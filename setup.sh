@@ -1,8 +1,8 @@
 #!/bin/bash
-# One-command setup for Arete on macOS:
+# One-command setup for Venato on macOS:
 #   1. checks this is a Mac with Python 3.13
 #   2. creates .venv and installs the pinned Python packages (requirements.txt)
-#   3. builds Arete.app (in /Applications, or ~/Applications if that isn't writable)
+#   3. builds Venato.app (in /Applications, or ~/Applications if that isn't writable)
 #
 # Run from the project folder:   ./setup.sh
 # Safe to run again (e.g. after pulling updates).
@@ -24,7 +24,7 @@ for candidate in python3.13 python3; do
     PY="$(command -v "$candidate")"; break
   fi
 done
-[ -n "$PY" ] || fail "Arete needs Python 3.13 (the version its packages are tested with).
+[ -n "$PY" ] || fail "Venato needs Python 3.13 (the version its packages are tested with).
 Install it from https://www.python.org/downloads/ (or with Homebrew: brew install python@3.13), then run ./setup.sh again."
 echo "Using $("$PY" --version) at $PY"
 
@@ -39,42 +39,42 @@ fi
 .venv/bin/python -m pip install --quiet -r requirements.txt
 echo "Packages installed."
 
-# --- 3. Arete.app ------------------------------------------------------------
-say "3/3  Building Arete.app…"
-if [ -n "${ARETE_APP_PATH:-}" ]; then
-  APP="$ARETE_APP_PATH"
+# --- 3. Venato.app ------------------------------------------------------------
+say "3/3  Building Venato.app…"
+if [ -n "${VENATO_APP_PATH:-}" ]; then
+  APP="$VENATO_APP_PATH"
 elif [ -w /Applications ]; then
-  APP="/Applications/Arete.app"
+  APP="/Applications/Venato.app"
 else
-  mkdir -p "$HOME/Applications"; APP="$HOME/Applications/Arete.app"
+  mkdir -p "$HOME/Applications"; APP="$HOME/Applications/Venato.app"
 fi
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp assets/Arete.icns "$APP/Contents/Resources/Arete.icns"
+cp assets/Venato.icns "$APP/Contents/Resources/Venato.icns"
 
-cat > "$APP/Contents/MacOS/Arete" <<EOF
+cat > "$APP/Contents/MacOS/Venato" <<EOF
 #!/bin/zsh
-# Launches the Arete desktop window using the project's virtualenv.
+# Launches the Venato desktop window using the project's virtualenv.
 APP_DIR="$APP_DIR"
 exec "\$APP_DIR/.venv/bin/python" "\$APP_DIR/desktop.py"
 EOF
-chmod +x "$APP/Contents/MacOS/Arete"
+chmod +x "$APP/Contents/MacOS/Venato"
 
 cat > "$APP/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>Arete</string>
-    <key>CFBundleDisplayName</key><string>Arete</string>
-    <key>CFBundleIdentifier</key><string>local.arete</string>
-    <key>CFBundleExecutable</key><string>Arete</string>
-    <key>CFBundleIconFile</key><string>Arete</string>
+    <key>CFBundleName</key><string>Venato</string>
+    <key>CFBundleDisplayName</key><string>Venato</string>
+    <key>CFBundleIdentifier</key><string>local.venato</string>
+    <key>CFBundleExecutable</key><string>Venato</string>
+    <key>CFBundleIconFile</key><string>Venato</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleVersion</key><string>1.0</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Arete records your voice when you click the mic in the chat bar, and transcribes it on this Mac.</string>
+    <string>Venato records your voice when you click the mic in the chat bar, and transcribes it on this Mac.</string>
 </dict>
 </plist>
 EOF
@@ -84,8 +84,8 @@ echo "Built $APP"
 
 say "All done!"
 cat <<EOF
-Open Arete from your Applications folder, Launchpad or Spotlight.
+Open Venato from your Applications folder, Launchpad or Spotlight.
   • The first time, macOS may say it's from an unidentified developer:
-    right-click Arete → Open → Open.
+    right-click Venato → Open → Open.
   • A short setup guide runs on first launch (Claude, Outlook calendar, microphone).
 EOF

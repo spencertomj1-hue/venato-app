@@ -24,7 +24,7 @@ class Reply:
 
 @pytest.fixture
 def updates(store, monkeypatch):
-    from arete import updates as module
+    from venato import updates as module
     module = importlib.reload(module)
     monkeypatch.setattr(module, "current_version", lambda: "1.1.1")
     return module
@@ -50,7 +50,7 @@ def test_check_and_banner_logic(updates, store):
 
 
 def test_source_copies_are_not_checked(store):
-    from arete import updates
+    from venato import updates
     updates = importlib.reload(updates)
     if not (Path(updates.__file__).parent / "VERSION").exists():
         assert updates.current_version() == "dev"
@@ -62,6 +62,6 @@ def test_banner_on_the_page(updates, store):
     store.save_settings(update_latest={"version": "1.2.0", "url": "https://example.com/r"})
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    assert any("Arete 1.2.0 is available" in m.value for m in at.markdown)
+    assert any("Venato 1.2.0 is available" in m.value for m in at.markdown)
     at.button(key="update_dismiss").click().run()
     assert not any("is available" in m.value for m in at.markdown)

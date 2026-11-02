@@ -1,7 +1,7 @@
-# One-command setup for Arete on Windows:
+# One-command setup for Venato on Windows:
 #   1. checks for Python 3.13
 #   2. creates .venv and installs the pinned Python packages (requirements.txt)
-#   3. adds Arete shortcuts to the Start menu and the desktop
+#   3. adds Venato shortcuts to the Start menu and the desktop
 #
 # Run from the project folder, in PowerShell:
 #   powershell -ExecutionPolicy Bypass -File .\setup.ps1
@@ -25,7 +25,7 @@ foreach ($candidate in @(@("py", "-3.13"), @("python"), @("python3"))) {
     }
 }
 if (-not $Py) {
-    Fail ("Arete needs Python 3.13 (the version its packages are tested with).`n" +
+    Fail ("Venato needs Python 3.13 (the version its packages are tested with).`n" +
           "Install it from https://www.python.org/downloads/ (tick 'Add python.exe to PATH'), then run setup.ps1 again.")
 }
 $PyExe = $Py[0]; $PyArgs = @($Py | Select-Object -Skip 1)
@@ -46,14 +46,14 @@ if ($LASTEXITCODE -ne 0) { Fail "Installing the packages failed (see the message
 Write-Host "Packages installed."
 
 # --- 3. Shortcuts --------------------------------------------------------------
-Say "3/3  Adding Arete to the Start menu and the desktop..."
+Say "3/3  Adding Venato to the Start menu and the desktop..."
 # pythonw.exe runs the app without a console window.
 $Target = Join-Path $AppDir ".venv\Scripts\pythonw.exe"
 $Icon = Join-Path $AppDir "assets\icon.ico"
 $Shell = New-Object -ComObject WScript.Shell
 $Places = @(
-    (Join-Path ([Environment]::GetFolderPath("Programs")) "Arete.lnk"),
-    (Join-Path ([Environment]::GetFolderPath("Desktop")) "Arete.lnk")
+    (Join-Path ([Environment]::GetFolderPath("Programs")) "Venato.lnk"),
+    (Join-Path ([Environment]::GetFolderPath("Desktop")) "Venato.lnk")
 )
 foreach ($place in $Places) {
     $link = $Shell.CreateShortcut($place)
@@ -61,11 +61,11 @@ foreach ($place in $Places) {
     $link.Arguments = "`"$(Join-Path $AppDir 'desktop.py')`""
     $link.WorkingDirectory = $AppDir
     $link.IconLocation = $Icon
-    $link.Description = "Arete: a personal life tracker"
+    $link.Description = "Venato: a personal life tracker"
     $link.Save()
     Write-Host "Made $place"
 }
 
 Say "All done!"
-Write-Host "Open Arete from the Start menu or the desktop shortcut."
+Write-Host "Open Venato from the Start menu or the desktop shortcut."
 Write-Host "  - A short setup guide runs on first launch (Claude, Outlook calendar, microphone)."

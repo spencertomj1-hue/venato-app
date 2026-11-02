@@ -1,5 +1,5 @@
 """
-Every test gets its own empty database: ARETE_DB points store.py at a temp
+Every test gets its own empty database: VENATO_DB points store.py at a temp
 file, so the real life.db is never touched.
 """
 
@@ -15,9 +15,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     data = tmp_path / "data"
-    monkeypatch.setenv("ARETE_DATA_DIR", str(data))
-    monkeypatch.setenv("ARETE_DB", str(data / "test.db"))
-    from arete import store as store_module
+    monkeypatch.setenv("VENATO_DATA_DIR", str(data))
+    monkeypatch.setenv("VENATO_DB", str(data / "test.db"))
+    from venato import store as store_module
     store_module = importlib.reload(store_module)
     store_module.init_db()
     # Most tests want the app itself, not the first-run wizard.
@@ -28,13 +28,13 @@ def store(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def no_real_outlook(tmp_path, monkeypatch):
     """Tests never use the real Keychain, calendar link or cache (and never hit the network)."""
-    from arete import outlook
+    from venato import outlook
     monkeypatch.setattr(outlook, "CACHE", tmp_path / "outlook-cache.ics")
     monkeypatch.setattr(outlook, "keyring", MemoryKeyring())
-    from arete import assistant                  # nor a real Anthropic API key
+    from venato import assistant                  # nor a real Anthropic API key
     monkeypatch.setattr(assistant, "keyring", MemoryKeyring())
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setenv("ARETE_NO_REMINDERS", "1")     # no reminder thread popping up real notifications
+    monkeypatch.setenv("VENATO_NO_REMINDERS", "1")     # no reminder thread popping up real notifications
 
 
 class MemoryKeyring:

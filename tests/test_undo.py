@@ -9,7 +9,7 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
 def _undo(store):
-    from arete import undo
+    from venato import undo
     return importlib.reload(undo)
 
 
@@ -38,7 +38,7 @@ def test_undo_bar_on_the_page(store):
     g = store.add_goal("Read 20 books", "yearly", store.local_today(), 20)
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.sidebar.radio[0].set_value("Goals").run()
-    from arete import undo
+    from venato import undo
     undo.checkpoint("Deleted the goal 'Read 20 books'")           # what the Delete button does first
     store.delete_goal(g["id"])
     at.run()
@@ -49,9 +49,9 @@ def test_undo_bar_on_the_page(store):
 
 
 def test_grid_ops_checkpoint(store):
-    from arete import tools, undo
+    from venato import tools, undo
     importlib.reload(tools)
-    from arete.ui import timetable
+    from venato.ui import timetable
     tools.add_block("2026-10-29", "plan", "09:00", "10:00", "Lecture")
     timetable.apply_grid_op({"kind": "paint", "date": "2026-10-29", "track": "plan", "start": "11:00", "end": "12:00",
                              "block": {"label": "Gym", "categoryId": "exercise"}})
@@ -64,9 +64,9 @@ def test_grid_ops_checkpoint(store):
 
 
 def test_grid_move_and_resize(store):
-    from arete import tools, undo
+    from venato import tools, undo
     importlib.reload(tools)
-    from arete.ui import timetable
+    from venato.ui import timetable
     tools.add_block("2026-10-29", "plan", "09:00", "10:00", "Gym", category="Exercise")
     gym = store.blocks_between("2026-10-29", "2026-10-29")[0]["id"]
     timetable.apply_grid_op({"kind": "move", "id": gym, "date": "2026-10-30", "track": "plan", "start": "10:00", "end": "11:00"})
@@ -86,9 +86,9 @@ def test_grid_move_and_resize(store):
 
 
 def test_batch_ops_are_one_undo(store):
-    from arete import tools, undo
+    from venato import tools, undo
     importlib.reload(tools)
-    from arete.ui import timetable
+    from venato.ui import timetable
     for d in ("2026-10-26", "2026-10-27"):
         tools.add_block(d, "plan", "10:00", "12:00", "Lecture")
     ids = [b["id"] for b in store.blocks_between("2026-10-26", "2026-10-27")]
@@ -106,8 +106,8 @@ def test_batch_ops_are_one_undo(store):
 
 
 def test_paste_is_quietly_undoable(store):
-    from arete import undo
-    from arete.ui import timetable
+    from venato import undo
+    from venato.ui import timetable
     timetable.apply_grid_op({"kind": "paint", "quiet": True, "label": "Pasted Gym", "date": "2026-10-29",
                              "track": "plan", "start": "18:00", "end": "19:00", "newId": "p1",
                              "block": {"label": "Gym", "categoryId": "exercise"}})

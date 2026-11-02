@@ -27,7 +27,7 @@ def test_store_and_countdown(store):
 
 
 def test_tools(store, monkeypatch):
-    from arete import tools
+    from venato import tools
     tools = importlib.reload(tools)
     monkeypatch.setattr(store, "local_today", lambda: date(2026, 10, 30))
     assert tools.add_deadline("Essay on Kant", "2026-11-06").text == \
@@ -44,7 +44,7 @@ def test_tools(store, monkeypatch):
 
 
 def test_deadline_reminders(store):
-    from arete import notify
+    from venato import notify
     notify = importlib.reload(notify)
     store.add_deadline("Essay", "2026-11-03")
     store.add_deadline("Later", "2026-11-10")

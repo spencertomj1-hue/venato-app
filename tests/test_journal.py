@@ -26,7 +26,7 @@ def test_store(store):
 
 
 def test_tools(store):
-    from arete import tools
+    from venato import tools
     tools = importlib.reload(tools)
     tools.write_journal("Long day in the lab.", date="2026-10-30")
     tools.write_journal("Pizza after.", date="2026-10-30")

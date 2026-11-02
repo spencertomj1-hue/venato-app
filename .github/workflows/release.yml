@@ -1,6 +1,6 @@
 # Builds the downloadable apps, each on its own system:
-#   Windows: Arete-Setup.exe  (PyInstaller bundle -> Inno Setup installer, packaging/arete.iss)
-#   macOS:   Arete.dmg        (PyInstaller Arete.app -> disk image; Apple silicon Macs)
+#   Windows: Venato-Setup.exe  (PyInstaller bundle -> Inno Setup installer, packaging/venato.iss)
+#   macOS:   Venato.dmg        (PyInstaller Venato.app -> disk image; Apple silicon Macs)
 # Each build is smoke-tested (the bundle imports everything, and its server starts and
 # answers) and kept as a download on the run's page. For a release, both are attached
 # to a GitHub Release.
@@ -48,7 +48,7 @@ jobs:
           $v = $env:VERSION_INPUT
           if (-not $v -and "${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") }
           if (-not $v) { $v = "0.0.0" }
-          "ARETE_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VENATO_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Install packages
         run: |
@@ -56,21 +56,21 @@ jobs:
           python -m pip install -r requirements.txt "pyinstaller>=6.11,<7"
 
       - name: Bundle with PyInstaller
-        run: pyinstaller packaging/arete.spec --noconfirm --distpath dist --workpath build
+        run: pyinstaller packaging/venato.spec --noconfirm --distpath dist --workpath build
 
       - name: "Smoke test: everything imports"
         shell: pwsh
         run: |
-          $env:ARETE_DATA_DIR = Join-Path $env:RUNNER_TEMP "arete-check"
-          $p = Start-Process dist\Arete\Arete.exe -ArgumentList "--check" -Wait -PassThru
-          Get-Content (Join-Path $env:ARETE_DATA_DIR "logs\arete.log") -ErrorAction SilentlyContinue
-          if ($p.ExitCode -ne 0) { throw "Arete.exe --check failed ($($p.ExitCode))" }
+          $env:VENATO_DATA_DIR = Join-Path $env:RUNNER_TEMP "venato-check"
+          $p = Start-Process dist\Venato\Venato.exe -ArgumentList "--check" -Wait -PassThru
+          Get-Content (Join-Path $env:VENATO_DATA_DIR "logs\venato.log") -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { throw "Venato.exe --check failed ($($p.ExitCode))" }
 
       - name: "Smoke test: the server starts"
         shell: pwsh
         run: |
-          $env:ARETE_DATA_DIR = Join-Path $env:RUNNER_TEMP "arete-serve"
-          $p = Start-Process dist\Arete\Arete.exe -ArgumentList "--serve", "8765" -PassThru
+          $env:VENATO_DATA_DIR = Join-Path $env:RUNNER_TEMP "venato-serve"
+          $p = Start-Process dist\Venato\Venato.exe -ArgumentList "--serve", "8765" -PassThru
           $ok = $false
           foreach ($i in 1..60) {
             try {
@@ -80,20 +80,20 @@ jobs:
             Start-Sleep -Seconds 2
           }
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-          Get-Content (Join-Path $env:ARETE_DATA_DIR "logs\arete.log") -ErrorAction SilentlyContinue | Select-Object -Last 40
+          Get-Content (Join-Path $env:VENATO_DATA_DIR "logs\venato.log") -ErrorAction SilentlyContinue | Select-Object -Last 40
           if (-not $ok) { throw "The bundled server didn't start" }
 
       - name: Build the installer (Inno Setup)
         shell: pwsh
         run: |
           if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) { choco install innosetup --no-progress -y }
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /Q packaging\arete.iss     # /Q: no per-file output, so the smoke-test results stay in the log
-          Get-Item dist\Arete-Setup.exe | Select-Object Name, Length
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /Q packaging\venato.iss     # /Q: no per-file output, so the smoke-test results stay in the log
+          Get-Item dist\Venato-Setup.exe | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: dist/Arete-Setup.exe
+          path: dist/Venato-Setup.exe
 
   mac:
     if: ${{ !github.event.repository.private }}   # public repo only (private Actions minutes are limited)
@@ -109,7 +109,7 @@ jobs:
         run: |
           v="$VERSION_INPUT"
           if [ -z "$v" ] && [ "${{ github.ref_type }}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; fi
-          echo "ARETE_VERSION=${v:-0.0.0}" >> "$GITHUB_ENV"
+          echo "VENATO_VERSION=${v:-0.0.0}" >> "$GITHUB_ENV"
 
       - name: Install packages
         run: |
@@ -117,17 +117,17 @@ jobs:
           python -m pip install -r requirements.txt "pyinstaller>=6.11,<7"
 
       - name: Bundle with PyInstaller
-        run: pyinstaller packaging/arete.spec --noconfirm --distpath dist --workpath build
+        run: pyinstaller packaging/venato.spec --noconfirm --distpath dist --workpath build
 
       - name: "Smoke test: everything imports"
         run: |
-          export ARETE_DATA_DIR="$RUNNER_TEMP/arete-check"
-          dist/Arete.app/Contents/MacOS/Arete --check
+          export VENATO_DATA_DIR="$RUNNER_TEMP/venato-check"
+          dist/Venato.app/Contents/MacOS/Venato --check
 
       - name: "Smoke test: the server starts"
         run: |
-          export ARETE_DATA_DIR="$RUNNER_TEMP/arete-serve"
-          dist/Arete.app/Contents/MacOS/Arete --serve 8765 > "$RUNNER_TEMP/serve.log" 2>&1 &
+          export VENATO_DATA_DIR="$RUNNER_TEMP/venato-serve"
+          dist/Venato.app/Contents/MacOS/Venato --serve 8765 > "$RUNNER_TEMP/serve.log" 2>&1 &
           pid=$!
           for i in $(seq 1 60); do
             if [ "$(curl -s http://127.0.0.1:8765/_stcore/health)" = "ok" ]; then ok=1; break; fi
@@ -140,15 +140,15 @@ jobs:
       - name: Make the disk image
         run: |
           mkdir dmg
-          cp -R dist/Arete.app dmg/
-          ln -s /Applications dmg/Applications        # drag Arete onto this to install
-          hdiutil create -volname Arete -srcfolder dmg -ov -format UDZO dist/Arete.dmg
-          ls -lh dist/Arete.dmg
+          cp -R dist/Venato.app dmg/
+          ln -s /Applications dmg/Applications        # drag Venato onto this to install
+          hdiutil create -volname Venato -srcfolder dmg -ov -format UDZO dist/Venato.dmg
+          ls -lh dist/Venato.dmg
 
       - uses: actions/upload-artifact@v4
         with:
           name: mac
-          path: dist/Arete.dmg
+          path: dist/Venato.dmg
 
   release:
     needs: [windows, mac]
@@ -163,9 +163,9 @@ jobs:
         run: |
           v="$VERSION_INPUT"
           if [ -z "$v" ]; then v="${GITHUB_REF_NAME#v}"; fi
-          notes="**Windows:** download **Arete-Setup.exe** and run it. Windows may say \"Windows protected your PC\" because the installer isn't code-signed: click **More info**, then **Run anyway**.
+          notes="**Windows:** download **Venato-Setup.exe** and run it. Windows may say \"Windows protected your PC\" because the installer isn't code-signed: click **More info**, then **Run anyway**.
 
-          **Mac (Apple silicon):** download **Arete.dmg**, open it and drag Arete into Applications. The first time, macOS will say it can't check the app for malicious software because it isn't notarised: open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+          **Mac (Apple silicon):** download **Venato.dmg**, open it and drag Venato into Applications. The first time, macOS will say it can't check the app for malicious software because it isn't notarised: open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
 
           Your data stays on your computer. To use the chat, paste an Anthropic API key in Settings → Claude (or sign in to Claude Code)."
-          gh release create "v$v" windows/Arete-Setup.exe mac/Arete.dmg --target "$GITHUB_SHA" --title "Arete v$v" --notes "$notes"
+          gh release create "v$v" windows/Venato-Setup.exe mac/Venato.dmg --target "$GITHUB_SHA" --title "Venato v$v" --notes "$notes"

@@ -3,12 +3,12 @@ Desktop launcher: runs the Streamlit app in its own native window (no browser).
 
 Run with:   .venv/bin/python desktop.py          (macOS / Linux)
             .venv/Scripts/pythonw.exe desktop.py  (Windows)
-Or open "Arete.app" (macOS) or the Arete shortcut (Windows), made by setup.sh / setup.ps1.
+Or open "Venato.app" (macOS) or the Venato shortcut (Windows), made by setup.sh / setup.ps1.
 
-It's also the entry point of the packaged Windows app (Arete.exe, built by
-packaging/arete.spec). A packaged app has no separate Python to run Streamlit
+It's also the entry point of the packaged Windows app (Venato.exe, built by
+packaging/venato.spec). A packaged app has no separate Python to run Streamlit
 with, so it starts a second copy of itself with `--serve PORT` to be the server.
-`Arete.exe --check` imports everything and sets up a database, then exits with
+`Venato.exe --check` imports everything and sets up a database, then exits with
 0 if all is well (the release build uses it as a smoke test).
 """
 
@@ -22,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-FROZEN = getattr(sys, "frozen", False)          # running as the packaged Arete.exe
+FROZEN = getattr(sys, "frozen", False)          # running as the packaged Venato.exe
 APP_DIR = Path(sys._MEIPASS) if FROZEN else Path(__file__).parent
 ICON = APP_DIR / "assets" / "icon.png"   # built by scripts/make_icon.py
 SPLASH_LOGO = APP_DIR / "assets" / "splash.png"   # also built by scripts/make_icon.py
@@ -31,12 +31,12 @@ READY_TIMEOUT = 45                       # give up waiting for the page after th
 
 
 def _data_dir():
-    from arete import system
-    return Path(os.environ.get("ARETE_DATA_DIR") or system.default_data_dir())
+    from venato import system
+    return system.data_dir()
 
 
 def _window_colour():
-    """The window's colour before the page draws: dark if Arete is set to dark mode, so it doesn't flash white."""
+    """The window's colour before the page draws: dark if Venato is set to dark mode, so it doesn't flash white."""
     import json
     try:
         theme = json.loads((_data_dir() / "settings.json").read_text(encoding="utf-8")).get("theme")
@@ -52,13 +52,13 @@ def splash_html():
 
 
 def set_dock_icon():
-    """The running process is Python, so tell macOS to show Arete's name and icon instead."""
+    """The running process is Python, so tell macOS to show Venato's name and icon instead."""
     try:
         from AppKit import NSApplication, NSImage
         from Foundation import NSBundle
         info = NSBundle.mainBundle().infoDictionary()
         if info is not None:
-            info["CFBundleName"] = "Arete"      # menu bar / Dock name
+            info["CFBundleName"] = "Venato"      # menu bar / Dock name
         image = NSImage.alloc().initWithContentsOfFile_(str(ICON))
         if image:
             NSApplication.sharedApplication().setApplicationIconImage_(image)
@@ -67,12 +67,12 @@ def set_dock_icon():
 
 
 def quiet_output():
-    """A windowed Arete.exe has no console, so send output to a log file in the data folder."""
+    """A windowed Venato.exe has no console, so send output to a log file in the data folder."""
     if sys.stdout is None or sys.stderr is None:
-        from arete.system import default_data_dir
-        logs = Path(os.environ.get("ARETE_DATA_DIR") or default_data_dir()) / "logs"
+        from venato import system
+        logs = system.data_dir() / "logs"
         logs.mkdir(parents=True, exist_ok=True)
-        log = open(logs / "arete.log", "a", encoding="utf-8", buffering=1)   # noqa: SIM115 - lives as long as the app
+        log = open(logs / "venato.log", "a", encoding="utf-8", buffering=1)   # noqa: SIM115 - lives as long as the app
         sys.stdout = sys.stdout or log
         sys.stderr = sys.stderr or log
 
@@ -97,7 +97,7 @@ def check():
     quiet_output()
     import json
     import tempfile
-    data = Path(os.environ.setdefault("ARETE_DATA_DIR", tempfile.mkdtemp(prefix="arete-check-")))
+    data = Path(os.environ.setdefault("VENATO_DATA_DIR", tempfile.mkdtemp(prefix="venato-check-")))
     data.mkdir(parents=True, exist_ok=True)
     (data / "settings.json").write_text(json.dumps({"wizard_done": True}), encoding="utf-8")
     from streamlit.testing.v1 import AppTest
@@ -108,9 +108,9 @@ def check():
         at.sidebar.radio[0].set_value(page).run()
         problems += [f"{page}: {e.message}" for e in at.exception]
     if problems or not pages:
-        print("Arete check FAILED:\n" + ("\n".join(problems) or "the app didn't draw its menu"))
+        print("Venato check FAILED:\n" + ("\n".join(problems) or "the app didn't draw its menu"))
         sys.exit(1)
-    print(f"Arete check OK: {len(pages)} pages drawn")
+    print(f"Venato check OK: {len(pages)} pages drawn")
 
 
 def server_flags(port):
@@ -164,7 +164,7 @@ def main():
         """
         Runs once the splash is up. The app loads in a second, hidden window, so
         none of its loading shows: once the page has fully drawn (its
-        #arete-ready marker) and the splash has had SPLASH_SECONDS, the app
+        #venato-ready marker) and the splash has had SPLASH_SECONDS, the app
         window appears and the splash closes.
         """
         shown_at = time.time()
@@ -174,7 +174,7 @@ def main():
             return show_error(splash)
 
         app = webview.create_window(
-            "Arete", f"http://127.0.0.1:{port}", width=1200, height=850,
+            "Venato", f"http://127.0.0.1:{port}", width=1200, height=850,
             hidden=True, background_color=_window_colour(),
         )
         app.events.closed += stop_server
@@ -183,7 +183,7 @@ def main():
         deadline = time.time() + READY_TIMEOUT
         while time.time() < deadline:
             try:
-                if app.evaluate_js("!!document.getElementById('arete-ready')"):
+                if app.evaluate_js("!!document.getElementById('venato-ready')"):
                     break
             except Exception:
                 pass            # page not loaded yet
@@ -201,7 +201,7 @@ def main():
     def show_error(splash):
         splash.evaluate_js(
             "document.getElementById('motto').outerHTML ="
-            " '<p class=\"error\">Arete couldn\\'t start. Close this window and try again.</p>'"
+            " '<p class=\"error\">Venato couldn\\'t start. Close this window and try again.</p>'"
         )
 
     state = {"app": None, "swapped": False}
@@ -215,7 +215,7 @@ def main():
 
     try:
         splash = webview.create_window(
-            "Arete", html=splash_html(), width=1200, height=850,
+            "Venato", html=splash_html(), width=1200, height=850,
             maximized=True, background_color="#FFFFFF",
         )
         splash.events.closed += splash_closed

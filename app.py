@@ -1,5 +1,5 @@
 """
-Arete — a small local app for logging mood, sleep, energy and habits.
+Venato — a small local app for logging mood, sleep, energy and habits.
 
 Run with:   streamlit run app.py
 All data is stored in life.db (SQLite) next to this file.
@@ -13,20 +13,20 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from arete.ui import chat
-from arete.ui import daily_log
-from arete.ui import goals
-from arete.ui import deadlines
-from arete.ui import search
-from arete.ui import review as review_ui
-from arete.ui import todos
-from arete.ui import network
-from arete.ui import settings_ui
-from arete import regional
-from arete import store
-from arete import notify
-from arete.ui import timetable
-from arete.store import entries_between, get_stats, init_db
+from venato.ui import chat
+from venato.ui import daily_log
+from venato.ui import goals
+from venato.ui import deadlines
+from venato.ui import search
+from venato.ui import review as review_ui
+from venato.ui import todos
+from venato.ui import network
+from venato.ui import settings_ui
+from venato import regional
+from venato import store
+from venato import notify
+from venato.ui import timetable
+from venato.store import entries_between, get_stats, init_db
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ def page_stats():
 # App entry point
 # ---------------------------------------------------------------------------
 
-st.set_page_config(page_title="Arete", page_icon=str(Path(__file__).parent / "assets" / "Logo.jpg"), layout="wide")
+st.set_page_config(page_title="Venato", page_icon=str(Path(__file__).parent / "assets" / "Logo.jpg"), layout="wide")
 
 # All of the app's own CSS goes out first, so nothing jumps around as the page draws:
 # the same top padding on every page, the sidebar nav restyled as large full-width
@@ -191,7 +191,7 @@ st.set_page_config(page_title="Arete", page_icon=str(Path(__file__).parent / "as
 st.html(f"""<style>
 .stMainBlockContainer {{ padding-top: 4rem; padding-bottom: 1.5rem; }}
 [data-stale="true"] {{ opacity: 1 !important; transition: none !important; }}
-[data-testid="stElementContainer"]:has(#arete-ready) {{ display: none; }}   /* no stray gap */
+[data-testid="stElementContainer"]:has(#venato-ready) {{ display: none; }}   /* no stray gap */
 [data-testid="stSidebar"] [data-testid="stElementContainer"]:has([data-testid="stRadio"]),
 [data-testid="stSidebar"] [data-testid="stRadio"],
 [data-testid="stSidebar"] [data-testid="stRadioGroup"] > div {{ width: 100% !important; }}
@@ -215,8 +215,8 @@ st.html(f"""<style>
 </style>""")
 
 
-from arete.ui import sidebar_theme          # the marble sidebar and its boxed menu
-from arete.ui import appearance             # light / dark / system
+from venato.ui import sidebar_theme          # the marble sidebar and its boxed menu
+from venato.ui import appearance             # light / dark / system
 appearance.sync()
 appearance.apply_text_colours()
 appearance.apply_text_size()
@@ -225,7 +225,7 @@ sidebar_theme.apply()
 
 def ready_marker():
     """Tells the desktop launcher the page has finished drawing (it then swaps the splash for the app)."""
-    st.html('<div id="arete-ready" style="display:none"></div>')
+    st.html('<div id="venato-ready" style="display:none"></div>')
 
 
 init_db()
@@ -247,19 +247,19 @@ PAGES = {
     "Settings": settings_ui.page_settings,
 }
 
-st.sidebar.title("Arete")
+st.sidebar.title("Venato")
 # Keyed so Home's goals "See all" can switch to the Goals page.
 choice = st.sidebar.radio("Go to", list(PAGES), label_visibility="collapsed", key="page")
 
 
 def update_banner():
-    """'Arete X is available' with a download link, when a newer release is out (arete/updates.py)."""
-    from arete import updates
+    """'Venato X is available' with a download link, when a newer release is out (venato/updates.py)."""
+    from venato import updates
     new = updates.available()
     if not new:
         return
     with st.container(key="update_banner", horizontal=True, vertical_alignment="center", gap="small"):
-        st.markdown(f":material/system_update: **Arete {new['version']} is available** "
+        st.markdown(f":material/system_update: **Venato {new['version']} is available** "
                     f"(you have {updates.current_version()}).")
         st.link_button("Download", new["url"], icon=":material/download:", type="primary")
         st.button("Not now", key="update_dismiss", on_click=updates.dismiss, args=(new["version"],),
@@ -274,7 +274,7 @@ PAGES[choice]()
 if choice != "Home" and store.ai_enabled():
     chat.render()
 
-from arete.ui import undo_bar                # "Deleted X · Undo", after a delete or overwrite
+from venato.ui import undo_bar                # "Deleted X · Undo", after a delete or overwrite
 undo_bar.render()
 
 

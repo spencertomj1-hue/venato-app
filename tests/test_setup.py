@@ -18,7 +18,7 @@ GOOD = "https://outlook.office365.com/published/0000fake/1111fake/calendar.ics"
 
 @pytest.fixture
 def outlook(store, tmp_path, monkeypatch):
-    from arete import outlook as module
+    from venato import outlook as module
     module = importlib.reload(module)
     monkeypatch.setattr(module, "CACHE", tmp_path / "cache.ics")
     monkeypatch.setattr(module, "keyring", MemoryKeyring())
@@ -72,8 +72,8 @@ def test_try_link_and_connect(outlook, store):
 # --- Claude, settings, backups ---
 
 def test_claude_status(store, tmp_path, monkeypatch):
-    from arete import assistant
-    from arete import setup_checks
+    from venato import assistant
+    from venato import setup_checks
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(assistant, "find_claude", lambda: None)
     assert setup_checks.claude_status()["found"] is False
@@ -96,7 +96,7 @@ def test_claude_status(store, tmp_path, monkeypatch):
 
 
 def test_settings_and_backups(store):
-    from arete import setup_checks
+    from venato import setup_checks
     setup_checks.save_settings(wizard_done=False, other=1)
     assert setup_checks.load_settings() == {"wizard_done": False, "timezone": "Europe/London", "other": 1}
     path = setup_checks.backup_now()
@@ -107,14 +107,14 @@ def test_settings_and_backups(store):
 # --- the wizard ---
 
 def test_wizard_shows_on_a_fresh_data_folder_and_finishes(store, monkeypatch):
-    from arete import setup_checks
+    from venato import setup_checks
     os.remove(store.DATA_DIR / "settings.json")                 # a brand-new data folder
     monkeypatch.setattr(setup_checks, "claude_status", lambda: {
         "found": False, "path": None, "logged_in": False, "account": None, "note": "Not installed."})
 
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    assert at.title[0].value == "Welcome to Arete"
+    assert at.title[0].value == "Welcome to Venato"
     assert not at.sidebar.radio                                  # no app yet
 
     at.button(key="wiz_next").click().run()                      # -> the assistant: optional, off to start with
@@ -139,8 +139,8 @@ def test_wizard_shows_on_a_fresh_data_folder_and_finishes(store, monkeypatch):
 
 def test_api_key_setup(store, monkeypatch):
     """Pasting a key: it's checked, saved in the (fake) secret store, and then Claude counts as ready."""
-    from arete import assistant
-    from arete import setup_checks
+    from venato import assistant
+    from venato import setup_checks
     monkeypatch.setattr(assistant, "find_claude", lambda: "/sdk/_bundled/claude")
     monkeypatch.setattr(assistant, "bundled_claude", lambda: "/sdk/_bundled/claude")
     status = setup_checks.claude_status()
@@ -167,7 +167,7 @@ def test_api_key_setup(store, monkeypatch):
 
 
 def test_check_api_key_messages(monkeypatch):
-    from arete import assistant
+    from venato import assistant
     assert not assistant.check_api_key("hello")[0]                       # not even the right shape
 
     class Reply:
@@ -181,7 +181,7 @@ def test_check_api_key_messages(monkeypatch):
 
 def test_wizard_without_the_assistant(store):
     """Leaving the assistant off: no microphone step, and no chat anywhere in the app."""
-    from arete import setup_checks
+    from venato import setup_checks
     os.remove(store.DATA_DIR / "settings.json")
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.button(key="wiz_next").click().run()                      # -> the assistant (left off)
@@ -194,7 +194,7 @@ def test_wizard_without_the_assistant(store):
     at.button(key="wiz_finish").click().run()
     assert setup_checks.load_settings()["ai_enabled"] is False
     assert not at.exception and at.sidebar.radio[0].value == "Home"
-    assert not [t for t in at.text_area if "Arete" in (t.placeholder or "")]   # no ask box
+    assert not [t for t in at.text_area if "Venato" in (t.placeholder or "")]   # no ask box
     for page in at.sidebar.radio[0].options:
         at.sidebar.radio[0].set_value(page).run()
         assert not at.exception, page
@@ -204,7 +204,7 @@ def test_wizard_without_the_assistant(store):
 
 
 def test_appearance_setting(store):
-    from arete.ui import appearance
+    from venato.ui import appearance
     assert appearance.mode() == "System"
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.sidebar.radio[0].set_value("Settings").run()
@@ -216,8 +216,8 @@ def test_appearance_setting(store):
 
 def test_automatic_backups(store, tmp_path):
     from datetime import date as d
-    from arete import setup_checks
-    folder = tmp_path / "cloud" / "Arete backups"
+    from venato import setup_checks
+    folder = tmp_path / "cloud" / "Venato backups"
     assert setup_checks.set_backups_dir(str(folder)) == folder and setup_checks.backups_dir() == folder
     made = setup_checks.auto_backup_if_due()
     assert made and made.parent == folder
@@ -244,7 +244,7 @@ def test_automatic_backups(store, tmp_path):
 
 
 def test_text_size_setting(store):
-    from arete.ui import appearance
+    from venato.ui import appearance
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not any("font-size: 20px" in h.value for h in at.get("html"))
     at.sidebar.radio[0].set_value("Settings").run()

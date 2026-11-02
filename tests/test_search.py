@@ -8,7 +8,7 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
 def seed(store):
-    from arete import tools
+    from venato import tools
     import importlib
     tools = importlib.reload(tools)
     store.add_todo("Email Priya about the thesis", "weekly", "2026-10-28")

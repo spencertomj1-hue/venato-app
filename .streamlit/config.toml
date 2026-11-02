@@ -1,4 +1,4 @@
-# Arete runs locally only.
+# Venato runs locally only.
 
 [server]
 address = "127.0.0.1"          # only this Mac can connect
@@ -14,7 +14,7 @@ gatherUsageStats = false       # no usage statistics sent to Streamlit
 toolbarMode = "minimal"
 
 # Colours checked for contrast (WCAG AA, 4.5:1 for text) in each mode. Light / dark /
-# system is chosen in Settings -> Appearance (arete/ui/appearance.py).
+# system is chosen in Settings -> Appearance (venato/ui/appearance.py).
 [theme.light]
 primaryColor = "#C62828"       # the accent (Streamlit's default #FF4B4B is only 3.4:1 on white)
 redTextColor = "#C62828"

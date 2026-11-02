@@ -1,16 +1,16 @@
-# Contributing to Arete
+# Contributing to Venato
 
 Thanks for helping! A few rules keep everyone's personal data safe.
 
 ## Never commit real data
 
-Arete is a personal tracker, so a careless commit could publish someone's diary, timetable or calendar link.
+Venato is a personal tracker, so a careless commit could publish someone's diary, timetable or calendar link.
 
-- **User data never lives in the repo.** Arete stores it in `~/Library/Application Support/Arete/`, and secrets (the Outlook link) only in the macOS Keychain. Don't add code that writes user data or secrets into the project folder.
-- **Don't commit** databases (`*.db`), calendars (`*.ics`), spreadsheets or exports (`*.csv`, `*.xlsx`), recordings, logs, `.env` files, `.streamlit/secrets.toml`, `settings.json` or `arete_config.json`. `.gitignore` blocks these, so please don't force-add them.
+- **User data never lives in the repo.** Venato stores it in `~/Library/Application Support/Venato/`, and secrets (the Outlook link) only in the macOS Keychain. Don't add code that writes user data or secrets into the project folder.
+- **Don't commit** databases (`*.db`), calendars (`*.ics`), spreadsheets or exports (`*.csv`, `*.xlsx`), recordings, logs, `.env` files, `.streamlit/secrets.toml`, `settings.json` or `venato_config.json`. `.gitignore` blocks these, so please don't force-add them.
 - **Use fake data** in tests, fixtures, screenshots and docs: obviously made-up names, places and links (e.g. `example.com`).
   - For screenshots, run the app on a demo data folder: `.venv/bin/python scripts/seed_demo.py`.
-  - Tests use temporary folders via `ARETE_DATA_DIR`. Never point them at a real data folder.
+  - Tests use temporary folders via `VENATO_DATA_DIR`. Never point them at a real data folder.
 
 ## Run gitleaks before every commit
 

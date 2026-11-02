@@ -12,7 +12,7 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 @pytest.fixture
 def review(store):
-    from arete import review as module
+    from venato import review as module
     return importlib.reload(module)
 
 
@@ -26,7 +26,7 @@ def test_when_its_due(review, store):
 
 
 def test_summary_numbers(review, store):
-    from arete import tools
+    from venato import tools
     tools = importlib.reload(tools)
     tools.add_block("2026-10-27", "plan", "09:00", "11:00", "Revision", category="Study")
     tools.add_block("2026-10-27", "actual", "09:00", "10:00", "Revision", category="Study")
@@ -51,7 +51,7 @@ def test_summary_numbers(review, store):
 
 
 def test_popup_once_and_history(store, monkeypatch):
-    from arete import review, tools
+    from venato import review, tools
     importlib.reload(tools)
     week = store.week_start_of(store.local_today())
     tools.add_block(week.isoformat(), "actual", "09:00", "10:00", "Gym", category="Exercise")
@@ -68,7 +68,7 @@ def test_popup_once_and_history(store, monkeypatch):
 
 def test_future_plans_dont_count(review, store, monkeypatch):
     from datetime import datetime
-    from arete import tools
+    from venato import tools
     tools = importlib.reload(tools)
     tools.add_block("2026-10-27", "plan", "09:00", "10:00", "Revision", category="Study")
     tools.add_block("2026-10-27", "actual", "09:00", "10:00", "Revision", category="Study")

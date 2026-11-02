@@ -1,4 +1,4 @@
-# Only source code goes to git. All user data lives in ~/Library/Application Support/Arete
+# Only source code goes to git. All user data lives in ~/Library/Application Support/Venato
 # (outside this folder); these rules are a second line of defence.
 
 # --- Databases (and SQLite's journal/WAL/SHM files) ---
@@ -19,7 +19,7 @@
 .env
 .env.*
 .streamlit/secrets.toml
-arete_config.json
+venato_config.json
 settings.json
 backups/
 
@@ -42,4 +42,4 @@ static/
 # --- Build output (PyInstaller / Inno Setup) ---
 build/
 dist/
-arete/VERSION
+venato/VERSION

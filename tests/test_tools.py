@@ -8,7 +8,7 @@ import pytest
 
 @pytest.fixture
 def tools(store):
-    from arete import tools as tools_module
+    from venato import tools as tools_module
     tools_module = importlib.reload(tools_module)   # picks up the reloaded store
     tools_module._now = lambda: datetime(2026, 10, 1, 8, 0)   # plan_time never plans in the past
     return tools_module
@@ -489,7 +489,7 @@ def test_weekly_habit_targets(tools, store):
 
 def test_move_block(store):
     import importlib
-    from arete import tools as t
+    from venato import tools as t
     t = importlib.reload(t)
     t.add_block("2026-10-29", "plan", "09:00", "10:00", "Gym", category="Exercise", details="Legs")
     t.add_block("2026-10-29", "plan", "11:00", "13:00", "Lecture")

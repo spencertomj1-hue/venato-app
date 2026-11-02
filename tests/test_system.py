@@ -1,9 +1,9 @@
-"""Platform differences (arete/system.py and the Claude CLI search), faked for each system."""
+"""Platform differences (venato/system.py and the Claude CLI search), faked for each system."""
 
 import os
 from pathlib import Path
 
-from arete import system
+from venato import system
 
 
 def as_system(monkeypatch, name):
@@ -13,15 +13,15 @@ def as_system(monkeypatch, name):
 
 def test_data_folder_per_system(monkeypatch, tmp_path):
     as_system(monkeypatch, "mac")
-    assert system.default_data_dir() == Path.home() / "Library" / "Application Support" / "Arete"
+    assert system.default_data_dir() == Path.home() / "Library" / "Application Support" / "Venato"
     as_system(monkeypatch, "windows")
     monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
-    assert system.default_data_dir() == tmp_path / "Roaming" / "Arete"
+    assert system.default_data_dir() == tmp_path / "Roaming" / "Venato"
     monkeypatch.delenv("APPDATA")
-    assert system.default_data_dir() == Path.home() / "AppData" / "Roaming" / "Arete"
+    assert system.default_data_dir() == Path.home() / "AppData" / "Roaming" / "Venato"
     as_system(monkeypatch, "linux")
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
-    assert system.default_data_dir() == tmp_path / "share" / "Arete"
+    assert system.default_data_dir() == tmp_path / "share" / "Venato"
 
 
 def test_open_folder(monkeypatch, tmp_path):
@@ -40,7 +40,7 @@ def test_open_folder(monkeypatch, tmp_path):
 
 
 def test_claude_env_paths(monkeypatch, store):
-    from arete import assistant
+    from venato import assistant
     monkeypatch.setenv("PATH", "/usr/bin")
     as_system(monkeypatch, "mac")
     env = assistant._env("/somewhere/claude")

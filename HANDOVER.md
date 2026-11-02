@@ -1,55 +1,55 @@
-# Arete — developer guide
+# Venato — developer guide
 
-How Arete is put together, the decisions behind it, and the pitfalls to know before changing it. For what the app does and how to install it, see the [README](README.md).
+How Venato is put together, the decisions behind it, and the pitfalls to know before changing it. For what the app does and how to install it, see the [README](README.md).
 
 ## 1. Running and testing
 
 ```bash
-./setup.sh                                               # Python 3.13 check, .venv, pinned packages, builds Arete.app
-.venv/bin/python desktop.py                              # the app in its own window (what Arete.app runs)
+./setup.sh                                               # Python 3.13 check, .venv, pinned packages, builds Venato.app
+.venv/bin/python desktop.py                              # the app in its own window (what Venato.app runs)
 .venv/bin/streamlit run app.py                           # the app in a browser (development)
 .venv/bin/python -m pytest -q -p no:logging tests        # the test suite
 .venv/bin/python scripts/seed_demo.py                    # a demo data folder with fake data
-ARETE_DATA_DIR=<folder> .venv/bin/streamlit run app.py   # run against any data folder
+VENATO_DATA_DIR=<folder> .venv/bin/streamlit run app.py   # run against any data folder
 ```
 
 - **Restart after changes:** Streamlit only hot-reloads `app.py`. Any other module, and the components' JS/CSS (read once at import), need a restart.
-- **Never test against real data:** tests and demos must set `ARETE_DATA_DIR` to a temporary folder (the pytest fixtures do).
+- **Never test against real data:** tests and demos must set `VENATO_DATA_DIR` to a temporary folder (the pytest fixtures do).
 
 ## 2. Where things live
 
 | What | Where |
 |---|---|
 | Code | the cloned folder. **Nothing user-specific is ever written here.** |
-| User data | `system.default_data_dir()`: `~/Library/Application Support/Arete/` (macOS), `%APPDATA%\Arete` (Windows), `~/.local/share/Arete` (Linux), or `$ARETE_DATA_DIR`: `life.db`, `settings.json`, `backups/`, `.outlook_cache.ics`, optional `arete_config.json`, and `agent/` (the Claude Code working folder) |
-| Outlook calendar link | the OS's secret store via `keyring` (macOS Keychain / Windows Credential Manager), service `Arete`, account `outlook-ics-url` |
+| User data | `system.default_data_dir()`: `~/Library/Application Support/Venato/` (macOS), `%APPDATA%\Venato` (Windows), `~/.local/share/Venato` (Linux), or `$VENATO_DATA_DIR`: `life.db`, `settings.json`, `backups/`, `.outlook_cache.ics`, optional `venato_config.json`, and `agent/` (the Claude Code working folder) |
+| Outlook calendar link | the OS's secret store via `keyring` (macOS Keychain / Windows Credential Manager), service `Venato`, account `outlook-ics-url` |
 | Speech model | `~/.cache/huggingface` (downloaded by faster-whisper on first use) |
-| Arete.app | `/Applications/Arete.app` or `~/Applications/Arete.app`, built by `setup.sh`. Its launcher script holds the clone's path, written at build time. |
-| Windows shortcuts | Start menu and desktop `Arete.lnk`, made by `setup.ps1`: `.venv\Scripts\pythonw.exe desktop.py` (no console window), icon `assets/icon.ico` |
+| Venato.app | `/Applications/Venato.app` or `~/Applications/Venato.app`, built by `setup.sh`. Its launcher script holds the clone's path, written at build time. |
+| Windows shortcuts | Start menu and desktop `Venato.lnk`, made by `setup.ps1`: `.venv\Scripts\pythonw.exe desktop.py` (no console window), icon `assets/icon.ico` |
 
 ## 3. Files
 
 ```
 app.py                         Streamlit entry: global CSS, wizard gate, sidebar nav, Home/Stats pages, chat bar, Outlook autosync
-desktop.py                     Native window launcher with a splash screen (pywebview); what Arete.app / the Windows shortcut runs
-setup.sh                       One-command install on macOS (venv, packages, Arete.app)
+desktop.py                     Native window launcher with a splash screen (pywebview); what Venato.app / the Windows shortcut runs
+setup.sh                       One-command install on macOS (venv, packages, Venato.app)
 setup.ps1                      One-command install on Windows (venv, packages, Start menu + desktop shortcuts)
 .github/workflows/tests.yml    Runs the tests on Windows, macOS and Linux for every push
 
-arete/                         The app's code, as a package (imported as `from arete import store`, ...)
+venato/                         The app's code, as a package (imported as `from venato import store`, ...)
   regional.py                Week start, clock, date format, water units (display only; data stays HH:mm / ISO / litres): use its time() / day_month() / long_date() / water_text()
   system.py                    Everything that differs by OS: data folder, opening a folder, words for the UI
   store.py                     ALL SQL; timetable painting rules; settings.json; stats. No Streamlit.
   tools.py                     What Claude can do: plain functions over store.py, previews for destructive changes
-  assistant.py                 Claude via claude-agent-sdk: finds the CLI, system prompt, in-process "arete" MCP server
+  assistant.py                 Claude via claude-agent-sdk: finds the CLI, system prompt, in-process "venato" MCP server
   voice.py                     Microphone recording (sounddevice) and local transcription (faster-whisper)
   outlook.py                   Read-only Outlook import: link checks, Keychain, fetch, recurrence expansion, sync
   notify.py                    Reminders: a background thread that notifies before Plan blocks / Outlook events start
-  updates.py                   Daily check of GitHub's latest release vs arete/VERSION (written by packaging/arete.spec; none = "dev", not checked); banner in app.py
+  updates.py                   Daily check of GitHub's latest release vs venato/VERSION (written by packaging/venato.spec; none = "dev", not checked); banner in app.py
   review.py                    Weekly review numbers (summary, due_week: from 7pm Sunday); ui/review.py shows the pop-up and Stats' history; reflections in `weekly_reviews`
   undo.py                      Undo: whole-database snapshot before deletes / overwrites (ui/undo_bar.py offers it)
   setup_checks.py              Logic behind the wizard/Settings: Claude status, mic test, backups, Finder
-  ui/                          One module per page or section (imported as `from arete.ui import goals`, ...)
+  ui/                          One module per page or section (imported as `from venato.ui import goals`, ...)
     search.py                  Home's search box: store.search (every word, any case, per kind) and Open (sets page + day / person)
     timetable.py               Timetable page and the week/day grid's Python side
     timetable_tools.py         Buttons above the grid: Add block, Fit time, Categories (dialogs calling the same tools.py functions as Claude)
@@ -68,11 +68,11 @@ arete/                         The app's code, as a package (imported as `from a
       calendar_component.*     the month calendar
       chat_component.*         the chat bar
 
-assets/                        Logo, app icon (icon.png, Arete.icns), splash screen (splash.html/.png),
+assets/                        Logo, app icon (icon.png, Venato.icns), splash screen (splash.html/.png),
                                sidebar background (sidebar.webp) and the README screenshots
 scripts/
   seed_demo.py                 Demo data folder (never touches real data)
-  make_icon.py                 Builds assets/icon.png, Arete.icns and splash.png from assets/Logo.jpg
+  make_icon.py                 Builds assets/icon.png, Venato.icns and splash.png from assets/Logo.jpg
   install-hooks.sh             gitleaks pre-commit hook
 tests/                         pytest + AppTest; tests/fixtures/sample.ics is a fake calendar
 ```
@@ -151,7 +151,7 @@ Two different things:
 ## 5d. Journal and reminders
 
 - **Journal = the day's notes (`entries.notes`):** `get_journal` / `save_journal` / `append_journal` / `journal_entries` work on that column (`save_journal` leaves the numbers alone and drops a row left empty). Databases from when the journal had its own `journal` table get it folded into notes by `_journal_became_notes` (appended unless already there) and the table dropped. In the Daily Log the form's widget keys include a hash of the saved entry, so if Claude adds to the day the box shows it instead of a stale draft. Search is `LIKE` per word (wildcards escaped). Claude: `write_journal` appends a paragraph (replace=true needs confirmation), `read_journal` by day, range and/or words. Settings → Data downloads it as Markdown.
-- **Reminders (`notify.py`):** `notify.start()` in `app.py` starts one daemon thread per process (skipped when `ARETE_NO_REMINDERS` is set, as the tests do). Every 30 s `check()` reads the settings, finds Plan blocks and visible timed Outlook events from yesterday's and today's timetable days (times before 07:00 are the next calendar day) that start within `reminder_minutes` (or started under a minute ago), and announces each once (key: date|start|label). `system.notify` runs `osascript` (macOS; shows as from Script Editor), a PowerShell toast (Windows) or `notify-send` (Linux), passing the text as arguments / environment variables so nothing in it runs as code.
+- **Reminders (`notify.py`):** `notify.start()` in `app.py` starts one daemon thread per process (skipped when `VENATO_NO_REMINDERS` is set, as the tests do). Every 30 s `check()` reads the settings, finds Plan blocks and visible timed Outlook events from yesterday's and today's timetable days (times before 07:00 are the next calendar day) that start within `reminder_minutes` (or started under a minute ago), and announces each once (key: date|start|label). `system.notify` runs `osascript` (macOS; shows as from Script Editor), a PowerShell toast (Windows) or `notify-send` (Linux), passing the text as arguments / environment variables so nothing in it runs as code.
 
 ## 6. Outlook import (`outlook.py`)
 
@@ -172,15 +172,15 @@ Two different things:
 
 ## 7. Claude chat (`assistant.py`, `tools.py`, `chat.py`)
 
-- **Optional:** everything must work by hand. With `ai_enabled` off there's no chat bar, no Home ask box, no Voice tab, and hints don't mention Arete/Claude. Anything Claude can change needs a UI too: when adding a tool, add (or reuse) a button/dialog, ideally calling the same `tools.py` function so rules and Confirm previews match (see `ui/timetable_tools.py`).
+- **Optional:** everything must work by hand. With `ai_enabled` off there's no chat bar, no Home ask box, no Voice tab, and hints don't mention Venato/Claude. Anything Claude can change needs a UI too: when adding a tool, add (or reuse) a button/dialog, ideally calling the same `tools.py` function so rules and Confirm previews match (see `ui/timetable_tools.py`).
 
 - **The agent:** `claude_agent_sdk.query` drives the `claude` CLI: the user's installed Claude Code if `find_claude()` finds one, otherwise the copy bundled inside the SDK (`bundled_claude()`).
-- **Signing in:** an Anthropic API key (pasted in the wizard/Settings, checked with Anthropic's free `GET /v1/models`, stored with `keyring` as service `Arete`, account `anthropic-api-key`; or `$ANTHROPIC_API_KEY`) is passed to the CLI as `ANTHROPIC_API_KEY`, which it prefers over a login. Otherwise the user's Claude Code login is used. `setup_checks.claude_status()` reports which.
+- **Signing in:** an Anthropic API key (pasted in the wizard/Settings, checked with Anthropic's free `GET /v1/models`, stored with `keyring` as service `Venato`, account `anthropic-api-key`; or `$ANTHROPIC_API_KEY`) is passed to the CLI as `ANTHROPIC_API_KEY`, which it prefers over a login. Otherwise the user's Claude Code login is used. `setup_checks.claude_status()` reports which.
 - **Isolation:**
-  - `tools=[]` (no built-in tools) and `allowed_tools` = only `mcp__arete__*`, with `permission_mode="dontAsk"`.
+  - `tools=[]` (no built-in tools) and `allowed_tools` = only `mcp__venato__*`, with `permission_mode="dontAsk"`.
   - `setting_sources=[]`, `strict_mcp_config=True` and `skills=[]`, so the user's own Claude config isn't loaded.
 - **No chat on disk:** the CLI runs with `--no-session-persistence`. `chat.py` keeps the conversation in `st.session_state` and sends the last 12 messages as context (`_with_history`).
-- **Finding the CLI:** `find_claude()` checks `arete_config.json`, then `$ARETE_CLAUDE_PATH`, `which`, the common install paths and nvm. Finder-launched apps get a bare PATH, so `_env()` adds PATH, USER and HOME; without USER/HOME the CLI can't read its Keychain login.
+- **Finding the CLI:** `find_claude()` checks `venato_config.json`, then `$VENATO_CLAUDE_PATH`, `which`, the common install paths and nvm. Finder-launched apps get a bare PATH, so `_env()` adds PATH, USER and HOME; without USER/HOME the CLI can't read its Keychain login.
 - **Async:** the SDK runs in a worker thread with its own event loop, so it never clashes with Streamlit's.
 - **System prompt:** rebuilt every message, with the current date/time in the user's time zone, the timetable rules, the categories and the confirm rules.
 - **Tools:**
@@ -200,16 +200,16 @@ Two different things:
 
 ## 8. Startup and smoothness
 
-- **Two windows:** `desktop.py` shows the splash at once, then loads the app in a **hidden** window. When the page renders its `#arete-ready` marker (and at least 2 seconds have passed), it shows the app window and closes the splash.
+- **Two windows:** `desktop.py` shows the splash at once, then loads the app in a **hidden** window. When the page renders its `#venato-ready` marker (and at least 2 seconds have passed), it shows the app window and closes the splash.
 - **Marker placement:** the marker comes before the Outlook autosync, so the network never delays startup.
 - **Global CSS first:** `app.py` sends all global CSS as its first element (top padding, sidebar nav, no stale-element dimming, and hiding the marker's gap). Pages must not inject their own top padding.
 - **Toolbar:** `.streamlit/config.toml` sets `client.toolbarMode = "minimal"`, along with `server.address = 127.0.0.1`, XSRF protection and no usage statistics.
 
 ## 8b. Installers (`packaging/`, `.github/workflows/release.yml`)
 
-- **One PyInstaller recipe** (`packaging/arete.spec`) builds `dist/Arete/Arete.exe` on Windows and `dist/Arete.app` on macOS, with Python and every package inside. `app.py`, `.streamlit/config.toml`, `assets/` and the components are data files; `collect_all` picks up packages with data/plugins (Streamlit, Plotly, keyring, pywebview, the SDK with its bundled CLI, faster-whisper…).
-- **The bundle runs itself twice:** the window process starts a copy of itself with `--serve PORT`, which runs Streamlit in-process (`desktop.serve`). `--check` imports every module and sets up a throwaway database. A windowed `.exe` has no console, so output goes to `<data folder>/logs/arete.log`.
-- **The workflow** builds both on GitHub's runners, smoke-tests each (`--check`, then `--serve` and `/_stcore/health`), makes `Arete-Setup.exe` (Inno Setup, `packaging/arete.iss`: per-user, no admin, Start menu + optional desktop shortcut) and `Arete.dmg` (`hdiutil`, drag to Applications), and keeps both as downloads on the run. Run it from the Actions tab with a version and "publish" (or push a `v*` tag) to make a GitHub Release with both attached.
+- **One PyInstaller recipe** (`packaging/venato.spec`) builds `dist/Venato/Venato.exe` on Windows and `dist/Venato.app` on macOS, with Python and every package inside. `app.py`, `.streamlit/config.toml`, `assets/` and the components are data files; `collect_all` picks up packages with data/plugins (Streamlit, Plotly, keyring, pywebview, the SDK with its bundled CLI, faster-whisper…).
+- **The bundle runs itself twice:** the window process starts a copy of itself with `--serve PORT`, which runs Streamlit in-process (`desktop.serve`). `--check` imports every module and sets up a throwaway database. A windowed `.exe` has no console, so output goes to `<data folder>/logs/venato.log`.
+- **The workflow** builds both on GitHub's runners, smoke-tests each (`--check`, then `--serve` and `/_stcore/health`), makes `Venato-Setup.exe` (Inno Setup, `packaging/venato.iss`: per-user, no admin, Start menu + optional desktop shortcut) and `Venato.dmg` (`hdiutil`, drag to Applications), and keeps both as downloads on the run. Run it from the Actions tab with a version and "publish" (or push a `v*` tag) to make a GitHub Release with both attached.
 - **Not signed:** Windows shows SmartScreen ("More info → Run anyway"); macOS needs "Open Anyway" in Privacy & Security. Signing needs paid certificates (Apple Developer ID, a Windows code-signing certificate). The Mac build is Apple silicon only (`macos-latest`).
 
 ## 9. Gotchas
@@ -224,7 +224,7 @@ Two different things:
 - **Always read and write text files as UTF-8** (`read_text(encoding="utf-8")`). Windows defaults to cp1252, which garbles the components' `›`, `…`, `×` etc.
 - **No `%-d` (or other `%-x`) in Python date formats:** Windows' `strftime` doesn't support them. Use `x.day` instead. (Plotly's `tickformat` is fine; it runs in the browser.)
 - **Accessibility in the components:** the custom parts are keyboard-usable and labelled: to-do titles are focusable (Enter edits, Menu key / Shift+F10 opens the menu, Alt+↑/↓ reorders), the timetable has a hidden-until-focused list of its blocks (`renderBlockList`), network circles are focusable buttons. Keep new interactive bits focusable with an `aria-label`, and keep focus where it was across redraws.
-- **OS differences go in `arete/system.py`** (data folder, opening folders, UI words), so the rest of the code stays the same everywhere.
+- **OS differences go in `venato/system.py`** (data folder, opening folders, UI words), so the rest of the code stays the same everywhere.
 
 - **The sidebar radio has `key="page"`.** Home's "See all" sets it from a component callback, which runs before the radio is drawn; don't set it anywhere after that.
 - **NaN breaks components.** pandas turns SQL NULLs into NaN, which is invalid JSON. `store._read()` converts them to `None`; do the same for anything passed in a component's `data`.
@@ -232,7 +232,7 @@ Two different things:
 - **Fixed positioning:** the chat bar is `position: fixed` inside a component. That works because Streamlit's containers have no `transform`; a future Streamlit version could break it.
 - **Empty element containers still add a 16px gap** in Streamlit layouts. Hide them if you add invisible elements.
 - **Tests and the Keychain:** an autouse fixture swaps `outlook.keyring` for an in-memory fake. Modules that tests `importlib.reload` must have it swapped again; see `test_outlook.py` and `test_setup.py`.
-- **UI tests:** for the headless browser or pywebview, run the server with `PYTHON_KEYRING_BACKEND=<module>.MemoryKeyring` and an empty `ARETE_DATA_DIR`.
+- **UI tests:** for the headless browser or pywebview, run the server with `PYTHON_KEYRING_BACKEND=<module>.MemoryKeyring` and an empty `VENATO_DATA_DIR`.
 - **The microphone permission prompt** for an unsigned app bundle launched via a shell script can vary by macOS version. A denied permission records silence, which `voice.Recorder` reports as such.
 
 ## 10. Ideas for later
@@ -241,4 +241,4 @@ Two different things:
 - "Carry over unfinished" for to-dos in the UI (the store function exists).
 - Streaming chat replies.
 - Configurable grid hours (currently fixed at 07:00–01:00).
-- Signing and notarising Arete.app.
+- Signing and notarising Venato.app.

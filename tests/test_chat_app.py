@@ -13,8 +13,8 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 @pytest.fixture
 def fake_claude(store, monkeypatch):
-    from arete import assistant
-    from arete import tools
+    from venato import assistant
+    from venato import tools
 
     calls = []
 
@@ -69,7 +69,7 @@ def test_preview_waits_for_confirm(store, fake_claude):
 
 
 def test_claude_error_is_shown_not_raised(store, monkeypatch):
-    from arete import assistant
+    from venato import assistant
     monkeypatch.setattr(assistant, "run_turn", lambda text, history=(): assistant.Turn(error=assistant.LOGIN_HELP))
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.session_state["chat_queue"] = "hi"
@@ -81,7 +81,7 @@ def test_claude_error_is_shown_not_raised(store, monkeypatch):
 
 def test_voice_transcript_becomes_message(store, fake_claude, monkeypatch):
     import numpy as np
-    from arete import voice
+    from venato import voice
     monkeypatch.setattr(voice, "transcribe", lambda audio: "slept 7 to 9")
     at = AppTest.from_file(APP, default_timeout=60).run()
     # What the mic "stop" callback leaves behind:
@@ -95,7 +95,7 @@ def test_voice_transcript_becomes_message(store, fake_claude, monkeypatch):
 
 def test_voice_error_is_shown(store, monkeypatch):
     import numpy as np
-    from arete import voice
+    from venato import voice
 
     def fail(audio):
         raise voice.VoiceError("Couldn't make out any words.")
@@ -113,8 +113,8 @@ def test_voice_error_is_shown(store, monkeypatch):
 def test_confirm_button_runs_the_change_with_undo(store, monkeypatch):
     """The chat's Confirm handler itself (not just the change): it runs it and offers Undo."""
     import importlib
-    from arete import tools, undo
-    from arete.ui import chat
+    from venato import tools, undo
+    from venato.ui import chat
     tools = importlib.reload(tools)
     tools.add_block("2026-10-29", "plan", "07:00", "09:00", "Sleep")
     result = tools.add_block("2026-10-29", "plan", "08:00", "09:00", "Gym", category="Exercise")

@@ -14,7 +14,7 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 @pytest.fixture
 def notify(store, monkeypatch):
-    from arete import notify as module, system
+    from venato import notify as module, system
     module = importlib.reload(module)                       # picks up the reloaded store
     shown = []
     monkeypatch.setattr(system, "notify", lambda title, body="": shown.append((title, body)) or True)
@@ -62,21 +62,21 @@ def test_outlook_events_and_settings(notify, store):
 
 
 def test_commands(monkeypatch):
-    from arete import system
+    from venato import system
     monkeypatch.setattr(system, "IS_MAC", True)
     argv, env = system.notification_command('Say "hi" & quit', "x")
     assert argv[0] == "osascript" and argv[-2:] == ['Say "hi" & quit', "x"]   # text as arguments, not code
     monkeypatch.setattr(system, "IS_MAC", False)
     monkeypatch.setattr(system, "IS_WINDOWS", True)
     argv, env = system.notification_command("$(evil)", "body")
-    assert argv[0] == "powershell.exe" and "$(evil)" not in " ".join(argv) and env["ARETE_TITLE"] == "$(evil)"
+    assert argv[0] == "powershell.exe" and "$(evil)" not in " ".join(argv) and env["VENATO_TITLE"] == "$(evil)"
 
 
 @pytest.mark.skipif(sys.platform not in ("win32", "darwin"), reason="Windows and macOS only")
 def test_real_notification_command_runs():
     """On the CI machines: the real command is accepted by the system."""
-    from arete import system
-    argv, env = system.notification_command("Arete test", "Ignore me")
+    from venato import system
+    argv, env = system.notification_command("Venato test", "Ignore me")
     import os
     done = subprocess.run(argv, env={**os.environ, **env}, capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr

@@ -1,13 +1,13 @@
 """
 Create a demo data folder full of realistic fake data (for screenshots and trying
-Arete out). It never touches your real data: it always writes to a new, empty folder.
+Venato out). It never touches your real data: it always writes to a new, empty folder.
 
     .venv/bin/python scripts/seed_demo.py              # a new temp folder
     .venv/bin/python scripts/seed_demo.py /tmp/demo    # a folder of your choice (must be empty)
 
 Then run the app on it:
 
-    ARETE_DATA_DIR=<folder> .venv/bin/streamlit run app.py
+    VENATO_DATA_DIR=<folder> .venv/bin/streamlit run app.py
 """
 
 import os
@@ -18,15 +18,15 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from arete.system import default_data_dir  # noqa: E402
+from venato.system import default_data_dir  # noqa: E402
 
 REAL_DATA = default_data_dir()
 
 
 def pick_folder():
-    folder = Path(sys.argv[1]).expanduser().resolve() if len(sys.argv) > 1 else Path(tempfile.mkdtemp(prefix="arete-demo-"))
+    folder = Path(sys.argv[1]).expanduser().resolve() if len(sys.argv) > 1 else Path(tempfile.mkdtemp(prefix="venato-demo-"))
     if folder == REAL_DATA.resolve():
-        sys.exit("That's your real Arete data folder. Pick another folder.")
+        sys.exit("That's your real Venato data folder. Pick another folder.")
     if folder.exists() and any(folder.iterdir()):
         sys.exit(f"{folder} isn't empty. Pick an empty or new folder.")
     folder.mkdir(parents=True, exist_ok=True)
@@ -34,11 +34,11 @@ def pick_folder():
 
 
 FOLDER = pick_folder()
-os.environ["ARETE_DATA_DIR"] = str(FOLDER)          # before importing store
-os.environ.pop("ARETE_DB", None)
+os.environ["VENATO_DATA_DIR"] = str(FOLDER)          # before importing store
+os.environ.pop("VENATO_DB", None)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from arete import store  # noqa: E402  (needs ARETE_DATA_DIR set first)
+from venato import store  # noqa: E402  (needs VENATO_DATA_DIR set first)
 
 random.seed(7)
 TODAY = date.today()
@@ -136,7 +136,7 @@ def main():
                     store.set_habit_done(conn, habit_id, (TODAY - timedelta(days=back)).isoformat(), True)
 
     print(f"Demo data created in: {FOLDER}")
-    print(f"Run the app on it:    ARETE_DATA_DIR='{FOLDER}' .venv/bin/streamlit run app.py")
+    print(f"Run the app on it:    VENATO_DATA_DIR='{FOLDER}' .venv/bin/streamlit run app.py")
 
 
 if __name__ == "__main__":

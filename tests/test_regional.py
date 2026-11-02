@@ -12,7 +12,7 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 @pytest.fixture
 def regional(store):
     import importlib
-    from arete import regional as module
+    from venato import regional as module
     return importlib.reload(module)
 
 
@@ -74,7 +74,7 @@ def test_region_settings_page(store):
 
 
 def test_timetable_hours(store):
-    from arete import tools
+    from venato import tools
     import importlib
     tools = importlib.reload(tools)
     assert (store.SLOTS, store.slot_time(0), store.slot_time(store.SLOTS)) == (36, "07:00", "01:00")

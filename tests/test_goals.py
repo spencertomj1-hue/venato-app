@@ -94,9 +94,9 @@ def test_old_goals_table_becomes_todos(tmp_path, monkeypatch):
                                      ('y', 'Learn Spanish', NULL, 'yearly', '2026-01-01', 0, NULL, 0, 0, 'x');
             INSERT INTO goal_rollover VALUES ('monthly', '2026-10-01'), ('yearly', '2026-01-01');
         """)
-    monkeypatch.setenv("ARETE_DATA_DIR", str(data))
-    monkeypatch.setenv("ARETE_DB", str(db))
-    from arete import store
+    monkeypatch.setenv("VENATO_DATA_DIR", str(data))
+    monkeypatch.setenv("VENATO_DB", str(db))
+    from venato import store
     store = importlib.reload(store)
     store.init_db()
     store.init_db()                                           # running again changes nothing

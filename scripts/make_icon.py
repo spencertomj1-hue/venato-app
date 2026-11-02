@@ -4,7 +4,7 @@ Build the app icon from assets/Logo.jpg.
 Crops the logo to its drawing, centres it on a white rounded square (the
 standard macOS icon shape, with a soft shadow), and writes:
   assets/icon.png   1024x1024 (also used as the Dock icon by desktop.py)
-  assets/Arete.icns all sizes, for Arete.app/Contents/Resources (macOS)
+  assets/Venato.icns all sizes, for Venato.app/Contents/Resources (macOS)
   assets/icon.ico   all sizes, for the Windows shortcuts made by setup.ps1
   assets/splash.png the cleaned drawing, for the loading screen
 
@@ -21,7 +21,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 LOGO = ASSETS / "Logo.jpg"
 PNG = ASSETS / "icon.png"
-ICNS = ASSETS / "Arete.icns"
+ICNS = ASSETS / "Venato.icns"
 ICO = ASSETS / "icon.ico"
 SPLASH = ASSETS / "splash.png"
 
@@ -72,7 +72,7 @@ def build_png():
 
 def build_icns(icon):
     with tempfile.TemporaryDirectory() as tmp:
-        iconset = Path(tmp) / "Arete.iconset"
+        iconset = Path(tmp) / "Venato.iconset"
         iconset.mkdir()
         for size in (16, 32, 128, 256, 512):
             icon.resize((size, size), Image.LANCZOS).save(iconset / f"icon_{size}x{size}.png")

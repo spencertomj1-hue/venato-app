@@ -25,6 +25,6 @@ class Collect(reporter.Reporter):
 
 def test_no_undefined_names():
     out = Collect()
-    for path in [ROOT / "app.py", ROOT / "desktop.py", *sorted((ROOT / "arete").rglob("*.py"))]:
+    for path in [ROOT / "app.py", ROOT / "desktop.py", *sorted((ROOT / "venato").rglob("*.py"))]:
         api.checkPath(str(path), out)
     assert out.found == []
