@@ -156,6 +156,9 @@ class Timetable {
         return;
       }
       if (e.key !== "Escape") return;
+      // Esc closes whatever is open first; with nothing open, it puts the category down.
+      if (!this.drag && !this.blockDrag && !this.marquee && !this.groupDrag && !this.popover && !this.picked.size
+          && this.brush && this.data && !this.data.readonly && !isTextField(e.composedPath()[0])) this.clearBrush();
       this.cancelDrag();
       this.closePopover();
       this.setPicked([]);
@@ -549,8 +552,24 @@ class Timetable {
     this.showBrush();
   }
 
+  // Nothing picked: a drag just asks for a category, and the label it filled in goes.
+  clearBrush() {
+    const cat = this.cats.get(this.brush);
+    if (cat && this.labelInput.value.trim() === cat.name) {
+      this.labelInput.value = "";
+      this.label = "";
+      remember("tt-label", "");
+    }
+    this.brush = null;
+    remember("tt-brush", null);
+    this.showBrush();
+  }
+
   showBrush() {
-    this.root.querySelectorAll("[data-cat]").forEach((el) => el.classList.toggle("on", el.dataset.cat === this.brush));
+    this.root.querySelectorAll("[data-cat]").forEach((el) => {
+      el.classList.toggle("on", el.dataset.cat === this.brush);
+      el.setAttribute("aria-pressed", el.dataset.cat === this.brush ? "true" : "false");
+    });
   }
 
   // Default category for a typed label (case-insensitive), if any.
@@ -568,7 +587,8 @@ class Timetable {
     const table = this.root.querySelector("table.tt");
 
     this.root.querySelectorAll("[data-cat]").forEach((el) =>
-      el.addEventListener("click", () => this.setBrush(el.dataset.cat)));
+      el.addEventListener("click", () =>
+        el.dataset.cat === this.brush ? this.clearBrush() : this.setBrush(el.dataset.cat)));   // click again to deselect
 
     this.root.querySelector(".tt-sync").addEventListener("click", (e) => {
       e.currentTarget.classList.add("spin");
