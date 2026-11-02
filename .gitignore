@@ -1,5 +1,5 @@
-# Only source code goes to git. All user data lives in ~/Library/Application Support/Venato
-# (outside this folder); these rules are a second line of defence.
+# Only source code goes to git. All user data lives in the data folder (~/Library/Application Support/Venato,
+# %APPDATA%\Venato or ~/.local/share/Venato), outside this folder; these rules are a second line of defence.
 
 # --- Databases (and SQLite's journal/WAL/SHM files) ---
 *.db
@@ -18,6 +18,7 @@
 # --- Secrets and local settings ---
 .env
 .env.*
+!.env.example
 .streamlit/secrets.toml
 venato_config.json
 settings.json
@@ -43,3 +44,14 @@ static/
 build/
 dist/
 venato/VERSION
+
+# --- Editors and tools ---
+.vscode/
+.idea/
+*.swp
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+Thumbs.db
