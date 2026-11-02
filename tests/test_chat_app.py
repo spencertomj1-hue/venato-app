@@ -108,3 +108,26 @@ def test_voice_error_is_shown(store, monkeypatch):
     assert not at.exception
     assert at.session_state["chat_error"] == "Couldn't make out any words."
     assert at.session_state["chat_busy"] is None
+
+
+def test_confirm_button_runs_the_change_with_undo(store, monkeypatch):
+    """The chat's Confirm handler itself (not just the change): it runs it and offers Undo."""
+    import importlib
+    from arete import tools, undo
+    from arete.ui import chat
+    tools = importlib.reload(tools)
+    tools.add_block("2026-10-29", "plan", "07:00", "09:00", "Sleep")
+    result = tools.add_block("2026-10-29", "plan", "08:00", "09:00", "Gym", category="Exercise")
+    assert result.pending
+    state = {"chat": {"confirm": {"id": "p1", "ok": True}}, "chat_pending": {"p1": result.pending},
+             "chat_messages": [], "chat_notes": []}
+    monkeypatch.setattr(chat.st, "session_state", state)
+    chat._on_confirm()
+    assert state["chat_messages"][-1]["text"].startswith("✓")
+    assert [b["label"] for b in store.blocks_between("2026-10-29", "2026-10-29")] == ["Sleep", "Gym"]
+    assert undo.pending() and undo.restore()                       # and it can be undone
+    assert [b["label"] for b in store.blocks_between("2026-10-29", "2026-10-29")] == ["Sleep"]
+    state["chat"]["confirm"] = {"id": "p2", "ok": False}           # Cancel
+    state["chat_pending"]["p2"] = result.pending
+    chat._on_confirm()
+    assert state["chat_messages"][-1]["text"] == "Cancelled."

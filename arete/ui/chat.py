@@ -18,6 +18,7 @@ import streamlit as st
 
 from arete import assistant
 from arete import tools
+from arete import undo
 from arete import voice
 
 HERE = Path(__file__).parent
