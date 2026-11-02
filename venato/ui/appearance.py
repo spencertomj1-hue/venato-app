@@ -80,8 +80,10 @@ def apply_text_colours():
         color: #1A1A1F !important; }""" if is_dark() else "")
     st.html(f"""<style>
     /* Keyboard focus is always visible (Streamlit's own controls draw theirs; this covers the rest). */
-    section[data-testid="stMain"]:focus-visible {{ outline: 2px solid {ring}; outline-offset: -4px; }}
-    a:focus-visible, [tabindex]:focus-visible, summary:focus-visible {{ outline: 2px solid {ring}; outline-offset: 2px; }}{dark_buttons}
+    a:focus-visible, [tabindex]:focus-visible, summary:focus-visible {{ outline: 2px solid {ring}; outline-offset: 2px; }}
+    /* ...except the page itself: it's only focusable so arrow keys scroll it, and Safari focuses it
+       on a click, so a key press (e.g. Backspace on a block) drew a ring round everything. */
+    [data-testid="stMain"]:focus, [data-testid="stMain"]:focus-visible {{ outline: none !important; }}{dark_buttons}
     [data-testid="stCaptionContainer"] {{ opacity: 1 !important; }}
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color: {caption} !important; }}
     </style>""")
