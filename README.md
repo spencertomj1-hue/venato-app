@@ -1,169 +1,90 @@
+<!-- TODO: demo.gif -->
+
 <p align="center">
-  <img src="assets/Logo.jpg" alt="Venato logo" width="160">
+  <img src="assets/Logo.jpg" alt="Venato logo" width="140">
 </p>
 
 <h1 align="center">Venato</h1>
 
 <p align="center">
-  Track everything, in one place, modifiable to your will.
+  <strong>A private, offline life tracker for your Mac or PC: plan your week, log what actually happened, and see the gap.</strong><br>
+  For students and anyone who wants their timetable, habits, journal, goals and people in one app, on their own computer.
 </p>
 
 <p align="center">
-  A personal life tracker for your Mac or Windows PC: a weekly Plan-vs-Actual timetable, a daily log
-  of mood, sleep, energy and water, a journal, habits with streaks, to-dos and goals, a map of the people you know, reminders before things start, and a Claude chat box that updates it all for you.
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/spencertomj1-hue/venato-app"></a>
+  <a href="https://github.com/spencertomj1-hue/venato-app/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/spencertomj1-hue/venato-app"></a>
+  <a href="https://github.com/spencertomj1-hue/venato-app/actions/workflows/tests.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/spencertomj1-hue/venato-app/tests.yml?branch=main&label=tests"></a>
+  <a href="https://github.com/spencertomj1-hue/venato-app/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/spencertomj1-hue/venato-app"></a>
+  <a href="https://github.com/spencertomj1-hue/venato-app/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/spencertomj1-hue/venato-app?style=social"></a>
+  <img alt="Python 3.13" src="https://img.shields.io/badge/python-3.13-blue">
+  <img alt="macOS | Windows" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey">
 </p>
 
-<p align="center"><em>No summit, just the climb.</em></p>
+<p align="center">
+  <img src="assets/home.png" alt="Venato's Home page" width="800">
+</p>
 
-> **Version 1 (v1.0.0).** Home with to-dos, habits and goals; timetable; goals; daily log; stats;
-> your network; and the Claude chat box. Keep backups (Settings → Data → Back up now). Bug reports
-> and ideas are welcome in [Issues](https://github.com/spencertomj1-hue/venato-app/issues).
+<p align="center">⭐ <strong>Star the repo if you find it useful.</strong> It helps other people find it.</p>
 
----
+*Venato* comes from the Latin *venari*, to hunt or track down. No summit, just the climb.
 
-*Venato* comes from the Latin *venari*, to hunt or track down. Venato helps you track down your best days by recording each one honestly: what you planned, what you actually did, how you felt and which habits you kept.
+## Why this?
 
-It runs entirely on your computer (Mac or Windows) as a normal app. It's built with [Streamlit](https://streamlit.io) and SQLite and shown in its own window. There are no accounts, no servers and no cloud sync.
-
-## Contents
-
-- [Features](#features)
-- [Screenshots](#screenshots)
-- [Requirements](#requirements)
-- [Install](#install)
-- [First run](#first-run)
-- [Connecting Outlook](#connecting-outlook)
-- [Setting up the Claude chat](#setting-up-the-claude-chat)
-- [Privacy](#privacy)
-- [Limitations](#limitations)
-- [Troubleshooting](#troubleshooting)
-- [For developers](#for-developers)
-- [Licence](#licence)
+- **Plan vs Actual, side by side.** Every day on the timetable has two columns: what you meant to do and what you really did. The weekly review then tells you how much of your plan you followed, per category. Notion and Daylio don't do that out of the box.
+- **Your data never leaves your computer.** No account, no server, no cloud sync. Everything is one SQLite file in your data folder, the app only listens on `127.0.0.1`, and voice is transcribed locally.
+- **Everything in one place.** Timetable, daily log (mood, sleep, energy, water), journal, habits with streaks, to-dos, goals, deadlines and a map of the people you know, all linked: tick a habit and the goal it counts towards moves; a deadline shows on the timetable and gets a reminder.
+- **Optional Claude assistant.** Type or say "Fit 6 hours of revision into next week around my lectures" or "Mood 4, slept 7.5 hours, tick reading". It works through a fixed set of Venato actions, previews anything destructive for you to confirm, and is off unless you switch it on. Everything also works by hand.
 
 ## Features
 
-**Home.** Today's agenda and timetable on the left. On the right: the box to ask Claude (if it's on), your to-dos, deadlines, today's habits to tick (with the last 7 days and your streak), your goals' progress bars, and a **search box** that finds anything (to-dos, goals, deadlines, habits, your journal, timetable blocks, Outlook events, people, groups, times you met and past reviews), with Open to jump straight there.
+**Planning**
+- **Weekly timetable** with Plan and Actual columns in 30-minute slots. Drag to add, move and resize blocks; click one and press Backspace to delete it; Shift-drag to select several to move, copy, paste or delete together; ⌘Z / Ctrl+Z to undo.
+- **Colour-coded categories** in groups ("Life", "Work"), with activities that pick their category automatically ("Lunch" goes to Meals).
+- **Fit time:** say what, how many hours and which days; Venato finds free gaps around your blocks and calendar events and previews the sittings before adding them.
+- **To-dos** for today, this week and this month, in the style of Apple Reminders: drag to reorder, notes, repeating to-dos.
+- **Goals** for the month or year with progress bars, updated by hand or linked to a habit.
+- **Deadlines** with countdowns, reminders the day before and on the day, and "Make time" to plan hours for them.
 
-**To-dos (on Home).** Today's, this week's and this month's to-do lists, side by side, in the style of Apple Reminders.
-- **Ticking off:** click the circle; the to-do moves into a folded "Completed" section. Click it again to untick.
-- **Adding and editing:** click "New to-do", type, and press Enter (it stays open for the next one; Esc cancels). Click a title to edit it, drag to reorder, and right-click for notes, repeat, moving to another list, or delete. Repeating to-dos get a fresh copy every new day, week or month.
+**Tracking**
+- **Daily log:** a month calendar of mood, sleep, energy and water. Click a day to tick habits and write notes.
+- **Habits:** daily or with a weekly target ("Gym 3 times a week"), with current and best streaks.
+- **Journal:** each day's notes, with a daily prompt and a searchable list of past entries.
+- **Stats:** charts of mood, energy, sleep and water, plus habit completion rates.
+- **Weekly review:** pops up after 7pm on Sunday with plan followed, time per category, mood/sleep/energy/water vs last week, habits, to-dos, deadlines, people you saw and two questions to reflect on.
 
-**Goals.** Measurable targets for the month or the year, like "Gym: 12 sessions" or "Read 20 books", each with a progress bar (on the Goals page and on Home).
-- **Progress:** either update it yourself (− / + or type a number), or link the goal to a habit and every day you tick that habit counts.
-- **Moving around:** ‹ › shows other months and years.
+**Applications**
+- **Application tracker:** a table of industry, company, route, description, contact / lead, deadline (with a countdown), status and notes. Edit cells in place, filter by status.
 
-**Deadlines.** Things due on a date (an essay, an application), on the Goals page and on Home with a countdown ("in 3 days", red when overdue). They show on the timetable's day header and in Home's agenda, you get a reminder the day before and on the day, and **Make time** fits hours for one into your Plan before it's due.
+**People**
+- **Network:** an interactive map of the people you know, grouped into groups and sub-groups, with who-knows-who links.
+- **Times you met:** log coffees and calls; each person's card shows when you last spoke.
 
-**Weekly timetable.**
-- **Layout:** a calendar-style week. Each day has a **Plan** column (what you intended) and an **Actual** column (what really happened), in 30-minute slots from 07:00 to 01:00 (change the hours in Settings → Region). Anything after midnight counts as the previous day.
-- **Editing:** drag down a column to add a block. Drag a block to move it (to another time, day, or between Plan and Actual), or drag its top or bottom edge to change when it starts or ends. Click a block to select it and see its details; press Delete or Backspace to remove it. **Several at once:** Shift-drag a box to pick blocks, or Shift-click them; then drag one to move them all, press Delete to remove them, or ⌘C / ⌘V (Ctrl on Windows) to copy and paste them, layout kept, at the pointer on any day or week. Pastes and moves can be undone with ⌘Z.
-- **Categories:** colour-coded, with groups "Life" and "Work" to start with. Activities pick their category automatically (for example "Lunch" → Meals). **Categories** (above the grid) adds, renames and recolours them, sets those activity defaults, and picks Outlook events' colour.
-- **Fit time:** say what (e.g. Revision), how many hours and which days; Venato finds free gaps around your blocks and Outlook events, spreads the sittings out and shows you the times before adding them.
-- **Moving around:** use ‹ Today › or a date picker, or swipe sideways on the trackpad.
-
-**Daily Log.** A month calendar showing each day's mood, sleep, energy and litres of water. Click a day to read its notes, tick that day's habits (with current and best streaks), and save its entry. Habits are added and removed here too, each either every day or with a weekly target (e.g. Gym 3 times a week: progress shows as "2/3 this week", and streaks count weeks that hit it).
-
-**Network.** A map of the people you know, as a tree: you in the middle, a circle for each group branching off you, sub-groups branching off their group (e.g. Northfield → Physics Society, Robotics Lab), and people branching off the group they're in. Dashed lines join people who know each other.
-- **Adding:** tell Venato ("add Physics Society inside Northfield", "Priya is in Physics Society and knows Sam from football"), or use "Add someone" / "Add group". A group's card also has "Add person here" and "Add sub-group".
-- **Looking around:** click a person or group for its card (who they work for, a description, connections, members); click a name in a card to jump there. Drag to move things, scroll to zoom, search by name, and click a group in the legend to hide or show its whole branch.
-- **Editing:** every card has an Edit button that opens a dialog to change details, add or remove connections, move groups, or remove things.
-- **Times you've met:** log coffees, calls and catch-ups with someone (in their Edit dialog, or tell Venato "had coffee with Priya, talked about her thesis"). Their card shows when you last spoke and the latest few.
-
-**Applications.** A table of everything you've applied for (or mean to): industry, company, route (e.g. graduate scheme, internship), description, contact / lead, deadline with a countdown, status (To apply → Applied → Interview → Offer…) and notes. Add one with **Add application**, then click any cell to change it; tick rows and press the bin to delete them (Undo brings them back). Filter by status, and Home's search finds them.
-
-**Journal (in the Daily Log).** Each day's notes are its journal entry: a big writing box with a different prompt each day to get you started, and past entries listed below with a search box. Tell Venato "journal: ..." to add to today's entry, or ask "what did I write about Priya?".
-
-**Reminders.** A desktop notification a few minutes before each block in your Plan (and each Outlook event) starts, while Venato is open. Turn it on or off and choose how early in Settings → Reminders.
-
-**Stats.** Charts of mood, energy, sleep and water, plus habit completion rates.
-
-**Weekly review.** The first time you open Venato after 7pm on Sunday, your week pops up: how much of your Plan you followed, time planned vs done per category, mood, sleep, energy and water against the week before, habits on target, to-dos, deadlines met and coming up, people you saw and your journal, with two questions to reflect on. Past reviews are at the bottom of Stats.
-
-**Claude assistant (optional).** Everything above works by hand. If you like, switch on the assistant (during setup, or in Settings → Assistant) for a chat box where you type or speak what you want changed, for example:
-> "I went to the gym from 6 to 7 tonight"
-> "Plan a lecture 9 till 11 tomorrow"
-> "Fit 6 hours of revision into next week around my lectures"
-> "Mood 4 today, slept 7 and a half hours, tick reading"
-> "How much did I actually study this week?"
-> "Add go gym to this week's to-dos"
-> "Tick off finish problem sheet"
-> "Set a goal of 12 gym sessions this month, counting my gym habit"
-> "I read 2 more books"
-> "Add Sam, a friend from uni who works at Northbank; she knows Alex from football"
-> "Had coffee with Sam, talked about her thesis"
-> "Drank 2 litres of water today"
-> "Journal: long day in the lab, but the experiment finally worked"
-
-Claude only changes Venato's data, through a fixed set of actions. **Anything that deletes or overwrites data shows a preview with Confirm / Cancel first.** Voice input is transcribed **on your computer**.
-
-**Outlook calendar (optional).** Your published Outlook calendar appears in the timetable's Plan column, and you can remove or adjust any event. It's read only: nothing is ever written back to Outlook.
-
-**Updates.** The installed app checks once a day whether a newer version is out and, if so, shows a banner with a download link (Settings → About to turn it off or check now).
-
-**Undo.** Delete or overwrite something (a block, a to-do, a goal, a deadline, a person, a habit, an import...) and a bar at the bottom says what happened, with **Undo** (or press ⌘Z / Ctrl+Z), for two minutes. The shortcuts never get in the way of typing: in a text box, copy, paste and undo work on the text as usual.
-
-**Settings.**
-- Region: time zone (your computer's, or pick one), week starting Monday or Sunday, 12- or 24-hour clock, date format, and water in litres or US fl oz
-- Timetable hours: when your day starts and ends (07:00 to 01:00 to start with; night owls and shift workers can move it)
-- Appearance: light, dark, or follow your computer, and text size (Small, Normal, Large, Extra large)
-- Calendar connection
-- Claude sign-in status
-- Microphone test
-- Reminders: on/off, how many minutes before, and a test notification
-- Automatic daily backups (keeps the last 30) to a folder you choose, e.g. iCloud Drive or OneDrive
-- Backups, CSV export/import (with separate to-do and goal CSVs), journal download and the data folder
+**Everything else**
+- **Search** across to-dos, goals, deadlines, applications, habits, journal, timetable, calendar events, people and past reviews.
+- **Outlook calendar (optional, read only):** your published ICS calendar shows in the Plan column, synced every 15 minutes.
+- **Reminders:** desktop notifications a few minutes before each planned block or event.
+- **Undo** for deletes and overwrites, for two minutes.
+- **Backups:** automatic daily backups (keeps 30) to any folder, e.g. iCloud Drive or OneDrive, plus CSV export/import and journal download.
+- **Settings:** time zone, week start, 12/24-hour clock, date format, litres or US fl oz, timetable hours, light/dark/system theme and four text sizes.
+- **Accessible:** keyboard and screen-reader support, and every page passes WCAG AA contrast in light and dark.
+- **Update check:** once a day, a banner if a new release is out (can be turned off).
 
 ## Screenshots
 
-*All screenshots use made-up demo data (see [For developers](#for-developers)).*
+*All screenshots use made-up demo data.*
 
-**Home**
+| Weekly timetable | Asking Claude |
+|---|---|
+| ![Weekly timetable](assets/timetable.png) | ![Chat](assets/chat.png) |
+| **Daily log** | **Settings** |
+| ![Daily log](assets/daily-log.png) | ![Settings](assets/settings.png) |
 
-![Home](assets/home.png)
+## Quick start
 
-**Weekly timetable**
+**Just want the app?** Download it from [Releases](https://github.com/spencertomj1-hue/venato-app/releases/latest): `Venato-Setup.exe` (Windows) or `Venato.dmg` (Apple silicon Mac). They aren't code-signed, so the first launch needs **More info → Run anyway** on Windows, or **System Settings → Privacy & Security → Open Anyway** on a Mac.
 
-![Weekly timetable](assets/timetable.png)
-
-**Asking Claude**
-
-![Chat](assets/chat.png)
-
-**Daily log**
-
-![Daily log](assets/daily-log.png)
-
-**First-run setup**
-
-![Setup wizard](assets/setup.png)
-
-**Settings**
-
-![Settings](assets/settings.png)
-
-<!-- Placeholders for future screenshots: assets/stats.png, assets/habits.png -->
-
-## Requirements
-
-- **A Mac** running macOS 11 or later (built and tested on macOS 26), **or a Windows 10/11 PC** (the tests run on Windows; the app window uses Microsoft Edge WebView2, which Windows 10/11 already has).
-- **Python 3.13.** Install it from [python.org](https://www.python.org/downloads/) (on Windows, tick **Add python.exe to PATH**), or on a Mac with Homebrew: `brew install python@3.13`.
-- **Git**, to download Venato: built into macOS; on Windows, install it from [git-scm.com](https://git-scm.com/download/win).
-- **About 2 GB of free disk space:** roughly 1 GB for the packages, plus about 470 MB for the speech model the first time you use the microphone.
-- **Optional, for the chat:** an [Anthropic API key](https://console.anthropic.com) (paste it in Settings → Claude), **or** [Claude Code](https://docs.claude.com/en/docs/claude-code) signed in with your own Claude account.
-
-## Install
-
-### The easy way: download it
-
-Go to [Releases](https://github.com/spencertomj1-hue/venato-app/releases/latest) and download:
-- **Windows:** `Venato-Setup.exe`. Run it. Windows may say "Windows protected your PC" because it isn't code-signed: click **More info → Run anyway**.
-- **Mac (Apple silicon):** `Venato.dmg`. Open it and drag Venato into Applications. The first time, macOS says it can't check the app: open **System Settings → Privacy & Security** and click **Open Anyway**.
-
-Nothing else to install. For the chat, paste an Anthropic API key in **Settings → Claude** (or sign in to Claude Code).
-
-### From the source code (Mac)
-
-Open the **Terminal** app and run:
+**From source (Mac).** Needs [Python 3.13](https://www.python.org/downloads/) (`brew install python@3.13`) and Git.
 
 ```bash
 git clone https://github.com/spencertomj1-hue/venato-app.git
@@ -171,110 +92,82 @@ cd venato-app
 ./setup.sh
 ```
 
-`setup.sh`:
-1. Checks for macOS and Python 3.13.
-2. Installs the exact tested package versions into a private `.venv` folder.
-3. Builds **Venato.app** in your Applications folder (or `~/Applications`), pointing at the folder you cloned.
+`setup.sh` makes a `.venv`, installs the pinned packages and builds **Venato.app** in Applications. Run it again after `git pull`.
 
-It's safe to run again, for example after `git pull`.
-
-Then open **Venato** from Applications, Launchpad or Spotlight. The first time, macOS may say it's from an unidentified developer: right-click Venato → **Open** → **Open**.
-
-### From the source code (Windows)
-
-Open **PowerShell** and run:
+**From source (Windows).** Same, but in PowerShell the last step is:
 
 ```powershell
-git clone https://github.com/spencertomj1-hue/venato-app.git
-cd venato-app
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-`setup.ps1` checks for Python 3.13, installs the tested packages into `.venv`, and adds a **Venato** shortcut to the Start menu and the desktop. It's safe to run again after `git pull`.
+It adds a Venato shortcut to the Start menu and desktop.
 
-## First run
+**Run it in a browser (any OS, incl. Linux).** Handy for development:
 
-A short setup guide appears the first time. Every step can be skipped, and you can rerun it from **Settings → About**.
+```bash
+git clone https://github.com/spencertomj1-hue/venato-app.git && cd venato-app
+python3.13 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/streamlit run app.py
+```
 
-1. **Welcome:** what Venato does, and where your data lives.
-2. **Claude:** the chat needs one of: an **Anthropic API key** (paste it in; easiest, nothing to install), or **Claude Code** signed in with your Claude subscription (it shows the commands, with copy buttons). Everything else works without it.
-3. **Outlook calendar (optional):** see below.
-4. **Microphone:** explains the microphone permission prompt and lets you test the mic.
+The first install downloads about 1 GB of packages; the speech model (about 470 MB) only downloads the first time you use the mic.
 
-## Connecting Outlook
+## Setting up the optional bits
 
-In the setup guide or **Settings → Calendar**:
+**Claude assistant.** Off until you switch it on (first-run setup or Settings → Assistant). It uses your own Claude access, one of:
+- an **Anthropic API key**, pasted into Settings → Assistant (kept in your system's secret store), or set as `ANTHROPIC_API_KEY`; or
+- **[Claude Code](https://docs.claude.com/en/docs/claude-code)** signed in with your Claude account (`claude auth login`). Venato finds it automatically.
 
-1. Open [outlook.office.com](https://outlook.office.com) and sign in.
-2. Click the **Settings** cog → **Calendar** → **Shared calendars**.
-3. Under **Publish a calendar**, pick your calendar and **Can view all details**, then click **Publish**.
-4. Copy the **ICS** link (the one ending in `.ics`, not `.html`).
-5. Paste it into Venato and press **Connect**.
+Claude can only use Venato's own actions. It has no access to your files, terminal or the web.
 
-Venato checks the link, shows how many events it found, and stores the link in your **macOS Keychain** (on Windows, the **Windows Credential Manager**). It syncs when the app opens, every 15 minutes, and when you press ↻.
-
-**Anyone who has the link can see your calendar.** To revoke it, go back to Shared calendars and click **Unpublish** (or **Reset links** to get a new one).
-
-## Setting up the Claude chat
-
-The assistant is optional and off unless you switch it on (setup, or Settings → Assistant). It uses **your own** Claude access. Venato has no account or key of its own. Pick one:
-
-- **Claude Code (recommended):**
-  1. Install it: `curl -fsSL https://claude.ai/install.sh | bash`
-  2. Sign in: `claude auth login`
-  3. Venato finds it automatically. **Settings → Claude** shows the status.
-- **An API key:** set `ANTHROPIC_API_KEY` in your environment before starting Venato.
-
-Claude can only use Venato's own actions: logging days, ticking habits, editing the timetable, and reading your stats. It has no access to your files, terminal or the web, and doesn't load your other Claude settings or plugins.
+**Outlook calendar.** In Outlook on the web: Settings → Calendar → Shared calendars → Publish a calendar, pick **Can view all details**, copy the **ICS** link and paste it into Settings → Calendar. The link is stored in the macOS Keychain / Windows Credential Manager. Anyone with that link can see your calendar, so unpublish it in Outlook to revoke it. Some universities and workplaces block publishing.
 
 ## Privacy
 
-**What stays on your computer:**
-- **Your data:** the timetable, daily log, habits and settings, all in your data folder: `~/Library/Application Support/Venato/` on a Mac, `%APPDATA%\\Venato` on Windows. That folder is outside the app's folder, so it can never end up in git.
-- **Voice:** recorded and transcribed locally with [faster-whisper](https://github.com/SYSTRAN/faster-whisper). Audio is never uploaded.
-- **Your Outlook link:** stored only in the macOS Keychain / Windows Credential Manager.
-- **Chat history:** kept in memory while the app is open, and **not saved to disk**. Claude Code runs with session saving turned off.
-- **The app itself:** it only listens on `127.0.0.1` (this computer), with XSRF protection on and Streamlit's usage statistics off.
-
-**What leaves your computer:**
-- **Messages to Claude (only if you switch the assistant on):** when you use the chat, your message, the recent conversation and whatever data Claude looks up to answer it (for example that week's timetable) go to Anthropic through your Claude Code login or API key, like any Claude conversation.
-- **Calendar fetch:** if you connect Outlook, Venato downloads your published calendar from Microsoft.
-- **Update check (installed app, once a day; turn it off in Settings → About):** a plain request to GitHub for the latest release's version number. Nothing about you is sent.
+- **Stays on your computer:** all your data (in `~/Library/Application Support/Venato/` on a Mac, `%APPDATA%\Venato` on Windows, `~/.local/share/Venato` on Linux, never inside the repo), voice recordings and their transcripts, and chat history (memory only, never saved).
+- **Leaves your computer only if you turn it on:** chat messages and the data Claude looks up go to Anthropic; the published Outlook calendar is downloaded from Microsoft; the daily update check asks GitHub for the latest version number.
 
 Nothing else is sent anywhere.
 
-## Limitations
-
-- **Mac and Windows.** Windows support is new: the tests run on Windows, but report anything odd in Issues. Linux should work from a terminal (`.venv/bin/python desktop.py`) but has no installer yet.
-- **The (optional) chat needs your own Claude access:** a Claude Code login or an Anthropic API key.
-- **Outlook publishing may be blocked.** Some universities and workplaces turn off "Publish a calendar". If the option is missing, or Outlook refuses the link, ask your IT team.
-- **Single user, single computer.** There's no sync between devices.
-- **Timetable hours:** the grid covers 07:00–01:00 unless you change it (Settings → Region). Outlook events outside the hours are clipped.
-
 ## Troubleshooting
 
-| Problem | What to try |
+| Problem | Fix |
 |---|---|
-| **"Venato is from an unidentified developer"** | Right-click Venato → Open → Open (only needed once). |
-| **setup.sh says Python 3.13 is missing** | Install it from python.org or with `brew install python@3.13`, then run `./setup.sh` again. |
-| **The chat says Claude isn't logged in** | Run `claude auth login` in Terminal, then **Settings → Claude → Check again**. |
-| **The chat can't find Claude Code** | Check `which claude` in Terminal (`where.exe claude` in PowerShell on Windows). If it's somewhere unusual, put `{"claude_path": "/path/to/claude"}` in `venato_config.json` in your data folder (see Privacy). |
-| **"Outlook refused this link"** | Your organisation may block publishing (ask IT), or the link was reset; publish again and paste the new ICS link. |
-| **The calendar header says "Offline"** | Venato keeps showing the last synced events; it syncs again when you're back online (or press ↻). |
-| **The mic records silence** | Allow Venato in System Settings → Privacy & Security → Microphone. |
-| **The app moved, or you moved the folder** | Run `./setup.sh` again to rebuild Venato.app. |
-| **Starting over** | Quit Venato and move your data folder (`~/Library/Application Support/Venato`, or `%APPDATA%\Venato` on Windows) somewhere else, or delete it. |
+| "Unidentified developer" on a Mac | Right-click Venato → Open → Open (once). |
+| `setup.sh` says Python 3.13 is missing | `brew install python@3.13` (or python.org), then run `./setup.sh` again. |
+| Chat says Claude isn't logged in | `claude auth login`, then Settings → Assistant → Check again. |
+| Chat can't find Claude Code | Set `claude_path` in `venato_config.json` in your data folder (see `venato_config.example.json`). |
+| Mic records silence | Allow Venato in System Settings → Privacy & Security → Microphone. |
+| You moved the cloned folder | Run `./setup.sh` again to rebuild Venato.app. |
 
-## For developers
+## Tech stack
 
-```bash
-.venv/bin/python -m pytest -q -p no:logging tests      # the test suite
-.venv/bin/python scripts/seed_demo.py                 # a demo data folder with fake data
-VENATO_DATA_DIR=<folder> .venv/bin/streamlit run app.py  # run against any data folder
-```
+- **Python 3.13** with **[Streamlit](https://streamlit.io)** for the UI, plus custom JS/CSS components (timetable, to-dos, network map, chat)
+- **SQLite** for storage, **Plotly** and **pandas** for stats
+- **[pywebview](https://pywebview.flowrl.com)** for the native desktop window
+- **[Claude Agent SDK](https://docs.claude.com/en/docs/claude-code/sdk)** for the optional assistant
+- **[faster-whisper](https://github.com/SYSTRAN/faster-whisper)** for on-device speech to text
+- **icalendar** / **recurring-ical-events** for Outlook, **keyring** for secrets
+- **PyInstaller** and **Inno Setup** for the installers, **GitHub Actions** for tests on Windows, macOS and Linux
 
-[`HANDOVER.md`](HANDOVER.md) is the developer guide: architecture, modules, tables and gotchas. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) before sending changes. **Never commit real data.**
+## Roadmap
 
-## Licence
+From the "Ideas for later" list in [`HANDOVER.md`](HANDOVER.md):
 
-Venato is released under the [MIT licence](LICENSE).
+- [ ] Timetable blocks in CSV export/import (to-dos and goals already have CSVs)
+- [ ] "Carry over unfinished" to-dos in the UI (the store function exists)
+- [ ] Streaming chat replies
+- [ ] Signed and notarised Mac app
+- [ ] A Linux installer (it runs from source today, in the browser)
+
+Got an idea? [Open an issue](https://github.com/spencertomj1-hue/venato-app/issues/new/choose).
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get set up, and [HANDOVER.md](HANDOVER.md) for how the code fits together. Please never commit real personal data.
+
+## License
+
+[MIT](LICENSE) © Thomas Spencer
+
+⭐ If Venato helps you, a star on GitHub is the easiest way to say thanks.
