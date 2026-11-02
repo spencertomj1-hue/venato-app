@@ -84,7 +84,7 @@ def apply_grid_op(op):
         s, e = store.slot_of(op["start"]), store.slot_of(op["end"])
         block = op.get("block")
         if block:
-            block = {"label": block["label"], "category_id": block["categoryId"]}
+            block = {"label": block["label"], "category_id": block["categoryId"], "details": block.get("details")}
         store.paint(op["date"], op["track"], s, e, block, new_id=op.get("newId"))
     elif op["kind"] == "upsert":
         e = op["entry"]

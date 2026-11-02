@@ -24,6 +24,27 @@ function slotTime(i) {
   return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
 }
 
+// Keyboard shortcuts use Cmd on a Mac and Ctrl elsewhere.
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+const MOD = IS_MAC ? "⌘" : "Ctrl+";
+
+// A box you type in (not a radio button, checkbox or button, which are <input>s too).
+const TEXT_INPUTS = /^(text|search|email|number|password|url|tel|date|time|datetime-local|month|week)$/;
+function isTextField(el) {
+  if (!el || !el.closest) return false;
+  if (el.closest("textarea, select, [contenteditable=''], [contenteditable='true']")) return true;
+  return el.tagName === "INPUT" && TEXT_INPUTS.test(el.type || "text");
+}
+
+// Should a shortcut leave this key press alone? Typing in a box, selected text on the page
+// (so normal copy works), or a dialog open: then the browser does what it normally does.
+function leaveShortcutAlone(e) {
+  if (isTextField(e.composedPath()[0])) return true;
+  const sel = window.getSelection && String(window.getSelection() || "");
+  if (sel.trim()) return true;
+  return !!document.querySelector("[role=dialog]");
+}
+
 // How times and dates are shown (Settings -> Region); data stays "HH:mm" and ISO dates.
 let CLOCK = "24-hour", DATEFMT = "DD/MM/YYYY";
 function fmtTime(t) {
@@ -118,6 +139,12 @@ class Timetable {
     this.onMouseUp = () => this.endDrag();
     this.onWindowResize = () => this.fitToWindow();
     this.onKey = (e) => {
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+      if (mod && !e.shiftKey && !e.altKey && (e.key === "c" || e.key === "v") && this.data && !this.data.readonly) {
+        if (leaveShortcutAlone(e)) return;
+        if (e.key === "c" ? this.copyBlock() : this.pasteBlock()) e.preventDefault();
+        return;
+      }
       if (e.key !== "Escape") return;
       this.cancelDrag();
       this.closePopover();
@@ -337,7 +364,7 @@ class Timetable {
           <div class="tt-blocks" aria-hidden="true"></div>
         </div>
       </div>
-      <div class="tt-hint">Drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it for details${this.data.single ? "" : " · swipe sideways to change week"}</div>
+      <div class="tt-hint">Drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it for details · ${MOD}C / ${MOD}V to copy and paste the block under the pointer${this.data.single ? "" : " · swipe sideways to change week"}</div>
       <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details; to add a block with the keyboard, use the Add block button above the timetable)"></div>`;
 
     // Blocks are positioned from the cells, so redo them when the size changes.
@@ -578,6 +605,7 @@ class Timetable {
       if (this.data.readonly || this.drag) return;
       if (this.blockDrag) { table.style.cursor = this.blockDrag.zone === "move" ? "grabbing" : "ns-resize"; return; }
       const td = e.target.closest("td.s");
+      this.hoverCell = td ? { di: +td.dataset.d, track: td.dataset.t, slot: +td.dataset.s } : null;
       const hit = td && this.brush !== "eraser" && this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
       this.hoverBlock(hit ? (hit.outlook ? `outlook:${hit.ev.id}` : hit.entry.id) : null);
       if (!hit) { table.style.cursor = ""; return; }
@@ -585,7 +613,10 @@ class Timetable {
       const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
       table.style.cursor = zone === "move" ? "grab" : "ns-resize";
     });
-    table.addEventListener("mouseleave", () => { if (!this.blockDrag) { table.style.cursor = ""; this.hoverBlock(null); } });
+    table.addEventListener("mouseleave", () => {
+      this.hoverCell = null;
+      if (!this.blockDrag) { table.style.cursor = ""; this.hoverBlock(null); }
+    });
 
     this.root.querySelector(".tt-a11y").addEventListener("click", (e) => {
       const b = e.target.closest("[data-i]");
@@ -680,6 +711,35 @@ class Timetable {
     this.highlight();
   }
 
+  // ---------- Copy and paste (Cmd/Ctrl+C, Cmd/Ctrl+V) ----------
+
+  // Copy the block under the pointer (or the one whose card is open). True if something was copied.
+  copyBlock() {
+    const h = this.hoverCell;
+    const hit = (h && this.blockAt(h.di, h.track, h.slot)) || this.cardHit;
+    if (!hit) return false;
+    const item = hit.outlook ? hit.ev : hit.entry;
+    const { s0, e0 } = this.spanOf(hit);
+    this.clip = { label: hit.outlook ? item.title : item.label, categoryId: item.categoryId,
+                  details: item.details || null, len: e0 - s0 };
+    remember("tt-clip", this.clip);
+    this.flashHint(`Copied ${this.clip.label}: point at where it should go and press ${MOD}V`, false);
+    return true;
+  }
+
+  // Paste the copied block where the pointer is (same length). True if it was pasted.
+  pasteBlock() {
+    if (!this.clip) this.clip = recall("tt-clip");                // copied earlier (e.g. on another week)
+    if (!this.clip) return false;                                  // nothing copied: leave the key alone
+    const h = this.hoverCell;
+    if (!h) { this.flashHint("Point at a time in the timetable, then paste"); return true; }
+    const s = Math.max(0, Math.min(SLOTS - this.clip.len, h.slot));
+    this.commit([{ opId: uid(), kind: "paint", date: this.data.days[h.di], track: h.track,
+                   start: slotTime(s), end: slotTime(s + this.clip.len), newId: uid(),
+                   block: { label: this.clip.label, categoryId: this.clip.categoryId, details: this.clip.details } }]);
+    return true;
+  }
+
   // ---------- Moving and resizing blocks ----------
 
   spanOf(hit) {
@@ -759,12 +819,13 @@ class Timetable {
     this.paintRange(drag.di, drag.track, drag.a, drag.b, { label, categoryId: cat.id });
   }
 
-  flashHint(text) {
+  flashHint(text, warn = true) {
     const hint = this.root.querySelector(".tt-hint");
-    const old = hint.textContent;
+    if (this.hintText === undefined) this.hintText = hint.textContent;   // the usual hint, to put back
     hint.textContent = text;
-    hint.classList.add("warn");
-    setTimeout(() => { hint.textContent = old; hint.classList.remove("warn"); }, 2000);
+    hint.classList.toggle("warn", warn);
+    clearTimeout(this.hintTimer);
+    this.hintTimer = setTimeout(() => { hint.textContent = this.hintText; hint.classList.remove("warn"); }, warn ? 2000 : 4000);
   }
 
   // ---------- Right-click editor ----------
@@ -829,6 +890,7 @@ class Timetable {
   // like Outlook's peek. Edit / Delete (Remove for Outlook events) unless view only.
   openCard(hit) {
     this.closePopover();
+    this.cardHit = hit;
     const item = hit.outlook ? hit.ev : hit.entry;
     const blockId = hit.outlook ? `outlook:${item.id}` : item.id;
     const cat = this.cats.get(item.categoryId);
@@ -887,6 +949,7 @@ class Timetable {
   closePopover() {
     if (this.popover) this.popover.remove();
     this.popover = null;
+    this.cardHit = null;
     if (this.focusId) {
       this.focusId = null;
       this.blocksEl.querySelectorAll(".blk.focus").forEach((b) => b.classList.remove("focus"));
