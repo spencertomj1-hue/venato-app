@@ -21,6 +21,7 @@ from venato.ui import search
 from venato.ui import review as review_ui
 from venato.ui import todos
 from venato.ui import network
+from venato.ui import applications
 from venato.ui import settings_ui
 from venato import regional
 from venato import store
@@ -242,8 +243,9 @@ PAGES = {
     "Timetable": timetable.render_page,
     goals.PAGE: goals.render_page,
     daily_log.PAGE: daily_log.page_daily_log,
-    "Stats": page_stats,
+    applications.PAGE: applications.render_page,
     network.PAGE: network.render_page,
+    "Stats": page_stats,
     "Settings": settings_ui.page_settings,
 }
 

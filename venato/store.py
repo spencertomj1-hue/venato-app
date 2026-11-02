@@ -248,6 +248,21 @@ def init_db():
                 done_at    TEXT,
                 created_at TEXT NOT NULL
             );
+
+            -- Applications: jobs, internships, courses... one row each, with where it's up to
+            CREATE TABLE IF NOT EXISTS applications (
+                id          TEXT PRIMARY KEY,
+                industry    TEXT,
+                company     TEXT,
+                route       TEXT,                        -- e.g. Graduate scheme, Internship, Spring week
+                description TEXT,
+                contact     TEXT,                        -- contact / lead
+                deadline    TEXT,                        -- YYYY-MM-DD, or NULL
+                status      TEXT NOT NULL,
+                notes       TEXT,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
             """
         )
         # Columns added after the first release.
@@ -582,6 +597,74 @@ def set_deadline_done(did, done):
 def delete_deadline(did):
     with db() as conn:
         conn.execute("DELETE FROM deadlines WHERE id = ?", (did,))
+
+
+# ---------------------------------------------------------------------------
+# Applications (the Applications page)
+# ---------------------------------------------------------------------------
+
+APP_STATUSES = ["To apply", "Applied", "Online test", "Interview", "Assessment centre",
+                "Offer", "Accepted", "Rejected", "Withdrawn"]
+APP_TEXT = ("industry", "company", "route", "description", "contact", "notes")
+APP_COLS = "id, " + ", ".join(APP_TEXT[:5]) + ", deadline, status, notes, created_at, updated_at"
+
+
+def _application_fields(fields):
+    """Tidy user input: stripped text (blank -> None), a real date or None, a known status."""
+    out = {}
+    for k, v in fields.items():
+        if k in APP_TEXT:
+            out[k] = (str(v).strip() if v is not None and str(v) not in ("nan", "NaT", "None") else "") or None
+        elif k == "deadline":
+            out[k] = _as_date(str(v)[:10]).isoformat() if v not in (None, "") and str(v) not in ("nan", "NaT", "None") else None
+        elif k == "status":
+            if v not in APP_STATUSES:
+                raise ValueError(f"Status must be one of: {', '.join(APP_STATUSES)}.")
+            out[k] = v
+        else:
+            raise ValueError(f"Unknown application field: {k}")
+    return out
+
+
+def add_application(status="To apply", **fields):
+    """Add an application; returns its id. Fields: industry, company, route, description,
+    contact, deadline, notes."""
+    row = _application_fields({"status": status or "To apply", **fields})
+    if not any(row.get(k) for k in ("company", "industry", "route", "description")):
+        raise ValueError("Say at least the company (or what it's for).")
+    aid, now = uuid.uuid4().hex, stamp()
+    cols = ["id", *row, "created_at", "updated_at"]
+    with db() as conn:
+        conn.execute(f"INSERT INTO applications ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+                     (aid, *row.values(), now, now))
+    return aid
+
+
+def applications():
+    """Every application: soonest deadline first (no deadline last), then newest."""
+    with db() as conn:
+        rows = conn.execute(f"SELECT {APP_COLS} FROM applications "
+                            "ORDER BY deadline IS NULL, deadline, created_at DESC").fetchall()
+    return [dict(zip(APP_COLS.split(", "), r)) for r in rows]
+
+
+def get_application(aid):
+    with db() as conn:
+        row = conn.execute(f"SELECT {APP_COLS} FROM applications WHERE id = ?", (aid,)).fetchone()
+    return dict(zip(APP_COLS.split(", "), row)) if row else None
+
+
+def update_application(aid, **fields):
+    row = _application_fields(fields)
+    if row:
+        with db() as conn:
+            conn.execute(f"UPDATE applications SET {', '.join(f'{k} = ?' for k in row)}, updated_at = ? WHERE id = ?",
+                         (*row.values(), stamp(), aid))
+
+
+def delete_application(aid):
+    with db() as conn:
+        conn.execute("DELETE FROM applications WHERE id = ?", (aid,))
 
 
 def countdown(due, today=None):
@@ -1995,6 +2078,10 @@ _SEARCH = {
     "To-do": ("SELECT id, title, notes, period_start, period FROM todos", "title || ' ' || COALESCE(notes, '')"),
     "Goal": ("SELECT id, title, unit, period_start, period FROM goals", "title"),
     "Deadline": ("SELECT id, title, notes, due, done FROM deadlines", "title || ' ' || COALESCE(notes, '')"),
+    "Application": ("SELECT id, COALESCE(company, industry, route, 'Application'), "
+                    "TRIM(COALESCE(route, '') || ' · ' || status, ' ·'), deadline, status FROM applications",
+                    "COALESCE(industry, '') || ' ' || COALESCE(company, '') || ' ' || COALESCE(route, '') || ' ' || "
+                    "COALESCE(description, '') || ' ' || COALESCE(contact, '') || ' ' || COALESCE(notes, '')"),
     "Habit": ("SELECT id, name, NULL, NULL, per_week FROM habits", "name"),
     "Journal": ("SELECT date, notes, NULL, date, NULL FROM entries", "COALESCE(notes, '')"),
     "Timetable": ("SELECT id, label, details, date, track || ' ' || start || '-' || \"end\" FROM tt_entries",

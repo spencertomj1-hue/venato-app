@@ -69,6 +69,8 @@ It runs entirely on your computer (Mac or Windows) as a normal app. It's built w
 - **Editing:** every card has an Edit button that opens a dialog to change details, add or remove connections, move groups, or remove things.
 - **Times you've met:** log coffees, calls and catch-ups with someone (in their Edit dialog, or tell Venato "had coffee with Priya, talked about her thesis"). Their card shows when you last spoke and the latest few.
 
+**Applications.** A table of everything you've applied for (or mean to): industry, company, route (e.g. graduate scheme, internship), description, contact / lead, deadline with a countdown, status (To apply → Applied → Interview → Offer…) and notes. Add one with **Add application**, then click any cell to change it; tick rows and press the bin to delete them (Undo brings them back). Filter by status, and Home's search finds them.
+
 **Journal (in the Daily Log).** Each day's notes are its journal entry: a big writing box with a different prompt each day to get you started, and past entries listed below with a search box. Tell Venato "journal: ..." to add to today's entry, or ask "what did I write about Priya?".
 
 **Reminders.** A desktop notification a few minutes before each block in your Plan (and each Outlook event) starts, while Venato is open. Turn it on or off and choose how early in Settings → Reminders.

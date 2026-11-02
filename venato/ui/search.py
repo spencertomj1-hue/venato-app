@@ -12,7 +12,7 @@ import streamlit as st
 from venato import regional
 from venato import store
 
-ICONS = {"To-do": "check_circle", "Goal": "flag", "Deadline": "event", "Habit": "repeat", "Journal": "edit_note",
+ICONS = {"To-do": "check_circle", "Goal": "flag", "Deadline": "event", "Application": "work", "Habit": "repeat", "Journal": "edit_note",
          "Timetable": "calendar_view_week", "Outlook": "calendar_month", "Person": "person", "Group": "group",
          "Met": "forum", "Review": "insights"}
 
@@ -35,6 +35,9 @@ def _open(r):
     elif kind in ("Person", "Met", "Group"):
         ss["page"] = "Network"
         ss["net_edit"] = {"kind": "group" if kind == "Group" else "person", "id": r["id"]}
+    elif kind == "Application":
+        ss["page"] = "Applications"
+        ss.pop("apps_filter", None)
     elif kind == "Review":
         ss["page"] = "Stats"
         ss["review_week"] = store._as_date(r["date"])
