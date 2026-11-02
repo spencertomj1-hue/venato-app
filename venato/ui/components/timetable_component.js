@@ -132,7 +132,8 @@ class Timetable {
     this.root = root;
     this.entries = new Map();   // id -> entry (server data + pending ops)
     this.pending = [];          // ops not yet acknowledged by Python
-    this.brush = recall("tt-brush");   // category id, "eraser", or null
+    this.brush = recall("tt-brush");   // category id, or null
+    if (this.brush === "eraser" || this.brush === "select") this.brush = null;   // tools that no longer exist
     this.label = recall("tt-label") || "";
     this.drag = null;           // {di, track, a, b} while painting
     this.picked = new Set();    // selected blocks: entry ids, or "outlook:<uid>"
@@ -362,8 +363,6 @@ class Timetable {
         <div class="tt-tools">
           <input class="tt-label" list="tt-labels" placeholder="Label, e.g. Lecture" title="Label for new blocks" aria-label="Label for new blocks">
           <datalist id="tt-labels"></datalist>
-          <button class="sw select" data-cat="select" title="Drag a box to select blocks (or hold Shift while dragging)">Select</button>
-          <button class="sw eraser" data-cat="eraser">Eraser</button>
         </div>
       </div>
       <div class="tt-legend">${key}</div>
@@ -380,8 +379,8 @@ class Timetable {
           <div class="tt-blocks" aria-hidden="true"></div>
         </div>
       </div>
-      <div class="tt-hint">Drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it for details · Shift-drag (or Select) to pick several · ${MOD}C / ${MOD}V copy and paste · Delete removes${this.data.single ? "" : " · swipe sideways to change week"}</div>
-      <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details; to add a block with the keyboard, use the Add block button above the timetable)"></div>`;
+      <div class="tt-hint">Drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it to select it and see details · Shift-drag to pick several · Delete or Backspace removes · ${MOD}C / ${MOD}V copy and paste${this.data.single ? "" : " · swipe sideways to change week"}</div>
+      <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details)"></div>`;
 
     // Blocks are positioned from the cells, so redo them when the size changes.
     this.blocksEl = this.root.querySelector(".tt-blocks");
@@ -614,6 +613,9 @@ class Timetable {
       const td = e.target.closest("td.s");
       if (!td || e.button !== 0) return;
       e.preventDefault();
+      // preventDefault keeps focus where it was: leave the label box, so Delete / Backspace act on blocks.
+      const typing = this.root.getRootNode().activeElement || document.activeElement;
+      if (isTextField(typing)) typing.blur();
       if (this.data.readonly) {                     // Home: no editing, just the details card
         const hit = this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
         if (hit) this.openCard(hit); else this.closePopover();
@@ -621,9 +623,9 @@ class Timetable {
       }
       this.closePopover();
       const di = +td.dataset.d, track = td.dataset.t, slot = +td.dataset.s;
-      const hit = this.brush !== "eraser" && this.blockAt(di, track, slot);
+      const hit = this.blockAt(di, track, slot);
       const hitId = hit && this.idOf(hit);
-      const selecting = e.shiftKey || this.brush === "select";
+      const selecting = e.shiftKey;
       if (selecting && hit && e.shiftKey) {         // Shift-click a block: add it to / take it out of the selection
         const next = new Set(this.picked);
         next.has(hitId) ? next.delete(hitId) : next.add(hitId);
@@ -661,12 +663,12 @@ class Timetable {
       if (this.marquee) { table.style.cursor = "crosshair"; return; }
       const td = e.target.closest("td.s");
       this.hoverCell = td ? { di: +td.dataset.d, track: td.dataset.t, slot: +td.dataset.s } : null;
-      const hit = td && this.brush !== "eraser" && this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
+      const hit = td && this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
       this.hoverBlock(hit ? (hit.outlook ? `outlook:${hit.ev.id}` : hit.entry.id) : null);
       if (!hit) { table.style.cursor = ""; return; }
       const { s0, e0 } = this.spanOf(hit);
       const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
-      table.style.cursor = e.shiftKey || this.brush === "select" ? "pointer"
+      table.style.cursor = e.shiftKey ? "pointer"
         : this.picked.has(this.idOf(hit)) && this.picked.size > 1 ? "grab"
         : zone === "move" ? "grab" : "ns-resize";
     });
@@ -989,16 +991,12 @@ class Timetable {
     this.cancelDrag();
     if (!drag) return;
     // A click (no drag) on a block opens its details card; dragging paints.
-    if (drag.a === drag.b && this.brush !== "eraser") {
+    if (drag.a === drag.b) {
       const hit = this.blockAt(drag.di, drag.track, drag.a);
       if (hit) {
         this.openCard(hit);
         return;
       }
-    }
-    if (this.brush === "eraser") {
-      this.paintRange(drag.di, drag.track, drag.a, drag.b, null);
-      return;
     }
     const cat = this.cats.get(this.brush);
     if (!cat) {

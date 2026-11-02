@@ -191,7 +191,7 @@ def _sync_text():
 def render_page():
     day = st.session_state.setdefault("tt_day", store.local_today())
     monday = store.week_start_of(day)            # the week's first day: Monday, or Sunday if chosen
-    # Add block / Fit time / Categories: the same things Claude can do, by hand.
+    # Fit time / Categories: the same things Claude can do, by hand.
     from venato.ui import timetable_tools
     timetable_tools.toolbar(day)
     render_grid([monday + timedelta(days=i) for i in range(7)])

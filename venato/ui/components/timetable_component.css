@@ -16,7 +16,7 @@
 
 button, input, select { font: inherit; }
 
-/* ---------- Header: week title, navigation, label + eraser ---------- */
+/* ---------- Header: week title, navigation, label ---------- */
 
 .tt-head {
   display: flex;
@@ -81,7 +81,6 @@ button, input, select { font: inherit; }
 .sw i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .sw:hover { background: rgba(128, 128, 128, 0.1); }
 .sw.on { background: rgba(128, 128, 128, 0.16); border-color: rgba(128, 128, 128, 0.35); font-weight: 600; }
-.sw.eraser { border: 1px dashed rgba(128, 128, 128, 0.5); }
 .sep { flex: none; width: 1px; height: 16px; margin: 0 5px; background: var(--line-day); }
 
 .tt-label {
@@ -220,7 +219,7 @@ td.s.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 }
 .blk.hover::before { top: 2px; }
 .blk.hover::after { bottom: 2px; }
-/* Selected blocks (click, Shift-click or drag a box with Shift / the Select tool). */
+/* Selected blocks (click, Shift-click or drag a box with Shift). */
 .blk.picked { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); z-index: 2; }
 .dragging .blk.picked { opacity: 0.55; }
 td.s.sel.box { background: color-mix(in srgb, var(--accent) 14%, transparent); }

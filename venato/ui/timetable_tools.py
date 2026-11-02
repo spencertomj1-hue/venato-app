@@ -1,7 +1,6 @@
 """
 Buttons above the timetable, so everything works without the Claude assistant:
 
-  Add block    a form for one block (also the keyboard way to add one)
   Fit time     smart scheduling: fit N hours of something into the Plan's free gaps
   Categories   add / rename / recolour categories, activity defaults, Outlook's colour
 
@@ -90,34 +89,6 @@ def _confirm_box(yes="Confirm"):
         st.session_state.pop(PENDING, None)
         st.rerun(scope="fragment")
     return True
-
-
-# ---------------------------------------------------------------------------
-# Add block
-# ---------------------------------------------------------------------------
-
-@st.dialog("Add a block", width="large")
-def _add_block_dialog(day):
-    if _confirm_box("Overwrite"):
-        return
-    with st.form("tt_add_form", border=False):
-        a, b = st.columns(2)
-        when = a.date_input("Day", value=day, format=regional.input_format())
-        track = b.segmented_control("Column", ["Plan", "Actual"], default="Plan",
-                                    help="Plan: what you intend to do. Actual: what you really did.")
-        a, b = st.columns(2)
-        starts, ends = _times(0, store.SLOTS - 1), _times(1, store.SLOTS)
-        start = a.selectbox("From", starts, index=_at(starts, "09:00"), format_func=regional.time)
-        end = b.selectbox("To", ends, index=_at(ends, "10:00", 1), format_func=regional.time, help="Times after midnight count as the same day.")
-        label = st.text_input("What", placeholder="e.g. Lecture, Gym, Revision")
-        category = st.selectbox("Category", [AUTO] + _category_names())
-        details = st.text_area("Details (optional)", height=80)
-        if st.form_submit_button("Add", type="primary", icon=":material/add:"):
-            cat = _category_choice(label, category)
-            if cat is not False:
-                _call(tools.add_block, when.isoformat(), (track or "Plan").lower(), start, end, label,
-                      category=cat, details=details.strip() or None, apply_now=True)
-    st.caption("If it overlaps blocks already there, they're trimmed or replaced, and you can Undo it straight after.")
 
 
 # ---------------------------------------------------------------------------
@@ -246,10 +217,7 @@ def open_fit(label, last):
 
 def toolbar(day):
     row = st.container(horizontal=True, gap="small")     # sized to the text, so bigger text never truncates
-    a = b = c = row
-    if a.button("Add block", icon=":material/add:", key="tt_btn_add"):
-        st.session_state.pop(PENDING, None)
-        _add_block_dialog(day)
+    b = c = row
     if b.button("Fit time", icon=":material/event_available:", key="tt_btn_fit",
                 help="Fit hours of something (e.g. 6 h of revision) into your free time"):
         st.session_state.pop(PENDING, None)
