@@ -17,7 +17,7 @@ import requests
 
 from venato import store
 
-REPO = "spencertomj1-hue/arete-app"
+REPO = "spencertomj1-hue/venato-app"
 LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
 CHECK_EVERY = 24 * 60 * 60          # seconds

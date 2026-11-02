@@ -17,7 +17,7 @@
 
 > **Version 1 (v1.0.0).** Home with to-dos, habits and goals; timetable; goals; daily log; stats;
 > your network; and the Claude chat box. Keep backups (Settings → Data → Back up now). Bug reports
-> and ideas are welcome in [Issues](https://github.com/spencertomj1-hue/arete-app/issues).
+> and ideas are welcome in [Issues](https://github.com/spencertomj1-hue/venato-app/issues).
 
 ---
 
@@ -153,7 +153,7 @@ Claude only changes Venato's data, through a fixed set of actions. **Anything th
 
 ### The easy way: download it
 
-Go to [Releases](https://github.com/spencertomj1-hue/arete-app/releases/latest) and download:
+Go to [Releases](https://github.com/spencertomj1-hue/venato-app/releases/latest) and download:
 - **Windows:** `Venato-Setup.exe`. Run it. Windows may say "Windows protected your PC" because it isn't code-signed: click **More info → Run anyway**.
 - **Mac (Apple silicon):** `Venato.dmg`. Open it and drag Venato into Applications. The first time, macOS says it can't check the app: open **System Settings → Privacy & Security** and click **Open Anyway**.
 
@@ -164,8 +164,8 @@ Nothing else to install. For the chat, paste an Anthropic API key in **Settings 
 Open the **Terminal** app and run:
 
 ```bash
-git clone https://github.com/spencertomj1-hue/arete-app.git
-cd arete-app
+git clone https://github.com/spencertomj1-hue/venato-app.git
+cd venato-app
 ./setup.sh
 ```
 
@@ -183,8 +183,8 @@ Then open **Venato** from Applications, Launchpad or Spotlight. The first time, 
 Open **PowerShell** and run:
 
 ```powershell
-git clone https://github.com/spencertomj1-hue/arete-app.git
-cd arete-app
+git clone https://github.com/spencertomj1-hue/venato-app.git
+cd venato-app
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
