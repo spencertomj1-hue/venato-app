@@ -59,6 +59,9 @@ function dayNum(iso) {
   return DATEFMT === "MM/DD/YYYY" ? `${m}/${d}` : DATEFMT === "YYYY-MM-DD" ? `${m}-${d}` : `${d}/${m}`;
 }
 
+// Grid column of a day's Plan or Actual (for box selection across days).
+const col = (di, track) => di * 2 + (track === "actual" ? 1 : 0);
+
 // "HH:mm" -> slot index. Times before the day's start are after midnight.
 function slotOf(t) {
   const [h, m] = t.split(":").map(Number);
@@ -132,6 +135,7 @@ class Timetable {
     this.brush = recall("tt-brush");   // category id, "eraser", or null
     this.label = recall("tt-label") || "";
     this.drag = null;           // {di, track, a, b} while painting
+    this.picked = new Set();    // selected blocks: entry ids, or "outlook:<uid>"
     this.selected = [];         // cells currently highlighted
     this.builtFor = null;       // week + categories the view was built for
     this.swipe = 0;             // accumulated sideways scroll
@@ -145,9 +149,16 @@ class Timetable {
         if (e.key === "c" ? this.copyBlock() : this.pasteBlock()) e.preventDefault();
         return;
       }
+      if ((e.key === "Delete" || e.key === "Backspace") && this.picked.size && this.data && !this.data.readonly) {
+        if (leaveShortcutAlone(e)) return;
+        e.preventDefault();
+        this.deletePicked();
+        return;
+      }
       if (e.key !== "Escape") return;
       this.cancelDrag();
       this.closePopover();
+      this.setPicked([]);
       if (this.returnFocus) { this.returnFocus.focus(); this.returnFocus = null; }
     };
     this.onOutside = (e) => {
@@ -191,6 +202,7 @@ class Timetable {
   }
 
   applyLocal(op) {
+    if (op.kind === "batch") { op.ops.forEach((o) => this.applyLocal(o)); return; }
     if (op.kind === "paint") {
       // Outlook events in the way become the user's own blocks first (like store.paint).
       if (op.track === "plan") {
@@ -347,6 +359,7 @@ class Timetable {
         <div class="tt-tools">
           <input class="tt-label" list="tt-labels" placeholder="Label, e.g. Lecture" title="Label for new blocks" aria-label="Label for new blocks">
           <datalist id="tt-labels"></datalist>
+          <button class="sw select" data-cat="select" title="Drag a box to select blocks (or hold Shift while dragging)">Select</button>
           <button class="sw eraser" data-cat="eraser">Eraser</button>
         </div>
       </div>
@@ -364,7 +377,7 @@ class Timetable {
           <div class="tt-blocks" aria-hidden="true"></div>
         </div>
       </div>
-      <div class="tt-hint">Drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it for details · ${MOD}C / ${MOD}V to copy and paste the block under the pointer${this.data.single ? "" : " · swipe sideways to change week"}</div>
+      <div class="tt-hint">Drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it for details · Shift-drag (or Select) to pick several · ${MOD}C / ${MOD}V copy and paste · Delete removes${this.data.single ? "" : " · swipe sideways to change week"}</div>
       <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details; to add a block with the keyboard, use the Add block button above the timetable)"></div>`;
 
     // Blocks are positioned from the cells, so redo them when the size changes.
@@ -510,11 +523,11 @@ class Timetable {
         const fg = (cat && cat.textColour) || contrastText(bg);
         const tall = last.bottom - first.top >= 30;   // room for the time line under the title
         if (outlook) {
-          return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}" data-id="outlook:${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
+          return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
             `width:${first.width}px;height:${last.bottom - first.top}px;background:${esc(bg)};color:${fg}">` +
             `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}" data-id="${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
+        return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
           `width:${first.width}px;height:${last.bottom - first.top}px;background:${esc(bg)};color:${fg}">` +
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
@@ -589,6 +602,25 @@ class Timetable {
       this.closePopover();
       const di = +td.dataset.d, track = td.dataset.t, slot = +td.dataset.s;
       const hit = this.brush !== "eraser" && this.blockAt(di, track, slot);
+      const hitId = hit && this.idOf(hit);
+      const selecting = e.shiftKey || this.brush === "select";
+      if (selecting && hit && e.shiftKey) {         // Shift-click a block: add it to / take it out of the selection
+        const next = new Set(this.picked);
+        next.has(hitId) ? next.delete(hitId) : next.add(hitId);
+        this.setPicked([...next]);
+        return;
+      }
+      if (hit && this.picked.has(hitId) && this.picked.size > 1) {   // a selected block: move the whole group
+        this.groupDrag = { downDi: di, downSlot: slot, hit, ddi: 0, ds: 0, moved: false,
+                           items: [...this.picked].map((id) => this.itemOf(id)).filter(Boolean) };
+        this.highlight();
+        return;
+      }
+      if (selecting) {                              // drag a box to select every block it touches
+        this.marquee = { di0: di, t0: track, s0: slot, di1: di, t1: track, s1: slot, add: e.shiftKey };
+        this.highlight();
+        return;
+      }
       if (hit) {                                    // on a block: move it, or drag its top / bottom edge
         const { s0, e0 } = this.spanOf(hit);
         this.blockDrag = { hit, zone: this.zoneAt(di, track, s0, e0, e.clientY), di, track, downSlot: slot, s0, e0,
@@ -596,6 +628,7 @@ class Timetable {
         this.highlight();
         return;
       }
+      if (this.picked.size) this.setPicked([]);   // clicking empty time clears the selection
       this.drag = { di, track, a: slot, b: slot };
       this.highlight();
     });
@@ -604,6 +637,8 @@ class Timetable {
     table.addEventListener("mousemove", (e) => {
       if (this.data.readonly || this.drag) return;
       if (this.blockDrag) { table.style.cursor = this.blockDrag.zone === "move" ? "grabbing" : "ns-resize"; return; }
+      if (this.groupDrag) { table.style.cursor = "grabbing"; return; }
+      if (this.marquee) { table.style.cursor = "crosshair"; return; }
       const td = e.target.closest("td.s");
       this.hoverCell = td ? { di: +td.dataset.d, track: td.dataset.t, slot: +td.dataset.s } : null;
       const hit = td && this.brush !== "eraser" && this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
@@ -611,7 +646,9 @@ class Timetable {
       if (!hit) { table.style.cursor = ""; return; }
       const { s0, e0 } = this.spanOf(hit);
       const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
-      table.style.cursor = zone === "move" ? "grab" : "ns-resize";
+      table.style.cursor = e.shiftKey || this.brush === "select" ? "pointer"
+        : this.picked.has(this.idOf(hit)) && this.picked.size > 1 ? "grab"
+        : zone === "move" ? "grab" : "ns-resize";
     });
     table.addEventListener("mouseleave", () => {
       this.hoverCell = null;
@@ -632,6 +669,12 @@ class Timetable {
     table.addEventListener("mouseover", (e) => {
       const td = e.target.closest("td.s");
       if (this.blockDrag && td) { this.dragBlockTo(+td.dataset.d, td.dataset.t, +td.dataset.s); return; }
+      if (this.marquee && td) {
+        Object.assign(this.marquee, { di1: +td.dataset.d, t1: td.dataset.t, s1: +td.dataset.s });
+        this.highlight();
+        return;
+      }
+      if (this.groupDrag && td) { this.dragGroupTo(+td.dataset.d, +td.dataset.s); return; }
       if (!this.drag || !td) return;
       if (+td.dataset.d !== this.drag.di || td.dataset.t !== this.drag.track) return;
       this.drag.b = +td.dataset.s;
@@ -683,10 +726,30 @@ class Timetable {
   }
 
   highlight() {
-    this.selected.forEach((td) => td.classList.remove("sel"));
+    this.selected.forEach((td) => td.classList.remove("sel", "box"));
     this.selected = [];
     // Fade the blocks while dragging so the selection shows through.
-    this.wrapEl.classList.toggle("dragging", !!this.drag || !!this.blockDrag);
+    this.wrapEl.classList.toggle("dragging", !!this.drag || !!this.blockDrag || !!this.groupDrag);
+    if (this.marquee) {
+      const m = this.marquee, c0 = col(m.di0, m.t0), c1 = col(m.di1, m.t1);
+      for (let c = Math.min(c0, c1); c <= Math.max(c0, c1); c++)
+        for (let i = Math.min(m.s0, m.s1); i <= Math.max(m.s0, m.s1); i++) {
+          const td = this.cells[Math.floor(c / 2)][c % 2 ? "actual" : "plan"][i];
+          td.classList.add("sel", "box");
+          this.selected.push(td);
+        }
+      return;
+    }
+    if (this.groupDrag) {
+      const g = this.groupDrag;
+      for (const it of g.items)
+        for (let i = it.s + g.ds; i < it.e + g.ds; i++) {
+          const td = this.cells[it.di + g.ddi][it.track][i];
+          td.classList.add("sel");
+          this.selected.push(td);
+        }
+      return;
+    }
     if (this.blockDrag) {
       const { di, track, s, e } = this.blockDrag.target;
       for (let i = s; i < e; i++) {
@@ -708,35 +771,140 @@ class Timetable {
   cancelDrag() {
     this.drag = null;
     this.blockDrag = null;
+    this.marquee = null;
+    this.groupDrag = null;
     this.highlight();
+  }
+
+  // ---------- Selecting several blocks ----------
+
+  idOf(hit) { return hit.outlook ? `outlook:${hit.ev.id}` : hit.entry.id; }
+
+  // A selected block as {id, outlook, en, di, track, s, e} (or null if it's gone).
+  itemOf(id) {
+    const b = (this.blocks || []).find((x) => (x.outlook ? `outlook:${x.en.id}` : x.en.id) === id);
+    return b ? { id, outlook: !!b.outlook, en: b.en, di: b.di, track: b.en.track, s: b.s, e: b.e } : null;
+  }
+
+  setPicked(ids) {
+    this.picked = new Set(ids);
+    this.blocksEl.querySelectorAll(".blk").forEach((el) => el.classList.toggle("picked", this.picked.has(el.dataset.id)));
+    const hint = this.root.querySelector(".tt-hint");
+    if (this.hintText === undefined) this.hintText = hint.textContent;
+    const n = this.picked.size;
+    hint.textContent = n > 1
+      ? `${n} blocks selected · drag one to move them all · ${MOD}C to copy · Delete to remove · Esc to clear`
+      : n === 1 ? `1 block selected · ${MOD}C to copy · Delete to remove · Shift-click or Shift-drag to select more`
+      : this.hintText;
+  }
+
+  endMarquee() {
+    const m = this.marquee;
+    this.marquee = null;
+    this.highlight();
+    this.root.querySelector("table").style.cursor = "";
+    const c0 = Math.min(col(m.di0, m.t0), col(m.di1, m.t1)), c1 = Math.max(col(m.di0, m.t0), col(m.di1, m.t1));
+    const s0 = Math.min(m.s0, m.s1), s1 = Math.max(m.s0, m.s1);
+    const inside = this.blocks.filter((b) => {
+      const c = col(b.di, b.en.track);
+      return c >= c0 && c <= c1 && b.s <= s1 && b.e > s0;
+    }).map((b) => (b.outlook ? `outlook:${b.en.id}` : b.en.id));
+    this.setPicked(m.add ? [...this.picked, ...inside] : inside);
+  }
+
+  dragGroupTo(di, slot) {
+    const g = this.groupDrag, ddi = di - g.downDi, ds = slot - g.downSlot;
+    const fits = g.items.every((it) => it.di + ddi >= 0 && it.di + ddi < this.data.days.length &&
+                                      it.s + ds >= 0 && it.e + ds <= SLOTS);
+    if (!fits) return;                                     // keep the last place where they all fit
+    g.ddi = ddi; g.ds = ds; g.moved = ddi !== 0 || ds !== 0;
+    this.highlight();
+  }
+
+  // Ops that lift every item out first and then put each down in its new place, so blocks in the
+  // group never trim each other on the way. Outlook events become the user's own blocks first.
+  placeOps(items, where) {
+    const ops = [];
+    for (const it of items) if (it.outlook) ops.push({ kind: "detach_outlook", uid: it.en.id });
+    const idOf = (it) => (it.outlook ? `ol:${it.en.id}` : it.en.id);
+    for (const it of items) ops.push({ kind: "delete", id: idOf(it) });
+    for (const it of items) {
+      const w = where(it);
+      ops.push({ kind: "paint", date: this.data.days[w.di], track: w.track, start: slotTime(w.s), end: slotTime(w.e),
+                 newId: idOf(it), block: { label: it.en.label, categoryId: it.en.categoryId, details: it.en.details || null } });
+    }
+    return ops;
+  }
+
+  endGroupDrag() {
+    const g = this.groupDrag;
+    this.groupDrag = null;
+    this.highlight();
+    this.root.querySelector("table").style.cursor = "";
+    if (!g.moved) { this.setPicked([this.idOf(g.hit)]); this.openCard(g.hit); return; }   // a click: just that one
+    const ops = this.placeOps(g.items, (it) => ({ di: it.di + g.ddi, track: it.track, s: it.s + g.ds, e: it.e + g.ds }));
+    this.commit([{ opId: uid(), kind: "batch", label: `Moved ${g.items.length} blocks`, ops }]);
+    this.setPicked(g.items.map((it) => (it.outlook ? `ol:${it.en.id}` : it.en.id)));
+  }
+
+  deletePicked() {
+    const items = [...this.picked].map((id) => this.itemOf(id)).filter(Boolean);
+    if (!items.length) return;
+    const ops = items.map((it) => (it.outlook ? { kind: "hide_outlook", uid: it.en.id } : { kind: "delete", id: it.en.id }));
+    const label = items.length === 1 ? `Deleted ${items[0].en.label}` : `Deleted ${items.length} blocks`;
+    this.closePopover();
+    this.commit([{ opId: uid(), kind: "batch", label, ops }]);
+    this.setPicked([]);
   }
 
   // ---------- Copy and paste (Cmd/Ctrl+C, Cmd/Ctrl+V) ----------
 
   // Copy the block under the pointer (or the one whose card is open). True if something was copied.
   copyBlock() {
-    const h = this.hoverCell;
-    const hit = (h && this.blockAt(h.di, h.track, h.slot)) || this.cardHit;
-    if (!hit) return false;
-    const item = hit.outlook ? hit.ev : hit.entry;
-    const { s0, e0 } = this.spanOf(hit);
-    this.clip = { label: hit.outlook ? item.title : item.label, categoryId: item.categoryId,
-                  details: item.details || null, len: e0 - s0 };
+    let items = [...this.picked].map((id) => this.itemOf(id)).filter(Boolean);
+    if (!items.length) {
+      const h = this.hoverCell;
+      const hit = (h && this.blockAt(h.di, h.track, h.slot)) || this.cardHit;
+      if (!hit) return false;
+      items = [this.itemOf(this.idOf(hit))].filter(Boolean);
+      if (!items.length) return false;
+    }
+    // Keep their layout: days and times relative to the earliest one.
+    const d0 = Math.min(...items.map((it) => it.di)), s0 = Math.min(...items.map((it) => it.s));
+    this.clip = { items: items.map((it) => ({ label: it.en.label, categoryId: it.en.categoryId, details: it.en.details || null,
+                                             len: it.e - it.s, ddi: it.di - d0, ds: it.s - s0, track: it.track })) };
     remember("tt-clip", this.clip);
-    this.flashHint(`Copied ${this.clip.label}: point at where it should go and press ${MOD}V`, false);
+    const what = items.length === 1 ? items[0].en.label : `${items.length} blocks`;
+    this.flashHint(`Copied ${what}: point at where it should go and press ${MOD}V`, false);
     return true;
   }
 
   // Paste the copied block where the pointer is (same length). True if it was pasted.
   pasteBlock() {
     if (!this.clip) this.clip = recall("tt-clip");                // copied earlier (e.g. on another week)
-    if (!this.clip) return false;                                  // nothing copied: leave the key alone
+    if (this.clip && !this.clip.items) this.clip = { items: [{ ...this.clip, ddi: 0, ds: 0, track: null }] };
+    if (!this.clip || !this.clip.items.length) return false;       // nothing copied: leave the key alone
     const h = this.hoverCell;
     if (!h) { this.flashHint("Point at a time in the timetable, then paste"); return true; }
-    const s = Math.max(0, Math.min(SLOTS - this.clip.len, h.slot));
-    this.commit([{ opId: uid(), kind: "paint", date: this.data.days[h.di], track: h.track,
-                   start: slotTime(s), end: slotTime(s + this.clip.len), newId: uid(),
-                   block: { label: this.clip.label, categoryId: this.clip.categoryId, details: this.clip.details } }]);
+    const one = this.clip.items.length === 1;
+    const ops = [], ids = [];
+    let skipped = 0;
+    for (const it of this.clip.items) {
+      const di = h.di + it.ddi;
+      const s = one ? Math.max(0, Math.min(SLOTS - it.len, h.slot)) : h.slot + it.ds;
+      if (di >= this.data.days.length || s + it.len > SLOTS) { skipped++; continue; }   // off the end of the week / day
+      const id = uid();
+      ids.push(id);
+      ops.push({ opId: uid(), kind: "paint", date: this.data.days[di], track: one || !it.track ? h.track : it.track,
+                 start: slotTime(s), end: slotTime(s + it.len), newId: id,
+                 block: { label: it.label, categoryId: it.categoryId, details: it.details } });
+    }
+    if (!ops.length) { this.flashHint("Not enough room there: point further up or earlier in the week"); return true; }
+    // Undoable with Cmd/Ctrl+Z, quietly (no Undo bar for a paste).
+    this.commit(ops.length === 1 ? [{ ...ops[0], quiet: true, label: `Pasted ${ops[0].block.label}` }]
+                                 : [{ opId: uid(), kind: "batch", quiet: true, label: `Pasted ${ops.length} blocks`, ops }]);
+    if (!one) this.setPicked(ids);
+    if (skipped) this.flashHint(`${skipped} didn't fit (past the end of the week or day) and weren't pasted`);
     return true;
   }
 
@@ -782,7 +950,7 @@ class Timetable {
     this.blockDrag = null;
     this.highlight();
     this.root.querySelector("table").style.cursor = "";
-    if (!bd.moved) { this.openCard(bd.hit); return; }   // just a click: the details card, as before
+    if (!bd.moved) { this.setPicked([this.idOf(bd.hit)]); this.openCard(bd.hit); return; }   // a click: select it, and its card
     const t = bd.target;
     const where = { date: this.data.days[t.di], track: t.track, start: slotTime(t.s), end: slotTime(t.e) };
     const ops = bd.hit.outlook
@@ -795,6 +963,8 @@ class Timetable {
 
   endDrag() {
     if (this.blockDrag) { this.endBlockDrag(); return; }
+    if (this.marquee) { this.endMarquee(); return; }
+    if (this.groupDrag) { this.endGroupDrag(); return; }
     const drag = this.drag;
     this.cancelDrag();
     if (!drag) return;

@@ -77,9 +77,25 @@ def apply_grid_op(op):
       {kind: "move", id, date, track, start, end}   (a block dragged to a new place, or its edge dragged)
       {kind: "hide_outlook", uid}     remove an Outlook occurrence from the timetable
       {kind: "detach_outlook", uid}   turn it into the user's own block (id "ol:<uid>")
+      {kind: "batch", label, ops: [...]}   several of the above (a group moved, pasted or deleted):
+                                     one Undo point for all of them, labelled e.g. "Moved 3 blocks"
     Painting over an Outlook event detaches it first (store.paint), so it's trimmed like any block.
     """
-    _checkpoint(op)
+    if op["kind"] == "batch":
+        from arete import undo
+        undo.checkpoint(op.get("label") or "Changed several blocks", quiet=bool(op.get("quiet")))
+        for sub in op.get("ops") or []:
+            _apply(sub)
+        return
+    if op.get("quiet"):                          # a paste: undoable with Cmd/Ctrl+Z, without the Undo bar
+        from arete import undo
+        undo.checkpoint(op.get("label") or "Pasted a block", quiet=True)
+    else:
+        _checkpoint(op)
+    _apply(op)
+
+
+def _apply(op):
     if op["kind"] == "paint":
         s, e = store.slot_of(op["start"]), store.slot_of(op["end"])
         block = op.get("block")

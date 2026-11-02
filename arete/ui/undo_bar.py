@@ -48,9 +48,11 @@ def render():
     if not label:
         return
     _shortcut(key="undo_shortcut")
+    hidden = undo.is_quiet()       # e.g. a paste: no bar, but Cmd/Ctrl+Z still presses the (hidden) Undo
     from arete import store
     bottom = 96 if store.ai_enabled() else 24          # above the chat bar when there is one
     st.html(f"""<style>
+      {".st-key-undo_bar { display: none !important; }" if hidden else ""}
       .st-key-undo_bar {{ position: fixed; left: 50%; transform: translateX(-50%); bottom: {bottom}px; z-index: 999;
         width: auto !important; max-width: min(560px, 92vw); padding: 6px 8px 6px 16px; border-radius: 12px;
         background: #26272f; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }}

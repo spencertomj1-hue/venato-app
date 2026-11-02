@@ -83,3 +83,34 @@ def test_grid_move_and_resize(store):
     timetable.apply_grid_op({"kind": "move", "id": "ol:ev1", "date": "2026-10-29", "track": "plan", "start": "16:00", "end": "17:00"})
     assert (store.get_block("ol:ev1")["start"], store.get_block("ol:ev1")["label"]) == ("16:00", "Seminar")
     assert not [e for e in store.outlook_between("2026-10-29", "2026-10-29")]                 # no duplicate left behind
+
+
+def test_batch_ops_are_one_undo(store):
+    from arete import tools, undo
+    importlib.reload(tools)
+    from arete.ui import timetable
+    for d in ("2026-10-26", "2026-10-27"):
+        tools.add_block(d, "plan", "10:00", "12:00", "Lecture")
+    ids = [b["id"] for b in store.blocks_between("2026-10-26", "2026-10-27")]
+    # Move both a day later and an hour later: lift both out, then put each down.
+    ops = [{"kind": "delete", "id": i} for i in ids] + [
+        {"kind": "paint", "date": d, "track": "plan", "start": "11:00", "end": "13:00", "newId": i,
+         "block": {"label": "Lecture", "categoryId": "classes"}} for i, d in zip(ids, ("2026-10-27", "2026-10-28"))]
+    timetable.apply_grid_op({"kind": "batch", "label": "Moved 2 blocks", "ops": ops})
+    after = [(b["date"], b["start"]) for b in store.blocks_between("2026-10-26", "2026-10-28")]
+    assert after == [("2026-10-27", "11:00"), ("2026-10-28", "11:00")]   # neither trimmed the other
+    assert undo.pending() == "Moved 2 blocks" and not undo.is_quiet()
+    undo.restore()
+    assert [(b["date"], b["start"]) for b in store.blocks_between("2026-10-26", "2026-10-28")] == \
+        [("2026-10-26", "10:00"), ("2026-10-27", "10:00")]               # one Undo puts both back
+
+
+def test_paste_is_quietly_undoable(store):
+    from arete import undo
+    from arete.ui import timetable
+    timetable.apply_grid_op({"kind": "paint", "quiet": True, "label": "Pasted Gym", "date": "2026-10-29",
+                             "track": "plan", "start": "18:00", "end": "19:00", "newId": "p1",
+                             "block": {"label": "Gym", "categoryId": "exercise"}})
+    assert undo.pending() == "Pasted Gym" and undo.is_quiet()             # no bar, but Cmd/Ctrl+Z works
+    undo.restore()
+    assert store.blocks_between("2026-10-29", "2026-10-29") == []

@@ -220,6 +220,10 @@ td.s.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 }
 .blk.hover::before { top: 2px; }
 .blk.hover::after { bottom: 2px; }
+/* Selected blocks (click, Shift-click or drag a box with Shift / the Select tool). */
+.blk.picked { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); z-index: 2; }
+.dragging .blk.picked { opacity: 0.55; }
+td.s.sel.box { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 
 /* ---------- Right-click editor ---------- */
 

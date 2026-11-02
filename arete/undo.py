@@ -53,12 +53,18 @@ def _write(state):
     _state_file().write_text(json.dumps(state), encoding="utf-8")
 
 
-def checkpoint(label):
-    """Call just before deleting or overwriting something: 'Deleted Gym', 'Replaced Tuesday's plan'..."""
+def checkpoint(label, quiet=False):
+    """Call just before deleting or overwriting something: 'Deleted Gym', 'Replaced Tuesday's plan'...
+    quiet: no Undo bar on the page (e.g. pasting), but Cmd/Ctrl+Z still undoes it."""
     if not store.DB_PATH.exists():
         return
     _copy(store.DB_PATH, _snapshot())
-    _write({"label": label, "at": time.time(), "after": None})
+    _write({"label": label, "at": time.time(), "after": None, "quiet": bool(quiet)})
+
+
+def is_quiet():
+    state = _read()
+    return bool(state and state.get("quiet"))
 
 
 def pending():
