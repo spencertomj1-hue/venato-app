@@ -199,7 +199,8 @@ What the app tracks
 - Habits: named habits ticked per day, with streaks (set_habit, add_habit, list_habits). A habit is
   either every day or has a weekly target ("gym 3 times a week" -> add_habit("Gym", times_per_week=3),
   or set_habit_target for an existing one); weekly ones count ticks per week.
-  Only add a new habit if the user clearly asks for one.
+  Only add a new habit if the user clearly asks for one. rename_habit renames one; delete_habit
+  (needs confirmation) removes it and all its ticks.
 - Timetable: every day has two tracks, "plan" (what they intend to do) and "actual"
   (what they really did). If they describe something that already happened ("I went to the gym
   from 6 to 7"), use actual; if it's an intention ("I'll study 2-4 tomorrow"), use plan.
@@ -221,7 +222,7 @@ What the app tracks
     weekdays_only if the user says when ("only mornings", "not at weekends"), and
     max_block_hours for how long each sitting should be (default 2).
   - Categories and their colours, and which category an activity uses by default, are changed
-    only by you (edit_category, set_activity_default); there are no editors in the app for them.
+    with edit_category and set_activity_default (the user can also use Categories on the Timetable page).
     Use hex colours (e.g. "make Gym dark green" -> #1B7F3B). Ask before creating a new category.
   - Events from the user's Outlook calendar are imported into the plan track. query_blocks lists them
     with ids starting "outlook:". The user can adjust them like their own blocks: update_block turns one
@@ -230,6 +231,8 @@ What the app tracks
 
 - Weekly review: "how did my week go?" / "review last week" -> weekly_review (date = a day in that week).
   Give a short, honest summary with one or two observations; don't list every number.
+  The review asks two questions; save_review_answers stores the user's answers ("what went well:
+  ...", "next week I'll ..."), in their own words.
 - Deadlines: things due on a date ("essay due Friday", "apply for the internship by 15 Nov") ->
   add_deadline(title, due). They show on Home with a countdown. complete_deadline ticks one off;
   edit_deadline changes it; delete_deadline needs confirmation. To make time for one, use plan_time
@@ -243,6 +246,7 @@ What the app tracks
     title in the current day/week/month (pass period or date to narrow it down, or the id from
     list_todos). If several match, ask which one. uncomplete_todo unticks.
   - repeat=true gives the to-do a fresh unticked copy every new period ("every week").
+  - edit_todo renames it, changes its notes or repeat, or moves it to another list (move_to="weekly" etc.).
   - delete_todo needs the user's confirmation.
 
 - Goals: measurable targets for a month or a year (period "monthly" or "yearly"), with a progress bar,
@@ -272,8 +276,21 @@ What the app tracks
   - disconnect_people and delete_person need the user's confirmation.
   - Times the user sees or speaks to someone go in their interaction log: "had coffee with Priya,
     talked about her thesis" -> log_interaction(person="Priya", note="Coffee; talked about her thesis")
-    (date defaults to today; "yesterday" etc. -> pass the date). person_history lists them. If the
-    person isn't in the network yet, ask whether to add them first.
+    (date defaults to today; "yesterday" etc. -> pass the date). person_history lists them (with ids);
+    delete_interaction removes one (needs confirmation). If the person isn't in the network yet, ask
+    whether to add them first.
+
+- Applications: the Applications page is a table of things the user has applied for, or means to
+  (jobs, internships, grad schemes, courses). Each has industry, company, route (e.g. "Graduate scheme",
+  "Internship", "Spring week"), description, contact (contact / lead: who they know there or who to ask),
+  deadline, status and notes. Status is one of: {", ".join(store.APP_STATUSES)}.
+  - "I applied to Acme's internship, deadline 1 Dec" -> add_application(company="Acme", route="Internship",
+    status="Applied", deadline=...). New ones default to "To apply".
+  - "got an interview at Acme" -> edit_application(application="Acme", status="Interview"). Use
+    append_notes=true to add to the notes rather than replace them. list_applications shows them
+    (filter by status or words); delete_application needs confirmation.
+  - Applying for something with a deadline doesn't also need add_deadline unless they ask: the table
+    has its own countdown.
 
 - Journal: the day's notes in the Daily Log (one entry per day). "journal: today was rough, ...",
   "note for today: ..." or "write in my journal that ..." -> write_journal(text) in the user's own words (first person; tidy
@@ -316,6 +333,13 @@ TODO_REF = _schema(["todo"], todo={"type": "string", "description": "the to-do's
                    period=TODO_PERIOD, date={**DATE, "description": "a day in the to-do's period, if not the current one"})
 GOAL_REF = {"goal": {"type": "string", "description": "the goal's title (or part of it), or its id"},
             "period": GOAL_PERIOD, "date": {**DATE, "description": "a day in the goal's month/year, if not the current one"}}
+
+APP_STATUS = {"type": "string", "enum": store.APP_STATUSES}
+APP_PROPS = {"company": {"type": "string"}, "industry": {"type": "string"},
+             "route": {"type": "string", "description": "e.g. Graduate scheme, Internship, Spring week"},
+             "description": {"type": "string"},
+             "contact": {"type": "string", "description": "contact / lead: who they know there, or who to ask"},
+             "deadline": DATE, "status": APP_STATUS, "notes": {"type": "string"}}
 
 TOOL_SPECS = [
     ("log_day", "Set mood/sleep/energy/water/notes for a date. Fields not given are left as they are.",
@@ -462,6 +486,31 @@ TOOL_SPECS = [
      "and/or entries containing all the words in query.",
      _schema([], date=DATE, start_date=DATE, end_date=DATE, query={"type": "string"},
              limit={"type": "integer", "description": "at most 31, default 10"}), tools.read_journal),
+    ("rename_habit", "Rename a habit (its ticks and streaks stay).",
+     _schema(["habit_name", "new_name"], habit_name={"type": "string"}, new_name={"type": "string"}),
+     tools.rename_habit),
+    ("delete_habit", "Delete a habit and all its ticks (needs the user's confirmation).",
+     _schema(["habit_name"], habit_name={"type": "string"}), tools.delete_habit),
+    ("edit_todo", "Change a to-do's title, notes or repeat, and/or move it to the day, week or month list.",
+     {**TODO_REF, "properties": {**TODO_REF["properties"], "title": {"type": "string"}, "notes": {"type": "string"},
+                                 "repeat": {"type": "boolean"}, "move_to": TODO_PERIOD}}, tools.edit_todo),
+    ("delete_interaction", "Remove a logged meeting with someone (id from person_history, or words from its note).",
+     _schema(["person", "interaction"], person={"type": "string"}, interaction={"type": "string"}),
+     tools.delete_interaction),
+    ("save_review_answers", "Save the user's answers to the weekly review's questions: what went well, what to change.",
+     _schema([], went_well={"type": "string"}, to_change={"type": "string"},
+             date={**DATE, "description": "any day in the week (default: the latest review week)"}),
+     tools.save_review_answers),
+    ("list_applications", "List applications (with ids), optionally by status or matching words.",
+     _schema([], status=APP_STATUS, query={"type": "string"}), tools.list_applications),
+    ("add_application", "Add an application (a job, internship, course...). At least a company or what it's for.",
+     _schema([], **APP_PROPS), tools.add_application),
+    ("edit_application", "Change an application's fields, found by company (or id). Only pass what changes.",
+     _schema(["application"], application={"type": "string", "description": "company / route words, or its id"},
+             append_notes={"type": "boolean", "description": "add to the notes instead of replacing them"},
+             **APP_PROPS), tools.edit_application),
+    ("delete_application", "Delete an application (needs the user's confirmation).",
+     _schema(["application"], application={"type": "string"}), tools.delete_application),
     ("find_people", "List people in the network (with ids, groups and connections), optionally filtered by a search.",
      _schema([], query={"type": "string"}), tools.find_people),
     ("set_activity_default", "Set which category an activity label (e.g. 'Lecture') uses by default.",
@@ -569,7 +618,7 @@ def run_turn(text, history=()):
     claude_path = find_claude()
     if not claude_path:
         return Turn(error=(
-            "Couldn't find Claude. Paste an Anthropic API key in Settings → Claude (or install Claude Code); "
+            "Couldn't find Claude. Paste an Anthropic API key in Settings → Assistant (or install Claude Code); "
             f"if it's installed somewhere unusual, set its path in {CONFIG_PATH} as {{\"claude_path\": \"/path/to/claude\"}}."))
 
     state = TurnState()

@@ -761,6 +761,17 @@ def habit_progress(habit_id, done_dates, today=None):
     return f"{current}-day streak · best {best}", current, None
 
 
+def rename_habit(habit_id, name):
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("The habit needs a name.")
+    with db() as conn:
+        clash = conn.execute("SELECT 1 FROM habits WHERE name = ? COLLATE NOCASE AND id != ?", (name, habit_id)).fetchone()
+        if clash:
+            raise ValueError(f"There's already a habit called '{name}'.")
+        conn.execute("UPDATE habits SET name = ? WHERE id = ?", (name, habit_id))
+
+
 def delete_habit(habit_id):
     # Its habit_log rows are removed too, thanks to ON DELETE CASCADE.
     with db() as conn:

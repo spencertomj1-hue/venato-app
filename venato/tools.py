@@ -215,6 +215,25 @@ def set_habit_target(habit_name, times_per_week=None):
     return Result(f"{name} is now {_often(per_week)}.", changed=True)
 
 
+def rename_habit(habit_name, new_name):
+    habit_id, name = _find_habit(habit_name)
+    try:
+        store.rename_habit(habit_id, new_name)
+    except ValueError as e:
+        raise ToolError(str(e))
+    return Result(f"Renamed the habit {name} to {str(new_name).strip()}.", changed=True)
+
+
+def delete_habit(habit_name, confirmed=False):
+    habit_id, name = _find_habit(habit_name)
+    ticks = len(store.get_habit_dates(habit_id))
+    if not confirmed:
+        return Result("", pending=Pending(f"Delete the habit {name} and its {ticks} tick{'s' * (ticks != 1)}",
+                                          lambda: delete_habit(name, True)))
+    store.delete_habit(habit_id)
+    return Result(f"Deleted the habit {name}.", changed=True)
+
+
 def list_habits(today=None):
     today = today or store.local_today()
     lines = []
@@ -734,6 +753,21 @@ def delete_deadline(deadline, confirmed=False):
     return Result(f"Deleted the deadline '{d['title']}'.", changed=True)
 
 
+def edit_todo(todo, period=None, date=None, title=None, notes=None, repeat=None, move_to=None):
+    """Change a to-do's title / notes / repeat, and/or move it to the day, week or month list."""
+    t = _find_todo(todo, period, date)
+    changes = {k: v for k, v in (("title", title), ("notes", notes), ("repeat", repeat)) if v is not None}
+    try:
+        store.update_todo(t["id"], **changes)
+    except ValueError as e:
+        raise ToolError(str(e))
+    if move_to:
+        store.move_todo(t["id"], _period(move_to))
+    if not changes and not move_to:
+        return Result("Nothing to change: give a new title, notes, repeat or move_to.")
+    return Result(f"Updated the to-do: {describe_todo(store.get_todo(t['id']))}.", changed=True)
+
+
 def complete_todo(todo, period=None, date=None):
     t = _find_todo(todo, period, date)
     if t["done"]:
@@ -1096,7 +1130,27 @@ def person_history(person, limit=20):
     rows = store.interactions_of(p["id"], limit=int(limit))
     if not rows:
         return Result(f"Nothing logged with {p['name']} yet.")
-    return Result(f"{p['name']}:\n" + "\n".join(f"- {nice_day(r['date'])} ({r['date']}): {r['note']}" for r in rows))
+    return Result(f"{p['name']}:\n" + "\n".join(f"- id {r['id']}, {nice_day(r['date'])} ({r['date']}): {r['note']}"
+                                                for r in rows))
+
+
+def delete_interaction(person, interaction, confirmed=False):
+    """Remove a logged meeting: `interaction` is its id (from person_history) or words from its note."""
+    p = _find_person(person)
+    rows = store.interactions_of(p["id"])
+    want = str(interaction).strip()
+    match = [r for r in rows if str(r["id"]) == want] or [r for r in rows if want.lower() in r["note"].lower()]
+    if not match:
+        raise ToolError(f"Nothing logged with {p['name']} matches '{interaction}'. Use person_history to see them.")
+    if len(match) > 1:
+        options = "; ".join(f"id {r['id']}: {r['date']} {r['note']}" for r in match)
+        raise ToolError(f"More than one matches: {options}. Ask the user which one, or pass its id.")
+    r = match[0]
+    if not confirmed:
+        return Result("", pending=Pending(f"Remove '{r['note']}' with {p['name']} on {nice_day(r['date'])}",
+                                          lambda: delete_interaction(p["id"], r["id"], True)))
+    store.delete_interaction(r["id"])
+    return Result(f"Removed it from {p['name']}'s history.", changed=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1141,3 +1195,119 @@ def weekly_review(date=None):
     from venato import review
     first = store.week_start_of(_day(date)) if date else review.due_week()
     return Result(review.as_text(review.summary(first)))
+
+
+def save_review_answers(went_well=None, to_change=None, date=None, confirmed=False):
+    """Write the weekly review's two reflections (what went well / what to change) for a week."""
+    from venato import review
+    first = store.week_start_of(_day(date)) if date else review.due_week()
+    old = next((r for r in store.reviews() if r["week_start"] == first.isoformat()), {})
+    overwrite = [k for k, v in (("went_well", went_well), ("to_change", to_change)) if v is not None and old.get(k)]
+    label = f"the week of {nice_day(first.isoformat())}"
+    if overwrite and not confirmed:
+        return Result("", pending=Pending(f"Replace your review answers for {label}",
+                                          lambda: save_review_answers(went_well, to_change, first.isoformat(), True)))
+    store.save_review(first, went_well=went_well if went_well is not None else store.KEEP,
+                      to_change=to_change if to_change is not None else store.KEEP)
+    return Result(f"Saved your review for {label}.", changed=True)
+
+
+# ---------------------------------------------------------------------------
+# Applications (jobs, internships, courses...)
+# ---------------------------------------------------------------------------
+
+APP_FIELDS = ("industry", "company", "route", "description", "contact", "deadline", "status", "notes")
+
+
+def describe_application(a, today=None):
+    name = a["company"] or a["industry"] or a["route"] or "Application"
+    bits = [x for x in (a["route"], a["industry"]) if x and x != name]
+    due = f", deadline {nice_day(a['deadline'])} ({store.countdown(a['deadline'], today)})" if a["deadline"] else ""
+    return f"{name}{' (' + ', '.join(bits) + ')' if bits else ''}: {a['status']}{due}"
+
+
+def _find_application(application):
+    found = store.get_application(str(application).strip())
+    if found:
+        return found
+    pool = [{**a, "title": " ".join(x for x in (a["company"], a["route"], a["industry"]) if x)}
+            for a in store.applications()]
+    matches = _best_match(pool, application)
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        options = "; ".join(f"id {a['id']}: {describe_application(a)}" for a in matches)
+        raise ToolError(f"More than one application matches '{application}': {options}. "
+                        "Ask the user which one, or pass its id.")
+    raise ToolError(f"There's no application matching '{application}'. Use list_applications to see them.")
+
+
+def _status(value):
+    if value is None:
+        return None
+    want = str(value).strip().lower()
+    for s in store.APP_STATUSES:
+        if s.lower() == want:
+            return s
+    raise ToolError(f"Status must be one of: {', '.join(store.APP_STATUSES)}.")
+
+
+def list_applications(status=None, query=None):
+    rows = store.applications()
+    if status:
+        rows = [a for a in rows if a["status"] == _status(status)]
+    if query:
+        words = str(query).lower().split()
+        rows = [a for a in rows if all(w in " ".join(str(a[k] or "") for k in APP_FIELDS).lower() for w in words)]
+    if not rows:
+        return Result("No applications" + (" match." if status or query else " yet."))
+    out = []
+    for a in rows:
+        extra = "; ".join(f"{k}: {a[k]}" for k in ("description", "contact", "notes") if a[k])
+        out.append(f"- id {a['id']}: {describe_application(a)}" + (f" — {extra}" if extra else ""))
+    return Result("\n".join(out))
+
+
+def add_application(company=None, industry=None, route=None, description=None, contact=None,
+                    deadline=None, status=None, notes=None):
+    try:
+        aid = store.add_application(status=_status(status) or "To apply", company=company, industry=industry,
+                                    route=route, description=description, contact=contact,
+                                    deadline=_day(deadline) if deadline else None, notes=notes)
+    except ValueError as e:
+        raise ToolError(str(e))
+    return Result(f"Added the application {describe_application(store.get_application(aid))}.", changed=True)
+
+
+def edit_application(application, confirmed=False, append_notes=False, **changes):
+    """Change any of an application's fields. Text that replaces something already written
+    needs the user's confirmation; status changes and filling empty fields don't."""
+    a = _find_application(application)
+    fields = {k: v for k, v in changes.items() if k in APP_FIELDS and v is not None}
+    if not fields:
+        return Result("Nothing to change: give the fields to update.")
+    if "status" in fields:
+        fields["status"] = _status(fields["status"])
+    if "deadline" in fields:
+        fields["deadline"] = _day(fields["deadline"]) if fields["deadline"] else None
+    if append_notes and fields.get("notes") and a["notes"]:
+        fields["notes"] = f"{a['notes']}\n{fields['notes']}"
+    replaced = [k for k in ("description", "contact", "notes") if k in fields and a[k] and fields[k] != a[k]
+                and not (k == "notes" and append_notes)]
+    if replaced and not confirmed:
+        return Result("", pending=Pending(f"Change {', '.join(replaced)} of {describe_application(a)}",
+                                          lambda: edit_application(a["id"], True, False, **fields)))
+    try:
+        store.update_application(a["id"], **fields)
+    except ValueError as e:
+        raise ToolError(str(e))
+    return Result(f"Updated: {describe_application(store.get_application(a['id']))}.", changed=True)
+
+
+def delete_application(application, confirmed=False):
+    a = _find_application(application)
+    if not confirmed:
+        return Result("", pending=Pending(f"Delete the application {describe_application(a)}",
+                                          lambda: delete_application(a["id"], True)))
+    store.delete_application(a["id"])
+    return Result(f"Deleted the application {a['company'] or 'entry'}.", changed=True)
