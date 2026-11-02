@@ -485,3 +485,21 @@ def test_weekly_habit_targets(tools, store):
     assert "Gym (every day)" in tools.list_habits(date(2026, 10, 30)).text
     with pytest.raises(tools.ToolError):
         tools.set_habit_target("Gym", 9)
+
+
+def test_move_block(store):
+    import importlib
+    from arete import tools as t
+    t = importlib.reload(t)
+    t.add_block("2026-10-29", "plan", "09:00", "10:00", "Gym", category="Exercise", details="Legs")
+    t.add_block("2026-10-29", "plan", "11:00", "13:00", "Lecture")
+    gym = store.blocks_between("2026-10-29", "2026-10-29")[0]
+    s = store.slot_of
+    store.move_block(gym["id"], "2026-10-29", "plan", s("09:00"), s("11:30"))   # bottom edge dragged down
+    by = {b["label"]: (b["date"], b["start"], b["end"]) for b in store.blocks_between("2026-10-29", "2026-10-30")}
+    assert by == {"Gym": ("2026-10-29", "09:00", "11:30"), "Lecture": ("2026-10-29", "11:30", "13:00")}   # trimmed
+    store.move_block(gym["id"], "2026-10-30", "actual", s("18:00"), s("20:30"))  # moved to another day and column
+    moved = store.get_block(gym["id"])
+    assert (moved["date"], moved["track"], moved["start"], moved["end"], moved["details"]) == \
+        ("2026-10-30", "actual", "18:00", "20:30", "Legs")                       # same id, details kept
+    assert store.move_block(gym["id"], "2026-10-30", "actual", 5, 5) is None    # nonsense: ignored

@@ -175,6 +175,13 @@ class Timetable {
         }
       }
       this.planPaint(op).forEach((o) => this.applyLocal(o));
+    } else if (op.kind === "move") {
+      // A dragged block: take it out, then paint it in its new place with the same id (like store.move_block).
+      const en = this.entries.get(op.id);
+      if (!en) return;
+      this.entries.delete(op.id);
+      this.applyLocal({ kind: "paint", date: op.date, track: op.track, start: op.start, end: op.end, newId: op.id,
+                        block: { label: en.label, categoryId: en.categoryId, details: en.details } });
     } else if (op.kind === "upsert") this.entries.set(op.entry.id, { ...op.entry });
     else if (op.kind === "hide_outlook") this.hidden.add(op.uid);
     else if (op.kind === "detach_outlook") {
@@ -330,7 +337,7 @@ class Timetable {
           <div class="tt-blocks" aria-hidden="true"></div>
         </div>
       </div>
-      <div class="tt-hint">Drag down a column to add · click a block for details${this.data.single ? "" : " · swipe sideways to change week"}</div>
+      <div class="tt-hint">Drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it for details${this.data.single ? "" : " · swipe sideways to change week"}</div>
       <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details; to add a block with the keyboard, use the Add block button above the timetable)"></div>`;
 
     // Blocks are positioned from the cells, so redo them when the size changes.
@@ -476,11 +483,11 @@ class Timetable {
         const fg = (cat && cat.textColour) || contrastText(bg);
         const tall = last.bottom - first.top >= 30;   // room for the time line under the title
         if (outlook) {
-          return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}" data-id="outlook:${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
+          return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}" data-id="outlook:${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
             `width:${first.width}px;height:${last.bottom - first.top}px;background:${esc(bg)};color:${fg}">` +
             `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}" data-id="${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
+        return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}" data-id="${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
           `width:${first.width}px;height:${last.bottom - first.top}px;background:${esc(bg)};color:${fg}">` +
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
@@ -553,9 +560,32 @@ class Timetable {
         return;
       }
       this.closePopover();
-      this.drag = { di: +td.dataset.d, track: td.dataset.t, a: +td.dataset.s, b: +td.dataset.s };
+      const di = +td.dataset.d, track = td.dataset.t, slot = +td.dataset.s;
+      const hit = this.brush !== "eraser" && this.blockAt(di, track, slot);
+      if (hit) {                                    // on a block: move it, or drag its top / bottom edge
+        const { s0, e0 } = this.spanOf(hit);
+        this.blockDrag = { hit, zone: this.zoneAt(di, track, s0, e0, e.clientY), di, track, downSlot: slot, s0, e0,
+                           target: { di, track, s: s0, e: e0 }, moved: false };
+        this.highlight();
+        return;
+      }
+      this.drag = { di, track, a: slot, b: slot };
       this.highlight();
     });
+
+    // Hovering a block: the cursor (and two little bars) show you can drag its edges or move it.
+    table.addEventListener("mousemove", (e) => {
+      if (this.data.readonly || this.drag) return;
+      if (this.blockDrag) { table.style.cursor = this.blockDrag.zone === "move" ? "grabbing" : "ns-resize"; return; }
+      const td = e.target.closest("td.s");
+      const hit = td && this.brush !== "eraser" && this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
+      this.hoverBlock(hit ? (hit.outlook ? `outlook:${hit.ev.id}` : hit.entry.id) : null);
+      if (!hit) { table.style.cursor = ""; return; }
+      const { s0, e0 } = this.spanOf(hit);
+      const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
+      table.style.cursor = zone === "move" ? "grab" : "ns-resize";
+    });
+    table.addEventListener("mouseleave", () => { if (!this.blockDrag) { table.style.cursor = ""; this.hoverBlock(null); } });
 
     this.root.querySelector(".tt-a11y").addEventListener("click", (e) => {
       const b = e.target.closest("[data-i]");
@@ -570,6 +600,7 @@ class Timetable {
 
     table.addEventListener("mouseover", (e) => {
       const td = e.target.closest("td.s");
+      if (this.blockDrag && td) { this.dragBlockTo(+td.dataset.d, td.dataset.t, +td.dataset.s); return; }
       if (!this.drag || !td) return;
       if (+td.dataset.d !== this.drag.di || td.dataset.t !== this.drag.track) return;
       this.drag.b = +td.dataset.s;
@@ -624,7 +655,16 @@ class Timetable {
     this.selected.forEach((td) => td.classList.remove("sel"));
     this.selected = [];
     // Fade the blocks while dragging so the selection shows through.
-    this.wrapEl.classList.toggle("dragging", !!this.drag);
+    this.wrapEl.classList.toggle("dragging", !!this.drag || !!this.blockDrag);
+    if (this.blockDrag) {
+      const { di, track, s, e } = this.blockDrag.target;
+      for (let i = s; i < e; i++) {
+        const td = this.cells[di][track][i];
+        td.classList.add("sel");
+        this.selected.push(td);
+      }
+      return;
+    }
     if (!this.drag) return;
     const { di, track, a, b } = this.drag;
     for (let s = Math.min(a, b); s <= Math.max(a, b); s++) {
@@ -636,10 +676,65 @@ class Timetable {
 
   cancelDrag() {
     this.drag = null;
+    this.blockDrag = null;
     this.highlight();
   }
 
+  // ---------- Moving and resizing blocks ----------
+
+  spanOf(hit) {
+    const item = hit.outlook ? hit.ev : hit.entry;
+    return { s0: Math.max(0, slotOf(item.start)), e0: Math.min(SLOTS, slotOf(item.end)) };
+  }
+
+  // Which part of a block the pointer is on: its top edge, its bottom edge, or the middle.
+  zoneAt(di, track, s0, e0, y) {
+    const top = this.cells[di][track][s0].getBoundingClientRect().top;
+    const bottom = this.cells[di][track][e0 - 1].getBoundingClientRect().bottom;
+    const edge = Math.min(8, (bottom - top) / 4);
+    return y - top <= edge ? "start" : bottom - y <= edge ? "end" : "move";
+  }
+
+  hoverBlock(id) {
+    if (this.hovered === id) return;
+    this.hovered = id;
+    this.blocksEl.querySelectorAll(".blk.hover").forEach((b) => b.classList.remove("hover"));
+    if (id) this.blocksEl.querySelector(`[data-id="${CSS.escape(id)}"]`)?.classList.add("hover");
+  }
+
+  dragBlockTo(di, track, slot) {
+    const bd = this.blockDrag, len = bd.e0 - bd.s0;
+    if (bd.zone === "move") {
+      const s = Math.max(0, Math.min(SLOTS - len, bd.s0 + slot - bd.downSlot));
+      bd.target = { di, track, s, e: s + len };
+    } else if (bd.zone === "start") {
+      bd.target = { di: bd.di, track: bd.track, s: Math.min(slot, bd.e0 - 1), e: bd.e0 };
+    } else {
+      bd.target = { di: bd.di, track: bd.track, s: bd.s0, e: Math.max(slot + 1, bd.s0 + 1) };
+    }
+    const t = bd.target;
+    bd.moved = t.di !== bd.di || t.track !== bd.track || t.s !== bd.s0 || t.e !== bd.e0;
+    this.highlight();
+  }
+
+  endBlockDrag() {
+    const bd = this.blockDrag;
+    this.blockDrag = null;
+    this.highlight();
+    this.root.querySelector("table").style.cursor = "";
+    if (!bd.moved) { this.openCard(bd.hit); return; }   // just a click: the details card, as before
+    const t = bd.target;
+    const where = { date: this.data.days[t.di], track: t.track, start: slotTime(t.s), end: slotTime(t.e) };
+    const ops = bd.hit.outlook
+      // An Outlook event becomes the user's own block first (as when it's edited), then moves.
+      ? [{ opId: uid(), kind: "detach_outlook", uid: bd.hit.ev.id },
+         { opId: uid(), kind: "move", id: `ol:${bd.hit.ev.id}`, ...where }]
+      : [{ opId: uid(), kind: "move", id: bd.hit.entry.id, ...where }];
+    this.commit(ops);
+  }
+
   endDrag() {
+    if (this.blockDrag) { this.endBlockDrag(); return; }
     const drag = this.drag;
     this.cancelDrag();
     if (!drag) return;

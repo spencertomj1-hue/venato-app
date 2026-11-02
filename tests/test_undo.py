@@ -61,3 +61,25 @@ def test_grid_ops_checkpoint(store):
     assert undo.pending() == "Erased Lecture"
     undo.restore()
     assert [b["label"] for b in store.blocks_between("2026-10-29", "2026-10-29")] == ["Lecture", "Gym"]
+
+
+def test_grid_move_and_resize(store):
+    from arete import tools, undo
+    importlib.reload(tools)
+    from arete.ui import timetable
+    tools.add_block("2026-10-29", "plan", "09:00", "10:00", "Gym", category="Exercise")
+    gym = store.blocks_between("2026-10-29", "2026-10-29")[0]["id"]
+    timetable.apply_grid_op({"kind": "move", "id": gym, "date": "2026-10-30", "track": "plan", "start": "10:00", "end": "11:00"})
+    assert undo.pending() == "Moved Gym"
+    timetable.apply_grid_op({"kind": "move", "id": gym, "date": "2026-10-30", "track": "plan", "start": "10:00", "end": "12:00"})
+    assert undo.pending() == "Changed Gym's times" and store.get_block(gym)["end"] == "12:00"
+    undo.restore()
+    assert store.get_block(gym)["end"] == "11:00"
+    # An Outlook event: detached into the user's own block, then moved.
+    with store.db() as conn:
+        conn.execute("INSERT INTO tt_outlook (uid, date, start, \"end\", title, location, all_day, exact) "
+                     "VALUES ('ev1', '2026-10-29', '14:00', '15:00', 'Seminar', NULL, 0, 1)")
+    timetable.apply_grid_op({"kind": "detach_outlook", "uid": "ev1"})
+    timetable.apply_grid_op({"kind": "move", "id": "ol:ev1", "date": "2026-10-29", "track": "plan", "start": "16:00", "end": "17:00"})
+    assert (store.get_block("ol:ev1")["start"], store.get_block("ol:ev1")["label"]) == ("16:00", "Seminar")
+    assert not [e for e in store.outlook_between("2026-10-29", "2026-10-29")]                 # no duplicate left behind

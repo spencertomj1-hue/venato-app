@@ -56,7 +56,7 @@ It runs entirely on your computer (Mac or Windows) as a normal app. It's built w
 
 **Weekly timetable.**
 - **Layout:** a calendar-style week. Each day has a **Plan** column (what you intended) and an **Actual** column (what really happened), in 30-minute slots from 07:00 to 01:00 (change the hours in Settings → Region). Anything after midnight counts as the previous day.
-- **Editing:** drag down a column to add a block, or click a block to see its details, edit it or delete it. **Add block** does the same with a form (and the keyboard).
+- **Editing:** drag down a column to add a block. Drag a block to move it (to another time, day, or between Plan and Actual), or drag its top or bottom edge to change when it starts or ends. Click a block to see its details, edit it or delete it. **Add block** does the same with a form (and the keyboard).
 - **Categories:** colour-coded, with groups "Life" and "Work" to start with. Activities pick their category automatically (for example "Lunch" → Meals). **Categories** (above the grid) adds, renames and recolours them, sets those activity defaults, and picks Outlook events' colour.
 - **Fit time:** say what (e.g. Revision), how many hours and which days; Arete finds free gaps around your blocks and Outlook events, spreads the sittings out and shows you the times before adding them.
 - **Moving around:** use ‹ Today › or a date picker, or swipe sideways on the trackpad.

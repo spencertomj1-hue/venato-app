@@ -1024,6 +1024,21 @@ def set_block_label(block_id, label, category_id, details=None):
                      (label, category_id, details, block_id))
 
 
+def move_block(block_id, day, track, s, e):
+    """Move and/or resize a block to slots s..e-1 of a day/track (dragging it in the grid).
+    It keeps its id, label, category and details; whatever it lands on is trimmed, like painting."""
+    with db() as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(f"SELECT {BLOCK_COLS} FROM tt_entries WHERE id = ?", (block_id,)).fetchone()
+        conn.row_factory = None
+        if not row or not 0 <= s < e <= SLOTS:
+            return None
+        conn.execute("DELETE FROM tt_entries WHERE id = ?", (block_id,))
+        paint(day, track, s, e, {"label": row["label"], "category_id": row["category_id"], "details": row["details"]},
+              new_id=block_id, conn=conn)
+    return dict(row)
+
+
 def delete_block(block_id):
     with db() as conn:
         conn.execute("DELETE FROM tt_entries WHERE id = ?", (block_id,))

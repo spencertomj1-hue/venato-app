@@ -60,6 +60,12 @@ def _checkpoint(op):
         undo.checkpoint(f"Edited {op['entry'].get('label') or 'a block'}")
     elif kind == "hide_outlook":
         undo.checkpoint("Removed an Outlook event from the timetable")
+    elif kind == "move":
+        b = store.get_block(op["id"])
+        what = b["label"] if b else "the block"
+        length = lambda start, end: store.slot_of(end) - store.slot_of(start)
+        resized = b and length(b["start"], b["end"]) != length(op["start"], op["end"])
+        undo.checkpoint(f"Changed {what}'s times" if resized else f"Moved {what}")      # an edge dragged, or the whole block
 
 
 def apply_grid_op(op):
@@ -68,6 +74,7 @@ def apply_grid_op(op):
       {kind: "paint", date, track, start, end, block: {label, categoryId} | null, newId}
       {kind: "upsert", entry}   (edits from the block card / right-click)
       {kind: "delete", id}
+      {kind: "move", id, date, track, start, end}   (a block dragged to a new place, or its edge dragged)
       {kind: "hide_outlook", uid}     remove an Outlook occurrence from the timetable
       {kind: "detach_outlook", uid}   turn it into the user's own block (id "ol:<uid>")
     Painting over an Outlook event detaches it first (store.paint), so it's trimmed like any block.
@@ -85,6 +92,8 @@ def apply_grid_op(op):
                               "category_id": e["categoryId"], "details": e.get("details") or None}])
     elif op["kind"] == "delete":
         store.delete_block(op["id"])
+    elif op["kind"] == "move":                       # dragged: moved and/or resized
+        store.move_block(op["id"], op["date"], op["track"], store.slot_of(op["start"]), store.slot_of(op["end"]))
     elif op["kind"] == "hide_outlook":
         store.hide_outlook(op["uid"])
     elif op["kind"] == "detach_outlook":
