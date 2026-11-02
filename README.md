@@ -21,7 +21,7 @@
 
 ---
 
-Venato helps by recording each day honestly: what you planned, what you actually did, how you felt and which habits you kept.
+*Venato* comes from the Latin *venari*, to hunt or track down. Venato helps you track down your best days by recording each one honestly: what you planned, what you actually did, how you felt and which habits you kept.
 
 It runs entirely on your computer (Mac or Windows) as a normal app. It's built with [Streamlit](https://streamlit.io) and SQLite and shown in its own window. There are no accounts, no servers and no cloud sync.
 
@@ -188,7 +188,7 @@ cd arete-app
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-`setup.ps1` checks for Python 3.13, installs the tested packages into `.venv`, and adds an **Venato** shortcut to the Start menu and the desktop. It's safe to run again after `git pull`.
+`setup.ps1` checks for Python 3.13, installs the tested packages into `.venv`, and adds a **Venato** shortcut to the Start menu and the desktop. It's safe to run again after `git pull`.
 
 ## First run
 
