@@ -121,9 +121,12 @@ table.tt {
 }
 col.c-time { width: 52px; }
 
-/* Header */
+/* Header: each day is one rounded bubble (its name, date and Plan / Actual), side by side
+   with no gap; the day row is its top half, the Plan / Actual row its bottom half. */
 table.tt th {
-  background: var(--head-bg);
+  position: relative;
+  z-index: 0;
+  background: transparent;
   color: var(--text);
   font-weight: 600;
   text-align: center;
@@ -131,10 +134,16 @@ table.tt th {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-th.day { padding: 7px 4px 2px; border-left: 1px solid var(--line-day); }
+th.day { padding: 7px 4px 2px; }
+th.day::before, th.sub::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; background: var(--head-bg);
+}
+th.day::before { border-radius: 10px 10px 0 0; }
+th.sub.first::before { border-radius: 0 0 0 10px; }
+th.sub:not(.first)::before { border-radius: 0 0 10px 0; }
 th.day .dn { font-size: 1.1rem; }               /* +0.30rem */
 th.day .dd { font-size: 0.85rem; font-weight: 400; color: var(--muted); }   /* +0.15rem */
-th.day.today { box-shadow: inset 0 2px 0 var(--accent); }
+th.day.today::before { box-shadow: inset 0 2px 0 var(--accent); }
 th.day.today .dn, th.day.today .dd { color: var(--accent); }
 th.sub {
   padding: 1px 2px 5px;
@@ -143,10 +152,7 @@ th.sub {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
-  border-bottom: 1px solid var(--line);
 }
-th.sub.first { border-left: 1px solid var(--line-day); }
-th.h-time { border-bottom: 1px solid var(--line); }
 
 /* Body: each empty half hour is a small rounded tile of very light grey (like the blocks),
    with a thin gap around it; a slightly wider gap between days. */
@@ -176,7 +182,7 @@ td.s::before {
   content: ""; position: absolute; inset: 1.5px; border-radius: 5px; background: var(--tile);
   pointer-events: none; transition: background 0.1s;
 }
-td.s.first::before { left: 4px; }                          /* the gap between days */
+td.s.first::before { left: 6px; }                          /* a gap between days (Plan and Actual stay together) */
 td.s.today { --tile: rgba(128, 128, 128, 0.11); }
 td.s:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.18); }
 td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
@@ -197,7 +203,7 @@ td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
   line-height: 1.2;
   transition: opacity 0.12s;
 }
-.blk.plan { border-left-width: 4px; }                     /* lines up with the tiles' wider gap between days */
+.blk.plan { border-left-width: 6px; }                     /* lines up with the tiles' wider gap between days */
 .blk b, .blk span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .blk b { font-size: 0.7rem; font-weight: 600; }
 .blk span { font-size: 0.62rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
