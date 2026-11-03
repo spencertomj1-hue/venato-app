@@ -159,14 +159,12 @@ th.sub {
 th.sub.first { border-left: 1px solid var(--line-day); }
 th.h-time { border-bottom: 1px solid var(--line); }
 
-/* Body: each cell draws its bottom line and a left line between columns. */
+/* Body: each empty half hour is a small rounded tile of very light grey (like the blocks),
+   with a thin gap around it; a slightly wider gap between days. */
 table.tt td {
   height: var(--row-h, 18px);   /* Home shrinks this to fit the window */
   padding: 0;
-  border-bottom: 1px dashed var(--line-soft);
 }
-tr.half td { border-bottom: 1px solid var(--line); }      /* the line on each hour */
-tr:last-child td { border-bottom: none; }
 
 /* Time labels sit centred on their hour line. */
 td.t { position: relative; overflow: visible; border-bottom-color: transparent !important; }
@@ -184,11 +182,15 @@ td.t span {
 }
 tr:first-child td.t span { transform: translateY(3px); }  /* first label below the header */
 
-td.s { border-left: 1px solid var(--line-soft); cursor: cell; }
-td.s.first { border-left: 1px solid var(--line-day); }
-td.s.today { background: rgba(128, 128, 128, 0.045); }
-td.s:hover:not(.filled) { background: rgba(128, 128, 128, 0.12); }
-td.s.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+td.s { position: relative; cursor: cell; --tile: rgba(128, 128, 128, 0.075); }
+td.s::before {
+  content: ""; position: absolute; inset: 1.5px; border-radius: 5px; background: var(--tile);
+  pointer-events: none; transition: background 0.1s;
+}
+td.s.first::before { left: 4px; }                          /* the gap between days */
+td.s.today { --tile: rgba(128, 128, 128, 0.11); }
+td.s:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.18); }
+td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
 
 /* Blocks, drawn over the cells (clicks pass through to the cells below). */
 .tt-blocks { position: absolute; inset: 0; pointer-events: none; }
@@ -206,6 +208,7 @@ td.s.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
   line-height: 1.2;
   transition: opacity 0.12s;
 }
+.blk.plan { border-left-width: 4px; }                     /* lines up with the tiles' wider gap between days */
 .blk b, .blk span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .blk b { font-size: 0.7rem; font-weight: 600; }
 .blk span { font-size: 0.62rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
@@ -213,16 +216,16 @@ td.s.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .dragging .blk { opacity: 0.35; }
 /* Hovering a block (editable grid): a ring, and grab bars at the top and bottom edges for resizing. */
 .blk.hover { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.28); }
-.blk.hover::before, .blk.hover::after {
+.blk.hover.picked::before, .blk.hover.picked::after {      /* resize bars: only on a selected block */
   content: ""; position: absolute; left: 50%; width: 18px; height: 3px; margin-left: -9px;
   border-radius: 2px; background: currentColor; opacity: 0.55;
 }
-.blk.hover::before { top: 2px; }
-.blk.hover::after { bottom: 2px; }
+.blk.hover.picked::before { top: 2px; }
+.blk.hover.picked::after { bottom: 2px; }
 /* Selected blocks (click, Shift-click or drag a box with Shift). */
 .blk.picked { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); z-index: 2; }
 .dragging .blk.picked { opacity: 0.55; }
-td.s.sel.box { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+td.s.sel.box { --tile: color-mix(in srgb, var(--accent) 16%, transparent); }
 
 /* ---------- Right-click editor ---------- */
 
@@ -260,8 +263,8 @@ td.s.sel.box { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tt-root.readonly .sw { pointer-events: none; }
 .tt-root.readonly .sw.on { background: transparent; border-color: transparent; font-weight: inherit; }
 .tt-root.readonly td.s { cursor: default; }
-.tt-root.readonly td.s:hover:not(.filled) { background: transparent; }
-.tt-root.readonly td.s.today:hover:not(.filled) { background: rgba(128, 128, 128, 0.045); }
+.tt-root.readonly td.s:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.075); }
+.tt-root.readonly td.s.today:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.11); }
 
 /* Home: the key sits under the grid and wraps, so every category is visible without scrolling. */
 .tt-root.readonly { display: flex; flex-direction: column; }

@@ -83,7 +83,9 @@ def apply_text_colours():
     a:focus-visible, [tabindex]:focus-visible, summary:focus-visible {{ outline: 2px solid {ring}; outline-offset: 2px; }}
     /* ...except the page itself: it's only focusable so arrow keys scroll it, and Safari focuses it
        on a click, so a key press (e.g. Backspace on a block) drew a ring round everything. */
-    [data-testid="stMain"]:focus, [data-testid="stMain"]:focus-visible {{ outline: none !important; }}{dark_buttons}
+    [data-testid="stMain"]:focus, [data-testid="stMain"]:focus-visible,
+    [data-testid="stAppViewContainer"]:focus, [data-testid="stMainBlockContainer"]:focus,
+    [data-testid="stVerticalBlock"]:focus, [data-testid="stElementContainer"]:focus {{ outline: none !important; box-shadow: none; }}{dark_buttons}
     [data-testid="stCaptionContainer"] {{ opacity: 1 !important; }}
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color: {caption} !important; }}
     </style>""")

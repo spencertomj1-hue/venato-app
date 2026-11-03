@@ -38,6 +38,13 @@ function isTextField(el) {
 
 // Should a shortcut leave this key press alone? Typing in a box, selected text on the page
 // (so normal copy works), or a dialog open: then the browser does what it normally does.
+// A key the timetable used: Safari puts a focus ring round whatever page element has focus
+// (often the whole page) when a key is pressed, so take the focus off it.
+function dropFocus() {
+  const el = document.activeElement;
+  if (el && el !== document.body && !isTextField(el) && el.blur) el.blur();
+}
+
 function leaveShortcutAlone(e) {
   if (isTextField(e.composedPath()[0])) return true;
   const sel = window.getSelection && String(window.getSelection() || "");
@@ -147,13 +154,14 @@ class Timetable {
       const mod = IS_MAC ? e.metaKey : e.ctrlKey;
       if (mod && !e.shiftKey && !e.altKey && (e.key === "c" || e.key === "v") && this.data && !this.data.readonly) {
         if (leaveShortcutAlone(e)) return;
-        if (e.key === "c" ? this.copyBlock() : this.pasteBlock()) e.preventDefault();
+        if (e.key === "c" ? this.copyBlock() : this.pasteBlock()) { e.preventDefault(); dropFocus(); }
         return;
       }
       if ((e.key === "Delete" || e.key === "Backspace") && this.picked.size && this.data && !this.data.readonly) {
         if (leaveShortcutAlone(e)) return;
         e.preventDefault();
         this.deletePicked();
+        dropFocus();
         return;
       }
       if (e.key !== "Escape") return;
@@ -380,7 +388,7 @@ class Timetable {
           <div class="tt-blocks" aria-hidden="true"></div>
         </div>
       </div>
-      <div class="tt-hint">Pick a category and drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it to select it · with no category picked (or holding Shift), drag a box to select several; Shift- or ${MOD.replace('+', '')}-click adds one · drag any selected block to move them all · ${MOD}C / ${MOD}V copy and paste · Delete or Backspace removes${this.data.single ? "" : " · swipe sideways to change week"}</div>
+      <div class="tt-hint">Pick a category and drag down a column to add · click a block to select it, click again for details · drag a selected block to move it, or its top or bottom edge to change the time · drag from a block (or from empty time with no category picked, or holding Shift) to select several; Shift- or ${MOD.replace('+', '')}-click adds one · drag any selected block to move them all · ${MOD}C / ${MOD}V copy and paste · Delete or Backspace removes${this.data.single ? "" : " · swipe sideways to change week"}</div>
       <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details)"></div>`;
 
     // Blocks are positioned from the cells, so redo them when the size changes.
@@ -551,11 +559,11 @@ class Timetable {
         const fg = (cat && cat.textColour) || contrastText(bg);
         const tall = last.bottom - first.top >= 30;   // room for the time line under the title
         if (outlook) {
-          return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
+          return `<div class="blk outlook plan ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
             `width:${first.width}px;height:${last.bottom - first.top}px;background:${esc(bg)};color:${fg}">` +
             `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
+        return `<div class="blk ${en.track === "plan" ? "plan " : ""}${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
           `width:${first.width}px;height:${last.bottom - first.top}px;background:${esc(bg)};color:${fg}">` +
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
@@ -666,12 +674,15 @@ class Timetable {
         this.highlight();
         return;
       }
-      if (selecting) {                              // drag a box to select every block it touches
-        this.marquee = { di0: di, t0: track, s0: slot, di1: di, t1: track, s1: slot, add: adding };
+      // An unselected block: a click selects it; dragging from it draws a box that selects
+      // every block it touches. Empty time draws a box too when no category is picked.
+      if (selecting || (hit && !this.picked.has(hitId))) {
+        this.marquee = { di0: di, t0: track, s0: slot, di1: di, t1: track, s1: slot, add: adding,
+                         from: hit && !adding ? hitId : null };
         this.highlight();
         return;
       }
-      if (hit) {                                    // on a block: move it, or drag its top / bottom edge
+      if (hit) {                                    // the selected block: move it, or drag its top / bottom edge
         const { s0, e0 } = this.spanOf(hit);
         this.blockDrag = { hit, zone: this.zoneAt(di, track, s0, e0, e.clientY), di, track, downSlot: slot, s0, e0,
                            target: { di, track, s: s0, e: e0 }, moved: false };
@@ -697,8 +708,8 @@ class Timetable {
       if (!hit) { table.style.cursor = td && (adding || !this.cats.has(this.brush)) ? "crosshair" : ""; return; }
       const { s0, e0 } = this.spanOf(hit);
       const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
-      table.style.cursor = adding ? "pointer"
-        : this.picked.has(this.idOf(hit)) && this.picked.size > 1 ? "grab"
+      table.style.cursor = adding || !this.picked.has(this.idOf(hit)) ? "pointer"   // not selected: a click selects it
+        : this.picked.size > 1 ? "grab"
         : zone === "move" ? "grab" : "ns-resize";
     });
     table.addEventListener("mouseleave", () => {
@@ -857,6 +868,7 @@ class Timetable {
     this.root.querySelector("table").style.cursor = "";
     const c0 = Math.min(col(m.di0, m.t0), col(m.di1, m.t1)), c1 = Math.max(col(m.di0, m.t0), col(m.di1, m.t1));
     const s0 = Math.min(m.s0, m.s1), s1 = Math.max(m.s0, m.s1);
+    if (m.from && c0 === c1 && s0 === s1) { this.setPicked([m.from]); return; }   // a click on a block: select it
     const inside = this.blocks.filter((b) => {
       const c = col(b.di, b.en.track);
       return c >= c0 && c <= c1 && b.s <= s1 && b.e > s0;
@@ -895,7 +907,7 @@ class Timetable {
     this.groupDrag = null;
     this.highlight();
     this.root.querySelector("table").style.cursor = "";
-    if (!g.moved) { this.setPicked([this.idOf(g.hit)]); this.openCard(g.hit); return; }   // a click: just that one
+    if (!g.moved) { this.setPicked([this.idOf(g.hit)]); return; }   // a click: just that one (click again for details)
     const ops = this.placeOps(g.items, (it) => ({ di: it.di + g.ddi, track: it.track, s: it.s + g.ds, e: it.e + g.ds }));
     this.commit([{ opId: uid(), kind: "batch", label: `Moved ${g.items.length} blocks`, ops }]);
     this.setPicked(g.items.map((it) => (it.outlook ? `ol:${it.en.id}` : it.en.id)));
@@ -1004,7 +1016,7 @@ class Timetable {
     this.blockDrag = null;
     this.highlight();
     this.root.querySelector("table").style.cursor = "";
-    if (!bd.moved) { this.setPicked([this.idOf(bd.hit)]); this.openCard(bd.hit); return; }   // a click: select it, and its card
+    if (!bd.moved) { this.setPicked([this.idOf(bd.hit)]); this.openCard(bd.hit); return; }   // a second click: its details
     const t = bd.target;
     const where = { date: this.data.days[t.di], track: t.track, start: slotTime(t.s), end: slotTime(t.e) };
     const ops = bd.hit.outlook

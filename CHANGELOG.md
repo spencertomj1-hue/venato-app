@@ -20,12 +20,14 @@ Venato was called **Arete** up to 1.1.1.
 - `CHANGELOG.md`, issue and pull request templates, and `.env.example` listing the environment variables Venato reads.
 
 ### Changed
+- Timetable: a click selects a block and a second click opens its details; drag a selected block to move or resize it; dragging from an unselected block draws a box that selects every block it touches. Empty half hours are now soft rounded tiles instead of grid lines.
 - Sidebar order: Network now comes before Stats.
 - Timetable: the Select, Eraser and Add block buttons are gone; click a block and press Delete or Backspace to remove it, Shift-drag to select several.
 - README rewritten: shorter, with badges, a quick start, tech stack and roadmap.
 - `CONTRIBUTING.md` now covers setting up, running and opening a pull request.
 
 ### Fixed
+- The grey focus ring round the page after Backspace or Delete on the timetable in the Mac app (focus is now taken off the page after a timetable shortcut).
 - A grey focus ring round the whole page after pressing a key (e.g. Backspace on a timetable block) in the Mac app.
 - Backspace on a timetable block edited the label box instead when it still had the cursor.
 - README pointed at a "Settings → Claude" tab that doesn't exist; it's Settings → Assistant.
