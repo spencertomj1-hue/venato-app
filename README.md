@@ -54,7 +54,7 @@
 - **Weekly review:** pops up after 7pm on Sunday with plan followed, time per category, mood/sleep/energy/water vs last week, habits, to-dos, deadlines, people you saw and two questions to reflect on.
 
 **Applications**
-- **Application tracker:** a table of industry, company, route, description, contact / lead, deadline (with a countdown), status and notes. Edit cells in place, filter by status.
+- **Application tracker:** a table of industry, company, route, description, contact / lead, deadline (with a countdown), status and notes. Compact rows: long text ends in "…" (click it to read it all); click a cell to edit; colour-coded status; filter by status.
 
 **People**
 - **Network:** an interactive map of the people you know, grouped into groups and sub-groups, with who-knows-who links.

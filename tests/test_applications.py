@@ -49,17 +49,22 @@ def test_page_and_table_edits(store):
     assert list(at.sidebar.radio[0].options).index("Network") < list(at.sidebar.radio[0].options).index("Stats")
     assert any("1 in total" in c.value for c in at.caption)
 
-    # What the table's on_change gets: edits by row number, deleted row numbers.
+    # What the table sends: one op per change.
     from venato.ui import applications as ui
     from venato import undo
     store.add_application(company="Beta")
-    ids = [r["id"] for r in store.applications()]                 # Acme (has a deadline), Beta
-    ui.apply_edits({"edited_rows": {0: {"Status": "Interview", "Deadline": "2099-02-01"}, 1: {"Route": "Spring week"}},
-                    "added_rows": [], "deleted_rows": []}, ids)
+    acme, beta = [r["id"] for r in store.applications()]           # Acme (has a deadline), Beta
+    ui.apply_op({"kind": "edit", "id": acme, "field": "status", "value": "Interview"})
+    ui.apply_op({"kind": "edit", "id": acme, "field": "deadline", "value": "2099-02-01"})
+    ui.apply_op({"kind": "edit", "id": beta, "field": "route", "value": "Spring week"})
+    ui.apply_op({"kind": "edit", "id": beta, "field": "status", "value": "Nonsense"})   # ignored
+    ui.apply_op({"kind": "edit", "id": beta, "field": "id", "value": "x"})            # not a column: ignored
     rows = {r["company"]: r for r in store.applications()}
     assert rows["Acme"]["status"] == "Interview" and rows["Acme"]["deadline"] == "2099-02-01"
-    assert rows["Beta"]["route"] == "Spring week"
-    ui.apply_edits({"edited_rows": {}, "added_rows": [], "deleted_rows": [0]}, ids)
+    assert rows["Beta"]["route"] == "Spring week" and rows["Beta"]["status"] == "To apply"
+    ui.apply_op({"kind": "edit", "id": beta, "field": "route", "value": ""})            # cleared
+    assert store.get_application(beta)["route"] is None
+    ui.apply_op({"kind": "delete", "id": acme})
     assert [r["company"] for r in store.applications()] == ["Beta"] and undo.pending() == "Deleted Acme"
     undo.restore()
     assert len(store.applications()) == 2

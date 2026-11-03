@@ -1,0 +1,87 @@
+/* Applications table: compact, one line per cell, "…" for the rest. */
+
+.ap-root {
+  --text: var(--st-text-color, #31333f);
+  --bg: var(--st-background-color, #fff);
+  --soft: var(--st-secondary-background-color, #f6f7f9);
+  --line: rgba(128, 128, 128, 0.22);
+  --muted: color-mix(in srgb, var(--text) 72%, var(--bg));
+  --accent: var(--st-primary-color, #ff4b4b);
+  --radius: var(--st-base-radius, 0.5rem);
+  position: relative;
+  font: inherit;
+  font-size: 0.84rem;
+  color: var(--text);
+}
+
+button, input, select { font: inherit; color: inherit; }
+svg { display: block; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.ap-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+table.ap { width: 100%; min-width: 880px; border-collapse: collapse; table-layout: fixed; }
+.ap th, .ap td { border-bottom: 1px solid var(--line); padding: 0; height: 34px; }
+.ap tbody tr:last-child td { border-bottom: none; }
+.ap th {
+  text-align: left; font-weight: 600; font-size: 0.78rem; color: var(--muted);
+  padding: 0 10px; background: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: clip;
+}
+.ap tbody tr:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+
+/* Column widths: short and fixed, so long text is cut, never wrapped or shrunk. */
+.c-industry { width: 9%; }  .c-company { width: 12%; }  .c-route { width: 10%; }
+.c-description { width: 14%; }  .c-contact { width: 11%; }  .c-deadline { width: 9%; }
+.c-due { width: 8%; }  .c-status { width: 12%; }  .c-notes { width: 13%; }  .c-del { width: 34px; }
+
+/* A cell: its text on one line, cut at the edge; "…" shows when it's cut. */
+.ap td { position: relative; }
+.ap-cell { display: flex; align-items: center; height: 100%; padding: 0 10px; cursor: text; outline: none; }
+.ap-cell:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 4px; }
+.ap-text { display: block; min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+td.c-due .ap-text { padding: 0 10px; color: var(--muted); }
+td.cut .ap-text { padding-right: 26px; }
+.ap-more {
+  display: none; position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  border: none; background: var(--soft); border-radius: 4px; padding: 0 5px; line-height: 1.4;
+  cursor: pointer; color: var(--muted); font-weight: 700;
+}
+td.cut .ap-more { display: block; }
+.ap-more:hover, .ap-more:focus-visible { color: var(--text); outline: 2px solid var(--accent); outline-offset: 0; }
+
+/* Editing in place */
+td.editing { box-shadow: inset 0 0 0 2px var(--accent); }
+.ap-input { width: 100%; height: 100%; border: none; background: var(--bg); padding: 0 9px; outline: none; }
+
+/* Status: a coloured pill with a dropdown */
+.ap-pill {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0 8px; max-width: calc(100% - 16px);
+  padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--c) 20%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--c) 55%, var(--bg));
+}
+.ap-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+.ap-pill select {
+  border: none; background: transparent; padding: 0; min-width: 0; max-width: 100%;
+  cursor: pointer; font-size: 0.8rem; font-weight: 600; text-overflow: ellipsis;
+}
+.ap-pill select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.ap-pill select option { background: var(--bg); color: var(--text); }
+
+/* Delete */
+.ap-del {
+  border: none; background: none; padding: 6px; margin: 0 auto; border-radius: 6px;
+  color: var(--muted); cursor: pointer; opacity: 0; display: block;
+}
+.ap-del svg { width: 15px; height: 15px; }
+.ap tr:hover .ap-del, .ap-del:focus-visible { opacity: 1; }
+.ap-del:hover { color: var(--accent); background: var(--soft); }
+.ap-del:focus-visible { outline: 2px solid var(--accent); }
+
+/* The bubble with a cell's full text */
+.ap-bubble {
+  position: absolute; z-index: 20; padding: 10px 12px; border-radius: 10px;
+  background: var(--bg); border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); outline: none;
+}
+.ap-bubble-h { font-size: 0.72rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.ap-bubble-t { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
