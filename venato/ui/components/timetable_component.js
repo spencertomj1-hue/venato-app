@@ -178,6 +178,7 @@ class Timetable {
     SLOTS = data.slots || 36;
     FIRST_MIN = data.firstMin ?? 7 * 60;
     DATEFMT = data.dateFormat || "DD/MM/YYYY";
+    this.nowAt = { min: data.nowMin, ms: Date.now() };   // the time in the user's zone when Python drew this
     this.cats = new Map(data.categories.map((c) => [c.id, c]));
     this.dayIndex = new Map(data.days.map((d, i) => [d, i]));
 
@@ -513,7 +514,32 @@ class Timetable {
     }
   }
 
+  // Home only: a thin red line across today at the current time, moving down as time passes.
+  drawNow() {
+    let line = this.wrapEl && this.wrapEl.querySelector(".tt-now");
+    const di = this.data && this.data.readonly && this.data.nowMin != null ? this.dayIndex.get(this.data.today) : undefined;
+    let m = di === undefined ? -1 : this.nowAt.min + (Date.now() - this.nowAt.ms) / 60000 - FIRST_MIN;
+    if (m < 0 && di !== undefined) m += 24 * 60;          // after midnight, when the day runs past it
+    const slot = m / 30;
+    if (di === undefined || slot < 0 || slot >= SLOTS || !this.cells[di]) { if (line) line.remove(); return; }
+    const origin = this.wrapEl.getBoundingClientRect();
+    const cell = this.cells[di].plan[Math.floor(slot)].getBoundingClientRect();
+    const end = (this.cells[di].actual[Math.floor(slot)] || this.cells[di].plan[Math.floor(slot)]).getBoundingClientRect();
+    if (!line) {
+      line = document.createElement("div");
+      line.className = "tt-now";
+      line.setAttribute("aria-hidden", "true");
+      this.wrapEl.appendChild(line);
+    }
+    line.style.top = `${cell.top - origin.top + (slot - Math.floor(slot)) * cell.height}px`;
+    line.style.left = `${cell.left - origin.left}px`;
+    line.style.width = `${end.right - cell.left}px`;
+    clearTimeout(this.nowTimer);
+    this.nowTimer = setTimeout(() => this.drawNow(), 30000);    // keep it moving
+  }
+
   layoutBlocks() {
+    this.drawNow();
     if (!this.blocks) return;
     const origin = this.wrapEl.getBoundingClientRect();
     this.blocksEl.innerHTML = this.blocks
@@ -742,6 +768,7 @@ class Timetable {
   }
 
   detach() {
+    clearTimeout(this.nowTimer);
     window.removeEventListener("resize", this.onWindowResize);
     window.removeEventListener("mousedown", this.onOutside);
     if (this.resizeObserver) this.resizeObserver.disconnect();

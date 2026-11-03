@@ -213,6 +213,7 @@ def render_grid(days, key="timetable", single=False, readonly=False):
     data = {
         "days": [d.isoformat() for d in days],
         "today": store.local_today().isoformat(),
+        "nowMin": (lambda n: n.hour * 60 + n.minute + n.second / 60)(store.local_now()),   # Home's time line
         "groups": store.groups(),
         "categories": [
             {"id": r.id, "name": r.name, "colour": r.colour, "textColour": r.text_colour,
