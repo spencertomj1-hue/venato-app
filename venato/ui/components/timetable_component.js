@@ -412,6 +412,7 @@ class Timetable {
             <tbody>${rows.join("")}</tbody>
           </table>
           <div class="tt-blocks" aria-hidden="true"></div>
+          <div class="tt-lines" aria-hidden="true"></div>
         </div>
       </div>
       <div class="tt-hint" aria-live="polite"></div>
@@ -526,27 +527,25 @@ class Timetable {
 
   // Draw each entry as one rounded block laid over its slot cells.
   // Home (view only): shrink the rows so the whole day fits in the window, no scrolling.
+  // Shrink (or grow) the rows so the whole day fits in the window without scrolling:
+  // Home down to 9px rows, the Timetable page down to 10px (still big enough to drag in).
   fitToWindow() {
-    if (!this.data.readonly || !this.wrapEl) return;
-    const card = this.root.querySelector(".tt-card").getBoundingClientRect();
-    const head = this.root.querySelector("thead").getBoundingClientRect().height;
-    const legendEl = this.root.querySelector(".tt-legend");
-    const legend = legendEl.getBoundingClientRect().height;     // 0 on Home, where the key is hidden
-    const lastEl = legend ? legendEl : this.root.querySelector(".tt-card");
+    if (!this.wrapEl || !this.cells || !this.cells[0]) return;
+    const min = this.data.readonly ? 9 : 10, max = 18;
     const main = document.querySelector(".stMainBlockContainer");
     const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24;
-    // window height minus everything above the rows and everything below them
-    const room = window.innerHeight - card.top - head - legend - 10 - bottomPad - 6;
-    let row = Math.max(9, Math.min(18, Math.floor(room / SLOTS)));
-    this.root.style.setProperty("--row-h", `${row}px`);
-    // Borders and margins make the estimate a little off: check where the key really
-    // ends and take any overshoot back out of the rows.
-    const over = lastEl.getBoundingClientRect().bottom + bottomPad - window.innerHeight;
-    if (over > 0 && row > 9) {
-      row = Math.max(9, row - Math.ceil(over / SLOTS));
+    const bottom = () => Math.max(...[".tt-card", ".tt-legend", ".tt-hint"].map((sel) => {
+      const r = this.root.querySelector(sel)?.getBoundingClientRect();
+      return r && r.height ? r.bottom : 0;
+    }));
+    let row = parseFloat(getComputedStyle(this.root).getPropertyValue("--row-h")) || 18;
+    for (let i = 0; i < 3; i++) {        // a few times: borders make the first guess a little off
+      const over = bottom() + bottomPad - window.innerHeight;
+      row = Math.max(min, Math.min(max, Math.floor(row - over / SLOTS)));
       this.root.style.setProperty("--row-h", `${row}px`);
     }
   }
+
 
   // Home only: a thin red line across today at the current time, moving down as time passes.
   drawNow() {
@@ -572,8 +571,27 @@ class Timetable {
     this.nowTimer = setTimeout(() => this.drawNow(), 30000);    // keep it moving
   }
 
+  // A thin line under each half hour, across every day (over the blocks too).
+  drawLines() {
+    const el = this.root.querySelector(".tt-lines");
+    if (!el || !this.cells[0]) return;
+    const origin = this.wrapEl.getBoundingClientRect();
+    const days = this.cells.length;
+    const left = this.cells[0].plan[0].getBoundingClientRect().left - origin.left;
+    const right = (this.cells[days - 1].actual[0] || this.cells[days - 1].plan[0]).getBoundingClientRect().right - origin.left;
+    let html = "";
+    for (let s = 0; s < SLOTS - 1; s++) {
+      const td = this.cells[0].plan[s];
+      const top = td.getBoundingClientRect().bottom - origin.top - 1;
+      const hour = td.parentElement.classList.contains("half");
+      html += `<i class="${hour ? "h" : ""}" style="top:${top}px;left:${left}px;width:${right - left}px"></i>`;
+    }
+    el.innerHTML = html;
+  }
+
   layoutBlocks() {
     this.drawNow();
+    this.drawLines();
     if (!this.blocks) return;
     const origin = this.wrapEl.getBoundingClientRect();
     this.blocksEl.innerHTML = this.blocks

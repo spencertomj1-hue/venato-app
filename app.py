@@ -190,7 +190,7 @@ st.set_page_config(page_title="Venato", page_icon=str(Path(__file__).parent / "a
 # items (radio circles hidden, current page with an accent bar), and no dimming of
 # the previous page while a rerun is in progress.
 st.html(f"""<style>
-.stMainBlockContainer {{ padding-top: 4rem; padding-bottom: 1.5rem; padding-left: 2rem; padding-right: 2rem; }}
+.stMainBlockContainer {{ padding-top: 2.5rem; padding-bottom: 1.5rem; padding-left: 2rem; padding-right: 2rem; }}
 [data-stale="true"] {{ opacity: 1 !important; transition: none !important; }}
 [data-testid="stElementContainer"]:has(#venato-ready) {{ display: none; }}   /* no stray gap */
 [data-testid="stSidebar"] [data-testid="stElementContainer"]:has([data-testid="stRadio"]),

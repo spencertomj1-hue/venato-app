@@ -4,8 +4,8 @@
   --line: rgba(128, 128, 128, 0.22);        /* hour lines */
   --line-soft: rgba(128, 128, 128, 0.11);   /* half-hour lines, Plan|Actual split */
   --line-day: rgba(128, 128, 128, 0.38);    /* between days */
-  --time-line: rgba(128, 128, 128, 0.16);   /* half-hour lines across the grid */
-  --hour-line: rgba(128, 128, 128, 0.30);   /* hour lines */
+  --time-line: color-mix(in srgb, var(--text) 14%, transparent);   /* half-hour lines (dark on light, light on dark) */
+  --hour-line: color-mix(in srgb, var(--text) 24%, transparent);   /* hour lines */
   --text: var(--st-text-color, #31333f);
   --bg: var(--st-background-color, #fff);
   --head-bg: var(--st-secondary-background-color, #f6f7f9);
@@ -163,8 +163,8 @@ th.day::before, th.sub::before {
   content: ""; position: absolute; inset: 0; z-index: -1; background: var(--head-bg);
 }
 th.sub::before { bottom: 5px; }                            /* a small gap above the grid */
-th.day::before { border-radius: 10px 10px 0 0; left: 6px; }       /* the same gap between days as the grid */
-th.sub.first::before { border-radius: 0 0 0 10px; left: 6px; }
+th.day::before { border-radius: 10px 10px 0 0; left: 7px; }       /* the same gap between days as the grid */
+th.sub.first::before { border-radius: 0 0 0 10px; left: 7px; }
 th.sub:not(.first)::before { border-radius: 0 0 10px 0; }
 th.day .dn { font-size: 1.1rem; }               /* +0.30rem */
 th.day .dd { font-size: 0.85rem; font-weight: 400; color: var(--muted); }   /* +0.15rem */
@@ -184,9 +184,8 @@ th.sub {
 table.tt td {
   height: var(--row-h, 18px);   /* Home shrinks this to fit the window */
   padding: 0;
-  border-bottom: 1px solid var(--time-line);              /* the time lines across the timetable */
+  border-bottom: 1px solid transparent;    /* room for the time lines, drawn over the blocks by .tt-lines */
 }
-tr.half td { border-bottom: 1px solid var(--hour-line); } /* a stronger one on each hour */
 tr:last-child td { border-bottom: none; }
 
 /* Time labels sit centred on their hour line. */
@@ -207,13 +206,18 @@ tr:first-child td.t span { transform: translateY(3px); }  /* first label below t
 
 td.s { position: relative; cursor: cell; --tile: rgba(128, 128, 128, 0.075); }
 td.s::before {
-  content: ""; position: absolute; inset: 1.5px; border-radius: 5px; background: var(--tile);
+  content: ""; position: absolute; inset: 2.5px; border-radius: 5px; background: var(--tile);
   pointer-events: none; transition: background 0.1s;
 }
-td.s.first::before { left: 6px; }                          /* a gap between days (Plan and Actual stay together) */
+td.s.first::before { left: 7px; }                          /* a gap between days (Plan and Actual stay together) */
 td.s.today { --tile: rgba(128, 128, 128, 0.11); }
 td.s:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.18); }
 td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
+
+/* The time lines across the timetable, drawn over the blocks so they show through long ones. */
+.tt-lines { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.tt-lines i { position: absolute; height: 1px; background: var(--time-line); }
+.tt-lines i.h { background: var(--hour-line); }
 
 /* Blocks, drawn over the cells (clicks pass through to the cells below). */
 .tt-blocks { position: absolute; inset: 0; pointer-events: none; }
@@ -224,14 +228,14 @@ td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
   flex-direction: column;
   justify-content: flex-start;
   padding: 2px 6px;
-  border: 1.5px solid var(--bg);           /* gap around each block */
+  border: 2.5px solid var(--bg);           /* gap around each block */
   border-radius: 7px;
   background-clip: padding-box;
   overflow: hidden;
   line-height: 1.2;
   transition: opacity 0.12s;
 }
-.blk.plan { border-left-width: 6px; }                     /* lines up with the tiles' wider gap between days */
+.blk.plan { border-left-width: 7px; }                     /* lines up with the tiles' wider gap between days */
 .blk b, .blk span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .blk b { font-size: 0.7rem; font-weight: 600; }
 .blk span { font-size: 0.62rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
