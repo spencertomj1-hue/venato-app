@@ -10,7 +10,7 @@
   --radius: var(--st-base-radius, 0.5rem);
   position: relative;
   font: inherit;
-  font-size: 0.84rem;
+  font-size: 0.76rem;
   color: var(--text);
 }
 
@@ -20,10 +20,10 @@ svg { display: block; }
 
 .ap-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
 table.ap { width: 100%; min-width: 880px; border-collapse: collapse; table-layout: fixed; }
-.ap th, .ap td { border-bottom: 1px solid var(--line); padding: 0; height: 34px; }
+.ap th, .ap td { border-bottom: 1px solid var(--line); padding: 0; height: 30px; }
 .ap tbody tr:last-child td { border-bottom: none; }
 .ap th {
-  text-align: left; font-weight: 600; font-size: 0.78rem; color: var(--muted);
+  text-align: left; font-weight: 600; font-size: 0.7rem; color: var(--muted);
   padding: 0 10px; background: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: clip;
 }
 .ap tbody tr:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
@@ -62,7 +62,7 @@ td.c-status { overflow: hidden; }
 .ap-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
 .ap-pill select {
   border: none; background: transparent; padding: 0; min-width: 0; max-width: 100%; flex: 0 1 auto;
-  cursor: pointer; font-size: 0.8rem; font-weight: 600; text-overflow: ellipsis;
+  cursor: pointer; font-size: 0.72rem; font-weight: 600; text-overflow: ellipsis;
 }
 .ap-pill select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .ap-pill select option { background: var(--bg); color: var(--text); }
@@ -83,5 +83,5 @@ td.c-status { overflow: hidden; }
   background: var(--bg); border: 1px solid var(--line);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); outline: none;
 }
-.ap-bubble-h { font-size: 0.72rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.ap-bubble-h { font-size: 0.68rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
 .ap-bubble-t { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; user-select: text; cursor: text; }

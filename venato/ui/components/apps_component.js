@@ -54,7 +54,13 @@ class AppsTable {
     this.onKey = (e) => {
       if (e.key === "Escape" && this.bubble) { this.closeBubble(true); e.stopPropagation(); }
     };
-    this.onResize = () => this.markOverflow();
+    // Re-fit the text whenever the table's width changes (window resized, sidebar opened or
+    // closed), once per frame, so it follows the sidebar as it slides.
+    this.resizer = new ResizeObserver(() => {
+      cancelAnimationFrame(this.frame);
+      this.frame = requestAnimationFrame(() => this.markOverflow());
+    });
+    this.resizer.observe(root);
     root.addEventListener("click", (e) => this.onClick(e));
     root.addEventListener("keydown", (e) => this.onKeyDown(e));
     root.addEventListener("change", (e) => this.onChange(e));
@@ -75,14 +81,12 @@ class AppsTable {
     this.attached = true;
     document.addEventListener("pointerdown", this.onOutside, true);
     document.addEventListener("keydown", this.onKey, true);
-    window.addEventListener("resize", this.onResize);
   }
 
   detach() {
     this.attached = false;
     document.removeEventListener("pointerdown", this.onOutside, true);
     document.removeEventListener("keydown", this.onKey, true);
-    window.removeEventListener("resize", this.onResize);
   }
 
   applyLocal(op) {
@@ -134,23 +138,32 @@ class AppsTable {
       `<span class="ap-text" data-key="${c.key}">${esc(text || "")}</span></span></td>`;
   }
 
-  // Text too long for its cell: cut it at a word or letter and end it with a clickable "...",
-  // in the same font and colour, so it reads like "PI in astroph...".
+  // Text too long for its cell: cut it and end it with a clickable "..." in the same font and
+  // colour, so it reads like "PI in astroph...". Widths come from a canvas (fast: no layout per try).
   markOverflow() {
-    this.root.querySelectorAll(".ap-text[data-key]").forEach((el) => {
+    const cells = this.root.querySelectorAll(".ap-text[data-key]");
+    if (!cells.length) return;
+    const ctx = (this.measure ||= document.createElement("canvas").getContext("2d"));
+    const style = getComputedStyle(cells[0]);
+    ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const dots = ctx.measureText("...").width + 2;
+    cells.forEach((el) => {
       const row = this.rows.find((r) => r.id === el.closest("tr").dataset.id);
       const key = el.dataset.key;
       const full = String((key === "deadline" ? row.deadlineText : row[key]) || "");
-      el.textContent = full;
-      if (!full || el.scrollWidth <= el.clientWidth + 1) return;
-      const more = `<button class="ap-more" data-more="${key}" aria-label="Show all of ${esc(COLS.find((c) => c.key === key).label)}">...</button>`;
+      const room = el.clientWidth - 1;
+      if (!full || ctx.measureText(full).width <= room) {
+        if (el.textContent !== full || el.querySelector(".ap-more")) el.textContent = full;
+        return;
+      }
       let lo = 0, hi = full.length;
       while (lo < hi) {                                   // the most characters that fit with "..."
         const mid = Math.ceil((lo + hi) / 2);
-        el.innerHTML = `${esc(full.slice(0, mid).trimEnd())}${more}`;
-        if (el.scrollWidth <= el.clientWidth + 1) lo = mid; else hi = mid - 1;
+        if (ctx.measureText(full.slice(0, mid).trimEnd()).width + dots <= room) lo = mid; else hi = mid - 1;
       }
-      el.innerHTML = `${esc(full.slice(0, lo).trimEnd())}${more}`;
+      const label = esc(COLS.find((c) => c.key === key).label);
+      const html = `${esc(full.slice(0, lo).trimEnd())}<button class="ap-more" data-more="${key}" aria-label="Show all of ${label}">...</button>`;
+      if (el.innerHTML !== html) el.innerHTML = html;
     });
   }
 
