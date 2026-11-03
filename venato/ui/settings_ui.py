@@ -429,6 +429,12 @@ def page_settings():
         if ai_switch("set") != ai:
             st.rerun()                                   # show or hide the chat box straight away
         if ai:
+            quick_on = st.toggle(
+                "Quick commands", value=store.load_settings().get("quick_commands", True), key="set_quick",
+                help="Short everyday messages like \"drank 500ml\", \"tick gym\" or \"mood 4\" are done "
+                     "straight away without asking Claude (their reply starts with ⚡). Anything else still goes to Claude.")
+            if quick_on != store.load_settings().get("quick_commands", True):
+                store.save_settings(quick_commands=quick_on)
             claude_section("set")
     if mic:
         with mic:

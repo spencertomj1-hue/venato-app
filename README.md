@@ -120,12 +120,14 @@ The first install downloads about 1 GB of packages; the speech model (about 470 
 
 Claude can only use Venato's own actions. It has no access to your files, terminal or the web.
 
+It runs on **Claude Haiku 5.5** at low effort, kept open between messages, and replies appear as they're written. Short everyday messages ("drank 500ml", "tick gym", "mood 4", "slept 7h", "done finish essay") are handled straight away without asking Claude; their replies start with ⚡ (switch off in Settings → Assistant → Quick commands). To use a different model, set `"model"` (and optionally `"effort"`) in `venato_config.json`.
+
 **Outlook calendar.** In Outlook on the web: Settings → Calendar → Shared calendars → Publish a calendar, pick **Can view all details**, copy the **ICS** link and paste it into Settings → Calendar. The link is stored in the macOS Keychain / Windows Credential Manager. Anyone with that link can see your calendar, so unpublish it in Outlook to revoke it. Some universities and workplaces block publishing.
 
 ## Privacy
 
 - **Stays on your computer:** all your data (in `~/Library/Application Support/Venato/` on a Mac, `%APPDATA%\Venato` on Windows, `~/.local/share/Venato` on Linux, never inside the repo), voice recordings and their transcripts, and chat history (memory only, never saved).
-- **Leaves your computer only if you turn it on:** chat messages and the data Claude looks up go to Anthropic; the published Outlook calendar is downloaded from Microsoft; the daily update check asks GitHub for the latest version number.
+- **Leaves your computer only if you turn it on:** chat messages go to Anthropic, each with a short snapshot of today (your timetable for today and tomorrow, today's log, habits, current to-dos, open deadlines and applications in progress) so Claude can answer without looking things up, plus anything else Claude looks up; the published Outlook calendar is downloaded from Microsoft; the daily update check asks GitHub for the latest version number.
 
 Nothing else is sent anywhere.
 
@@ -156,7 +158,7 @@ From the "Ideas for later" list in [`HANDOVER.md`](HANDOVER.md):
 
 - [ ] Timetable blocks in CSV export/import (to-dos and goals already have CSVs)
 - [ ] "Carry over unfinished" to-dos in the UI (the store function exists)
-- [ ] Streaming chat replies
+- [x] Streaming chat replies
 - [ ] Signed and notarised Mac app
 - [ ] A Linux installer (it runs from source today, in the browser)
 

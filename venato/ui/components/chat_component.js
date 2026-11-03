@@ -2,7 +2,9 @@
 // area, with a collapsible history panel above it.
 //
 // Python passes { messages: [{role, text}], pending: [{id, summary}],
-//                 busy: null | "thinking" | "transcribing", recording, error }.
+//                 busy: null | "thinking" | "transcribing", partial, status, recording, error }.
+// partial is Claude's reply so far while it's still writing; status says what it's doing
+// ("Updating your timetable") while a tool runs.
 // Triggers back to Python:
 //   send    {text, nonce}             a typed message
 //   mic     {action: "start"|"stop", nonce}
@@ -149,9 +151,14 @@ class ChatBar {
           </div>
         </div>`);
     }
-    const label = busy === "transcribing" ? "Transcribing" : "Thinking";
+    const { partial, status } = this.data;
+    const label = busy === "transcribing" ? "Transcribing" : status || "Thinking";
     const working = !!busy || !!this.optimistic;
-    if (working) extras.push(`<div class="cb-thinking">${label}<i></i><i></i><i></i></div>`);
+    if (working && partial && !status) {
+      extras.push(`<div class="cb-msg assistant writing">${esc(partial).replace(/\n/g, "<br>")}<span class="cb-caret"></span></div>`);
+    } else if (working) {
+      extras.push(`<div class="cb-thinking">${esc(label)}<i></i><i></i><i></i></div>`);
+    }
 
     if (inline) {
       // Under the box: only the latest reply (until you send again), plus any previews.

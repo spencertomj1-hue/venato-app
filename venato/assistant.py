@@ -15,22 +15,25 @@ usually claude.exe in ~/.local/bin (or an npm claude.cmd).
 """
 
 import asyncio
+import atexit
 import getpass
+import hashlib
 import json
 import os
 import shutil
+import threading
+import time
 
 import claude_agent_sdk
 import keyring
 import requests
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from claude_agent_sdk import (
-    ClaudeAgentOptions, CLINotFoundError, ResultMessage, create_sdk_mcp_server, query, tool,
+    ClaudeAgentOptions, ClaudeSDKClient, CLINotFoundError, ResultMessage, StreamEvent, create_sdk_mcp_server, tool,
 )
 
 from venato import regional
@@ -53,7 +56,7 @@ CLAUDE_CANDIDATES = [
     "~/.bun/bin/claude.exe",
 ]
 
-LOGIN_HELP = ("Claude isn't set up yet. In Settings → Claude, paste an Anthropic API key, or sign in to Claude Code. "
+LOGIN_HELP = ("Claude isn't set up yet. In Settings → Assistant, paste an Anthropic API key, or sign in to Claude Code. "
               "Then try again.")
 
 
@@ -177,17 +180,24 @@ def _env(claude_path):
     return env
 
 
+# The model the assistant runs on unless venato_config.json names another ("model": "...").
+DEFAULT_MODEL = "claude-haiku-5-5"
+DEFAULT_EFFORT = "low"      # quick answers; "effort" in venato_config.json overrides it
+
+
 # ---------------------------------------------------------------------------
-# System prompt (rebuilt for every message so "today" is always right)
+# System prompt. It holds nothing that changes from minute to minute (the time and today's
+# details go at the top of each message instead, see context()), so a Claude session can
+# stay open between messages and the prompt can be cached.
 # ---------------------------------------------------------------------------
 
 def system_prompt(now=None):
-    now = now or store.local_now()
     return f"""You are the assistant built into Venato, the user's personal life-tracking app.
 You change their data only through the venato tools. You have no other tools.
 
-Right now it is {now:%A %d %B %Y, %H:%M} ({store.zone_name()}). Today's date is {now:%Y-%m-%d}.
-Work out relative dates ("tomorrow", "next Tuesday", "last night") from this, and always pass
+Each message starts with a [Now] section: the current date and time, and a snapshot of today
+(timetable, habits, to-dos, deadlines, applications). Use it instead of looking those up, and
+work out relative dates ("tomorrow", "next Tuesday", "last night") from it. Always pass
 dates to tools as YYYY-MM-DD. Weeks start on {store.week_start_name()}. Tools always take 24-hour
 "HH:mm" times and litres; the user sees {regional.clock()} times and water in {regional.water_unit()}, so
 use those when talking to them (e.g. "64 oz" -> water=1.89).
@@ -312,6 +322,50 @@ Style
 - Ask one short question when something is ambiguous instead of guessing.
 - No markdown headings or tables; plain sentences.
 """
+
+
+# ---------------------------------------------------------------------------
+# [Now]: the time and a snapshot of today, put at the top of every message
+# ---------------------------------------------------------------------------
+
+CONTEXT_LINES = 12          # at most this many lines per section
+CONTEXT_EXTRAS = []         # more sections, as (title, function returning text) (the private copy adds one)
+
+
+def _section(title, text):
+    lines = [l for l in str(text or "").splitlines() if l.strip()]
+    if len(lines) > CONTEXT_LINES:
+        lines = lines[:CONTEXT_LINES] + [f"... and {len(lines) - CONTEXT_LINES} more (use the list tool for all)"]
+    return f"{title}:\n" + ("\n".join(lines) if lines else "(none)")
+
+
+def context(now=None):
+    """What Claude would otherwise look up first: today's and tomorrow's timetable, today's log,
+    habits, current to-dos, open deadlines and active applications (with ids)."""
+    now = now or store.local_now()
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+    parts = [f"It is {now:%A %d %B %Y, %H:%M} ({store.zone_name()}). Today is {today.isoformat()}."]
+    sections = [
+        ("Timetable today and tomorrow", lambda: tools.query_blocks(today.isoformat(), tomorrow.isoformat()).text),
+        ("Today's log", lambda: tools.query_entries(today.isoformat(), today.isoformat()).text),
+        ("Habits", lambda: tools.list_habits(today).text),
+        ("To-dos", lambda: tools.list_todos().text),
+        ("Deadlines", lambda: tools.list_deadlines().text),
+        ("Applications in progress", lambda: "\n".join(
+            l for l in tools.list_applications().text.splitlines()
+            if not any(f": {s}" in l for s in ("Accepted", "Rejected", "Withdrawn")))),
+    ] + list(CONTEXT_EXTRAS)
+    for title, get in sections:
+        try:
+            parts.append(_section(title, get() if callable(get) else get))
+        except Exception:                # a snapshot must never stop the message being sent
+            continue
+    return "\n\n".join(parts)
+
+
+def with_context(text, now=None):
+    return f"[Now]\n{context(now)}\n[/Now]\n\n{text}"
 
 
 # ---------------------------------------------------------------------------
@@ -579,27 +633,6 @@ def _with_history(text, history):
     return f"Conversation so far (for context):\n{lines}\n\nNew message from the user:\n{text}"
 
 
-async def _ask(prompt, claude_path, state):
-    AGENT_DIR.mkdir(parents=True, exist_ok=True)
-    cfg = load_config()
-    options = ClaudeAgentOptions(
-        system_prompt=system_prompt(),
-        mcp_servers={"venato": _make_server(state)},
-        allowed_tools=ALLOWED_TOOLS,
-        tools=[],                      # no built-in tools (Bash, files, web...)
-        permission_mode="dontAsk",     # anything not allowed above is refused
-        setting_sources=[], strict_mcp_config=True, skills=[],   # ignore the user's own Claude config
-        cli_path=claude_path, cwd=str(AGENT_DIR), env=_env(claude_path),
-        extra_args={"no-session-persistence": None},             # don't write the chat to disk
-        max_turns=15, model=cfg.get("model"),
-    )
-    turn = Turn()
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, ResultMessage):
-            turn.reply = (message.result or "").strip()
-    return turn
-
-
 def _friendly(error):
     msg = str(error)
     low = msg.lower()
@@ -610,26 +643,233 @@ def _friendly(error):
     return f"Claude ran into a problem: {msg}"
 
 
-def run_turn(text, history=()):
+# ---------------------------------------------------------------------------
+# Claude sessions: one Claude Code process per browser tab, kept open between messages
+# (starting one costs most of a second), on one background event loop. Replies stream:
+# a Job holds the text so far while Claude is still writing.
+# ---------------------------------------------------------------------------
+
+TURN_TIMEOUT = 300           # seconds before a message is given up on
+IDLE_CLOSE = 15 * 60         # a session unused this long is closed
+TIMINGS = store.DATA_DIR / "logs" / "assistant.jsonl"     # how long each message took (no message text)
+
+TOOL_STATUS = [              # (word in the tool's name, what the chat shows while it runs)
+    ("application", "Updating your applications"), ("problem", "Updating your problem sets"),
+    ("module", "Updating your problem sets"), ("journal", "Writing in your journal"),
+    ("review", "Updating your weekly review"), ("todo", "Updating your to-dos"),
+    ("goal", "Updating your goals"), ("deadline", "Updating your deadlines"),
+    ("habit", "Updating your habits"), ("person", "Updating your network"), ("people", "Updating your network"),
+    ("group", "Updating your network"), ("interaction", "Updating your network"),
+    ("block", "Updating your timetable"), ("plan_time", "Finding free time"), ("category", "Updating categories"),
+    ("activity", "Updating categories"), ("outlook", "Updating categories"), ("log_day", "Updating your daily log"),
+]
+
+
+def _status(tool_name):
+    name = tool_name.rsplit("__", 1)[-1]
+    if name.startswith(("list_", "query_", "read_", "find_", "get_")) or name in ("weekly_review", "person_history"):
+        return "Looking that up"
+    return next((label for word, label in TOOL_STATUS if word in name), "Working on it")
+
+
+class Job:
+    """One message being answered in the background."""
+
+    def __init__(self, turn=None):
+        self.partial = ""        # the reply so far, while it's being written
+        self.status = ""         # e.g. "Updating your timetable" while a tool runs
+        self.turn = turn         # the finished Turn
+        self.started = time.monotonic()
+        self.future = None
+        self.key = None
+
+    @classmethod
+    def finished(cls, turn):
+        return cls(turn)
+
+    @property
+    def done(self):
+        if self.turn is None and time.monotonic() - self.started > TURN_TIMEOUT:
+            if self.future:
+                self.future.cancel()
+            _drop(self.key)
+            self.turn = Turn(error="Claude took too long to answer. Try again.")
+        return self.turn is not None
+
+    def wait(self):
+        while not self.done:
+            time.sleep(0.05)
+        return self.turn
+
+
+class _Session:
+    def __init__(self):
+        self.client = None
+        self.signature = None
+        self.state = TurnState()
+        self.fresh = True        # no messages yet: send the recent chat along with the first one
+        self.last_used = time.monotonic()
+
+
+_loop = None
+_loop_lock = threading.Lock()
+_sessions = {}
+
+
+def _event_loop():
+    global _loop
+    with _loop_lock:
+        if _loop is None:
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_forever, name="venato-claude", daemon=True).start()
+            _loop = loop
+            atexit.register(_close_all)
+    return _loop
+
+
+def _options(state, claude_path):
+    return ClaudeAgentOptions(
+        system_prompt=system_prompt(),
+        mcp_servers={"venato": _make_server(state)},
+        allowed_tools=ALLOWED_TOOLS,
+        tools=[],                      # no built-in tools (Bash, files, web...)
+        permission_mode="dontAsk",     # anything not allowed above is refused
+        setting_sources=[], strict_mcp_config=True, skills=[],   # ignore the user's own Claude config
+        cli_path=claude_path, cwd=str(AGENT_DIR), env=_env(claude_path),
+        extra_args={"no-session-persistence": None},             # don't write the chat to disk
+        max_turns=15, model=load_config().get("model") or DEFAULT_MODEL,
+        include_partial_messages=True,                           # stream the reply as it's written
+        effort=load_config().get("effort") or DEFAULT_EFFORT,
+    )
+
+
+def _signature(claude_path):
+    """Anything that needs a fresh session when it changes: the prompt, the model, the key."""
+    key = api_key() or ""
+    parts = (claude_path, system_prompt(), load_config().get("model") or DEFAULT_MODEL, load_config().get("effort"),
+             hashlib.sha256(key.encode()).hexdigest())
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
+
+
+async def _close(sess):
+    client, sess.client = sess.client, None
+    if client:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
+def _drop(key):
+    sess = _sessions.pop(key, None)
+    if sess and sess.client and _loop:
+        asyncio.run_coroutine_threadsafe(_close(sess), _loop)
+
+
+def _close_all():
+    if not _loop:
+        return
+    try:
+        asyncio.run_coroutine_threadsafe(
+            asyncio.gather(*(_close(s) for s in list(_sessions.values()))), _loop).result(timeout=5)
+    except Exception:
+        pass
+
+
+async def _run(key, text, history, job, claude_path, timing):
+    now = time.monotonic()
+    for other_key, other in list(_sessions.items()):          # tidy up tabs closed long ago
+        if other_key != key and now - other.last_used > IDLE_CLOSE:
+            _sessions.pop(other_key, None)
+            await _close(other)
+    sess = _sessions.setdefault(key, _Session())
+    signature = _signature(claude_path)
+    if sess.client is None or sess.signature != signature or now - sess.last_used > IDLE_CLOSE:
+        await _close(sess)
+        AGENT_DIR.mkdir(parents=True, exist_ok=True)
+        sess.state, sess.fresh = TurnState(), True
+        client = ClaudeSDKClient(_options(sess.state, claude_path))
+        t = time.monotonic()
+        await client.connect()
+        sess.client, sess.signature = client, signature
+        timing["connect_s"] = round(time.monotonic() - t, 2)
+    sess.last_used = time.monotonic()
+    sess.state.pending, sess.state.changed = [], False       # the tool server keeps this same object
+    prompt = with_context(_with_history(text, history) if sess.fresh else text)
+    sess.fresh = False
+
+    turn = Turn()
+    await sess.client.query(prompt)
+    async for message in sess.client.receive_response():
+        if isinstance(message, StreamEvent):
+            event = message.event or {}
+            block = event.get("content_block") or {}
+            delta = event.get("delta") or {}
+            if event.get("type") == "content_block_start" and block.get("type") == "tool_use":
+                job.status, job.partial = _status(block.get("name", "")), ""
+                timing["tool_calls"] = timing.get("tool_calls", 0) + 1
+            elif event.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
+                timing.setdefault("first_text_s", round(time.monotonic() - job.started, 2))
+                job.status = ""
+                job.partial += delta.get("text", "")
+        elif isinstance(message, ResultMessage):
+            turn.reply = (message.result or "").strip()
+            if message.is_error and not turn.reply:
+                turn.error = _friendly(" ".join(message.errors or []) or message.subtype)
+            usage = message.usage or {}
+            timing.update(input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
+                          cache_read=usage.get("cache_read_input_tokens"),
+                          cache_write=usage.get("cache_creation_input_tokens"))
+    turn.pending, turn.changed = list(sess.state.pending), sess.state.changed
+    sess.last_used = time.monotonic()
+    return turn
+
+
+def _log_timing(timing):
+    try:
+        TIMINGS.parent.mkdir(parents=True, exist_ok=True)
+        if TIMINGS.exists() and TIMINGS.stat().st_size > 1_000_000:          # keep it small
+            TIMINGS.replace(TIMINGS.with_suffix(".old.jsonl"))
+        with TIMINGS.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(timing) + "\n")
+    except OSError:
+        pass
+
+
+def start_turn(text, history=(), key="default"):
     """
-    Send one chat message to Claude, with the recent conversation as context
-    (history: (role, text) pairs). Blocks until done; safe to call from Streamlit.
+    Start answering one chat message in the background and return its Job straight away.
+    history: the recent (role, text) pairs, sent along only when the session is new
+    (an open session remembers the conversation itself). key: one session per browser tab.
     """
     claude_path = find_claude()
     if not claude_path:
-        return Turn(error=(
+        return Job.finished(Turn(error=(
             "Couldn't find Claude. Paste an Anthropic API key in Settings → Assistant (or install Claude Code); "
-            f"if it's installed somewhere unusual, set its path in {CONFIG_PATH} as {{\"claude_path\": \"/path/to/claude\"}}."))
+            f"if it's installed somewhere unusual, set its path in {CONFIG_PATH} as {{\"claude_path\": \"/path/to/claude\"}}.")))
+    job = Job()
+    job.key = key
+    timing = {"at": store.stamp(), "model": load_config().get("model") or DEFAULT_MODEL, "quick": False}
 
-    state = TurnState()
-    try:
-        # Run the SDK's asyncio code in its own thread with a fresh event loop,
-        # so it never clashes with Streamlit's.
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            turn = pool.submit(asyncio.run, _ask(_with_history(text, history), claude_path, state)).result(timeout=300)
-    except CLINotFoundError:
-        return Turn(error=f"Couldn't start Claude Code at {claude_path}. Check the path in {CONFIG_PATH}.")
-    except Exception as e:
-        return Turn(error=_friendly(e))
-    turn.pending, turn.changed = state.pending, state.changed
-    return turn
+    def finish(future):
+        try:
+            turn = future.result()
+        except CLINotFoundError:
+            turn = Turn(error=f"Couldn't start Claude Code at {claude_path}. Check the path in {CONFIG_PATH}.")
+            _drop(key)
+        except Exception as e:                   # includes a cancelled (timed-out) turn
+            turn = Turn(error=_friendly(e) if str(e) else "Claude stopped answering. Try again.")
+            _drop(key)
+        timing["total_s"] = round(time.monotonic() - job.started, 2)
+        _log_timing(timing)
+        if job.turn is None:
+            job.turn = turn
+
+    job.future = asyncio.run_coroutine_threadsafe(_run(key, text, history, job, claude_path, timing), _event_loop())
+    job.future.add_done_callback(finish)
+    return job
+
+
+def run_turn(text, history=(), key="default"):
+    """Send one chat message to Claude and wait for the whole reply (scripts and tests)."""
+    return start_turn(text, history, key).wait()

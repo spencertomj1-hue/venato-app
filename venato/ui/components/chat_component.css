@@ -216,3 +216,9 @@ button, textarea { font: inherit; color: inherit; }
   z-index: 999999;
   background: rgba(0, 0, 0, 0.25);
 }
+
+/* Claude's reply while it's still being written */
+.cb-caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px;
+  background: currentColor; animation: cb-blink 1s steps(2) infinite; }
+@keyframes cb-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cb-caret { animation: none; } }
