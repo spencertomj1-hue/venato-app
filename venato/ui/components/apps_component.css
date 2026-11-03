@@ -31,7 +31,7 @@ table.ap { width: 100%; min-width: 880px; border-collapse: collapse; table-layou
 /* Column widths: short and fixed, so long text is cut, never wrapped or shrunk. */
 .c-industry { width: 9%; }  .c-company { width: 12%; }  .c-route { width: 10%; }
 .c-description { width: 14%; }  .c-contact { width: 11%; }  .c-deadline { width: 9%; }
-.c-due { width: 8%; }  .c-status { width: 12%; }  .c-notes { width: 13%; }  .c-del { width: 34px; }
+.c-due { width: 7%; }  .c-status { width: 14%; }  .c-notes { width: 12%; }  .c-del { width: 34px; }
 
 /* A cell: its text on one line; if it's too long it's cut and ends in a clickable "...". */
 .ap td { position: relative; }
@@ -51,15 +51,17 @@ td.editing { box-shadow: inset 0 0 0 2px var(--accent); }
 .ap-input { width: 100%; height: 100%; border: none; background: var(--bg); padding: 0 9px; outline: none; }
 
 /* Status: a coloured pill with a dropdown */
+td.c-status { overflow: hidden; }
 .ap-pill {
-  display: inline-flex; align-items: center; gap: 6px; margin: 0 8px; max-width: calc(100% - 16px);
+  display: flex; align-items: center; gap: 6px; margin: 0 8px; width: fit-content; max-width: calc(100% - 16px);
+  box-sizing: border-box; overflow: hidden;
   padding: 2px 8px; border-radius: 999px;
   background: color-mix(in srgb, var(--c) 20%, var(--bg));
   border: 1px solid color-mix(in srgb, var(--c) 55%, var(--bg));
 }
 .ap-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
 .ap-pill select {
-  border: none; background: transparent; padding: 0; min-width: 0; max-width: 100%;
+  border: none; background: transparent; padding: 0; min-width: 0; max-width: 100%; flex: 0 1 auto;
   cursor: pointer; font-size: 0.8rem; font-weight: 600; text-overflow: ellipsis;
 }
 .ap-pill select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
