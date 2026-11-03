@@ -1,5 +1,5 @@
 // Applications table: compact rows, one line per cell. Text too long for its
-// column is cut off with a "…" button; clicking it shows the whole text in a
+// column is cut off and ends in a clickable "..."; clicking it shows the whole text in a
 // bubble (click anywhere, or Esc, to close). Click a cell to edit it in place;
 // Status is a coloured pill with a dropdown.
 //
@@ -131,18 +131,26 @@ class AppsTable {
     }
     const text = c.kind === "date" ? r.deadlineText : r[c.key];
     return `<td class="c-${c.key}"><span class="ap-cell" tabindex="0" role="button" data-edit="${c.key}" aria-label="${esc(label)}: ${esc(text || "empty")}. Press Enter to edit">` +
-      `<span class="ap-text${text ? "" : " empty"}">${esc(text || "")}</span></span>` +
-      `<button class="ap-more" data-more="${c.key}" tabindex="-1" aria-label="Show all of ${esc(c.label)}">…</button></td>`;
+      `<span class="ap-text" data-key="${c.key}">${esc(text || "")}</span></span></td>`;
   }
 
-  // Show "…" only on cells whose text is cut off.
+  // Text too long for its cell: cut it at a word or letter and end it with a clickable "...",
+  // in the same font and colour, so it reads like "PI in astroph...".
   markOverflow() {
-    this.root.querySelectorAll("td").forEach((td) => {
-      const t = td.querySelector(".ap-text");
-      const cut = !!t && t.scrollWidth > t.clientWidth + 1;
-      td.classList.toggle("cut", cut);
-      const more = td.querySelector(".ap-more");
-      if (more) more.tabIndex = cut ? 0 : -1;
+    this.root.querySelectorAll(".ap-text[data-key]").forEach((el) => {
+      const row = this.rows.find((r) => r.id === el.closest("tr").dataset.id);
+      const key = el.dataset.key;
+      const full = String((key === "deadline" ? row.deadlineText : row[key]) || "");
+      el.textContent = full;
+      if (!full || el.scrollWidth <= el.clientWidth + 1) return;
+      const more = `<button class="ap-more" data-more="${key}" aria-label="Show all of ${esc(COLS.find((c) => c.key === key).label)}">...</button>`;
+      let lo = 0, hi = full.length;
+      while (lo < hi) {                                   // the most characters that fit with "..."
+        const mid = Math.ceil((lo + hi) / 2);
+        el.innerHTML = `${esc(full.slice(0, mid).trimEnd())}${more}`;
+        if (el.scrollWidth <= el.clientWidth + 1) lo = mid; else hi = mid - 1;
+      }
+      el.innerHTML = `${esc(full.slice(0, lo).trimEnd())}${more}`;
     });
   }
 
@@ -209,7 +217,15 @@ class AppsTable {
     const del = e.target.closest("[data-del]");
     if (del) { this.commit({ kind: "delete", id: del.dataset.del }); return; }
     const cell = e.target.closest("[data-edit]");
-    if (cell) this.startEdit(cell.closest("tr").dataset.id, cell.dataset.edit);
+    if (!cell) return;
+    // Wait a moment: a double-click (selecting a word) or a drag that selected text means
+    // "copy this", not "edit this".
+    clearTimeout(this.editTimer);
+    if (e.detail > 1 || String(window.getSelection() || "")) return;
+    const id = cell.closest("tr").dataset.id, field = cell.dataset.edit;
+    this.editTimer = setTimeout(() => {
+      if (!String(window.getSelection() || "")) this.startEdit(id, field);
+    }, 280);
   }
 
   onKeyDown(e) {

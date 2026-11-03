@@ -33,20 +33,18 @@ table.ap { width: 100%; min-width: 880px; border-collapse: collapse; table-layou
 .c-description { width: 14%; }  .c-contact { width: 11%; }  .c-deadline { width: 9%; }
 .c-due { width: 8%; }  .c-status { width: 12%; }  .c-notes { width: 13%; }  .c-del { width: 34px; }
 
-/* A cell: its text on one line, cut at the edge; "…" shows when it's cut. */
+/* A cell: its text on one line; if it's too long it's cut and ends in a clickable "...". */
 .ap td { position: relative; }
 .ap-cell { display: flex; align-items: center; height: 100%; padding: 0 10px; cursor: text; outline: none; }
 .ap-cell:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 4px; }
-.ap-text { display: block; min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.ap-text { display: block; min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; user-select: text; }
 td.c-due .ap-text { padding: 0 10px; color: var(--muted); }
-td.cut .ap-text { padding-right: 26px; }
 .ap-more {
-  display: none; position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-  border: none; background: var(--soft); border-radius: 4px; padding: 0 5px; line-height: 1.4;
-  cursor: pointer; color: var(--muted); font-weight: 700;
+  border: none; background: none; padding: 0 0 0 1px; margin: 0; font: inherit; color: inherit;
+  cursor: pointer; letter-spacing: 0.02em; user-select: none;
 }
-td.cut .ap-more { display: block; }
-.ap-more:hover, .ap-more:focus-visible { color: var(--text); outline: 2px solid var(--accent); outline-offset: 0; }
+.ap-more:hover { color: var(--accent); }
+.ap-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
 
 /* Editing in place */
 td.editing { box-shadow: inset 0 0 0 2px var(--accent); }
@@ -84,4 +82,4 @@ td.editing { box-shadow: inset 0 0 0 2px var(--accent); }
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); outline: none;
 }
 .ap-bubble-h { font-size: 0.72rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
-.ap-bubble-t { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+.ap-bubble-t { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; user-select: text; cursor: text; }
