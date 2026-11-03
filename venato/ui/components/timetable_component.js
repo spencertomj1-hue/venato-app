@@ -379,7 +379,7 @@ class Timetable {
           <div class="tt-blocks" aria-hidden="true"></div>
         </div>
       </div>
-      <div class="tt-hint">Drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it to select it and see details · Shift-drag to pick several · Delete or Backspace removes · ${MOD}C / ${MOD}V copy and paste${this.data.single ? "" : " · swipe sideways to change week"}</div>
+      <div class="tt-hint">Pick a category and drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it to select it · with no category picked (or holding Shift), drag a box to select several; Shift- or ${MOD.replace('+', '')}-click adds one · drag any selected block to move them all · ${MOD}C / ${MOD}V copy and paste · Delete or Backspace removes${this.data.single ? "" : " · swipe sideways to change week"}</div>
       <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details)"></div>`;
 
     // Blocks are positioned from the cells, so redo them when the size changes.
@@ -625,8 +625,10 @@ class Timetable {
       const di = +td.dataset.d, track = td.dataset.t, slot = +td.dataset.s;
       const hit = this.blockAt(di, track, slot);
       const hitId = hit && this.idOf(hit);
-      const selecting = e.shiftKey;
-      if (selecting && hit && e.shiftKey) {         // Shift-click a block: add it to / take it out of the selection
+      const adding = e.shiftKey || (IS_MAC ? e.metaKey : e.ctrlKey);   // Shift or Cmd/Ctrl: add to the selection
+      // Dragging empty time draws a selection box with Shift / Cmd / Ctrl held, or when no category is picked.
+      const selecting = adding || (!hit && !this.cats.has(this.brush));
+      if (adding && hit) {                          // Shift / Cmd / Ctrl-click a block: add it to / take it out of the selection
         const next = new Set(this.picked);
         next.has(hitId) ? next.delete(hitId) : next.add(hitId);
         this.setPicked([...next]);
@@ -639,7 +641,7 @@ class Timetable {
         return;
       }
       if (selecting) {                              // drag a box to select every block it touches
-        this.marquee = { di0: di, t0: track, s0: slot, di1: di, t1: track, s1: slot, add: e.shiftKey };
+        this.marquee = { di0: di, t0: track, s0: slot, di1: di, t1: track, s1: slot, add: adding };
         this.highlight();
         return;
       }
@@ -665,10 +667,11 @@ class Timetable {
       this.hoverCell = td ? { di: +td.dataset.d, track: td.dataset.t, slot: +td.dataset.s } : null;
       const hit = td && this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
       this.hoverBlock(hit ? (hit.outlook ? `outlook:${hit.ev.id}` : hit.entry.id) : null);
-      if (!hit) { table.style.cursor = ""; return; }
+      const adding = e.shiftKey || (IS_MAC ? e.metaKey : e.ctrlKey);
+      if (!hit) { table.style.cursor = td && (adding || !this.cats.has(this.brush)) ? "crosshair" : ""; return; }
       const { s0, e0 } = this.spanOf(hit);
       const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
-      table.style.cursor = e.shiftKey ? "pointer"
+      table.style.cursor = adding ? "pointer"
         : this.picked.has(this.idOf(hit)) && this.picked.size > 1 ? "grab"
         : zone === "move" ? "grab" : "ns-resize";
     });
@@ -832,6 +835,8 @@ class Timetable {
       return c >= c0 && c <= c1 && b.s <= s1 && b.e > s0;
     }).map((b) => (b.outlook ? `outlook:${b.en.id}` : b.en.id));
     this.setPicked(m.add ? [...this.picked, ...inside] : inside);
+    // A box over empty time with no category picked: they probably meant to add a block.
+    if (!inside.length && !m.add && (s1 > s0 || c1 > c0)) this.flashHint("Pick a category first to add a block");
   }
 
   dragGroupTo(di, slot) {

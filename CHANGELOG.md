@@ -12,6 +12,7 @@ Venato was called **Arete** up to 1.1.1.
 ### Added
 - Applications page: a table to track applications (industry, company, route, description, contact / lead, deadline with countdown, status, notes), between Daily Log and Network. Search finds them.
 - Timetable: click a category again, or press Esc, to deselect it.
+- Timetable: with no category picked, dragging over empty time draws a selection box; ⌘/Ctrl-click (as well as Shift-click) adds a block to the selection.
 - Assistant: can now list, add, edit and delete applications; rename and delete habits; edit and move to-dos; remove a logged meeting; and save weekly-review answers.
 - `CHANGELOG.md`, issue and pull request templates, and `.env.example` listing the environment variables Venato reads.
 

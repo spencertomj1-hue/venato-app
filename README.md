@@ -39,7 +39,7 @@
 ## Features
 
 **Planning**
-- **Weekly timetable** with Plan and Actual columns in 30-minute slots. Drag to add, move and resize blocks; click one and press Backspace to delete it; Shift-drag to select several to move, copy, paste or delete together; ⌘Z / Ctrl+Z to undo.
+- **Weekly timetable** with Plan and Actual columns in 30-minute slots. Drag to add, move and resize blocks; click one and press Backspace to delete it; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
 - **Colour-coded categories** in groups ("Life", "Work"), with activities that pick their category automatically ("Lunch" goes to Meals).
 - **Fit time:** say what, how many hours and which days; Venato finds free gaps around your blocks and calendar events and previews the sittings before adding them.
 - **To-dos** for today, this week and this month, in the style of Apple Reminders: drag to reorder, notes, repeating to-dos.
