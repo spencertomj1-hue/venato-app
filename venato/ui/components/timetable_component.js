@@ -141,7 +141,6 @@ class Timetable {
     this.pending = [];          // ops not yet acknowledged by Python
     this.brush = recall("tt-brush");   // category id, or null
     if (this.brush === "eraser" || this.brush === "select") this.brush = null;   // tools that no longer exist
-    this.label = recall("tt-label") || "";
     this.drag = null;           // {di, track, a, b} while painting
     this.picked = new Set();    // selected blocks: entry ids, or "outlook:<uid>"
     this.selected = [];         // cells currently highlighted
@@ -370,7 +369,6 @@ class Timetable {
           <button class="tt-ol-toggle" title="Show or hide Outlook events">${CAL_ICON}Outlook</button>
         </div>
         <div class="tt-tools">
-          <input class="tt-label" list="tt-labels" placeholder="Label, e.g. Lecture" title="Label for new blocks" aria-label="Label for new blocks">
           <datalist id="tt-labels"></datalist>
         </div>
       </div>
@@ -404,8 +402,6 @@ class Timetable {
       this.cells[+td.dataset.d][td.dataset.t][+td.dataset.s] = td;
     });
 
-    this.labelInput = this.root.querySelector(".tt-label");
-    this.labelInput.value = this.label;
     this.bindEvents();
     this.showBrush();
   }
@@ -572,27 +568,14 @@ class Timetable {
 
   // ---------- Brush ----------
 
-  setBrush(id, { fromLabel = false } = {}) {
+  setBrush(id) {
     this.brush = id;
     remember("tt-brush", id);
-    const cat = this.cats.get(id);
-    // Picking a category fills in its name, unless the typed label already maps to it.
-    if (cat && !fromLabel && this.mapLabel(this.labelInput.value) !== id) {
-      this.labelInput.value = cat.name;
-      this.label = cat.name;
-      remember("tt-label", cat.name);
-    }
     this.showBrush();
   }
 
-  // Nothing picked: a drag just asks for a category, and the label it filled in goes.
+  // Nothing picked: dragging empty time draws a selection box instead of adding.
   clearBrush() {
-    const cat = this.cats.get(this.brush);
-    if (cat && this.labelInput.value.trim() === cat.name) {
-      this.labelInput.value = "";
-      this.label = "";
-      remember("tt-label", "");
-    }
     this.brush = null;
     remember("tt-brush", null);
     this.showBrush();
@@ -634,13 +617,6 @@ class Timetable {
       el.addEventListener("click", () => this.nav({ dir: +el.dataset.nav })));
     this.root.querySelector(".tt-goto").addEventListener("change", (e) => {
       if (e.target.value) this.nav({ date: e.target.value });
-    });
-
-    this.labelInput.addEventListener("input", () => {
-      this.label = this.labelInput.value;
-      remember("tt-label", this.label);
-      const id = this.mapLabel(this.label);
-      if (id && this.cats.has(id)) this.setBrush(id, { fromLabel: true });
     });
 
     table.addEventListener("mousedown", (e) => {
@@ -1044,10 +1020,10 @@ class Timetable {
     }
     const cat = this.cats.get(this.brush);
     if (!cat) {
-      this.flashHint("Pick a category (or type a label) first");
+      this.flashHint("Pick a category first");
       return;
     }
-    const label = this.labelInput.value.trim() || cat.name;
+    const label = cat.name;                     // renamed in its details (click it twice)
     this.paintRange(drag.di, drag.track, drag.a, drag.b, { label, categoryId: cat.id });
   }
 

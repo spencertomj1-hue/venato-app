@@ -83,17 +83,6 @@ button, input, select { font: inherit; }
 .sw.on { background: rgba(128, 128, 128, 0.16); border-color: rgba(128, 128, 128, 0.35); font-weight: 600; }
 .sep { flex: none; width: 1px; height: 16px; margin: 0 5px; background: var(--line-day); }
 
-.tt-label {
-  width: 11.5em;
-  padding: 4px 10px;
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.78rem;
-  outline: none;
-}
-.tt-label:focus { border-color: var(--accent); }
 
 .tt-hint { margin-top: 6px; font-size: 0.72rem; color: var(--muted); }
 .tt-hint.warn { color: #d33; }
@@ -143,13 +132,13 @@ table.tt th {
   text-overflow: ellipsis;
 }
 th.day { padding: 7px 4px 2px; border-left: 1px solid var(--line-day); }
-th.day .dn { font-size: 0.8rem; }
-th.day .dd { font-size: 0.7rem; font-weight: 400; color: var(--muted); }
+th.day .dn { font-size: 1.1rem; }               /* +0.30rem */
+th.day .dd { font-size: 0.85rem; font-weight: 400; color: var(--muted); }   /* +0.15rem */
 th.day.today { box-shadow: inset 0 2px 0 var(--accent); }
 th.day.today .dn, th.day.today .dd { color: var(--accent); }
 th.sub {
   padding: 1px 2px 5px;
-  font-size: 0.6rem;
+  font-size: 0.7rem;               /* +0.10rem */
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;

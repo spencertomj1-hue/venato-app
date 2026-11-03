@@ -20,6 +20,7 @@ Venato was called **Arete** up to 1.1.1.
 - `CHANGELOG.md`, issue and pull request templates, and `.env.example` listing the environment variables Venato reads.
 
 ### Changed
+- Timetable: bigger day names, dates and Plan / Actual labels; the label box at the top right is gone (new blocks take their category's name; rename one in its details).
 - Timetable: a click selects a block and a second click opens its details; drag a selected block to move or resize it; dragging from an unselected block draws a box that selects every block it touches. Empty half hours are now soft rounded tiles instead of grid lines.
 - Sidebar order: Network now comes before Stats.
 - Timetable: the Select, Eraser and Add block buttons are gone; click a block and press Delete or Backspace to remove it, Shift-drag to select several.
