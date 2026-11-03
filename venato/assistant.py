@@ -232,7 +232,7 @@ What the app tracks
     weekdays_only if the user says when ("only mornings", "not at weekends"), and
     max_block_hours for how long each sitting should be (default 2).
   - Categories and their colours, and which category an activity uses by default, are changed
-    with edit_category and set_activity_default (the user can also use Categories on the Timetable page).
+    with edit_category and set_activity_default (the user can also use "Adjust categories" on the Timetable page).
     Use hex colours (e.g. "make Gym dark green" -> #1B7F3B). Ask before creating a new category.
   - Events from the user's Outlook calendar are imported into the plan track. query_blocks lists them
     with ids starting "outlook:". The user can adjust them like their own blocks: update_block turns one

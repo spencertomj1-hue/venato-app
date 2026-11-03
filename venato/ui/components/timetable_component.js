@@ -45,6 +45,28 @@ function dropFocus() {
   if (el && el !== document.body && !isTextField(el) && el.blur) el.blur();
 }
 
+// The "?" panel at the top right: everything you can do on the timetable.
+function helpHtml(single) {
+  const key = (k) => `<kbd>${k}</kbd>`;
+  const items = [
+    ["Plan and Actual", "Each day has two columns: <b>Plan</b> is what you mean to do, <b>Actual</b> is what you really did."],
+    ["Add a block", "Pick a category from the key, then drag down a column. The block takes the category's name; rename it in its details."],
+    ["Put a category down", "Click it again, or press " + key("Esc") + ". With no category picked, dragging selects instead of adding."],
+    ["Select", "Click a block to select it. Click it again to see its details, edit it or delete it."],
+    ["Move or resize", "Drag a selected block to move it (to another time, day, or between Plan and Actual). Drag its top or bottom edge to change when it starts or ends."],
+    ["Select several", "Drag from a block (or from empty time with no category picked, or holding " + key("Shift") + ") to draw a box: every block it touches is selected. " + key("Shift") + " or " + key(MOD.replace("+", "")) + "-click adds or removes one. Drag any selected block to move them all."],
+    ["Copy and paste", key(MOD + "C") + " copies the selected blocks; point at a time and " + key(MOD + "V") + " pastes them there, layout kept, on any day or week."],
+    ["Delete and undo", key("Delete") + " or " + key("Backspace") + " removes the selected blocks; " + key(MOD + "Z") + " brings them back."],
+    ["Right-click", "Right-click a block to edit it straight away."],
+    ["Outlook", "Outlook events show in Plan. ↻ syncs now; the Outlook button shows or hides them. Moving or deleting one only changes Venato, never Outlook."],
+    ["Fit time", "<b>Fit time</b> (above) finds free gaps for hours of something, e.g. 6 hours of revision, and shows you before adding them."],
+    ["Categories", "<b>Adjust categories</b> (above) adds, renames and recolours categories, and sets which category an activity uses."],
+  ];
+  if (!single) items.push(["Change week", "‹ Today › at the top, the date box, or swipe sideways on a trackpad."]);
+  return `<div class="tt-help-h">How the timetable works</div><dl>` +
+    items.map(([t, d]) => `<dt>${t}</dt><dd>${d}</dd>`).join("") + "</dl>";
+}
+
 function leaveShortcutAlone(e) {
   if (isTextField(e.composedPath()[0])) return true;
   const sel = window.getSelection && String(window.getSelection() || "");
@@ -164,6 +186,8 @@ class Timetable {
         return;
       }
       if (e.key !== "Escape") return;
+      const help = this.root.querySelector(".tt-help");
+      if (help && !help.hidden) { this.toggleHelp(false); this.root.querySelector(".tt-help-btn").focus(); return; }
       // Esc closes whatever is open first; with nothing open, it puts the category down.
       if (!this.drag && !this.blockDrag && !this.marquee && !this.groupDrag && !this.popover && !this.picked.size
           && this.brush && this.data && !this.data.readonly && !isTextField(e.composedPath()[0])) this.clearBrush();
@@ -173,6 +197,8 @@ class Timetable {
       if (this.returnFocus) { this.returnFocus.focus(); this.returnFocus = null; }
     };
     this.onOutside = (e) => {
+      const help = this.root.querySelector(".tt-help");
+      if (help && !help.hidden && !e.composedPath().some((el) => el.classList && (el.classList.contains("tt-help") || el.classList.contains("tt-help-btn")))) this.toggleHelp(false);
       if (this.popover && !e.composedPath().includes(this.popover) && !e.composedPath().includes(this.wrapEl)) this.closePopover();
     };
   }
@@ -370,6 +396,8 @@ class Timetable {
         </div>
         <div class="tt-tools">
           <datalist id="tt-labels"></datalist>
+          <button class="tt-help-btn" aria-expanded="false" aria-controls="tt-help" title="How the timetable works">?</button>
+          <div class="tt-help" id="tt-help" role="dialog" aria-label="How the timetable works" hidden>${helpHtml(this.data.single)}</div>
         </div>
       </div>
       <div class="tt-legend">${key}</div>
@@ -386,7 +414,7 @@ class Timetable {
           <div class="tt-blocks" aria-hidden="true"></div>
         </div>
       </div>
-      <div class="tt-hint">Pick a category and drag down a column to add · click a block to select it, click again for details · drag a selected block to move it, or its top or bottom edge to change the time · drag from a block (or from empty time with no category picked, or holding Shift) to select several; Shift- or ${MOD.replace('+', '')}-click adds one · drag any selected block to move them all · ${MOD}C / ${MOD}V copy and paste · Delete or Backspace removes${this.data.single ? "" : " · swipe sideways to change week"}</div>
+      <div class="tt-hint" aria-live="polite"></div>
       <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details)"></div>`;
 
     // Blocks are positioned from the cells, so redo them when the size changes.
@@ -502,7 +530,9 @@ class Timetable {
     if (!this.data.readonly || !this.wrapEl) return;
     const card = this.root.querySelector(".tt-card").getBoundingClientRect();
     const head = this.root.querySelector("thead").getBoundingClientRect().height;
-    const legend = this.root.querySelector(".tt-legend").getBoundingClientRect().height;
+    const legendEl = this.root.querySelector(".tt-legend");
+    const legend = legendEl.getBoundingClientRect().height;     // 0 on Home, where the key is hidden
+    const lastEl = legend ? legendEl : this.root.querySelector(".tt-card");
     const main = document.querySelector(".stMainBlockContainer");
     const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24;
     // window height minus everything above the rows and everything below them
@@ -511,7 +541,7 @@ class Timetable {
     this.root.style.setProperty("--row-h", `${row}px`);
     // Borders and margins make the estimate a little off: check where the key really
     // ends and take any overshoot back out of the rows.
-    const over = this.root.querySelector(".tt-legend").getBoundingClientRect().bottom + bottomPad - window.innerHeight;
+    const over = lastEl.getBoundingClientRect().bottom + bottomPad - window.innerHeight;
     if (over > 0 && row > 9) {
       row = Math.max(9, row - Math.ceil(over / SLOTS));
       this.root.style.setProperty("--row-h", `${row}px`);
@@ -613,6 +643,7 @@ class Timetable {
     this.root.querySelector(".tt-ol-toggle").addEventListener("click", () =>
       this.trigger("outlook", { show: !this.data.showOutlook }));
 
+    this.root.querySelector(".tt-help-btn").addEventListener("click", () => this.toggleHelp());
     this.root.querySelectorAll("[data-nav]").forEach((el) =>
       el.addEventListener("click", () => this.nav({ dir: +el.dataset.nav })));
     this.root.querySelector(".tt-goto").addEventListener("change", (e) => {
@@ -829,12 +860,8 @@ class Timetable {
     this.picked = new Set(ids);
     this.blocksEl.querySelectorAll(".blk").forEach((el) => el.classList.toggle("picked", this.picked.has(el.dataset.id)));
     const hint = this.root.querySelector(".tt-hint");
-    if (this.hintText === undefined) this.hintText = hint.textContent;
-    const n = this.picked.size;
-    hint.textContent = n > 1
-      ? `${n} blocks selected · drag one to move them all · ${MOD}C to copy · Delete to remove · Esc to clear`
-      : n === 1 ? `1 block selected · ${MOD}C to copy · Delete to remove · Shift-click or Shift-drag to select more`
-      : this.hintText;
+    this.hintText = this.picked.size > 1 ? `${this.picked.size} blocks selected` : "";
+    hint.textContent = this.hintText;
   }
 
   endMarquee() {
@@ -1027,13 +1054,20 @@ class Timetable {
     this.paintRange(drag.di, drag.track, drag.a, drag.b, { label, categoryId: cat.id });
   }
 
+  toggleHelp(open) {
+    const help = this.root.querySelector(".tt-help"), btn = this.root.querySelector(".tt-help-btn");
+    if (!help) return;
+    open = open ?? help.hidden;
+    help.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+  }
+
   flashHint(text, warn = true) {
     const hint = this.root.querySelector(".tt-hint");
-    if (this.hintText === undefined) this.hintText = hint.textContent;   // the usual hint, to put back
     hint.textContent = text;
     hint.classList.toggle("warn", warn);
     clearTimeout(this.hintTimer);
-    this.hintTimer = setTimeout(() => { hint.textContent = this.hintText; hint.classList.remove("warn"); }, warn ? 2000 : 4000);
+    this.hintTimer = setTimeout(() => { hint.textContent = this.hintText || ""; hint.classList.remove("warn"); }, warn ? 2000 : 4000);
   }
 
   // ---------- Right-click editor ----------
