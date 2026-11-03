@@ -589,6 +589,21 @@ class Timetable {
     el.innerHTML = html;
   }
 
+  // Where a block goes: exactly over the tiles it covers (the same gaps and rounded corners),
+  // so blocks and empty tiles line up. The gaps come from the CSS (--gap, --day-gap).
+  boxStyle(first, last, origin) {
+    const css = getComputedStyle(this.root);
+    const gap = parseFloat(css.getPropertyValue("--gap")) || 2.5;
+    const dayGap = parseFloat(css.getPropertyValue("--day-gap")) || 7;
+    const a = first.getBoundingClientRect(), b = last.getBoundingClientRect();
+    const border = parseFloat(getComputedStyle(last).borderBottomWidth) || 0;
+    const left = a.left - origin.left + (first.classList.contains("first") ? dayGap : gap);
+    const top = a.top - origin.top + gap;
+    const right = a.right - origin.left - gap;
+    const bottom = b.bottom - origin.top - border - gap;
+    return `left:${left}px;top:${top}px;width:${right - left}px;height:${bottom - top}px;`;
+  }
+
   layoutBlocks() {
     this.drawNow();
     this.drawLines();
@@ -596,19 +611,19 @@ class Timetable {
     const origin = this.wrapEl.getBoundingClientRect();
     this.blocksEl.innerHTML = this.blocks
       .map(({ en, di, s, e, outlook }) => {
-        const first = this.cells[di][en.track][s].getBoundingClientRect();
-        const last = this.cells[di][en.track][e - 1].getBoundingClientRect();
+        const firstTd = this.cells[di][en.track][s], lastTd = this.cells[di][en.track][e - 1];
+        const first = firstTd.getBoundingClientRect(), last = lastTd.getBoundingClientRect();
         const cat = this.cats.get(en.categoryId);
         const bg = cat ? cat.colour : "#9e9e9e";
         const fg = (cat && cat.textColour) || contrastText(bg);
         const tall = last.bottom - first.top >= 30;   // room for the time line under the title
         if (outlook) {
-          return `<div class="blk outlook plan ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
-            `width:${first.width}px;height:${last.bottom - first.top}px;background:${esc(bg)};color:${fg}">` +
+          return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+            `background:${esc(bg)};color:${fg}">` +
             `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div class="blk ${en.track === "plan" ? "plan " : ""}${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
-          `width:${first.width}px;height:${last.bottom - first.top}px;background:${esc(bg)};color:${fg}">` +
+        return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+          `background:${esc(bg)};color:${fg}">` +
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
       .join("");

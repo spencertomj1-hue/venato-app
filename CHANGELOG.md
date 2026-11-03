@@ -20,7 +20,7 @@ Venato was called **Arete** up to 1.1.1.
 - `CHANGELOG.md`, issue and pull request templates, and `.env.example` listing the environment variables Venato reads.
 
 ### Changed
-- Timetable: bigger gaps between blocks and tiles; the time lines run over blocks too; the whole day fits the window on the Timetable page (rows shrink to fit, like Home); less empty space at the top of every page.
+- Timetable: bigger gaps between blocks and tiles; the whole day fits the window on the Timetable page (rows shrink to fit, like Home); less empty space at the top of every page.
 - Timetable: day headers are rounded bubbles with a small gap above the grid; solid, slightly darker time lines; no outline round the table; the help text under it moved into a "?" panel at the top right; "Categories" is now "Adjust categories"; Home's timetable has no colour key.
 - Timetable: bigger day names, dates and Plan / Actual labels; the label box at the top right is gone (new blocks take their category's name; rename one in its details).
 - Timetable: a click selects a block and a second click opens its details; drag a selected block to move or resize it; dragging from an unselected block draws a box that selects every block it touches. Empty half hours are now soft rounded tiles instead of grid lines.
@@ -30,6 +30,7 @@ Venato was called **Arete** up to 1.1.1.
 - `CONTRIBUTING.md` now covers setting up, running and opening a pull request.
 
 ### Fixed
+- Timetable blocks now sit exactly over their tiles with all four corners rounded (the first column of each day had a square corner, and blocks were slightly out of line).
 - The grey focus ring round the page after Backspace or Delete on the timetable in the Mac app (focus is now taken off the page after a timetable shortcut).
 - A grey focus ring round the whole page after pressing a key (e.g. Backspace on a timetable block) in the Mac app.
 - Backspace on a timetable block edited the label box instead when it still had the cursor.
