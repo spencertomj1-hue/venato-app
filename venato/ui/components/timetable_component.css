@@ -121,8 +121,8 @@ table.tt {
 }
 col.c-time { width: 52px; }
 
-/* Header: each day is one rounded bubble (its name, date and Plan / Actual), side by side
-   with no gap; the day row is its top half, the Plan / Actual row its bottom half. */
+/* Header: each day is one rounded bubble (its name, date and Plan / Actual), with the same gap
+   between days as the grid; the day row is its top half, the Plan / Actual row its bottom half. */
 table.tt th {
   position: relative;
   z-index: 0;
@@ -138,8 +138,8 @@ th.day { padding: 7px 4px 2px; }
 th.day::before, th.sub::before {
   content: ""; position: absolute; inset: 0; z-index: -1; background: var(--head-bg);
 }
-th.day::before { border-radius: 10px 10px 0 0; }
-th.sub.first::before { border-radius: 0 0 0 10px; }
+th.day::before { border-radius: 10px 10px 0 0; left: 6px; }       /* the same gap between days as the grid */
+th.sub.first::before { border-radius: 0 0 0 10px; left: 6px; }
 th.sub:not(.first)::before { border-radius: 0 0 10px 0; }
 th.day .dn { font-size: 1.1rem; }               /* +0.30rem */
 th.day .dd { font-size: 0.85rem; font-weight: 400; color: var(--muted); }   /* +0.15rem */
@@ -159,7 +159,10 @@ th.sub {
 table.tt td {
   height: var(--row-h, 18px);   /* Home shrinks this to fit the window */
   padding: 0;
+  border-bottom: 1px dashed var(--line-soft);              /* the time lines across the timetable */
 }
+tr.half td { border-bottom: 1px dashed var(--line); }     /* a stronger one on each hour */
+tr:last-child td { border-bottom: none; }
 
 /* Time labels sit centred on their hour line. */
 td.t { position: relative; overflow: visible; border-bottom-color: transparent !important; }
