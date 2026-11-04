@@ -117,6 +117,15 @@ def _loop():
         except Exception:                      # a bad check must never kill the thread
             log.exception("Reminder check failed")
         try:
+            from venato import blocks           # a Focus timer that has run out: log it and say so
+            if blocks.is_on("focus"):
+                from venato.blocks import focus
+                msg = focus.finish_if_due()
+                if msg:
+                    system.notify("Venato · Focus", msg)
+        except Exception:
+            log.exception("Focus check failed")
+        try:
             from venato import setup_checks     # the daily automatic backup rides on the same thread
             setup_checks.auto_backup_if_due()
         except Exception:
