@@ -714,6 +714,19 @@ class Timetable {
         this.highlight();
         return;
       }
+      // The top or bottom edge of any block (selected or not): resize it straight away.
+      if (hit && !selecting && !(this.picked.has(hitId) && this.picked.size > 1)) {
+        const { s0, e0 } = this.spanOf(hit);
+        const zone = this.zoneAt(di, track, s0, e0, e.clientY);
+        if (zone !== "move") {
+          const fresh = !(this.picked.size === 1 && this.picked.has(hitId));   // a first click only selects it
+          if (fresh) this.setPicked([hitId]);
+          this.blockDrag = { hit, zone, di, track, downSlot: slot, s0, e0, target: { di, track, s: s0, e: e0 }, moved: false,
+                             fresh };
+          this.highlight();
+          return;
+        }
+      }
       // An unselected block: a click selects it; dragging from it draws a box that selects
       // every block it touches. Empty time draws a box too when no category is picked.
       if (selecting || (hit && !this.picked.has(hitId))) {
@@ -748,9 +761,11 @@ class Timetable {
       if (!hit) { table.style.cursor = td && (adding || !this.cats.has(this.brush)) ? "crosshair" : ""; return; }
       const { s0, e0 } = this.spanOf(hit);
       const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
-      table.style.cursor = adding || !this.picked.has(this.idOf(hit)) ? "pointer"   // not selected: a click selects it
-        : this.picked.size > 1 ? "grab"
-        : zone === "move" ? "grab" : "ns-resize";
+      const inGroup = this.picked.has(this.idOf(hit)) && this.picked.size > 1;
+      table.style.cursor = adding ? "pointer"
+        : zone !== "move" && !inGroup ? "ns-resize"                         // any block's edge: drag to resize
+        : !this.picked.has(this.idOf(hit)) ? "pointer"                     // not selected: a click selects it
+        : "grab";
     });
     table.addEventListener("mouseleave", () => {
       this.hoverCell = null;
@@ -1052,7 +1067,11 @@ class Timetable {
     this.blockDrag = null;
     this.highlight();
     this.root.querySelector("table").style.cursor = "";
-    if (!bd.moved) { this.setPicked([this.idOf(bd.hit)]); this.openCard(bd.hit); return; }   // a second click: its details
+    if (!bd.moved) {                                 // a second click: its details (a first one just selected it)
+      this.setPicked([this.idOf(bd.hit)]);
+      if (!bd.fresh) this.openCard(bd.hit);
+      return;
+    }
     const t = bd.target;
     const where = { date: this.data.days[t.di], track: t.track, start: slotTime(t.s), end: slotTime(t.e) };
     const ops = bd.hit.outlook

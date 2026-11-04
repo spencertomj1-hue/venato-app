@@ -243,12 +243,12 @@ td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
 .dragging .blk { opacity: 0.35; }
 /* Hovering a block (editable grid): a ring, and grab bars at the top and bottom edges for resizing. */
 .blk.hover { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.28); }
-.blk.hover.picked::before, .blk.hover.picked::after {      /* resize bars: only on a selected block */
-  content: ""; position: absolute; left: 50%; width: 18px; height: 3px; margin-left: -9px;
-  border-radius: 2px; background: currentColor; opacity: 0.55;
+.blk.hover::before, .blk.hover::after {      /* resize bars, on the very edge (next to the selection ring) */
+  content: ""; position: absolute; left: 50%; width: 22px; height: 3px; margin-left: -11px;
+  border-radius: 2px; background: currentColor; opacity: 0.6;
 }
-.blk.hover.picked::before { top: 2px; }
-.blk.hover.picked::after { bottom: 2px; }
+.blk.hover::before { top: 0; }
+.blk.hover::after { bottom: 0; }
 /* Selected blocks (click, Shift-click or drag a box with Shift). */
 .blk.picked { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); z-index: 2; }
 .dragging .blk.picked { opacity: 0.55; }

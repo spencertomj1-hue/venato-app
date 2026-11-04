@@ -86,6 +86,9 @@ if st.session_state.get("page") not in PAGES:
 st.sidebar.title("Venato")
 # Keyed so Home's goals "See all" can switch to the Goals page.
 choice = st.sidebar.radio("Go to", list(PAGES), label_visibility="collapsed", key="page")
+with st.sidebar:
+    from venato.ui import page_fade               # fades between pages instead of swapping bits in front of you
+    page_fade.render()
 
 
 def update_banner():

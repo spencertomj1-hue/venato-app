@@ -23,6 +23,8 @@ Venato was called **Arete** up to 1.1.1.
 - `CHANGELOG.md`, issue and pull request templates, and `.env.example` listing the environment variables Venato reads.
 
 ### Changed
+- Timetable: the resize bars sit right on a block's top and bottom edges and show whenever you hover a block; drag an edge to resize it without selecting it first.
+- Switching pages fades through the page colour and fades the new page in once it has drawn, instead of the old page changing bit by bit.
 - Home is built from the switched-on blocks' widgets; Stats moved to its own module.
 - Timetable: bigger gaps between blocks and tiles; the whole day fits the window on the Timetable page (rows shrink to fit, like Home); less empty space at the top of every page.
 - Timetable: day headers are rounded bubbles with a small gap above the grid; solid, slightly darker time lines; no outline round the table; the help text under it moved into a "?" panel at the top right; "Categories" is now "Adjust categories"; Home's timetable has no colour key.
