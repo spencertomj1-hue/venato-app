@@ -355,11 +355,12 @@ def monthly_cost(s):
 def log_renewals(today=None):
     """Log each renewal that has come round (for subscriptions set to), and move it on. Returns how many."""
     today = today or store.local_today()
+    oldest = today - timedelta(days=366)       # a start date years back doesn't log years of payments
     n = 0
     for s in subscriptions(active_only=True):
         nxt = store._as_date(s["next_date"])
         while nxt <= today:
-            if s["auto_log"]:
+            if s["auto_log"] and nxt >= oldest:
                 if add(s["amount"], "spend", s["category_id"], f"{s['name']} ({s['period']})", nxt, "subscription",
                        f"{s['id']}:{nxt.isoformat()}"):
                     n += 1
@@ -414,8 +415,8 @@ def _money(text):
         return None
     neg = t.startswith("-") or (t.startswith("(") and t.endswith(")"))
     t = t.strip("-()")
-    if "," in t and "." not in t and len(t.split(",")[-1]) == 2:
-        t = t.replace(",", ".")                # 12,50 (European decimals)
+    if "," in t and ("." not in t and len(t.split(",")[-1]) == 2 or "." in t and t.rfind(",") > t.rfind(".")):
+        t = t.replace(".", "").replace(",", ".")   # 12,50 / 1.234,56 (European decimals)
     t = t.replace(",", "")
     try:
         v = float(t)
@@ -428,7 +429,7 @@ def import_rows(rows, mapping, dry_run=False):
     """Turn CSV rows into transactions: a signed 'amount' column (negative = spending), or separate
     'out' / 'in' columns. Returns (preview rows, problems); without dry_run they're also saved
     (repeat imports of the same rows are skipped)."""
-    out, problems = [], []
+    out, problems, seen = [], [], {}
     for i, row in enumerate(rows, 1):
         try:
             day = _parse_date(row.get(mapping["date"]))
@@ -447,7 +448,11 @@ def import_rows(rows, mapping, dry_run=False):
                     kind, amount = "income", abs(n)
                 else:
                     continue
-            key = hashlib.sha256(f"{day}|{amount:.2f}|{kind}|{note}|{i}".encode()).hexdigest()[:24]
+            # The same purchase twice in a day is two rows; counting repeats (not the row number) keeps
+            # the key the same when a later export overlaps this one.
+            base = f"{day}|{amount:.2f}|{kind}|{note.lower()}"
+            seen[base] = seen.get(base, 0) + 1
+            key = hashlib.sha256(f"{base}|{seen[base]}".encode()).hexdigest()[:24]
             cat = guess_category(note, kind)
             out.append({"date": day.isoformat(), "kind": kind, "amount": amount, "note": note,
                         "category": cat["name"] if cat else ""})

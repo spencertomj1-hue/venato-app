@@ -383,8 +383,10 @@ def convert(profile, rows, mapping):
             title = (row.get(mapping.get("title")) or "").strip() if mapping.get("title") else ""
             kind = (row.get(mapping.get("type")) or "").strip() if mapping.get("type") else ""
             mins = get.get("minutes")
-            if mins and mapping.get("minutes") and "time" in mapping["minutes"].lower() and mins > 600:
-                mins /= 60                                          # Strava times are in seconds
+            col = (mapping.get("minutes") or "").lower()
+            raw = str(row.get(mapping.get("minutes")) or "") if mapping.get("minutes") else ""
+            if mins and ":" not in raw and "min" not in col and ("sec" in col or "(s)" in col or profile == "Strava"):
+                mins /= 60                                          # Strava's times are in seconds
             km = get.get("km")
             if km and mapping.get("km") and ("meter" in mapping["km"].lower() or "(m)" in mapping["km"].lower()):
                 km /= 1000

@@ -54,3 +54,13 @@ def test_habits_and_todos(quick, store):
     assert quick.handle("tick gym and add a lecture") is None
     store.save_settings(quick_commands=False)
     assert quick.handle("drank 500ml") is None        # switched off in Settings
+
+
+def test_a_broken_block_handler_never_breaks_quick(store, monkeypatch):
+    import importlib
+    from venato import quick
+    quick = importlib.reload(quick)
+    def boom(text, day):
+        raise RuntimeError("bug")
+    monkeypatch.setattr(quick, "EXTRA", [boom])
+    assert quick.handle("something odd") is None

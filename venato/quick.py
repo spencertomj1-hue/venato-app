@@ -139,6 +139,8 @@ def handle(text):
             result = handler(text, day)
         except tools.ToolError:
             return None                      # e.g. an odd value: Claude can explain it better
+        except Exception:                    # a bug in a block's handler must never break the chat box
+            return None
         if result is None:
             continue
         reply = Reply(changed=result.changed)

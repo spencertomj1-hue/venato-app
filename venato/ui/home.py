@@ -82,6 +82,9 @@ def page_home():
             chat.render(inline=True)
     for i, widget in enumerate(widgets):
         with columns[i % len(columns)]:
-            widget()
+            try:
+                widget()
+            except Exception as e:               # one broken widget mustn't take Home down with it
+                st.caption(f":material/error: A Home widget couldn't load ({type(e).__name__}).")
     with columns[-1]:
         search.render_home()                     # search everything (bottom right)

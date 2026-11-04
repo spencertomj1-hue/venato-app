@@ -117,3 +117,21 @@ def test_quick_and_tools(mn):
     names = {t[0] for t in assistant.tool_specs()}
     assert {"add_money", "money_summary", "set_budget", "savings_goal", "add_subscription"} <= names
     assert "spent" in mn._context()
+
+
+def test_old_subscription_logs_at_most_a_year(mn, store):
+    mn.add_subscription("Old", 1, "weekly", store.local_today() - timedelta(days=3650))
+    assert 50 <= mn.log_renewals() <= 54
+
+
+def test_import_overlapping_exports_and_european_amounts(mn):
+    assert mn._money("1.234,56") == 1234.56 and mn._money("1,234.56") == 1234.56 and mn._money("(12.50)") == -12.5
+    m = {"date": "Date", "description": "Description", "amount": "Amount"}
+    first = [{"Date": "2026-10-01", "Description": "Coffee", "Amount": "-3"},
+             {"Date": "2026-10-01", "Description": "Coffee", "Amount": "-3"},      # really twice
+             {"Date": "2026-10-02", "Description": "Bus", "Amount": "-2"}]
+    mn.import_rows(first, m)
+    later = [{"Date": "2026-09-30", "Description": "Lunch", "Amount": "-8"}] + first + \
+            [{"Date": "2026-10-03", "Description": "Tesco", "Amount": "-20"}]
+    mn.import_rows(later, m)
+    assert len(mn.transactions("2026-09-30", "2026-10-03")) == 5

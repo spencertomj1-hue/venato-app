@@ -251,6 +251,7 @@ def render_page():
 
 def render_home():
     st.markdown("**Money**")
+    mn.log_renewals()
     s = mn.month_summary()
     text = f"Spent {mn.fmt(s['spent'])} this month"
     if s["budget"]:

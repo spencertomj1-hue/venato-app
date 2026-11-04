@@ -130,3 +130,10 @@ def test_tool(hl, store):
     assert "Steps 9,000" in out and "Resting heart rate 55.0 bpm" in out
     assert "9000" in hl.tool_health(7, "steps").text
     assert "health_data" in {s[0] for s in assistant.tool_specs()}
+
+
+def test_short_strava_activity_in_seconds(hl):
+    rows = [{"Activity Date": "Oct 8, 2026, 7:00:00 AM", "Activity Name": "Sprint", "Activity Type": "Run",
+             "Moving Time": "300", "Distance": "1.0"}]
+    m = hl.guess_mapping("Strava", list(rows[0]))
+    assert hl.convert("Strava", rows, m)[1][0]["minutes"] == 5
