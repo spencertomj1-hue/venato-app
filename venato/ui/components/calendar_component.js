@@ -1,7 +1,7 @@
-// Month calendar for the Daily log page. Each day shows small icons for mood,
-// sleep, energy and water (and a note marker); clicking a day selects it.
+// Month calendar for the Daily log page. Each day shows icons for mood, energy and
+// productivity (out of 10), sleep and water (and a note marker); clicking a day selects it.
 //
-// Python passes { month: "YYYY-MM", today, selected, days: {iso: {mood, sleep, energy, water, notes}} }.
+// Python passes { month: "YYYY-MM", today, selected, days: {iso: {mood, sleep, energy, productivity, water, notes}} }.
 // Triggers back to Python:  select {date, nonce}   nav {dir: -1 | 0 | 1, nonce}
 
 const esc = (s) =>
@@ -13,12 +13,14 @@ const ICON = {
   mood: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8s2.5-.6 3.5-1.8M9 9.5h.01M15 9.5h.01"/></svg>',
   sleep: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
   energy: '<svg viewBox="0 0 24 24"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg>',
+  productivity: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16.5 9.5"/></svg>',
   water: '<svg viewBox="0 0 24 24"><path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/></svg>',
   note: '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h6M9 16h4"/></svg>',
 };
 
-// Mood 1 (low) -> 5 (great).
+// Mood 1-2 (low) ... 9-10 (great).
 const MOOD_COLOURS = ["", "#e5484d", "#f76b15", "#e2a400", "#7cb342", "#30a46c"];
+const moodColour = (v) => MOOD_COLOURS[Math.min(5, Math.max(1, Math.ceil(v / 2)))];
 
 export default function (component) {
   const { data, parentElement, setTriggerValue } = component;
@@ -42,10 +44,10 @@ export default function (component) {
     if (key === data.today) cls.push("today");
     if (key === data.selected) cls.push("selected");
     if (key > data.today) cls.push("future");
-    // What a screen reader says for the day, e.g. "Friday 30 October: mood 4, slept 7.5 hours, energy 3, has notes".
+    // What a screen reader says for the day, e.g. "Friday 30 October: mood 8 out of 10, slept 7.5 hours, has notes".
     const said = [d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }),
-      [e.mood != null && `mood ${e.mood}`, e.sleep != null && `slept ${+e.sleep} hours`,
-       e.energy != null && `energy ${e.energy}`, e.water != null && `drank ${+e.water} ${waterUnit === "L" ? "litres" : waterUnit}`, e.notes && "has notes"].filter(Boolean).join(", ") || "nothing logged"]
+      [e.mood != null && `mood ${e.mood} out of 10`, e.energy != null && `energy ${e.energy} out of 10`,
+       e.productivity != null && `productivity ${e.productivity} out of 10`, e.sleep != null && `slept ${+e.sleep} hours`, e.water != null && `drank ${+e.water} ${waterUnit === "L" ? "litres" : waterUnit}`, e.notes && "has notes"].filter(Boolean).join(", ") || "nothing logged"]
       .join(": ");
     const stat = (kind, value, extra = "") =>
       value == null ? "" : `<span class="stat ${kind}" ${extra}>${ICON[kind]}${esc(value)}</span>`;
@@ -54,9 +56,10 @@ export default function (component) {
         aria-pressed="${key === data.selected}"${key === data.today ? ' aria-current="date"' : ""}>
         <span class="num">${d.getDate()}${e.notes ? `<i class="note" title="Has notes">${ICON.note}</i>` : ""}</span>
         <span class="stats">
-          ${stat("mood", e.mood, e.mood ? `style="--c:${MOOD_COLOURS[e.mood]}"` : "")}
-          ${stat("sleep", e.sleep == null ? null : `${+e.sleep}h`)}
+          ${stat("mood", e.mood, e.mood ? `style="--c:${moodColour(e.mood)}"` : "")}
           ${stat("energy", e.energy)}
+          ${stat("productivity", e.productivity)}
+          ${stat("sleep", e.sleep == null ? null : `${+e.sleep}h`)}
           ${stat("water", e.water == null ? null : `${+e.water}${waterUnit === "L" ? "L" : " oz"}`)}
         </span>
       </button>`);
@@ -74,6 +77,7 @@ export default function (component) {
         <span class="stat mood" style="--c:#7cb342">${ICON.mood}mood</span>
         <span class="stat sleep">${ICON.sleep}sleep</span>
         <span class="stat energy">${ICON.energy}energy</span>
+        <span class="stat productivity">${ICON.productivity}productivity</span>
         <span class="stat water">${ICON.water}water</span>
       </div>
     </div>

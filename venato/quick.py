@@ -1,7 +1,7 @@
 """
 Quick commands: short, everyday logging handled straight away, without asking Claude.
 
-"drank 500ml", "2 glasses of water", "tick gym", "did gym yesterday", "mood 4",
+"drank 500ml", "2 glasses of water", "tick gym", "did gym yesterday", "mood 7", "productivity 8",
 "slept 7.5h", "done finish essay". Each one calls the same tools.py action Claude
 would, so the rules are the same (Confirm before overwriting, Undo, and so on).
 
@@ -89,9 +89,14 @@ def _water(text, day):
 # --- Mood, energy, sleep ---
 
 def _scores(text, day):
-    m = re.fullmatch(r"(?:my\s+)?(mood|energy)(?:\s+(?:is|was|=|:))?\s*:?\s*([1-5])(?:\s*/\s*5| out of 5)?", text)
+    m = re.fullmatch(r"(?:my\s+)?(mood|energy|productivity|productive)(?:\s+(?:is|was|=|:))?\s*:?\s*(10|[1-9])"
+                     r"(?:\s*/\s*(5|10)|\s+out of (5|10))?", text)
     if m:
-        return tools.log_day(day.isoformat(), **{m.group(1): int(m.group(2))})
+        field = "productivity" if m.group(1).startswith("product") else m.group(1)
+        value, scale = int(m.group(2)), int(m.group(3) or m.group(4) or 10)
+        if value > scale:
+            return None
+        return tools.log_day(day.isoformat(), **{field: value * 10 // scale})     # "4/5" -> 8
     m = re.fullmatch(r"(?:i\s+)?(?:slept|sleep(?:\s+(?:was|=|:))?)\s*(?:for\s+)?(\d+(?:\.\d+)?)\s*(?:h|hrs?|hours?)?", text)
     if m and 0 < float(m.group(1)) <= 16:
         return tools.log_day(day.isoformat(), sleep=float(m.group(1)))

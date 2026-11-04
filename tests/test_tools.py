@@ -59,7 +59,9 @@ def test_log_day_replacing_notes_needs_confirm(tools, store):
 
 def test_log_day_validation(tools):
     with pytest.raises(tools.ToolError):
-        tools.log_day(DAY, mood=7)
+        tools.log_day(DAY, mood=11)
+    with pytest.raises(tools.ToolError):
+        tools.log_day(DAY, productivity=0)
     with pytest.raises(tools.ToolError):
         tools.log_day("tomorrow", mood=3)
     with pytest.raises(tools.ToolError):

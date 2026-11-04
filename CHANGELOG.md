@@ -10,6 +10,7 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Added
+- Daily log: a self-rated productivity score for each day, out of 10, in the log, the calendar, Stats, the weekly review, the assistant ("productivity 8") and CSV export / import.
 - Blocks: pick the parts of Venato you want in the setup wizard or Settings → Blocks. Each has its own page, Home widget, assistant tools and quick commands; Home shows the widgets in the order you set. Existing installs keep their current pages.
 - New blocks: Focus (Pomodoro / stopwatch that fills the Actual timetable), Workouts, Food (diary and meal planner), Recipes (with a shopping list), Cut down (caffeine, alcohol, smoking, screen time, or your own), Grades (weighted marks, classification or GPA), Money (spending, budgets, savings goals, subscriptions, bank CSV import), Involvement (organisations, roles, goals, volunteering, practice, donations, events and tickets) and Health data (Apple Health, Google Fit, Strava and Whoop imports).
 - Calendars: add Google, Apple (iCloud) or any other published .ics calendar next to Outlook in Settings → Calendar.
@@ -23,6 +24,7 @@ Venato was called **Arete** up to 1.1.1.
 - `CHANGELOG.md`, issue and pull request templates, and `.env.example` listing the environment variables Venato reads.
 
 ### Changed
+- Mood and energy are now out of 10 (was 5). Days already logged are doubled once so they match; older CSV exports (without a productivity column) are doubled on import; "mood 4/5" still works.
 - Daily log: much bigger mood, sleep, energy and water numbers (and icons) in the month calendar, in a 2 × 2 grid.
 - Timetable: the resize bars sit right on a block's top and bottom edges and show whenever you hover a block; drag an edge to resize it without selecting it first.
 - Switching pages fades through the page colour and fades the new page in once it has drawn, instead of the old page changing bit by bit.

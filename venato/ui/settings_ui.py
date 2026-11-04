@@ -276,7 +276,7 @@ def wizard():
             st.markdown(
                 "Venato keeps track of your days:\n\n"
                 "- :material/calendar_view_week: a **timetable** of what you planned and what you actually did\n"
-                "- :material/mood: a **daily log** of mood, sleep, energy and water, a journal, and your **habits**\n"
+                "- :material/mood: a **daily log** of mood, energy and productivity (out of 10), sleep and water, a journal, and your **habits**\n"
                 "- :material/checklist: **to-dos** and **goals**, and a map of the **people** you know\n"
                 "- :material/chat: optionally, a **Claude assistant** that can update it all for you\n\n"
                 f":material/lock: **Your data stays on your {system.COMPUTER}.** Nothing is uploaded (unless you switch on "
@@ -540,7 +540,7 @@ def _data_section():
     st.subheader("Import", anchor=False)
     st.write(
         f"Use the same format as the export: a `date` column (YYYY-MM-DD), optional "
-        f"`mood`, `sleep`, `energy`, `water` (litres), `notes` columns, and `{store.HABIT_PREFIX}<name>` columns "
+        f"`mood`, `sleep`, `energy`, `productivity` (scores out of 10), `water` (litres), `notes` columns, and `{store.HABIT_PREFIX}<name>` columns "
         f"containing true/false or 1/0."
     )
     uploaded = st.file_uploader("CSV file", type="csv")

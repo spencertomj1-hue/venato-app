@@ -1,5 +1,5 @@
 """
-The Stats page: averages and charts of mood, energy, sleep and water, habit completion,
+The Stats page: averages and charts of mood, energy, productivity, sleep and water, habit completion,
 then anything blocks add (EXTRAS), then past weekly reviews.
 """
 
@@ -37,29 +37,30 @@ def page_stats():
     stats = get_stats(periods[period])
     entries = entries_between(stats["start"], stats["end"])
     entries["date"] = pd.to_datetime(entries["date"])
-    for col in ("mood", "sleep", "energy", "water"):
-        entries[col] = pd.to_numeric(entries[col])
+    for col in ("mood", "sleep", "energy", "productivity", "water"):
+        entries[col] = pd.to_numeric(entries[col]) if col in entries else pd.Series(dtype=float)
 
     # --- Averages ---
     def fmt(value, unit=""):
         return f"{value:.1f}{unit}" if value is not None else "–"
 
-    a, b, c, d = st.columns(4)
-    a.metric("Avg mood", fmt(stats["avg_mood"]))
+    a, b, c, p, d = st.columns(5)
+    a.metric("Avg mood", fmt(stats["avg_mood"], "/10"))
     b.metric("Avg sleep", fmt(stats["avg_sleep"], " h"))
-    c.metric("Avg energy", fmt(stats["avg_energy"]))
+    c.metric("Avg energy", fmt(stats["avg_energy"], "/10"))
+    p.metric("Avg productivity", fmt(stats["avg_productivity"], "/10"))
     d.metric("Avg water", regional.water_text(None if stats["avg_water"] is None else round(stats["avg_water"], 1)))
 
     # --- Line charts ---
     if entries.empty:
         st.info("No entries in this period yet.")
     else:
-        # Mood and energy share a 1-5 scale, so they go on the same chart.
+        # Mood, energy and productivity share a 1-10 scale, so they go on the same chart.
         fig = px.line(
-            entries, x="date", y=["mood", "energy"], markers=True,
-            title="Mood & energy", labels={"value": "Score (1-5)", "variable": ""},
+            entries, x="date", y=["mood", "energy", "productivity"], markers=True,
+            title="Mood, energy & productivity", labels={"value": "Score (1-10)", "variable": ""},
         )
-        fig.update_yaxes(range=[0.5, 5.5], dtick=1, tickformat="d")
+        fig.update_yaxes(range=[0.5, 10.5], dtick=1, tickformat="d")
         _date_axis(fig, stats)
         st.plotly_chart(fig, width="stretch")
 

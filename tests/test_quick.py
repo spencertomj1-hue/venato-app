@@ -28,14 +28,16 @@ def test_water(quick, store):
 
 def test_scores(quick, store):
     today = store.local_today().isoformat()
-    quick.handle("mood 4")
-    quick.handle("energy was 3/5")
+    quick.handle("mood 7")
+    quick.handle("energy was 3/5")                    # out of 5 still works: doubled
+    quick.handle("productivity 8/10")
     quick.handle("slept 7.5h last night")
     e = store.get_entry(today)
-    assert (e["mood"], e["energy"], e["sleep"]) == (4, 3, 7.5)
+    assert (e["mood"], e["energy"], e["productivity"], e["sleep"]) == (7, 6, 8, 7.5)
     r = quick.handle("mood 2")                        # overwriting asks first, like Claude's tool
-    assert r.pending and store.get_entry(today)["mood"] == 4
-    assert quick.handle("mood 9") is None             # out of range: Claude explains
+    assert r.pending and store.get_entry(today)["mood"] == 7
+    assert quick.handle("mood 11") is None            # out of range: Claude explains
+    assert quick.handle("mood 7/5") is None
     assert quick.handle("my mood is great") is None
 
 

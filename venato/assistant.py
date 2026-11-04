@@ -210,7 +210,8 @@ dates to tools as YYYY-MM-DD. Weeks start on {store.week_start_name()}. Tools al
 use those when talking to them (e.g. "64 oz" -> water=1.89).
 
 What the app tracks
-- Daily log: per date, mood 1-5, sleep hours, energy 1-5, water drunk (litres) and the day's notes,
+- Daily log: per date, mood 1-10, energy 1-10, productivity 1-10 (self-rated), sleep hours, water drunk (litres)
+  and the day's notes,
   which are its journal entry (log_day for the numbers; write_journal for the notes). "drank 2 litres today" -> water=2; a 500 ml bottle is 0.5; glasses are about 0.25 L.
   water is the day's total: for "another 500 ml", check the day first (query_entries) and add to it.
 - Habits: named habits ticked per day, with streaks (set_habit, add_habit, list_habits). A habit is
@@ -408,11 +409,12 @@ APP_PROPS = {"company": {"type": "string"}, "industry": {"type": "string"},
              "deadline": DATE, "status": APP_STATUS, "notes": {"type": "string"}}
 
 TOOL_SPECS = [
-    ("log_day", "Set mood/sleep/energy/water/notes for a date. Fields not given are left as they are.",
+    ("log_day", "Set mood/sleep/energy/productivity/water/notes for a date (scores 1-10). Fields not given are left as they are.",
      _schema(["date"], date=DATE,
-             mood={"type": "integer", "minimum": 1, "maximum": 5},
+             mood={"type": "integer", "minimum": 1, "maximum": 10},
              sleep={"type": "number", "description": "hours slept"},
-             energy={"type": "integer", "minimum": 1, "maximum": 5},
+             energy={"type": "integer", "minimum": 1, "maximum": 10},
+             productivity={"type": "integer", "minimum": 1, "maximum": 10, "description": "how productive the day felt"},
              water={"type": "number", "description": "litres of water drunk that day (the total)"},
              notes={"type": "string"},
              append_notes={"type": "boolean", "description": "add to existing notes instead of replacing"}),

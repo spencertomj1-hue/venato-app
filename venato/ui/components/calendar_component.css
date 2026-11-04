@@ -45,7 +45,7 @@ button { font: inherit; color: inherit; }
   flex-direction: column;
   justify-content: space-between;
   gap: 4px;
-  min-height: 118px;
+  min-height: 148px;
   padding: 6px 8px;
   border: none;
   border-right: 1px solid var(--line);
@@ -80,3 +80,5 @@ button { font: inherit; color: inherit; }
 .stat.sleep svg { fill: currentColor; stroke: none; }
 .stat.energy svg { fill: currentColor; stroke: none; }
 .stat.water svg { fill: currentColor; stroke: none; }
+.cal-key .stat { font-size: 0.75rem; gap: 3px; }                 /* the key stays small; the days' numbers are big */
+.cal-key .stat svg { width: 12px; height: 12px; }

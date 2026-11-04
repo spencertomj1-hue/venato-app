@@ -43,9 +43,10 @@ def render(first, key):
     d.metric("To-dos done", f"{t['weekly_done'] + t['daily_done']}/{t['weekly'] + t['daily']}"
              if t["weekly"] + t["daily"] else "–")
     log = s["log"]
-    a, b, c, d = st.columns(4)
-    for col, name, k, unit, fmt in ((a, "Mood", "mood", "/5", "{:g}"), (b, "Sleep", "sleep", " h", "{:g}"),
-                                    (c, "Energy", "energy", "/5", "{:g}"), (d, "Water", "water", "", "{}")):
+    a, b, c, p, d = st.columns(5)
+    for col, name, k, unit, fmt in ((a, "Mood", "mood", "/10", "{:g}"), (b, "Sleep", "sleep", " h", "{:g}"),
+                                    (c, "Energy", "energy", "/10", "{:g}"), (p, "Productivity", "productivity", "/10", "{:g}"),
+                                    (d, "Water", "water", "", "{}")):
         now, before = log[k]["now"], log[k]["before"]
         if k == "water":
             value = regional.water_text(now) if now is not None else "–"

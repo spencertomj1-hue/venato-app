@@ -99,9 +99,9 @@ def init_db():
             -- One row per day
             CREATE TABLE IF NOT EXISTS entries (
                 date   TEXT PRIMARY KEY,   -- ISO format, e.g. 2026-10-29
-                mood   INTEGER,            -- 1-5
+                mood   INTEGER,            -- 1-10
                 sleep  REAL,               -- hours
-                energy INTEGER,            -- 1-5
+                energy INTEGER,            -- 1-10
                 notes  TEXT,
                 water  REAL                -- litres drunk
             );
@@ -277,6 +277,8 @@ def init_db():
         _journal_became_notes(conn)
         _add_column(conn, "tt_outlook", "description", "TEXT")
         _add_column(conn, "net_groups", "parent_id", "TEXT")
+        _add_column(conn, "entries", "productivity", "INTEGER")    # 1-10, self-rated
+        _scores_out_of_ten(conn)
         if conn.execute("SELECT COUNT(*) FROM tt_categories").fetchone()[0] == 0:
             conn.executemany(
                 "INSERT INTO tt_categories VALUES (?, ?, ?, ?, ?, ?)",
@@ -463,11 +465,24 @@ def get_entry(day):
 KEEP = object()   # e.g. save_entry(water=KEEP), update_goal: leave this field as it is
 
 
-def save_entry(conn, day, mood, sleep, energy, notes, water=KEEP):
-    """Insert or update the entry for a date (uses an open connection)."""
+def _scores_out_of_ten(conn):
+    """Mood and energy used to be out of 5: double them, once, so old days match the new 1-10 scale."""
+    conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+    if conn.execute("SELECT 1 FROM meta WHERE key = 'scores_out_of_10'").fetchone():
+        return
+    conn.execute("UPDATE entries SET mood = mood * 2 WHERE mood IS NOT NULL")
+    conn.execute("UPDATE entries SET energy = energy * 2 WHERE energy IS NOT NULL")
+    conn.execute("INSERT INTO meta (key, value) VALUES ('scores_out_of_10', '1')")
+
+
+def save_entry(conn, day, mood, sleep, energy, notes, water=KEEP, productivity=KEEP):
+    """Insert or update the entry for a date (uses an open connection). Mood, energy and
+    productivity are 1-10."""
     cols = {"mood": mood, "sleep": sleep, "energy": energy, "notes": notes}
     if water is not KEEP:
         cols["water"] = water
+    if productivity is not KEEP:
+        cols["productivity"] = productivity
     conn.execute(
         f"INSERT INTO entries (date, {', '.join(cols)}) VALUES (?{', ?' * len(cols)}) "
         f"ON CONFLICT(date) DO UPDATE SET {', '.join(f'{c} = excluded.{c}' for c in cols)}",
@@ -511,7 +526,7 @@ def save_journal(day, text):
         conn.execute("INSERT INTO entries (date, notes) VALUES (?, ?) "
                      "ON CONFLICT(date) DO UPDATE SET notes = excluded.notes", (day, text))
         conn.execute("DELETE FROM entries WHERE date = ? AND mood IS NULL AND sleep IS NULL "
-                     "AND energy IS NULL AND notes IS NULL AND water IS NULL", (day,))
+                     "AND energy IS NULL AND notes IS NULL AND water IS NULL AND productivity IS NULL", (day,))
 
 
 def append_journal(day, text):
@@ -838,7 +853,7 @@ def streaks(done_dates, today=None):
 # Whole-dataset helpers (used by History and Export/Import)
 #
 # Everything is represented as one "wide" table: one row per date with
-# mood/sleep/energy/notes plus a True/False column per habit.
+# mood/sleep/energy/productivity/notes plus a True/False column per habit.
 # ---------------------------------------------------------------------------
 
 def load_all_data():
@@ -870,6 +885,11 @@ def _clean(value, cast):
     return cast(value)
 
 
+def _score(value):
+    """A 1-10 score from a CSV / table cell (rounded, kept in range)."""
+    return max(1, min(10, int(round(float(value)))))
+
+
 def _is_ticked(value):
     """Interpret a CSV/table cell as a habit tick."""
     if value is None or pd.isna(value):
@@ -883,6 +903,10 @@ def save_all_data(df, replace=False):
     replace=True wipes existing data first; otherwise rows are merged by date.
     """
     habit_cols = [c for c in df.columns if c.startswith(HABIT_PREFIX)]
+    # A CSV exported before scores went out of 10 has no productivity column: its mood and
+    # energy are out of 5 (if none is above 5), so they're doubled.
+    old_scale = "productivity" not in df.columns and all(
+        pd.to_numeric(df[c], errors="coerce").dropna().le(5).all() for c in ("mood", "energy") if c in df.columns)
     with db() as conn:
         if replace:
             conn.execute("DELETE FROM entries")
@@ -898,13 +922,16 @@ def save_all_data(df, replace=False):
                 continue  # skip blank rows (e.g. an empty row added in the editor)
             day = pd.to_datetime(row["date"]).date().isoformat()
 
-            mood = _clean(row.get("mood"), int)
+            mood = _clean(row.get("mood"), _score)
             sleep = _clean(row.get("sleep"), float)
-            energy = _clean(row.get("energy"), int)
+            energy = _clean(row.get("energy"), _score)
+            if old_scale:
+                mood, energy = (None if v is None else v * 2 for v in (mood, energy))
             notes = _clean(row.get("notes"), str)
             water = _clean(row.get("water"), float) if "water" in df.columns else KEEP
-            if any(v not in (None, KEEP) for v in (mood, sleep, energy, notes, water)):
-                save_entry(conn, day, mood, sleep, energy, notes, water)
+            prod = _clean(row.get("productivity"), _score) if "productivity" in df.columns else KEEP
+            if any(v not in (None, KEEP) for v in (mood, sleep, energy, notes, water, prod)):
+                save_entry(conn, day, mood, sleep, energy, notes, water, prod)
 
             for col in habit_cols:
                 set_habit_done(conn, habit_ids[col[len(HABIT_PREFIX):]], day, _is_ticked(row[col]))
@@ -2079,6 +2106,7 @@ def get_stats(days=None, today=None):
         "start": first, "end": last, "days": num_days,
         "days_logged": len(entries),
         "avg_mood": avg("mood"), "avg_sleep": avg("sleep"), "avg_energy": avg("energy"),
+        "avg_productivity": avg("productivity"),
         "avg_water": avg("water"),
         "habit_completion_pct": habits,
         "timetable_hours": hours,

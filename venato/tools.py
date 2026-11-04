@@ -107,15 +107,17 @@ def _date_range(start_date, end_date, max_days=93):
 # Daily log and habits
 # ---------------------------------------------------------------------------
 
-def log_day(date, mood=None, sleep=None, energy=None, notes=None, append_notes=False, confirmed=False, water=None):
-    """Set fields of a day's log; untouched fields keep their values."""
+def log_day(date, mood=None, sleep=None, energy=None, notes=None, append_notes=False, confirmed=False, water=None,
+            productivity=None):
+    """Set fields of a day's log (mood, energy and productivity 1-10); untouched fields keep their values."""
     day = _day(date)
     old = store.get_entry(day)
-    new = {k: old.get(k) for k in ("mood", "sleep", "energy", "notes", "water")}
+    new = {k: old.get(k) for k in ("mood", "sleep", "energy", "notes", "water", "productivity")}
     changes, overwrites = [], []
 
-    for name, value, lo, hi, cast in (("mood", mood, 1, 5, int), ("sleep", sleep, 0, 24, float),
-                                      ("energy", energy, 1, 5, int), ("water", water, 0, 15, float)):
+    for name, value, lo, hi, cast in (("mood", mood, 1, 10, int), ("sleep", sleep, 0, 24, float),
+                                      ("energy", energy, 1, 10, int), ("water", water, 0, 15, float),
+                                      ("productivity", productivity, 1, 10, int)):
         if value is None:
             continue
         value = cast(value)
@@ -142,18 +144,20 @@ def log_day(date, mood=None, sleep=None, energy=None, notes=None, append_notes=F
             changes.append("notes")
 
     if not changes and not overwrites:
-        if any(v is not None for v in (mood, sleep, energy, notes, water)):
+        if any(v is not None for v in (mood, sleep, energy, notes, water, productivity)):
             return Result(f"Nothing to change: {nice_day(day)} already has those values.")
-        raise ToolError("Give at least one of mood, sleep, energy, water or notes.")
+        raise ToolError("Give at least one of mood, sleep, energy, productivity, water or notes.")
 
     summary = f"{nice_day(day)} log: " + ", ".join(overwrites + changes)
     if overwrites and not confirmed:
         return Result(
             "",
-            pending=Pending(summary, lambda: log_day(date, mood, sleep, energy, notes, append_notes, True, water)),
+            pending=Pending(summary, lambda: log_day(date, mood, sleep, energy, notes, append_notes, True, water,
+                                                    productivity)),
         )
     with store.db() as conn:
-        store.save_entry(conn, day, new["mood"], new["sleep"], new["energy"], new["notes"], new["water"])
+        store.save_entry(conn, day, new["mood"], new["sleep"], new["energy"], new["notes"], new["water"],
+                         new["productivity"])
     return Result(f"Saved. {summary}.", changed=True)
 
 
@@ -252,7 +256,7 @@ def query_entries(start_date, end_date):
     lines = []
     for day in sorted(set(entries) | set(ticks)):
         e = entries.get(day, {})
-        parts = [f"{k} {e[k]}" for k in ("mood", "sleep", "energy") if e.get(k) is not None]
+        parts = [f"{k} {e[k]}" for k in ("mood", "sleep", "energy", "productivity") if e.get(k) is not None]
         if e.get("water") is not None:
             parts.append(f"water {e['water']:g} L")
         if e.get("notes"):
@@ -279,7 +283,8 @@ def get_stats(period="30d", today=None):
     habits = ", ".join(f"{k} {v:g}%" for k, v in s["habit_completion_pct"].items()) or "no habits"
     return Result(
         f"{s['start']} to {s['end']} ({s['days']} days, {s['days_logged']} logged)\n"
-        f"Averages: mood {s['avg_mood']}, sleep {s['avg_sleep']}h, energy {s['avg_energy']}, "
+        f"Averages (out of 10): mood {s['avg_mood']}, energy {s['avg_energy']}, productivity {s['avg_productivity']}; "
+        f"sleep {s['avg_sleep']}h, "
         f"water {s['avg_water']} L/day\n"
         f"Habit completion: {habits}\n"
         f"Timetable plan hours: {hours['plan']}\n"
