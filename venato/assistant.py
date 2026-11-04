@@ -191,6 +191,13 @@ DEFAULT_EFFORT = "low"      # quick answers; "effort" in venato_config.json over
 # stay open between messages and the prompt can be cached.
 # ---------------------------------------------------------------------------
 
+def _block_prompts():
+    """A paragraph from each switched-on block that has one."""
+    from venato import blocks
+    text = "\n".join(b.prompt.strip("\n") for b in blocks.enabled() if b.prompt)
+    return f"\n{text}\n" if text else ""
+
+
 def system_prompt(now=None):
     return f"""You are the assistant built into Venato, the user's personal life-tracking app.
 You change their data only through the venato tools. You have no other tools.
@@ -310,7 +317,7 @@ What the app tracks
   when asked.
 
 {tools.list_categories().text}
-
+{_block_prompts()}
 Confirmations
 Deleting, or overwriting/trimming existing data, never happens straight away: the tool returns
 a preview and the user gets Confirm / Cancel buttons in the chat panel. When that happens, say
@@ -355,13 +362,18 @@ def context(now=None):
         ("Applications in progress", lambda: "\n".join(
             l for l in tools.list_applications().text.splitlines()
             if not any(f": {s}" in l for s in ("Accepted", "Rejected", "Withdrawn")))),
-    ] + list(CONTEXT_EXTRAS)
+    ] + list(CONTEXT_EXTRAS) + _block_contexts()
     for title, get in sections:
         try:
             parts.append(_section(title, get() if callable(get) else get))
         except Exception:                # a snapshot must never stop the message being sent
             continue
     return "\n\n".join(parts)
+
+
+def _block_contexts():
+    from venato import blocks
+    return [(b.name, b.context) for b in blocks.enabled() if b.context]
 
 
 def with_context(text, now=None):
@@ -600,10 +612,20 @@ def _make_server(state):
             return {"content": [{"type": "text", "text": text}]}
         return handler
 
-    return create_sdk_mcp_server("venato", tools=[wrap(*spec) for spec in TOOL_SPECS])
+    return create_sdk_mcp_server("venato", tools=[wrap(*spec) for spec in tool_specs()])
 
 
-ALLOWED_TOOLS = [f"mcp__venato__{spec[0]}" for spec in TOOL_SPECS]
+def tool_specs():
+    """The built-in tools, plus those of every switched-on block."""
+    from venato import blocks
+    return TOOL_SPECS + [spec for b in blocks.enabled() for spec in b.tools]
+
+
+def allowed_tools():
+    return [f"mcp__venato__{spec[0]}" for spec in tool_specs()]
+
+
+ALLOWED_TOOLS = [f"mcp__venato__{spec[0]}" for spec in TOOL_SPECS]   # the built-in ones (kept for scripts)
 
 
 # ---------------------------------------------------------------------------
@@ -731,7 +753,7 @@ def _options(state, claude_path):
     return ClaudeAgentOptions(
         system_prompt=system_prompt(),
         mcp_servers={"venato": _make_server(state)},
-        allowed_tools=ALLOWED_TOOLS,
+        allowed_tools=allowed_tools(),
         tools=[],                      # no built-in tools (Bash, files, web...)
         permission_mode="dontAsk",     # anything not allowed above is refused
         setting_sources=[], strict_mcp_config=True, skills=[],   # ignore the user's own Claude config
@@ -746,7 +768,7 @@ def _options(state, claude_path):
 def _signature(claude_path):
     """Anything that needs a fresh session when it changes: the prompt, the model, the key."""
     key = api_key() or ""
-    parts = (claude_path, system_prompt(), load_config().get("model") or DEFAULT_MODEL, load_config().get("effort"),
+    parts = (claude_path, system_prompt(), tuple(allowed_tools()), load_config().get("model") or DEFAULT_MODEL, load_config().get("effort"),
              hashlib.sha256(key.encode()).hexdigest())
     return hashlib.sha256(repr(parts).encode()).hexdigest()
 

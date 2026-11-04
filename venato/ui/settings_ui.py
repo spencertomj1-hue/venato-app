@@ -23,7 +23,7 @@ from venato import store
 from venato import undo
 from venato import system
 
-STEPS = [("Welcome", ":material/waving_hand:"), ("Assistant", ":material/chat:"),
+STEPS = [("Welcome", ":material/waving_hand:"), ("Blocks", ":material/widgets:"), ("Assistant", ":material/chat:"),
          ("Calendar", ":material/calendar_month:"), ("Microphone", ":material/mic:"), ("Done", ":material/check_circle:")]
 
 
@@ -205,9 +205,12 @@ def needs_wizard():
     return st.session_state.get("wizard_open") or not setup_checks.load_settings().get("wizard_done")
 
 
+MIC = 4          # STEPS index of the microphone step
+
+
 def _go(step):
-    if step == 3 and not store.ai_enabled():          # the microphone is only for the assistant
-        step = 4 if st.session_state.get("wizard_step", 0) < 3 else 2
+    if step == MIC and not store.ai_enabled():        # the microphone is only for the assistant
+        step = MIC + 1 if st.session_state.get("wizard_step", 0) < MIC else MIC - 1
     st.session_state["wizard_step"] = step
 
 
@@ -241,16 +244,23 @@ def wizard():
                 "anything and set it up later in **Settings**."
             )
         elif step == 1:
+            st.header(f"{icon} Choose your blocks", anchor=False)
+            from venato.ui import blocks_ui
+            if store.load_settings().get("blocks") is None:
+                from venato import blocks
+                blocks.save(blocks.chosen_keys())      # start from the usual ones, ticked
+            blocks_ui.section("wiz")
+        elif step == 2:
             st.header(f"{icon} Claude assistant (optional)", anchor=False)
             st.markdown(AI_PITCH)
             if ai_switch("wiz"):
                 claude_section("wiz")
-        elif step == 2:
+        elif step == 3:
             st.header(f"{icon} Outlook calendar (optional)", anchor=False)
             st.markdown("Show your Outlook events (classes, meetings) in the timetable. Venato only reads them.")
             if not calendar_status("wiz"):
                 outlook_guide("wiz")
-        elif step == 3:
+        elif step == MIC:
             st.header(f"{icon} Microphone", anchor=False)
             mic_section("wiz")
         else:
@@ -402,15 +412,18 @@ def _updates_section():
 def page_settings():
     st.header("Settings", anchor=False)
     ai = store.ai_enabled()
-    names = [":material/palette: Appearance", ":material/public: Region", ":material/calendar_month: Calendar",
+    names = [":material/widgets: Blocks", ":material/palette: Appearance", ":material/public: Region", ":material/calendar_month: Calendar",
              ":material/chat: Assistant",
              ":material/notifications: Reminders", ":material/database: Data", ":material/info: About"]
     if ai:
-        names.insert(4, ":material/mic: Voice")       # voice input is for the assistant
-    tabs = dict(zip(["look", "region", "cal", "claude", "mic", "remind", "data", "about"] if ai else
-                    ["look", "region", "cal", "claude", "remind", "data", "about"], st.tabs(names)))
+        names.insert(5, ":material/mic: Voice")       # voice input is for the assistant
+    tabs = dict(zip(["blocks", "look", "region", "cal", "claude", "mic", "remind", "data", "about"] if ai else
+                    ["blocks", "look", "region", "cal", "claude", "remind", "data", "about"], st.tabs(names)))
     look, region, cal, claude, mic, remind, data, about = (
         tabs.get(k) for k in ("look", "region", "cal", "claude", "mic", "remind", "data", "about"))
+    with tabs["blocks"]:
+        from venato.ui import blocks_ui
+        blocks_ui.section("set")
     with look:
         appearance_section()
     with region:

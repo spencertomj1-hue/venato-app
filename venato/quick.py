@@ -133,7 +133,8 @@ def handle(text):
     text, day = _when(_clean(text))
     if not text or len(text) > 60:
         return None
-    for handler in HANDLERS + EXTRA:
+    from venato import blocks
+    for handler in HANDLERS + EXTRA + [q for b in blocks.enabled() for q in b.quick]:
         try:
             result = handler(text, day)
         except tools.ToolError:

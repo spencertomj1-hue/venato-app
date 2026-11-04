@@ -265,6 +265,11 @@ def init_db():
             );
             """
         )
+        # Each block's own tables (venato/blocks/*), then their later changes.
+        from venato import blocks
+        conn.executescript(blocks.schema_sql())
+        for migrate in blocks.migrations():
+            migrate(conn)
         # Columns added after the first release.
         _add_column(conn, "tt_entries", "details", "TEXT")
         _add_column(conn, "entries", "water", "REAL")
