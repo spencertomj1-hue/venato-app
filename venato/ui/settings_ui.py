@@ -128,6 +128,46 @@ def outlook_guide(prefix):
             st.markdown(f"- **{ev['title']}** · {ev['when']}")
 
 
+def other_calendars(prefix):
+    """Google, iCloud and other published calendars, shown alongside Outlook in the timetable."""
+    items = outlook.extra_calendars()
+    for c in items:
+        x, y = st.columns([4, 1], vertical_alignment="center")
+        x.markdown(f":material/event: **{c['name']}**")
+        if y.button("Remove", key=f"{prefix}_cal_rm_{c['id']}", icon=":material/link_off:"):
+            outlook.remove_calendar(c["id"])
+            st.session_state.pop("outlook_status", None)
+            st.rerun()
+    with st.expander("Add a Google, Apple (iCloud) or other calendar", icon=":material/add:", expanded=False):
+        st.markdown(
+            "**Google:** calendar.google.com → ⚙ Settings → your calendar → **Integrate calendar** → copy the "
+            "**Secret address in iCal format**.  \n"
+            "**Apple:** Calendar app (Mac) or iCloud.com → right-click the calendar → **Share Calendar** → tick "
+            "**Public Calendar** → copy the link (webcal://…).  \n"
+            "**Anything else:** any calendar link ending in .ics.")
+        st.info("Anyone with the link can see that calendar, so it's kept in the "
+                f"{system.SECRET_STORE}, never shown again. Venato only reads it.", icon=":material/visibility:")
+        with st.form(f"{prefix}_cal_add", clear_on_submit=True, border=False):
+            a, b = st.columns([1, 3])
+            name = a.text_input("Name", placeholder="e.g. Personal")
+            link = b.text_input("Calendar link", type="password", placeholder="https://calendar.google.com/…/basic.ics")
+            go = st.form_submit_button("Add calendar", icon=":material/link:")
+        if go:
+            try:
+                url, provider = outlook.check_any_link(link)
+                with st.spinner("Checking the link…"):
+                    found = outlook.try_link(url)
+                    st.session_state["outlook_status"] = outlook.add_calendar(name or provider, url, found["data"])
+                st.success(f"Added. Found {found['count']} events in the next 2 weeks.", icon=":material/check_circle:")
+                st.rerun()
+            except outlook.LinkError as e:
+                st.error(str(e), icon=":material/error:")
+            except outlook.SyncError as e:
+                st.error(outlook.friendly(e).replace("Outlook", "the calendar"), icon=":material/error:")
+            except Exception as e:
+                st.error(f"That link didn't give a calendar Venato can read ({type(e).__name__}).", icon=":material/error:")
+
+
 def calendar_status(prefix):
     """Connected? Last sync, Sync now, Disconnect."""
     if not outlook.ics_url():
@@ -436,6 +476,8 @@ def page_settings():
                 outlook_guide("set")
         else:
             outlook_guide("set")
+        st.subheader("Other calendars", anchor=False)
+        other_calendars("set")
     with claude:
         st.subheader("Claude assistant", anchor=False)
         st.markdown(AI_PITCH)

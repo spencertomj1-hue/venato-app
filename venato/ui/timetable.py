@@ -173,15 +173,15 @@ def _on_outlook_toggle(key):
 
 def _sync_text():
     """'Synced 5 min ago', or an offline note. Never mentions the calendar URL."""
-    if not outlook.ics_url():
-        return {"text": "Outlook not connected", "error": False,
-                "detail": "Connect your Outlook calendar in Settings → Calendar."}
+    if not outlook.ics_url() and not outlook.extra_calendars():
+        return {"text": "No calendar connected", "error": False,
+                "detail": "Connect Outlook, Google or Apple calendars in Settings → Calendar."}
     status = st.session_state.get("outlook_status") or {}
     when = outlook.ago(status.get("synced_at") or outlook.last_synced())
     if status.get("error"):
         return {"text": f"Offline · events from {when}", "error": True,
-                "detail": f"Outlook sync failed: {status['error']} Showing the last synced events."}
-    return {"text": f"Synced {when}", "error": False, "detail": "Outlook calendar (read only)"}
+                "detail": f"Calendar sync failed: {status['error']} Showing the last synced events."}
+    return {"text": f"Synced {when}", "error": False, "detail": "Calendars (read only)"}
 
 
 # ---------------------------------------------------------------------------

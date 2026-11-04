@@ -193,3 +193,36 @@ def test_outlook_category_setting(outlook, store):
     tools = importlib.reload(tools)
     assert tools.set_outlook_category("Study").changed
     assert store.outlook_category("anything") == "study"
+
+
+def test_check_any_link(outlook):
+    assert outlook.check_any_link("webcal://p12-caldav.icloud.com/published/2/abc") == \
+        ("https://p12-caldav.icloud.com/published/2/abc", "iCloud")
+    assert outlook.check_any_link(" https://calendar.google.com/calendar/ical/x%40gmail.com/private-1/basic.ics ")[1] == "Google"
+    for bad in ("http://calendar.example/cal.ics", "https://calendar.google.com/calendar/u/0/r",
+                "https://127.0.0.1/cal.ics", "https://192.168.1.4/cal.ics", "https://localhost/cal.ics",
+                "https://[::1]/cal.ics", "file:///etc/passwd", ""):
+        with pytest.raises(outlook.LinkError):
+            outlook.check_any_link(bad)
+
+
+def test_other_calendars_merge_and_remove(outlook, store, monkeypatch):
+    def fetch(url):
+        return FIXTURE
+    monkeypatch.setattr(outlook, "fetch", fetch)
+    monkeypatch.setattr(outlook.store, "local_today", lambda: TODAY)   # the syncs inside use today
+    outlook.sync(TODAY, fetcher=fetch)
+    one = len(store.outlook_between("2026-10-15", "2026-12-24"))
+    google = "https://calendar.google.com/calendar/ical/me/private-x/basic.ics"
+    outlook.add_calendar("Personal", google, FIXTURE)
+    with pytest.raises(outlook.LinkError):
+        outlook.add_calendar("Again", google, FIXTURE)
+    items = outlook.extra_calendars()
+    assert [c["name"] for c in items] == ["Personal"]
+    assert outlook.keyring.get_password(outlook.KEYCHAIN_SERVICE, outlook.EXTRA_ACCOUNT)   # in the Keychain only
+    status = outlook.sync(TODAY, fetcher=fetch)
+    assert status["ok"] and len(store.outlook_between("2026-10-15", "2026-12-24")) == 2 * one
+    outlook.disconnect()                                     # Outlook gone: the other calendar stays
+    assert len(store.outlook_between("2026-10-15", "2026-12-24")) == one
+    outlook.remove_calendar(items[0]["id"])
+    assert not outlook.extra_calendars() and not store.outlook_between("2026-10-15", "2026-12-24")
