@@ -45,7 +45,7 @@ button { font: inherit; color: inherit; }
   flex-direction: column;
   justify-content: space-between;
   gap: 4px;
-  min-height: 92px;
+  min-height: 118px;
   padding: 6px 8px;
   border: none;
   border-right: 1px solid var(--line);
@@ -66,16 +66,16 @@ button { font: inherit; color: inherit; }
 .cell.today .num { color: var(--accent); }
 .note svg { width: 11px; height: 11px; fill: none; stroke: var(--muted); stroke-width: 2; }
 
-.stats { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.stats { display: grid; grid-template-columns: auto auto; justify-content: start; gap: 4px 14px; }
 .stat {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.95rem;
+  gap: 5px;
+  font-size: 1.25rem;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
-.stat svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.stat svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .stat.mood { color: color-mix(in srgb, var(--c, var(--muted)) 50%, var(--text)); font-weight: 600; }   /* readable in both modes */
 .stat.sleep svg { fill: currentColor; stroke: none; }
 .stat.energy svg { fill: currentColor; stroke: none; }

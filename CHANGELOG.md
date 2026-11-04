@@ -23,7 +23,7 @@ Venato was called **Arete** up to 1.1.1.
 - `CHANGELOG.md`, issue and pull request templates, and `.env.example` listing the environment variables Venato reads.
 
 ### Changed
-- Daily log: bigger mood, sleep, energy and water numbers (and icons) in the month calendar.
+- Daily log: much bigger mood, sleep, energy and water numbers (and icons) in the month calendar, in a 2 × 2 grid.
 - Timetable: the resize bars sit right on a block's top and bottom edges and show whenever you hover a block; drag an edge to resize it without selecting it first.
 - Switching pages fades through the page colour and fades the new page in once it has drawn, instead of the old page changing bit by bit.
 - Home is built from the switched-on blocks' widgets; Stats moved to its own module.
