@@ -99,7 +99,7 @@ def test_batch_ops_are_one_undo(store):
     timetable.apply_grid_op({"kind": "batch", "label": "Moved 2 blocks", "ops": ops})
     after = [(b["date"], b["start"]) for b in store.blocks_between("2026-10-26", "2026-10-28")]
     assert after == [("2026-10-27", "11:00"), ("2026-10-28", "11:00")]   # neither trimmed the other
-    assert undo.pending() == "Moved 2 blocks" and not undo.is_quiet()
+    assert undo.pending() == "Moved 2 blocks" and undo.is_quiet()       # no Undo bar; Cmd/Ctrl+Z works
     undo.restore()
     assert [(b["date"], b["start"]) for b in store.blocks_between("2026-10-26", "2026-10-28")] == \
         [("2026-10-26", "10:00"), ("2026-10-27", "10:00")]               # one Undo puts both back
