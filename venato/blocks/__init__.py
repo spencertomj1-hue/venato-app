@@ -35,6 +35,7 @@ class Block:
     order: int = 100                 # where its page goes in the sidebar
     default: bool = False            # on for someone who never chose (existing installs: the original pages)
     core: bool = False               # always on
+    page_name: str = ""              # the sidebar page it shares, when not its own name (e.g. Recipes is on Food)
 
 
 GROUPS = ["Plan", "Health & body", "Food", "Study & work", "Money", "People & life", "Connections", "Other"]
@@ -91,9 +92,14 @@ def save(keys):
 
 
 def pages():
-    """{sidebar name: page function} for the switched-on blocks, in sidebar order."""
+    """{sidebar name: page function} for the switched-on blocks, in sidebar order. Blocks that share a
+    page (page_name) give one sidebar entry, drawn by the first of them."""
     on = set(chosen_keys())
-    return {b.name: b.page for b in all_blocks() if b.page and b.key in on}
+    out = {}
+    for b in all_blocks():
+        if b.page and b.key in on:
+            out.setdefault(b.page_name or b.name, b.page)
+    return out
 
 
 def schema_sql():

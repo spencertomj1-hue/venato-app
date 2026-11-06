@@ -5,41 +5,82 @@ from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from venato import store
 from venato import undo
 from venato.blocks import health as hl
+from venato.ui import kit
+
+
+COLOUR = {"steps": "#4E79A7", "active_kcal": "#F28E2B", "distance_km": "#59A14F", "sleep_h": "#B07AA1",
+          "resting_hr": "#FF9DA7", "hrv": "#76B7B2", "weight_kg": "#9C755F", "recovery": "#8CD17D",
+          "strain": "#EDC948"}
+# Which way is better: up ("normal"), down ("inverse") or neither ("off").
+BETTER = {"resting_hr": "inverse", "weight_kg": "off", "strain": "off"}
+BARS = ("steps", "active_kcal", "sleep_h", "distance_km", "strain")
+
+
+def _num(v):
+    return f"{v:,.0f}" if abs(v) >= 100 else f"{v:.1f}"
+
+
+def _avg(s, first, last):
+    vals = [v for d, v in s.items() if first <= d <= last]
+    return sum(vals) / len(vals) if vals else None
 
 
 def _charts(today):
-    span = st.segmented_control("Show", ["30 days", "90 days", "1 year"], default="30 days", key="hl_span") or "30 days"
+    a, b = st.columns([3, 1], vertical_alignment="center")
+    a.caption("Your imported numbers. Tiles show the last 7 days' average against the 7 days before.")
+    span = b.segmented_control("Show", ["30 days", "90 days", "1 year"], default="30 days", key="hl_span",
+                               label_visibility="collapsed", width="stretch") or "30 days"
     days = {"30 days": 30, "90 days": 90, "1 year": 365}[span]
     first = today - timedelta(days=days - 1)
-    shown = 0
-    avg = hl.latest(7)
-    if avg:
-        cols = st.columns(min(4, len(avg)))
-        for i, (m, v) in enumerate(avg.items()):
-            label, unit, _ = hl.METRICS[m]
-            cols[i % len(cols)].metric(f"{label} (7-day avg)", f"{v:,.0f}" if v >= 100 else f"{v:.1f}",
-                                       help=unit or None)
-    pair = st.columns(2)
-    for m, (label, unit, _) in hl.METRICS.items():
-        s = hl.series(m, first, today)
-        if not s:
+    data = {}
+    for m in hl.METRICS:
+        s = hl.series(m, today - timedelta(days=max(days, 30) - 1), today)
+        if s:
+            data[m] = {store._as_date(d): v for d, v in s.items()}
+    if not data:
+        kit.empty("No health data yet. Import an export in the Import tab.", ":material/monitor_heart:")
+        return
+    tiles = []
+    for m, s in data.items():
+        label, unit, _ = hl.METRICS[m]
+        now = _avg(s, today - timedelta(days=6), today)
+        before = _avg(s, today - timedelta(days=13), today - timedelta(days=7))
+        if now is None:
             continue
-        df = pd.DataFrame({"date": pd.to_datetime(list(s)), "value": list(s.values())})
-        fig = (px.bar if m in ("steps", "active_kcal", "sleep_h", "distance_km", "strain") else px.line)(
-            df, x="date", y="value", height=220, labels={"value": unit or label, "date": ""}, title=label)
-        fig.update_layout(margin=dict(l=0, r=0, t=40, b=0))
-        fig.update_xaxes(tickformat="%-d %b")
-        with pair[shown % 2]:
-            st.plotly_chart(fig, width="stretch", key=f"hl_c_{m}")
-        shown += 1
-    if not shown:
-        st.info("No health data yet. Import an export in the Import tab.")
+        delta = None if before is None else f"{'+' if now >= before else '-'}{_num(abs(now - before))} {unit}".strip()
+        tiles.append({"label": label, "value": f"{_num(now)} {unit}".strip(), "delta": delta,
+                      "delta_color": BETTER.get(m, "normal"), "help": "7-day average, against the week before"})
+    for i in range(0, len(tiles), 4):
+        kit.stats(tiles[i:i + 4], per_row=4)
+    shown = [m for m in data if any(first <= d for d in data[m])]
+    for i in range(0, len(shown), 2):
+        cols = st.columns(2)
+        for col, m in zip(cols, shown[i:i + 2]):
+            label, unit, _ = hl.METRICS[m]
+            s = {d: v for d, v in data[m].items() if d >= first}
+            df = pd.DataFrame({"date": pd.to_datetime(list(s)), "value": list(s.values())}).sort_values("date")
+            df["avg"] = df["value"].rolling(7, min_periods=3).mean()
+            c = COLOUR[m]
+            fig = go.Figure()
+            hover = "%{x|%a %-d %b}: %{y:,.1f} " + unit + "<extra></extra>"
+            if m in BARS:
+                fig.add_bar(x=df["date"], y=df["value"], marker_color=kit.rgba(c, 0.55), hovertemplate=hover)
+            else:
+                fig.add_scatter(x=df["date"], y=df["value"], mode="markers", marker=dict(color=kit.rgba(c, 0.5), size=5),
+                                hovertemplate=hover)
+            fig.add_scatter(x=df["date"], y=df["avg"], mode="lines", line=dict(color=c, width=3),
+                            hovertemplate="7-day average: %{y:,.1f}<extra></extra>")
+            fig.update_xaxes(tickformat="%-d %b")
+            if m not in BARS:
+                fig.update_yaxes(rangemode="normal")
+            with col, kit.card(f"{label}" + (f" ({unit})" if unit else "")):
+                kit.chart(fig, f"hl_c_{m}", 220)
 
 
 def _apple():
@@ -121,14 +162,16 @@ def _manage():
     c = hl.counts()
     if not c:
         return
-    st.markdown("**Imported so far**")
-    for src, (m, w) in c.items():
-        x, y = st.columns([4, 1], vertical_alignment="center")
-        x.markdown(f"{src}: {m} values, {w} workouts")
-        if y.button("Remove", key=f"hl_clear_{src}", icon=":material/delete:"):
-            undo.checkpoint(f"Removed the {src} import")
-            hl.clear(src)
-            st.rerun()
+    with kit.card("Imported so far", stretch=False):
+        for src, (m, w) in c.items():
+            x, y = st.columns([4, 1], vertical_alignment="center")
+            x.markdown(f"**{src}** :gray[· {m:,} values · {w} workouts]")
+            with y.popover("Remove", icon=":material/delete:", width="stretch"):
+                st.warning(f"Remove everything imported from {src}?")
+                if st.button("Remove", key=f"hl_clear_{src}", type="primary"):
+                    undo.checkpoint(f"Removed the {src} import")
+                    hl.clear(src)
+                    st.rerun()
 
 
 def render_page():
@@ -138,10 +181,11 @@ def render_page():
     with tabs[0]:
         _charts(today)
     with tabs[1]:
-        _apple()
-        st.divider()
-        _csv()
-        st.divider()
+        a, b = st.columns(2)
+        with a, kit.card():
+            _apple()
+        with b, kit.card():
+            _csv()
         _manage()
 
 

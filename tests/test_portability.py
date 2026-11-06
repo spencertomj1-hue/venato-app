@@ -12,7 +12,7 @@ def test_no_platform_specific_strftime():
     for f in [ROOT / "app.py", *sorted((ROOT / "venato").rglob("*.py"))]:
         for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
             code = line.split("#")[0]
-            if re.search(r"%-[a-zA-Z]", code) and not re.search(r"tickformat|hoverformat|fmt_day|fmt\.replace", code):
+            if re.search(r"%-[a-zA-Z]", code) and not re.search(r"tickformat|hoverformat|%\{x\||fmt_day|fmt\.replace", code):
                 bad.append(f"{f.relative_to(ROOT)}:{n}: {line.strip()}")
     assert not bad, "Use store.fmt_day (Windows has no %-d):\n" + "\n".join(bad)
 

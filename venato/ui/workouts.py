@@ -4,12 +4,13 @@ The data and the maths are in venato/blocks/workouts.py."""
 from datetime import timedelta
 
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from venato import store
 from venato import undo
 from venato.blocks import workouts as wk
+from venato.ui import kit
 
 NEW_EX = "+ New exercise"
 CURRENT = "wk_current"
@@ -17,13 +18,33 @@ CURRENT = "wk_current"
 
 def _metrics(today):
     week0 = store.week_start_of(today)
-    week = wk.workouts(week0, today)
-    vol = wk.weekly_volume(week0, today)
-    a, b, c = st.columns(3)
-    a.metric("Workouts this week", len(week))
-    b.metric("Working sets", sum(v["sets"] for v in vol.values()))
-    c.metric("Volume", f"{wk.kg_out(sum(v['tonnage'] for v in vol.values())) or 0:,.0f} {wk.units()[0]}",
-             help="Weight × reps of this week's working sets")
+    last0 = week0 - timedelta(days=7)
+    week, prev = wk.workouts(week0, today), wk.workouts(last0, last0 + (today - week0))
+    vol, pvol = wk.weekly_volume(week0, today), wk.weekly_volume(last0, last0 + (today - week0))
+    sets, psets = sum(v["sets"] for v in vol.values()), sum(v["sets"] for v in pvol.values())
+    ton = wk.kg_out(sum(v["tonnage"] for v in vol.values())) or 0
+    pton = wk.kg_out(sum(v["tonnage"] for v in pvol.values())) or 0
+    recent = wk.workouts(today - timedelta(days=60), today)[:1]
+    if recent:
+        ago = (today - store._as_date(recent[0]["date"])).days
+        last = "Today" if ago == 0 else "Yesterday" if ago == 1 else f"{ago} days ago"
+    else:
+        last = "–"
+
+    def delta(now, before, unit=""):
+        if not before and not now:
+            return None
+        d = now - before
+        return f"{'+' if d >= 0 else '-'}{abs(d):,.0f}{unit} vs this point last week"
+
+    kit.stats([
+        {"label": "Workouts this week", "value": str(len(week)), "delta": delta(len(week), len(prev))},
+        {"label": "Working sets", "value": str(sets), "delta": delta(sets, psets)},
+        {"label": "Volume", "value": f"{ton:,.0f} {wk.units()[0]}", "delta": delta(ton, pton, f" {wk.units()[0]}"),
+         "help": "Weight × reps of this week's working sets"},
+        {"label": "Last workout", "value": last,
+         "delta": recent[0]["title"] if recent else None, "delta_color": "off", "delta_arrow": "off"},
+    ])
 
 
 # --- Log ---
@@ -60,18 +81,18 @@ def _add_sets_form(wid):
     w_unit, d_unit = wk.units()
     with st.form(f"wk_add_{wid}", clear_on_submit=False, border=True):
         st.markdown("**Add sets**")
-        a, b = st.columns([3, 2])
-        choice = a.selectbox("Exercise", names + [NEW_EX], key=f"wk_ex_{wid}")
-        new_name = b.text_input("New exercise name", key=f"wk_newname_{wid}",
-                                placeholder="only for + New exercise")
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        choice = st.selectbox("Exercise", names + [NEW_EX], key=f"wk_ex_{wid}")
+        new_name = st.text_input("New exercise name", key=f"wk_newname_{wid}",
+                                 placeholder="only for + New exercise")
+        c1, c2, c3 = st.columns(3)
         count = c1.number_input("Sets", 1, 50, 3, key=f"wk_n_{wid}")
         reps = c2.number_input("Reps", 0, 1000, 8, key=f"wk_reps_{wid}")
         weight = c3.number_input(f"Weight ({w_unit})", 0.0, 2000.0, 0.0, step=2.5, key=f"wk_w_{wid}")
+        c4, c5, c6 = st.columns(3, vertical_alignment="bottom")
         dist = c4.number_input(f"Distance ({d_unit})", 0.0, 1000.0, 0.0, step=0.5, key=f"wk_d_{wid}")
         mins = c5.number_input("Minutes", 0.0, 1440.0, 0.0, step=1.0, key=f"wk_m_{wid}")
         warm = c6.checkbox("Warm-up", key=f"wk_warm_{wid}")
-        if st.form_submit_button("Add", type="primary", icon=":material/add:"):
+        if st.form_submit_button("Add", type="primary", icon=":material/add:", width="stretch"):
             try:
                 if choice == NEW_EX:
                     kind = "cardio" if dist else "timed" if mins and not reps else "weights" if weight else "bodyweight"
@@ -116,9 +137,10 @@ def _sets_table(wid):
         "Est. 1RM": wk.kg_out(wk.one_rep_max(s["weight"], s["reps"])) if not s["warmup"] else None,
     } for s in sets])
     key = f"wk_sets_{wid}"
+    shown = [c for c in df.columns if c not in ("Distance", "Minutes") or df[c].notna().any()]
     st.data_editor(
         df, key=key, on_change=_apply_set_edits, args=(key, [s["id"] for s in sets]), num_rows="delete",
-        hide_index=True, width="stretch",
+        hide_index=True, width="stretch", column_order=shown,
         column_config={
             "Exercise": st.column_config.TextColumn(disabled=True),
             "Weight": st.column_config.NumberColumn(f"Weight ({w_unit})", min_value=0, step=0.5),
@@ -146,15 +168,25 @@ def _workout_details(wid):
 def _log_tab(today):
     wid = _choose_workout(today)
     if not wid:
-        st.info("Start a workout above, or start one of your plans.")
+        kit.empty("Start a workout above, or start one of your plans.", ":material/fitness_center:")
         return
     w = wk.get_workout(wid)
     st.subheader(f"{w['title']} · {store.fmt_day(store._as_date(w['date']), '%a %-d %b')}", anchor=False)
-    _workout_details(wid)
-    _add_sets_form(wid)
-    _sets_table(wid)
-    a, b = st.columns(2)
-    with a.popover("Save as plan", icon=":material/bookmark_add:"):
+    summary = wk.summary(wid)
+    if summary:
+        names = [e["name"] for e in wk.exercises()]
+        colours = kit.colours(names)
+        kit.pills([(part, colours.get(next((n for n in names if part.startswith(n)), ""), kit.PALETTE[0]))
+                   for part in summary.split(", ")])
+    a, b = st.columns([3, 2])
+    with a, kit.card("Sets"):
+        _sets_table(wid)
+    with b:
+        _add_sets_form(wid)
+    with st.expander("Details", icon=":material/edit_note:"):
+        _workout_details(wid)
+    a, b, _ = st.columns([1, 1, 2])
+    with a.popover("Save as plan", icon=":material/bookmark_add:", width="stretch"):
         name = st.text_input("Plan name", w["title"], key=f"wk_planname_{wid}")
         if st.button("Save", key=f"wk_plansave_{wid}", type="primary"):
             try:
@@ -162,11 +194,13 @@ def _log_tab(today):
                 st.success(f"Saved the plan {name}.")
             except wk.WorkoutError as e:
                 st.error(str(e))
-    if b.button("Delete this workout", key=f"wk_del_{wid}", icon=":material/delete:"):
-        undo.checkpoint(f"Deleted the workout {w['title']}")
-        wk.delete_workout(wid)
-        st.session_state.pop(CURRENT, None)
-        st.rerun()
+    with b.popover("Delete workout", icon=":material/delete:", width="stretch"):
+        st.warning(f"Delete {w['title']} and its sets? (Undo can bring it back.)")
+        if st.button("Delete", key=f"wk_del_{wid}", type="primary"):
+            undo.checkpoint(f"Deleted the workout {w['title']}")
+            wk.delete_workout(wid)
+            st.session_state.pop(CURRENT, None)
+            st.rerun()
 
 
 # --- History, progress, plans, exercises ---
@@ -174,18 +208,35 @@ def _log_tab(today):
 def _history_tab(today):
     rows = wk.workouts(today - timedelta(days=180), today)
     if not rows:
-        st.caption("No workouts in the last 6 months.")
+        kit.empty("No workouts in the last 6 months.", ":material/history:")
+        return
+    first = store.week_start_of(today) - timedelta(weeks=11)
+    weeks = [first + timedelta(weeks=i) for i in range(12)]
+    counts = {w: 0 for w in weeks}
     for w in rows:
-        label = f"{store.fmt_day(store._as_date(w['date']), '%a %-d %b')} · {w['title']}" + (f" · {w['source']}" if w["source"] != "manual" else "")
-        with st.expander(label):
-            st.write(wk.summary(w["id"]) or "No sets.")
-            bits = [f"{w['minutes']:.0f} min" if w["minutes"] else "", f"effort {w['rpe']:g}/10" if w["rpe"] else "",
-                    w["notes"] or ""]
-            if any(bits):
-                st.caption(" · ".join(b for b in bits if b))
-            if st.button("Open", key=f"wk_open_{w['id']}"):
+        k = store.week_start_of(store._as_date(w["date"]))
+        if k in counts:
+            counts[k] += 1
+    with kit.card("Workouts per week", stretch=False):
+        fig = go.Figure(go.Bar(x=pd.to_datetime(weeks), y=list(counts.values()), marker_color=kit.PALETTE[0],
+                               hovertemplate="Week of %{x|%-d %b}: %{y}<extra></extra>"))
+        fig.update_xaxes(tickformat="%-d %b")
+        fig.update_yaxes(dtick=1)
+        kit.chart(fig, "wk_hist_chart", 200)
+    cols = st.columns(3)
+    for i, w in enumerate(rows[:30]):
+        with cols[i % 3], st.container(border=True, height="stretch"):
+            day = store._as_date(w["date"])
+            kit.html(f"<div style='display:flex;gap:12px;align-items:center'>{kit.date_badge(day)}<div>"
+                     f"<b>{w['title']}</b><br><span style='opacity:.7;font-size:.85rem'>{day:%A}"
+                     + (f" · {w['minutes']:.0f} min" if w["minutes"] else "")
+                     + (f" · effort {w['rpe']:g}/10" if w["rpe"] else "")
+                     + (f" · {w['source']}" if w["source"] != "manual" else "") + "</span></div></div>")
+            st.caption(wk.summary(w["id"]) or "No sets.")
+            if w["notes"]:
+                st.caption(w["notes"])
+            if st.button("Open", key=f"wk_open_{w['id']}", icon=":material/arrow_forward:", width="stretch"):
                 st.session_state[CURRENT] = w["id"]
-                st.session_state["wk_tab_hint"] = True
                 st.toast("Opened in the Log tab.")
 
 
@@ -193,72 +244,108 @@ def _progress_tab(today):
     w_unit, d_unit = wk.units()
     pbs = wk.personal_bests()
     if not pbs:
-        st.caption("Log some workouts to see progress and personal bests.")
+        kit.empty("Log some workouts to see progress and personal bests.", ":material/trending_up:")
         return
     names = sorted(pbs)
-    name = st.selectbox("Exercise", names, key="wk_prog_ex")
+    a, _ = st.columns([1, 2])
+    name = a.selectbox("Exercise", names, key="wk_prog_ex")
     ex = wk.find_exercise(name)
+    pb = pbs[name]
+    tiles = []
+    if "best_1rm" in pb:
+        tiles.append({"label": "Best est. 1RM", "value": f"{wk.kg_out(pb['best_1rm'][0]):,.1f} {w_unit}",
+                      "delta": f"{store.fmt_day(store._as_date(pb['best_1rm'][1]), '%-d %b %Y')}", "delta_color": "off",
+                      "delta_arrow": "off"})
+    if "heaviest" in pb:
+        tiles.append({"label": "Heaviest set", "value": f"{wk.kg_out(pb['heaviest'][0]):,.1f} {w_unit}",
+                      "delta": f"{store.fmt_day(store._as_date(pb['heaviest'][1]), '%-d %b %Y')}", "delta_color": "off",
+                      "delta_arrow": "off"})
+    if "most_reps" in pb:
+        tiles.append({"label": "Most reps in a set", "value": str(pb["most_reps"][0])})
+    if "longest_km" in pb:
+        tiles.append({"label": "Longest", "value": f"{wk.km_out(pb['longest_km'][0]):g} {d_unit}"})
+    if tiles:
+        kit.stats(tiles, per_row=4)
     rows = wk.progress(ex["id"])
-    if rows:
-        df = pd.DataFrame(rows, columns=["date", "orm", "top", "reps", "km"])
-        df["date"] = pd.to_datetime(df["date"])
-        if ex["kind"] == "cardio":
-            df["Distance"] = df["km"].map(wk.km_out)
-            fig = px.line(df, x="date", y="Distance", markers=True, title=f"{name}: distance ({d_unit})")
-        elif df["top"].notna().any():
-            df["Est. 1RM"] = df["orm"].map(wk.kg_out)
-            df["Top set"] = df["top"].map(wk.kg_out)
-            fig = px.line(df, x="date", y=["Est. 1RM", "Top set"], markers=True, title=f"{name} ({w_unit})",
-                          labels={"value": w_unit, "variable": ""})
+    a, b = st.columns([3, 2])
+    with a, kit.card(f"{name} over time"):
+        if rows:
+            df = pd.DataFrame(rows, columns=["date", "orm", "top", "reps", "km"])
+            df["date"] = pd.to_datetime(df["date"])
+            fig = go.Figure()
+            if ex["kind"] == "cardio":
+                fig.add_scatter(x=df["date"], y=df["km"].map(wk.km_out), mode="lines+markers", name="Distance",
+                                line=dict(color=kit.PALETTE[2], width=3))
+                fig.update_yaxes(ticksuffix=f" {d_unit}")
+            elif df["top"].notna().any():
+                fig.add_scatter(x=df["date"], y=df["orm"].map(wk.kg_out), mode="lines+markers", name="Est. 1RM",
+                                line=dict(color=kit.PALETTE[0], width=3))
+                fig.add_scatter(x=df["date"], y=df["top"].map(wk.kg_out), mode="lines+markers", name="Top set",
+                                line=dict(color=kit.PALETTE[1], width=2, dash="dot"))
+                fig.update_yaxes(ticksuffix=f" {w_unit}")
+            else:
+                fig.add_bar(x=df["date"], y=df["reps"], name="Total reps", marker_color=kit.PALETTE[0])
+            fig.update_xaxes(tickformat="%-d %b")
+            fig.update_layout(hovermode="x unified")
+            kit.chart(fig, "wk_prog_chart", 300, legend=True)
         else:
-            fig = px.bar(df, x="date", y="reps", title=f"{name}: total reps", labels={"reps": "Reps"})
-        fig.update_xaxes(title=None, tickformat="%-d %b")
-        st.plotly_chart(fig, width="stretch")
-    st.markdown("**Personal bests**")
-    table = []
-    for n in names:
-        pb = pbs[n]
-        table.append({"Exercise": n,
-                      f"Heaviest ({w_unit})": wk.kg_out(pb["heaviest"][0]) if "heaviest" in pb else None,
-                      f"Est. 1RM ({w_unit})": wk.kg_out(pb["best_1rm"][0]) if "best_1rm" in pb else None,
-                      "Most reps": pb["most_reps"][0] if "most_reps" in pb else None,
-                      f"Longest ({d_unit})": wk.km_out(pb["longest_km"][0]) if "longest_km" in pb else None})
-    st.dataframe(pd.DataFrame(table), hide_index=True, width="stretch")
-    st.markdown("**Sets per muscle group**")
-    week0 = store.week_start_of(today)
-    this, last = wk.weekly_volume(week0, today), wk.weekly_volume(week0 - timedelta(days=7), week0 - timedelta(days=1))
-    vol = [{"Muscle": m, "Week": "This week", "Sets": v["sets"]} for m, v in this.items()] + \
-          [{"Muscle": m, "Week": "Last week", "Sets": v["sets"]} for m, v in last.items()]
-    if vol:
-        fig = px.bar(pd.DataFrame(vol), x="Muscle", y="Sets", color="Week", barmode="group")
-        fig.update_xaxes(title=None)
-        st.plotly_chart(fig, width="stretch")
+            kit.empty("No working sets of this one yet.")
+    with b, kit.card("Sets per muscle group", "This week against last week"):
+        week0 = store.week_start_of(today)
+        this = wk.weekly_volume(week0, today)
+        last = wk.weekly_volume(week0 - timedelta(days=7), week0 - timedelta(days=1))
+        muscles = sorted(set(this) | set(last), key=lambda m: -(this.get(m, {}).get("sets", 0)))
+        if muscles:
+            fig = go.Figure()
+            fig.add_bar(y=muscles, x=[last.get(m, {}).get("sets", 0) for m in muscles], orientation="h",
+                        name="Last week", marker_color="rgba(128,128,128,.35)")
+            fig.add_bar(y=muscles, x=[this.get(m, {}).get("sets", 0) for m in muscles], orientation="h",
+                        name="This week", marker_color=kit.PALETTE[0])
+            fig.update_layout(barmode="group")
+            fig.update_yaxes(autorange="reversed")
+            kit.chart(fig, "wk_vol_chart", max(200, 40 * len(muscles) + 60), legend=True)
+        else:
+            kit.empty("No sets in the last two weeks.")
+    with kit.card("Personal bests", stretch=False):
+        table = []
+        for n in names:
+            p = pbs[n]
+            table.append({"Exercise": n,
+                          f"Heaviest ({w_unit})": wk.kg_out(p["heaviest"][0]) if "heaviest" in p else None,
+                          f"Est. 1RM ({w_unit})": wk.kg_out(p["best_1rm"][0]) if "best_1rm" in p else None,
+                          "Most reps": p["most_reps"][0] if "most_reps" in p else None,
+                          f"Longest ({d_unit})": wk.km_out(p["longest_km"][0]) if "longest_km" in p else None})
+        kit.table(table, numbers={f"Heaviest ({w_unit})": "%.1f", f"Est. 1RM ({w_unit})": "%.1f"})
 
 
 def _plans_tab():
     ps = wk.plans()
     if not ps:
-        st.caption("No plans yet. Log a workout, then \"Save as plan\" to reuse it.")
-    for p in ps:
-        with st.container(border=True):
-            a, b, c = st.columns([5, 1, 1], vertical_alignment="center")
-            items = wk.plan_items(p["id"])
-            a.markdown(f"**{p['name']}**  \n" + ", ".join(
-                f"{i['exercise']} {i['sets']}×{i['reps'] or '-'}" + (f" @ {wk.weight_text(i['weight'])}" if i["weight"] else "")
-                for i in items))
-            if b.button("Start", key=f"wk_pstart_{p['id']}", type="primary"):
+        kit.empty("No plans yet. Log a workout, then \"Save as plan\" to reuse it.", ":material/list_alt:")
+        return
+    cols = st.columns(3)
+    for i, p in enumerate(ps):
+        with cols[i % 3], st.container(border=True, height="stretch"):
+            st.markdown(f"**{p['name']}**")
+            for it in wk.plan_items(p["id"]):
+                st.markdown(f"- {it['exercise']} · {it['sets']}×{it['reps'] or '-'}"
+                            + (f" @ {wk.weight_text(it['weight'])}" if it["weight"] else ""))
+            a, b = st.columns([3, 1])
+            if a.button("Start", key=f"wk_pstart_{p['id']}", type="primary", icon=":material/play_arrow:",
+                        width="stretch"):
                 st.session_state[CURRENT] = wk.start_from_plan(p["id"])
                 st.toast(f"Started {p['name']}: it's in the Log tab.")
-            if c.button("", icon=":material/delete:", key=f"wk_pdel_{p['id']}", help="Delete this plan"):
-                undo.checkpoint(f"Deleted the plan {p['name']}")
-                wk.delete_plan(p["id"])
-                st.rerun()
+            with b.popover("", icon=":material/delete:", width="stretch", help="Delete this plan"):
+                st.warning(f"Delete the plan {p['name']}?")
+                if st.button("Delete", key=f"wk_pdel_{p['id']}", type="primary"):
+                    undo.checkpoint(f"Deleted the plan {p['name']}")
+                    wk.delete_plan(p["id"])
+                    st.rerun()
 
 
 def _exercises_tab():
     exs = wk.exercises()
-    st.dataframe(pd.DataFrame([{"Exercise": e["name"], "Type": e["kind"], "Muscle": e["muscle"] or ""} for e in exs]),
-                 hide_index=True, width="stretch", height=300)
+    kit.table([{"Exercise": e["name"], "Type": e["kind"], "Muscle": e["muscle"] or ""} for e in exs], height=300)
     with st.form("wk_ex_add", clear_on_submit=True):
         a, b, c = st.columns(3)
         name = a.text_input("New exercise")

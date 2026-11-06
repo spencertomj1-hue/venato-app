@@ -10,7 +10,7 @@ import streamlit as st
 from venato import store
 from venato import undo
 from venato.blocks import money as mn
-from venato.ui import appearance
+from venato.ui import kit
 
 
 TX_FIELD = {"Date": "date", "Amount": "amount", "Note": "note"}
@@ -38,38 +38,16 @@ def _apply_tx(key, rows, cats):
         st.toast(str(e), icon=":material/error:")
 
 
-# One colour per category, the same on every chart (Tableau 10 without its red, which means over budget here).
-PALETTE = ["#4E79A7", "#F28E2B", "#59A14F", "#8CD17D", "#76B7B2", "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F",
-           "#BAB0AC"]
-
-
-def _colours(names):
-    return {n: PALETTE[i % len(PALETTE)] for i, n in enumerate(names)}
-
-
-def _good_bad():
-    return ("#4ADE80", "#FF7B72") if appearance.is_dark() else ("#146C2E", "#C62828")
+_colours = kit.colours
+_good_bad = kit.good_bad
 
 
 def _chart(fig, key, height=280):
-    fig.update_layout(height=height, margin=dict(l=0, r=0, t=8, b=0), paper_bgcolor="rgba(0,0,0,0)",
-                      plot_bgcolor="rgba(0,0,0,0)", showlegend=fig.layout.showlegend, hoverlabel=dict(namelength=-1))
-    st.plotly_chart(fig, width="stretch", key=key, config={"displayModeBar": False})
+    kit.chart(fig, key, height, legend=bool(fig.layout.showlegend))
 
 
 def _table(rows, money=(), progress=(), dates=None):
-    """A read-only table with amounts shown like the rest of the app (-£4.50, £1,200.00), right-aligned."""
-    df = pd.DataFrame(rows)
-    cfg = {}
-    for c in money:
-        df[c] = df[c].map(mn.fmt)
-        cfg[c] = st.column_config.TextColumn(alignment="right")
-    for c in progress:
-        df[c] = df[c] * 100
-        cfg[c] = st.column_config.ProgressColumn(format="%.0f%%", min_value=0, max_value=100)
-    for c, f in (dates or {}).items():
-        cfg[c] = st.column_config.DateColumn(format=f)
-    st.dataframe(df, hide_index=True, width="stretch", column_config=cfg)
+    kit.table(rows, money=money, fmt=mn.fmt, progress=progress, dates=dates)
 
 
 def _delta(now, before):
@@ -348,70 +326,92 @@ def _budgets():
 
 
 def _savings():
-    for g in mn.savings():
-        s = mn.goal_status(g)
-        with st.container(border=True):
-            x, y = st.columns([3, 2])
-            x.markdown(f"**{g['name']}**" + (f" · by {store.fmt_day(store._as_date(g['deadline']), '%-d %b %Y')}" if g["deadline"] else ""))
-            x.progress(s["pct"] / 100, text=f"{mn.fmt(g['saved'])} of {mn.fmt(g['target'])} ({s['pct']:.0f}%)"
-                       + (f" · {mn.fmt(s['per_month'])}/month to make it" if s.get("per_month") else ""))
-            with y.form(f"mn_g_{g['id']}", clear_on_submit=True, border=False):
+    goals = mn.savings()
+    good, _ = kit.good_bad()
+    cols = st.columns(3)
+    for i, g in enumerate(goals):
+        gs = mn.goal_status(g)
+        colour = good if gs["pct"] >= 100 else kit.PALETTE[i % len(kit.PALETTE)]
+        with cols[i % 3], st.container(border=True, height="stretch"):
+            st.markdown(f"**{g['name']}**")
+            st.caption(f"by {store.fmt_day(store._as_date(g['deadline']), '%-d %b %Y')}" if g["deadline"] else "No deadline")
+            kit.rings([{"frac": gs["pct"] / 100, "colour": colour, "size": 120, "centre": f"{gs['pct']:.0f}%",
+                        "centre_sub": "saved", "title": f"{mn.fmt(g['saved'])} of {mn.fmt(g['target'])}",
+                        "sub": f"{mn.fmt(gs['per_month'])}/month to make it" if gs.get("per_month") else ""}])
+            with st.form(f"mn_g_{g['id']}", clear_on_submit=True, border=False):
                 a, b = st.columns([2, 1], vertical_alignment="bottom")
                 amt = a.number_input("Add (negative takes out)", -1_000_000.0, 1_000_000.0, None, 10.0)
-                if b.form_submit_button("Save") and amt:
+                if b.form_submit_button("Save", width="stretch") and amt:
                     mn.contribute(g["id"], amt)
                     st.rerun()
-            if y.button("Delete", key=f"mn_gd_{g['id']}", icon=":material/delete:"):
-                undo.checkpoint(f"Deleted the savings goal {g['name']}")
-                mn.delete_goal(g["id"])
-                st.rerun()
-    with st.form("mn_goal", clear_on_submit=True, border=False):
-        a, b, c, d = st.columns([3, 2, 2, 2], vertical_alignment="bottom")
-        name = a.text_input("New savings goal", placeholder="e.g. Interrailing")
-        target = b.number_input(f"Target ({mn.currency()})", 0.0, 10_000_000.0, None, 50.0)
-        saved = c.number_input("Saved so far", 0.0, 10_000_000.0, 0.0, 50.0)
-        deadline = d.date_input("By", None)
-        if st.form_submit_button("Add goal"):
-            try:
-                mn.add_goal(name, target, deadline, saved)
-                st.rerun()
-            except mn.MoneyError as e:
-                st.error(str(e))
+            with st.popover("Delete", icon=":material/delete:"):
+                st.warning(f"Delete the savings goal {g['name']}?")
+                if st.button("Delete", key=f"mn_gd_{g['id']}", type="primary"):
+                    undo.checkpoint(f"Deleted the savings goal {g['name']}")
+                    mn.delete_goal(g["id"])
+                    st.rerun()
+    if not goals:
+        kit.empty("No savings goals yet.", ":material/savings:")
+    with kit.card("New savings goal", stretch=False):
+        with st.form("mn_goal", clear_on_submit=True, border=False):
+            a, b, c, d = st.columns([3, 2, 2, 2], vertical_alignment="bottom")
+            name = a.text_input("Name", placeholder="e.g. Interrailing")
+            target = b.number_input(f"Target ({mn.currency()})", 0.0, 10_000_000.0, None, 50.0)
+            saved = c.number_input("Saved so far", 0.0, 10_000_000.0, 0.0, 50.0)
+            deadline = d.date_input("By", None)
+            if st.form_submit_button("Add goal", type="primary", icon=":material/add:"):
+                try:
+                    mn.add_goal(name, target, deadline, saved)
+                    st.rerun()
+                except mn.MoneyError as e:
+                    st.error(str(e))
 
 
 def _subscriptions():
     subs = mn.subscriptions()
     active = [s for s in subs if s["active"]]
     if active:
-        st.metric("Subscriptions a month", mn.fmt(sum(mn.monthly_cost(s) for s in active)),
-                  help=f"{mn.fmt(12 * sum(mn.monthly_cost(s) for s in active))} a year")
-    for s in subs:
-        with st.container(border=True):
-            a, b, c, d = st.columns([3, 2, 2, 1], vertical_alignment="center")
-            a.markdown(f"**{s['name']}** · {mn.fmt(s['amount'])} {s['period']}")
-            b.caption(f"Next: {store.fmt_day(store._as_date(s['next_date']), '%-d %b %Y')}")
-            on = c.toggle("Active", bool(s["active"]), key=f"mn_sa_{s['id']}")
+        month = sum(mn.monthly_cost(s) for s in active)
+        kit.stats([{"label": "Subscriptions a month", "value": mn.fmt(month)},
+                   {"label": "A year", "value": mn.fmt(12 * month)},
+                   {"label": "Active", "value": f"{len(active)} of {len(subs)}"}])
+    cols = st.columns(3)
+    today = store.local_today()
+    for i, s in enumerate(subs):
+        nxt = store._as_date(s["next_date"])
+        with cols[i % 3], st.container(border=True, height="stretch"):
+            kit.html(f"<div style='display:flex;gap:12px;align-items:center'>{kit.date_badge(nxt)}<div>"
+                     f"<b>{s['name']}</b><br><span style='opacity:.7;font-size:.85rem'>{mn.fmt(s['amount'])} "
+                     f"{s['period']} · {'today' if nxt == today else f'in {(nxt - today).days} days' if nxt > today else 'due'}"
+                     f"</span></div></div>")
+            a, b = st.columns([3, 1], vertical_alignment="center")
+            on = a.toggle("Active", bool(s["active"]), key=f"mn_sa_{s['id']}")
             if on != bool(s["active"]):
                 mn.update_subscription(s["id"], active=int(on))
                 st.rerun()
-            if d.button("", icon=":material/delete:", key=f"mn_sd_{s['id']}", help="Delete"):
-                undo.checkpoint(f"Deleted the subscription {s['name']}")
-                mn.delete_subscription(s["id"])
-                st.rerun()
-    with st.form("mn_sub", clear_on_submit=True, border=False):
-        a, b, c, d = st.columns([3, 2, 2, 2], vertical_alignment="bottom")
-        name = a.text_input("New subscription", placeholder="e.g. Spotify")
-        amount = b.number_input(f"Amount ({mn.currency()})", 0.0, 100_000.0, None, 1.0)
-        period = c.selectbox("Every", list(mn.PERIODS), index=1)
-        nxt = d.date_input("Next payment", store.local_today())
-        log = st.checkbox("Log each payment as spending", True)
-        if st.form_submit_button("Add subscription"):
-            try:
-                mn.add_subscription(name, amount, period, nxt, None, log)
-                mn.log_renewals()
-                st.rerun()
-            except mn.MoneyError as e:
-                st.error(str(e))
+            with b.popover("", icon=":material/delete:", help="Delete"):
+                st.warning(f"Delete {s['name']}?")
+                if st.button("Delete", key=f"mn_sd_{s['id']}", type="primary"):
+                    undo.checkpoint(f"Deleted the subscription {s['name']}")
+                    mn.delete_subscription(s["id"])
+                    st.rerun()
+    if not subs:
+        kit.empty("No subscriptions yet.", ":material/autorenew:")
+    with kit.card("New subscription", stretch=False):
+        with st.form("mn_sub", clear_on_submit=True, border=False):
+            a, b, c, d = st.columns([3, 2, 2, 2], vertical_alignment="bottom")
+            name = a.text_input("Name", placeholder="e.g. Spotify")
+            amount = b.number_input(f"Amount ({mn.currency()})", 0.0, 100_000.0, None, 1.0)
+            period = c.selectbox("Every", list(mn.PERIODS), index=1)
+            nxt = d.date_input("Next payment", store.local_today())
+            log = st.checkbox("Log each payment as spending", True)
+            if st.form_submit_button("Add subscription", type="primary", icon=":material/add:"):
+                try:
+                    mn.add_subscription(name, amount, period, nxt, None, log)
+                    mn.log_renewals()
+                    st.rerun()
+                except mn.MoneyError as e:
+                    st.error(str(e))
 
 
 def _import():

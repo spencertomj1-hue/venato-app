@@ -94,9 +94,10 @@ def test_pages(food, store):
     f.log("Toast", "breakfast", 1, kcal=150)
     r.add_item("milk")
     at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
-    for page in ("Food", "Recipes", "Home"):
+    assert list(__import__("venato.blocks", fromlist=["pages"]).pages()).count("Food") == 1
+    for page in ("Food", "Home"):
         at.sidebar.radio[0].set_value(page).run()
         assert not at.exception, page
     at.session_state["rc_open"] = rid
-    at.sidebar.radio[0].set_value("Recipes").run()
+    at.sidebar.radio[0].set_value("Food").run()
     assert not at.exception

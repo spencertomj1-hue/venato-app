@@ -373,7 +373,7 @@ def _context():
     return text + (", ".join(line(r["qty"], r["unit"], r["item"]) for r in rows[:20]) or "empty") + "."
 
 
-PROMPT = """- Recipes and shopping list (the Recipes page). add_recipe(name, ingredients=["200 g pasta", "2 onions"],
+PROMPT = """- Recipes and shopping list (tabs on the Food page). add_recipe(name, ingredients=["200 g pasta", "2 onions"],
   servings, method, tags, nutrition per serving); list_recipes(query) and show_recipe(name, servings) scale it.
   "add milk and eggs to the shopping list" -> add_to_shopping(items=["milk", "eggs"]); shopping_list;
   tick_shopping(item); recipe_to_shopping(name, servings); shopping_from_plan(days) adds everything the
@@ -407,7 +407,7 @@ TOOLS = [
 
 
 def _page():
-    from venato.ui import recipes as ui
+    from venato.ui import food as ui              # recipes and the shopping list are tabs on the Food page
     ui.render_page()
 
 
@@ -419,4 +419,4 @@ def _home():
 BLOCK = Block("recipes", "Recipes", ":material/menu_book:",
               "Your recipes, scaled to any number of servings, and a shopping list by aisle (filled from your meal plan).",
               group="Food", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=35)
+              quick=[_quick], schema=SCHEMA, order=35, page_name="Food")
