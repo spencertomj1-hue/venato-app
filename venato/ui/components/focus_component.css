@@ -4,33 +4,92 @@
   --soft: var(--st-secondary-background-color, #f6f7f9);
   --accent: var(--st-primary-color, #ff4b4b);
   --break: #2e9e6a;
+  --line: color-mix(in srgb, var(--text) 14%, transparent);
   font: inherit;
   color: var(--text);
 }
-.fc { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "ring mid" "btns btns";
-      gap: 14px 22px; align-items: center; }
-.fc-ring { grid-area: ring; width: 170px; height: 170px; transform: rotate(-90deg); }
-.fc-ring circle { fill: none; stroke-width: 9; }
-.fc-ring .track { stroke: color-mix(in srgb, var(--text) 10%, transparent); }
+.fc-ring circle { fill: none; }
+.fc-ring .track { stroke: color-mix(in srgb, var(--text) 9%, transparent); }
 .fc-ring .fill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray 0.9s linear; }
 .fc.break .fc-ring .fill { stroke: var(--break); }
-.fc-mid { grid-area: mid; }
-.fc-time { font-size: 3.4rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
-.fc-label { margin-top: 6px; font-size: 1rem; opacity: 0.8; }
-.fc-btns { grid-area: btns; display: flex; gap: 8px; flex-wrap: wrap; }
-.fc-btns button {
-  font: inherit; font-size: 0.9rem; padding: 7px 16px; border-radius: 999px; cursor: pointer;
+
+/* --- Focus page: the big stopwatch --- */
+.fc.big { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 18px 0 6px; }
+.fc-watch { position: relative; width: min(340px, 82vw); aspect-ratio: 1; }
+/* The button on top of a stopwatch: it dips when the dial is pressed. */
+.fc-crown {
+  position: absolute; top: -13px; left: 50%; width: 46px; height: 18px; transform: translateX(-50%);
+  border-radius: 7px 7px 3px 3px; background: var(--soft); border: 1px solid var(--line);
+  transition: transform 0.12s ease;
+}
+.fc-crown::after {
+  content: ""; position: absolute; left: 50%; bottom: -8px; width: 16px; height: 8px; transform: translateX(-50%);
+  background: var(--soft); border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+}
+.fc-watch:has(.fc-dial:active) .fc-crown { transform: translateX(-50%) translateY(5px); }
+.fc-dial {
+  position: relative; width: 100%; height: 100%; border-radius: 50%; padding: 0; cursor: pointer;
+  font: inherit; color: var(--text); background: var(--soft); border: 1px solid var(--line);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--text) 10%, transparent),
+              inset 0 0 0 10px var(--bg);
+  transition: transform 0.12s ease, box-shadow 0.25s ease;
+}
+.fc-dial:hover { box-shadow: 0 14px 36px color-mix(in srgb, var(--text) 15%, transparent), inset 0 0 0 10px var(--bg); }
+.fc-dial:active, .fc-dial.pressed { transform: scale(0.97); }
+.fc-dial:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.fc.running .fc-dial {
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 14%, transparent),
+              0 14px 40px color-mix(in srgb, var(--accent) 22%, transparent), inset 0 0 0 10px var(--bg);
+}
+.fc.running.break .fc-dial {
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--break) 14%, transparent),
+              0 14px 40px color-mix(in srgb, var(--break) 22%, transparent), inset 0 0 0 10px var(--bg);
+}
+.fc.big .fc-ring { position: absolute; inset: 7%; width: 86%; height: 86%; transform: rotate(-90deg); }
+.fc.big .fc-ring circle { stroke-width: 5; }
+.fc.big .ticks line { stroke: color-mix(in srgb, var(--text) 22%, transparent); stroke-width: 0.5; }
+.fc.big .ticks line.major { stroke: color-mix(in srgb, var(--text) 45%, transparent); stroke-width: 0.9; }
+.fc.big .fc-mid {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; pointer-events: none;
+}
+.fc.big .fc-kind { font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.65; }
+.fc.big .fc-time {
+  font-size: clamp(2.6rem, 11vw, 4.4rem); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1;
+  letter-spacing: -0.02em;
+}
+.fc.big .fc-label { font-size: 1rem; font-weight: 600; max-width: 70%; overflow: hidden; text-overflow: ellipsis;
+                    white-space: nowrap; min-height: 1.2em; }
+.fc.big .fc-hint { font-size: 0.82rem; color: var(--accent); font-weight: 600; }
+.fc.break .fc-hint { color: var(--break); }
+.fc.paused .fc-time { animation: fc-blink 1.6s ease-in-out infinite; }
+@keyframes fc-blink { 50% { opacity: 0.35; } }
+.fc.big .fc-btns { display: flex; gap: 8px; }
+.fc.big .fc-btns:not(:has(button)) { display: none; }
+.fc-small {
+  font: inherit; font-size: 0.88rem; padding: 6px 18px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+}
+.fc-small:hover { background: var(--soft); }
+.fc-small:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* --- Home: small --- */
+.fc.compact { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "ring mid" "btns btns";
+              gap: 8px 14px; align-items: center; }
+.fc.compact .fc-ring { grid-area: ring; width: 64px; height: 64px; transform: rotate(-90deg); }
+.fc.compact .fc-ring circle { stroke-width: 11; }
+.fc.compact .fc-mid { grid-area: mid; }
+.fc.compact .fc-time { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.fc.compact .fc-label { font-size: 0.82rem; margin-top: 2px; opacity: 0.8; }
+.fc.compact .fc-btns { grid-area: btns; display: flex; gap: 8px; flex-wrap: wrap; }
+.fc.compact .fc-btns button {
+  font: inherit; font-size: 0.78rem; padding: 4px 11px; border-radius: 999px; cursor: pointer;
   border: 1px solid color-mix(in srgb, var(--text) 25%, transparent); background: var(--bg); color: var(--text);
 }
-.fc-btns button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.fc.break .fc-btns button.primary { background: var(--break); border-color: var(--break); }
-.fc-btns button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fc.compact .fc-btns button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fc.compact.break .fc-btns button.primary { background: var(--break); border-color: var(--break); }
 
-/* Home: small */
-.fc.compact { grid-template-columns: auto 1fr; gap: 8px 14px; }
-.fc.compact .fc-ring { width: 64px; height: 64px; }
-.fc.compact .fc-ring circle { stroke-width: 11; }
-.fc.compact .fc-time { font-size: 1.6rem; }
-.fc.compact .fc-label { font-size: 0.82rem; margin-top: 2px; }
-.fc.compact .fc-btns button { font-size: 0.78rem; padding: 4px 11px; }
-@media (prefers-reduced-motion: reduce) { .fc-ring .fill { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .fc-ring .fill, .fc-dial, .fc-crown { transition: none; }
+  .fc.paused .fc-time { animation: none; }
+}
