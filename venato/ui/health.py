@@ -53,9 +53,11 @@ def _charts(today):
         before = _avg(s, today - timedelta(days=13), today - timedelta(days=7))
         if now is None:
             continue
+        spark = [s.get(today - timedelta(days=i)) for i in range(29, -1, -1)]
         delta = None if before is None else f"{'+' if now >= before else '-'}{_num(abs(now - before))} {unit}".strip()
         tiles.append({"label": label, "value": f"{_num(now)} {unit}".strip(), "delta": delta,
-                      "delta_color": BETTER.get(m, "normal"), "help": "7-day average, against the week before"})
+                      "delta_color": BETTER.get(m, "normal"), "help": "7-day average, against the week before",
+                      "chart": [v or 0 for v in spark], "chart_type": "bar" if m in BARS else "line"})
     for i in range(0, len(tiles), 4):
         kit.stats(tiles[i:i + 4], per_row=4)
     shown = [m for m in data if any(first <= d for d in data[m])]
