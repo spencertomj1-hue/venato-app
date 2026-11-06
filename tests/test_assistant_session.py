@@ -21,7 +21,7 @@ def test_system_prompt_is_stable(store):
 def test_context_snapshot(store):
     from venato import tools
     a = _assistant()
-    today = store.local_today().isoformat()
+    today = "2026-11-03"                       # the snapshot's "now" below (not the real today)
     tools.add_block(today, "plan", "10:00", "12:00", "Lecture")
     tools.add_habit("Gym")
     tools.add_todo("Finish essay", "daily")

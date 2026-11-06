@@ -44,7 +44,8 @@ def _overlapping(date, track, s, e):
 
 
 def _checkpoint(op):
-    """Before a grid change that deletes or overwrites something, save an Undo point for it."""
+    """Before a grid change that deletes or overwrites something, save an Undo point for it. Quiet:
+    no Undo bar pops up on the timetable, but Cmd/Ctrl+Z still brings it back."""
     from venato import undo
     kind = op["kind"]
     if kind == "paint":
@@ -52,20 +53,20 @@ def _checkpoint(op):
         covered = _overlapping(op["date"], op["track"], s, e)
         if covered:
             what = ", ".join(dict.fromkeys(covered))
-            undo.checkpoint(f"Erased {what}" if not op.get("block") else f"Painted over {what}")
+            undo.checkpoint(f"Erased {what}" if not op.get("block") else f"Painted over {what}", quiet=True)
     elif kind == "delete":
         b = store.get_block(op["id"])
-        undo.checkpoint(f"Deleted {b['label']}" if b else "Deleted a block")
+        undo.checkpoint(f"Deleted {b['label']}" if b else "Deleted a block", quiet=True)
     elif kind == "upsert":
-        undo.checkpoint(f"Edited {op['entry'].get('label') or 'a block'}")
+        undo.checkpoint(f"Edited {op['entry'].get('label') or 'a block'}", quiet=True)
     elif kind == "hide_outlook":
-        undo.checkpoint("Removed an Outlook event from the timetable")
+        undo.checkpoint("Removed an Outlook event from the timetable", quiet=True)
     elif kind == "move":
         b = store.get_block(op["id"])
         what = b["label"] if b else "the block"
         length = lambda start, end: store.slot_of(end) - store.slot_of(start)
         resized = b and length(b["start"], b["end"]) != length(op["start"], op["end"])
-        undo.checkpoint(f"Changed {what}'s times" if resized else f"Moved {what}")      # an edge dragged, or the whole block
+        undo.checkpoint(f"Changed {what}'s times" if resized else f"Moved {what}", quiet=True)      # an edge dragged, or the whole block
 
 
 def apply_grid_op(op):
@@ -83,7 +84,7 @@ def apply_grid_op(op):
     """
     if op["kind"] == "batch":
         from venato import undo
-        undo.checkpoint(op.get("label") or "Changed several blocks", quiet=bool(op.get("quiet")))
+        undo.checkpoint(op.get("label") or "Changed several blocks", quiet=True)    # no bar; Cmd/Ctrl+Z undoes
         for sub in op.get("ops") or []:
             _apply(sub)
         return

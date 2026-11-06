@@ -24,6 +24,8 @@ Venato was called **Arete** up to 1.1.1.
 - `CHANGELOG.md`, issue and pull request templates, and `.env.example` listing the environment variables Venato reads.
 
 ### Changed
+- Timetable: pointing at a block selects it (moving off deselects it), so Delete, ⌘C, dragging and a click for details work straight away; a thinner selection outline.
+- Timetable: no more messages under the grid (copied, didn't fit, pick a category...), which also stops the grid shrinking when you copy or paste; deleting or moving blocks no longer shows the Undo bar (⌘Z still undoes).
 - Mood and energy are now out of 10 (was 5). Days already logged are doubled once so they match; older CSV exports (without a productivity column) are doubled on import; "mood 4/5" still works.
 - Daily log: much bigger mood, sleep, energy and water numbers (and icons) in the month calendar, in a 2 × 2 grid.
 - Timetable: the resize bars sit right on a block's top and bottom edges and show whenever you hover a block; drag an edge to resize it without selecting it first.
@@ -39,6 +41,7 @@ Venato was called **Arete** up to 1.1.1.
 - `CONTRIBUTING.md` now covers setting up, running and opening a pull request.
 
 ### Fixed
+- No grey focus ring after clicking and pressing a key (e.g. Backspace on empty time): focus rings now only show when you use Tab.
 - Timetable blocks now sit exactly over their tiles with all four corners rounded (the first column of each day had a square corner, and blocks were slightly out of line).
 - The grey focus ring round the page after Backspace or Delete on the timetable in the Mac app (focus is now taken off the page after a timetable shortcut).
 - A grey focus ring round the whole page after pressing a key (e.g. Backspace on a timetable block) in the Mac app.

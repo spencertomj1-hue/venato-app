@@ -1,5 +1,5 @@
 """
-A soft transition between pages: clicking another page in the sidebar fades the main area
+A soft transition between pages (and focus rings only for keyboard users): clicking another page in the sidebar fades the main area
 to the page colour, and fades the new page in once Streamlit has finished drawing it
 (instead of the old page's pieces being swapped out one by one in front of you).
 """
@@ -14,6 +14,10 @@ export default function () {
   if (window.__venatoFade) return;
   window.__venatoFade = true;
   const doc = document;
+  // Focus rings only for keyboard users: Tab turns them on, a click turns them off (Safari focuses
+  // things on a click, so a later key press, e.g. Backspace, drew a grey ring). See appearance.py.
+  doc.addEventListener("keydown", (e) => { if (e.key === "Tab") doc.documentElement.classList.add("venato-kbd"); }, true);
+  doc.addEventListener("pointerdown", () => doc.documentElement.classList.remove("venato-kbd"), true);
   const veil = doc.createElement("div");
   veil.id = "venato-veil";
   veil.setAttribute("aria-hidden", "true");

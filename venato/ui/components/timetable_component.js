@@ -52,11 +52,11 @@ function helpHtml(single) {
     ["Plan and Actual", "Each day has two columns: <b>Plan</b> is what you mean to do, <b>Actual</b> is what you really did."],
     ["Add a block", "Pick a category from the key, then drag down a column. The block takes the category's name; rename it in its details."],
     ["Put a category down", "Click it again, or press " + key("Esc") + ". With no category picked, dragging selects instead of adding."],
-    ["Select", "Click a block to select it. Click it again to see its details, edit it or delete it."],
-    ["Move or resize", "Drag a selected block to move it (to another time, day, or between Plan and Actual). Drag its top or bottom edge to change when it starts or ends."],
-    ["Select several", "Drag from a block (or from empty time with no category picked, or holding " + key("Shift") + ") to draw a box: every block it touches is selected. " + key("Shift") + " or " + key(MOD.replace("+", "")) + "-click adds or removes one. Drag any selected block to move them all."],
-    ["Copy and paste", key(MOD + "C") + " copies the selected blocks; point at a time and " + key(MOD + "V") + " pastes them there, layout kept, on any day or week."],
-    ["Delete and undo", key("Delete") + " or " + key("Backspace") + " removes the selected blocks; " + key(MOD + "Z") + " brings them back."],
+    ["Select", "Point at a block to select it (moving off deselects it). Click it to see its details, edit it or delete it."],
+    ["Move or resize", "Drag a block to move it (to another time, day, or between Plan and Actual). Drag its top or bottom edge to change when it starts or ends."],
+    ["Select several", "Drag from empty time with no category picked (or holding " + key("Shift") + ") to draw a box: every block it touches is selected. " + key("Shift") + " or " + key(MOD.replace("+", "")) + "-click adds or removes one. Drag any selected block to move them all."],
+    ["Copy and paste", key(MOD + "C") + " copies the block you're pointing at (or the selected ones); point at a time and " + key(MOD + "V") + " pastes them there, layout kept, on any day or week."],
+    ["Delete and undo", key("Delete") + " or " + key("Backspace") + " removes the block you're pointing at (or the selected ones); " + key(MOD + "Z") + " brings them back."],
     ["Right-click", "Right-click a block to edit it straight away."],
     ["Outlook", "Outlook events show in Plan. ↻ syncs now; the Outlook button shows or hides them. Moving or deleting one only changes Venato, never Outlook."],
     ["Fit time", "<b>Fit time</b> (above) finds free gaps for hours of something, e.g. 6 hours of revision, and shows you before adding them."],
@@ -159,6 +159,15 @@ export default function (component) {
 class Timetable {
   constructor(root) {
     this.root = root;
+    // Focus rings only for keyboard users: Tab turns them on, any click turns them off. (Safari
+    // focuses things on a click, so a later key press used to draw a grey ring.)
+    if (!window.__ttRoots) {
+      window.__ttRoots = new Set();           // (the roots may be inside shadow DOM, so keep them, don't query)
+      const set = (on) => window.__ttRoots.forEach((r) => (r.isConnected ? r.classList.toggle("kbd", on) : window.__ttRoots.delete(r)));
+      document.addEventListener("keydown", (e) => { if (e.key === "Tab") set(true); }, true);
+      document.addEventListener("pointerdown", () => set(false), true);
+    }
+    window.__ttRoots.add(root);
     this.entries = new Map();   // id -> entry (server data + pending ops)
     this.pending = [];          // ops not yet acknowledged by Python
     this.brush = recall("tt-brush");   // category id, or null
@@ -182,6 +191,11 @@ class Timetable {
         if (leaveShortcutAlone(e)) return;
         e.preventDefault();
         this.deletePicked();
+        dropFocus();
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && !leaveShortcutAlone(e)) {
+        e.preventDefault();                        // nothing selected: do nothing at all (and leave no focus ring)
         dropFocus();
         return;
       }
@@ -415,7 +429,6 @@ class Timetable {
           <div class="tt-lines" aria-hidden="true"></div>
         </div>
       </div>
-      <div class="tt-hint" aria-live="polite"></div>
       <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details)"></div>`;
 
     // Blocks are positioned from the cells, so redo them when the size changes.
@@ -534,7 +547,7 @@ class Timetable {
     const min = this.data.readonly ? 9 : 10, max = 18;
     const main = document.querySelector(".stMainBlockContainer");
     const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24;
-    const bottom = () => Math.max(...[".tt-card", ".tt-legend", ".tt-hint"].map((sel) => {
+    const bottom = () => Math.max(...[".tt-card", ".tt-legend"].map((sel) => {
       const r = this.root.querySelector(sel)?.getBoundingClientRect();
       return r && r.height ? r.bottom : 0;
     }));
@@ -907,9 +920,6 @@ class Timetable {
   setPicked(ids) {
     this.picked = new Set(ids);
     this.blocksEl.querySelectorAll(".blk").forEach((el) => el.classList.toggle("picked", this.picked.has(el.dataset.id)));
-    const hint = this.root.querySelector(".tt-hint");
-    this.hintText = this.picked.size > 1 ? `${this.picked.size} blocks selected` : "";
-    hint.textContent = this.hintText;
   }
 
   endMarquee() {
@@ -1040,11 +1050,16 @@ class Timetable {
     return y - top <= edge ? "start" : bottom - y <= edge ? "end" : "move";
   }
 
+  // Hovering a block selects it (and moving off deselects it), so Delete, dragging and a
+  // click for details act on it straight away. A selection of several (Shift / a box) stays put.
   hoverBlock(id) {
     if (this.hovered === id) return;
     this.hovered = id;
     this.blocksEl.querySelectorAll(".blk.hover").forEach((b) => b.classList.remove("hover"));
     if (id) this.blocksEl.querySelector(`[data-id="${CSS.escape(id)}"]`)?.classList.add("hover");
+    if (!this.data.readonly && this.picked.size <= 1 && !this.drag && !this.blockDrag && !this.marquee && !this.groupDrag) {
+      this.setPicked(id ? [id] : []);
+    }
   }
 
   dragBlockTo(di, track, slot) {
@@ -1114,13 +1129,8 @@ class Timetable {
     btn.setAttribute("aria-expanded", String(open));
   }
 
-  flashHint(text, warn = true) {
-    const hint = this.root.querySelector(".tt-hint");
-    hint.textContent = text;
-    hint.classList.toggle("warn", warn);
-    clearTimeout(this.hintTimer);
-    this.hintTimer = setTimeout(() => { hint.textContent = this.hintText || ""; hint.classList.remove("warn"); }, warn ? 2000 : 4000);
-  }
+  flashHint() {}                      // the timetable doesn't show messages (they pushed the grid about)
+
 
   // ---------- Right-click editor ----------
 
