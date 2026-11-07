@@ -149,7 +149,7 @@ def _log_tab(today):
         st.info("Start a workout above, or start one of your plans.")
         return
     w = wk.get_workout(wid)
-    st.subheader(f"{w['title']} · {store._as_date(w['date']):%a %-d %b}", anchor=False)
+    st.subheader(f"{w['title']} · {store.fmt_day(store._as_date(w['date']), '%a %-d %b')}", anchor=False)
     _workout_details(wid)
     _add_sets_form(wid)
     _sets_table(wid)
@@ -176,7 +176,7 @@ def _history_tab(today):
     if not rows:
         st.caption("No workouts in the last 6 months.")
     for w in rows:
-        label = f"{store._as_date(w['date']):%a %-d %b} · {w['title']}" + (f" · {w['source']}" if w["source"] != "manual" else "")
+        label = f"{store.fmt_day(store._as_date(w['date']), '%a %-d %b')} · {w['title']}" + (f" · {w['source']}" if w["source"] != "manual" else "")
         with st.expander(label):
             st.write(wk.summary(w["id"]) or "No sets.")
             bits = [f"{w['minutes']:.0f} min" if w["minutes"] else "", f"effort {w['rpe']:g}/10" if w["rpe"] else "",
@@ -316,7 +316,7 @@ def render_home():
     text = f"{len(week)} this week"
     if last:
         w = last[0]
-        text += f" · last: {store._as_date(w['date']):%a %-d %b}, {w['title']}"
+        text += f" · last: {store.fmt_day(store._as_date(w['date']), '%a %-d %b')}, {w['title']}"
         detail = wk.summary(w["id"])
         if detail:
             text += f" ({detail[:80]}{'…' if len(detail) > 80 else ''})"

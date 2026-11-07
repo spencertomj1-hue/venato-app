@@ -385,7 +385,7 @@ def tool_log(kind, organisation=None, hours=None, amount=None, title=None, date=
 def tool_event(title, date, organisation=None, start=None, location=None, ticket="Not needed", price=None, url=None):
     from venato import tools
     _wrap(lambda: add_event(title, date, organisation, start, location, ticket, price, url))
-    return tools.Result(f"Added {title} on {store._as_date(date):%a %-d %b}" + (f" at {start}" if start else "")
+    return tools.Result(f"Added {title} on {store.fmt_day(store._as_date(date), '%a %-d %b')}" + (f" at {start}" if start else "")
                         + (" — ticket still to buy." if ticket == "Need to buy" else "."), changed=True)
 
 

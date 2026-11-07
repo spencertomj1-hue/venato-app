@@ -43,6 +43,7 @@ Venato was called **Arete** up to 1.1.1.
 - `CONTRIBUTING.md` now covers setting up, running and opening a pull request.
 
 ### Fixed
+- Windows: the new blocks' pages (Workouts, Food, Money, Grades, Recipes, Involvement) no longer crash on dates (Windows can't format a day without its leading zero the way Mac and Linux can).
 - No grey focus ring after clicking and pressing a key (e.g. Backspace on empty time): focus rings now only show when you use Tab.
 - Timetable blocks now sit exactly over their tiles with all four corners rounded (the first column of each day had a square corner, and blocks were slightly out of line).
 - The grey focus ring round the page after Backspace or Delete on the timetable in the Mac app (focus is now taken off the page after a timetable shortcut).

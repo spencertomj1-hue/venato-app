@@ -135,5 +135,5 @@ def render_home():
     due = sorted((a["due"], a["name"], m["name"]) for m in gr.modules() for a in gr.assessments(m["id"])
                  if a["due"] and a["mark"] is None and a["due"] >= store.local_today().isoformat())
     if due:
-        text += f" · next: {due[0][2]} {due[0][1]} ({store._as_date(due[0][0]):%-d %b})"
+        text += f" · next: {due[0][2]} {due[0][1]} ({store.fmt_day(store._as_date(due[0][0]), '%-d %b')})"
     st.caption(text)

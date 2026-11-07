@@ -1346,6 +1346,13 @@ def _as_date(day):
     return day if isinstance(day, date) else date.fromisoformat(str(day))
 
 
+def fmt_day(day, fmt="%a %-d %b"):
+    """strftime that also understands "%" + "-d" (the day without a leading zero), which
+    Windows' strftime doesn't. E.g. 'Sat 7 Nov'."""
+    day = _as_date(day)
+    return day.strftime(fmt.replace("%-d", str(day.day)))
+
+
 def start_of_period(period, day):
     """First day of the period containing `day`: the day, its Monday, the 1st, or 1 Jan."""
     day = _as_date(day)

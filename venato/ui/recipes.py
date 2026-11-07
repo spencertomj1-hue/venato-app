@@ -120,7 +120,7 @@ def _recipe_view(r):
             meal = st.selectbox("Meal", food.MEALS, index=2, key=f"rc_plan_meal_{r['id']}")
             if st.button("Plan", key=f"rc_plan_go_{r['id']}", type="primary"):
                 food.plan(r["name"], day, meal, servings, r["id"])
-                st.toast(f"Planned for {meal} on {day:%a %-d %b}.")
+                st.toast(f"Planned for {meal} on {store.fmt_day(day, '%a %-d %b')}.")
     if e.button("Delete recipe", key=f"rc_del_{r['id']}", icon=":material/delete:"):
         undo.checkpoint(f"Deleted the recipe {r['name']}")
         rc.delete(r["id"])

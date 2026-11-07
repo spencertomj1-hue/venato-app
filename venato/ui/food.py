@@ -94,7 +94,7 @@ def _planner(day):
         grid[(p["date"], p["meal"])].append(p)
     for d in days:
         with st.container(border=True):
-            st.markdown(f"**{d:%A %-d %b}**")
+            st.markdown(f"**{store.fmt_day(d, '%A %-d %b')}**")
             cols = st.columns(4)
             for i, meal in enumerate(food.MEALS):
                 with cols[i]:

@@ -120,7 +120,7 @@ def _savings():
         s = mn.goal_status(g)
         with st.container(border=True):
             x, y = st.columns([3, 2])
-            x.markdown(f"**{g['name']}**" + (f" · by {store._as_date(g['deadline']):%-d %b %Y}" if g["deadline"] else ""))
+            x.markdown(f"**{g['name']}**" + (f" · by {store.fmt_day(store._as_date(g['deadline']), '%-d %b %Y')}" if g["deadline"] else ""))
             x.progress(s["pct"] / 100, text=f"{mn.fmt(g['saved'])} of {mn.fmt(g['target'])} ({s['pct']:.0f}%)"
                        + (f" · {mn.fmt(s['per_month'])}/month to make it" if s.get("per_month") else ""))
             with y.form(f"mn_g_{g['id']}", clear_on_submit=True, border=False):
@@ -157,7 +157,7 @@ def _subscriptions():
         with st.container(border=True):
             a, b, c, d = st.columns([3, 2, 2, 1], vertical_alignment="center")
             a.markdown(f"**{s['name']}** · {mn.fmt(s['amount'])} {s['period']}")
-            b.caption(f"Next: {store._as_date(s['next_date']):%-d %b %Y}")
+            b.caption(f"Next: {store.fmt_day(store._as_date(s['next_date']), '%-d %b %Y')}")
             on = c.toggle("Active", bool(s["active"]), key=f"mn_sa_{s['id']}")
             if on != bool(s["active"]):
                 mn.update_subscription(s["id"], active=int(on))

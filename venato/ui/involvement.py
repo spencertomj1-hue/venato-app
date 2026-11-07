@@ -22,7 +22,7 @@ def _goal_rows(gs, prefix):
     for g in gs:
         p = inv.goal_progress(g)
         x, y = st.columns([8, 1], vertical_alignment="center")
-        label = g["text"] + (f" · by {store._as_date(g['deadline']):%-d %b}" if g["deadline"] else "")
+        label = g["text"] + (f" · by {store.fmt_day(store._as_date(g['deadline']), '%-d %b')}" if g["deadline"] else "")
         done = x.checkbox(label, bool(g["done"]), key=f"{prefix}_gd_{g['id']}")
         if done != bool(g["done"]):
             inv.set_goal_done(g["id"], done)
@@ -71,7 +71,7 @@ def _org_card(o, today):
         _goal_form(o["id"], f"inv_gf_{o['id']}")
         recent = inv.entries(org_id=o["id"])[:5]
         if recent:
-            st.caption("Recent: " + " · ".join(f"{store._as_date(r['date']):%-d %b} {r['kind'].lower()}"
+            st.caption("Recent: " + " · ".join(f"{store.fmt_day(store._as_date(r['date']), '%-d %b')} {r['kind'].lower()}"
                                                + (f" {r['hours']:g} h" if r["hours"] else "") for r in recent))
         if st.button(f"Delete {o['name']}", key=f"inv_del_{o['id']}", icon=":material/delete:"):
             undo.checkpoint(f"Deleted {o['name']}")
@@ -120,7 +120,7 @@ def _log(today):
     d.metric("Donated (30 days)", inv._money(t["donated"]))
     for r in inv.entries(first, today):
         x, y = st.columns([10, 1], vertical_alignment="center")
-        bits = [f"{store._as_date(r['date']):%a %-d %b}", r["kind"]] + ([r["org"]] if r["org"] else []) \
+        bits = [f"{store.fmt_day(store._as_date(r['date']), '%a %-d %b')}", r["kind"]] + ([r["org"]] if r["org"] else []) \
             + ([r["title"]] if r["title"] else []) + ([f"{r['hours']:g} h"] if r["hours"] else []) \
             + ([inv._money(r["amount"])] if r["amount"] else [])
         x.markdown(" · ".join(bits))
@@ -137,7 +137,7 @@ def _events(today):
         with st.container(border=True):
             a, b, c = st.columns([4, 2, 2], vertical_alignment="center")
             a.markdown(f"**{e['title']}**" + (f" · {e['org']}" if e["org"] else "") + "  \n"
-                       + f"{store._as_date(e['date']):%a %-d %b}" + (f" {e['start']}" if e["start"] else "")
+                       + f"{store.fmt_day(store._as_date(e['date']), '%a %-d %b')}" + (f" {e['start']}" if e["start"] else "")
                        + (f" · {e['location']}" if e["location"] else "")
                        + (f" · {inv._money(e['price'])}" if e["price"] else "")
                        + (f" · [link]({e['url']})" if e["url"] else ""))
@@ -187,7 +187,7 @@ def render_page():
 def render_home():
     st.markdown("**Involvement**")
     today = store.local_today()
-    bits = [f"{e['title']} {store._as_date(e['date']):%a %-d %b}" + (" (ticket to buy)" if e["ticket"] == "Need to buy" else "")
+    bits = [f"{e['title']} {store.fmt_day(store._as_date(e['date']), '%a %-d %b')}" + (" (ticket to buy)" if e["ticket"] == "Need to buy" else "")
             for e in inv.upcoming(14)[:3]]
     t = inv.totals(today - timedelta(days=29), today)
     if t["volunteering"]:
