@@ -80,6 +80,11 @@ def build_icns(icon):
         subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(ICNS)], check=True)
 
 
+def build_icns_pillow(icon):
+    """Without macOS's iconutil: Pillow writes every .icns size from the 1024 px icon."""
+    icon.save(ICNS, format="ICNS")
+
+
 def build_ico(icon):
     icon.save(ICO, sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
 
@@ -87,7 +92,9 @@ def build_ico(icon):
 if __name__ == "__main__":
     icon = build_png()
     build_ico(icon)
-    if shutil.which("iconutil"):            # macOS only
+    if shutil.which("iconutil"):            # macOS
         build_icns(icon)
+    else:
+        build_icns_pillow(icon)
     build_splash()
     print(f"Wrote the icons and {SPLASH.name}")
