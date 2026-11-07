@@ -9,6 +9,7 @@ faster-whisper==1.2.1
 sounddevice==0.5.6
 requests==2.34.2
 icalendar==7.3.0
+defusedxml==0.7.1           # Apple Health exports (safe XML parsing)
 recurring-ical-events==3.8.2
 keyring==25.7.0
 pytest==9.2.0

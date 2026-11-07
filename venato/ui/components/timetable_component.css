@@ -4,6 +4,11 @@
   --line: rgba(128, 128, 128, 0.22);        /* hour lines */
   --line-soft: rgba(128, 128, 128, 0.11);   /* half-hour lines, Plan|Actual split */
   --line-day: rgba(128, 128, 128, 0.38);    /* between days */
+  --gap: 2.5px;                             /* around each tile and block */
+  --day-gap: 7px;                           /* before each day */
+  --tile-radius: 5px;
+  --time-line: color-mix(in srgb, var(--text) 14%, transparent);   /* half-hour lines (dark on light, light on dark) */
+  --hour-line: color-mix(in srgb, var(--text) 24%, transparent);   /* hour lines */
   --text: var(--st-text-color, #31333f);
   --bg: var(--st-background-color, #fff);
   --head-bg: var(--st-secondary-background-color, #f6f7f9);
@@ -46,8 +51,30 @@ button, input, select { font: inherit; }
   color: var(--text);
   font-size: 0.78rem;
 }
-.tt-goto:focus, .tt-goto:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }   /* every part of the date, incl. the picker */
-.tt-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.tt-root.kbd .tt-goto:focus, .tt-root.kbd .tt-goto:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }   /* every part of the date, incl. the picker */
+.tt-tools { position: relative; display: flex; align-items: center; gap: 6px; margin-left: auto; }
+
+/* The "?" at the top right and its panel */
+.tt-help-btn {
+  width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(128, 128, 128, 0.35);
+  background: var(--bg); color: var(--text); font-weight: 700; font-size: 0.85rem; cursor: pointer; line-height: 1;
+}
+.tt-help-btn:hover, .tt-help-btn[aria-expanded="true"] { background: var(--head-bg); }
+.tt-help {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(440px, 90vw);
+  max-height: 70vh; overflow-y: auto; padding: 12px 14px; border-radius: 12px;
+  background: var(--bg); border: 1px solid rgba(128, 128, 128, 0.25); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  font-size: 0.8rem; line-height: 1.45; user-select: text;
+}
+.tt-help[hidden] { display: none; }
+.tt-help-h { font-weight: 700; margin-bottom: 6px; }
+.tt-help dl { margin: 0; }
+.tt-help dt { font-weight: 600; margin-top: 8px; }
+.tt-help dd { margin: 2px 0 0; color: var(--muted); }
+.tt-help kbd {
+  font: inherit; font-size: 0.72rem; padding: 0 5px; border-radius: 4px;
+  border: 1px solid rgba(128, 128, 128, 0.35); background: var(--head-bg);
+}
 
 /* ---------- Legend / brush picker (one line) ---------- */
 
@@ -83,24 +110,11 @@ button, input, select { font: inherit; }
 .sw.on { background: rgba(128, 128, 128, 0.16); border-color: rgba(128, 128, 128, 0.35); font-weight: 600; }
 .sep { flex: none; width: 1px; height: 16px; margin: 0 5px; background: var(--line-day); }
 
-.tt-label {
-  width: 11.5em;
-  padding: 4px 10px;
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.78rem;
-  outline: none;
-}
-.tt-label:focus { border-color: var(--accent); }
 
-.tt-hint { margin-top: 6px; font-size: 0.72rem; color: var(--muted); }
-.tt-hint.warn { color: #d33; }
 
 /* Keyboard / screen-reader list of the blocks: hidden until something in it has focus. */
 .tt-a11y { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.tt-a11y:focus-within {
+.tt-root.kbd .tt-a11y:focus-within {          /* only for keyboard users (Tab), never after a click */
   position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal;
   display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 10px;
   border: 1px solid var(--line); border-radius: var(--radius);
@@ -111,12 +125,12 @@ button, input, select { font: inherit; }
   padding: 2px 10px; border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 999px;
   background: var(--bg); color: var(--text); font-size: 0.75rem; cursor: pointer;
 }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:focus-visible { outline: none; }
+.tt-root.kbd :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }   /* rings only when using Tab */
 
 /* ---------- Week grid ---------- */
 
 .tt-card {
-  border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
   user-select: none;
@@ -132,9 +146,12 @@ table.tt {
 }
 col.c-time { width: 52px; }
 
-/* Header */
+/* Header: each day is one rounded bubble (its name, date and Plan / Actual), with the same gap
+   between days as the grid; the day row is its top half, the Plan / Actual row its bottom half. */
 table.tt th {
-  background: var(--head-bg);
+  position: relative;
+  z-index: 0;
+  background: transparent;
   color: var(--text);
   font-weight: 600;
   text-align: center;
@@ -142,30 +159,34 @@ table.tt th {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-th.day { padding: 7px 4px 2px; border-left: 1px solid var(--line-day); }
-th.day .dn { font-size: 0.8rem; }
-th.day .dd { font-size: 0.7rem; font-weight: 400; color: var(--muted); }
-th.day.today { box-shadow: inset 0 2px 0 var(--accent); }
+th.day { padding: 7px 4px 2px; }
+th.day::before, th.sub::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; background: var(--head-bg);
+}
+th.sub::before { bottom: 5px; }                            /* a small gap above the grid */
+th.day::before { border-radius: 10px 10px 0 0; left: var(--day-gap); }       /* the same gap between days as the grid */
+th.sub.first::before { border-radius: 0 0 0 10px; left: var(--day-gap); }
+th.sub:not(.first)::before { border-radius: 0 0 10px 0; }
+th.day .dn { font-size: 1.1rem; }               /* +0.30rem */
+th.day .dd { font-size: 0.85rem; font-weight: 400; color: var(--muted); }   /* +0.15rem */
+th.day.today::before { box-shadow: inset 0 2px 0 var(--accent); }
 th.day.today .dn, th.day.today .dd { color: var(--accent); }
 th.sub {
-  padding: 1px 2px 5px;
-  font-size: 0.6rem;
+  padding: 1px 2px 10px;
+  font-size: 0.7rem;               /* +0.10rem */
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
-  border-bottom: 1px solid var(--line);
 }
-th.sub.first { border-left: 1px solid var(--line-day); }
-th.h-time { border-bottom: 1px solid var(--line); }
 
-/* Body: each cell draws its bottom line and a left line between columns. */
+/* Body: each empty half hour is a small rounded tile of very light grey (like the blocks),
+   with a thin gap around it; a slightly wider gap between days. */
 table.tt td {
   height: var(--row-h, 18px);   /* Home shrinks this to fit the window */
   padding: 0;
-  border-bottom: 1px dashed var(--line-soft);
+  border-bottom: 1px solid transparent;    /* room for the time lines, drawn over the blocks by .tt-lines */
 }
-tr.half td { border-bottom: 1px solid var(--line); }      /* the line on each hour */
 tr:last-child td { border-bottom: none; }
 
 /* Time labels sit centred on their hour line. */
@@ -184,14 +205,23 @@ td.t span {
 }
 tr:first-child td.t span { transform: translateY(3px); }  /* first label below the header */
 
-td.s { border-left: 1px solid var(--line-soft); cursor: cell; }
-td.s.first { border-left: 1px solid var(--line-day); }
-td.s.today { background: rgba(128, 128, 128, 0.045); }
-td.s:hover:not(.filled) { background: rgba(128, 128, 128, 0.12); }
-td.s.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+td.s { position: relative; cursor: cell; --tile: rgba(128, 128, 128, 0.075); }
+td.s::before {
+  content: ""; position: absolute; inset: var(--gap); border-radius: var(--tile-radius); background: var(--tile);
+  pointer-events: none; transition: background 0.1s;
+}
+td.s.first::before { left: var(--day-gap); }                          /* a gap between days (Plan and Actual stay together) */
+td.s.today { --tile: rgba(128, 128, 128, 0.11); }
+td.s:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.18); }
+td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
+
+/* The time lines across the timetable, drawn over the blocks so they show through long ones. */
+.tt-lines { position: absolute; inset: 0; pointer-events: none; z-index: 0; }   /* under the blocks */
+.tt-lines i { position: absolute; height: 1px; background: var(--time-line); }
+.tt-lines i.h { background: var(--hour-line); }
 
 /* Blocks, drawn over the cells (clicks pass through to the cells below). */
-.tt-blocks { position: absolute; inset: 0; pointer-events: none; }
+.tt-blocks { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 .blk {
   position: absolute;
   box-sizing: border-box;
@@ -199,9 +229,7 @@ td.s.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
   flex-direction: column;
   justify-content: flex-start;
   padding: 2px 6px;
-  border: 1.5px solid var(--bg);           /* gap around each block */
-  border-radius: 7px;
-  background-clip: padding-box;
+  border-radius: var(--tile-radius);       /* placed exactly over its tiles (JS boxStyle) */
   overflow: hidden;
   line-height: 1.2;
   transition: opacity 0.12s;
@@ -212,17 +240,16 @@ td.s.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .blk:not(.tall) { justify-content: center; padding-top: 0; padding-bottom: 0; }
 .dragging .blk { opacity: 0.35; }
 /* Hovering a block (editable grid): a ring, and grab bars at the top and bottom edges for resizing. */
-.blk.hover { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.28); }
-.blk.hover::before, .blk.hover::after {
-  content: ""; position: absolute; left: 50%; width: 18px; height: 3px; margin-left: -9px;
-  border-radius: 2px; background: currentColor; opacity: 0.55;
+.blk.hover::before, .blk.hover::after {      /* resize bars, on the very edge (next to the selection ring) */
+  content: ""; position: absolute; left: 50%; width: 22px; height: 3px; margin-left: -11px;
+  border-radius: 2px; background: currentColor; opacity: 0.6;
 }
-.blk.hover::before { top: 2px; }
-.blk.hover::after { bottom: 2px; }
+.blk.hover::before { top: 0; }
+.blk.hover::after { bottom: 0; }
 /* Selected blocks (click, Shift-click or drag a box with Shift). */
-.blk.picked { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); z-index: 2; }
+.blk.picked { box-shadow: 0 0 0 1px var(--bg), 0 0 0 2.5px var(--accent); z-index: 2; }   /* hovered = selected */
 .dragging .blk.picked { opacity: 0.55; }
-td.s.sel.box { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+td.s.sel.box { --tile: color-mix(in srgb, var(--accent) 16%, transparent); }
 
 /* ---------- Right-click editor ---------- */
 
@@ -256,18 +283,18 @@ td.s.sel.box { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tt-root.single .tt-nav, .tt-root.single .tt-goto { display: none; }
 
 /* View-only mode (Home page): same look, no editing. The legend is just a key. */
-.tt-root.readonly .tt-tools, .tt-root.readonly .tt-hint { display: none; }
+.tt-root.readonly .tt-tools { display: none; }
 .tt-root.readonly .sw { pointer-events: none; }
 .tt-root.readonly .sw.on { background: transparent; border-color: transparent; font-weight: inherit; }
 .tt-root.readonly td.s { cursor: default; }
-.tt-root.readonly td.s:hover:not(.filled) { background: transparent; }
-.tt-root.readonly td.s.today:hover:not(.filled) { background: rgba(128, 128, 128, 0.045); }
+.tt-root.readonly td.s:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.075); }
+.tt-root.readonly td.s.today:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.11); }
 
 /* Home: the key sits under the grid and wraps, so every category is visible without scrolling. */
 .tt-root.readonly { display: flex; flex-direction: column; }
 .tt-root.readonly .tt-head { order: 0; }
 .tt-root.readonly .tt-card { order: 1; }
-.tt-root.readonly .tt-legend { order: 2; flex-wrap: wrap; overflow: visible; row-gap: 2px; margin: 10px 0 0; }
+.tt-root.readonly .tt-legend { display: none; }           /* Home: no colour key */
 .tt-root.readonly .tt-legend .sep { display: none; }   /* the group divider looks stray once the key wraps */
 
 /* ---------- Outlook (read-only events) ---------- */
@@ -335,3 +362,8 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
                     padding-top: 6px; border-top: 1px solid var(--line); }
 .tt-peek .row { justify-content: flex-end; margin-top: 4px; }
 .tt-pop .p-details { resize: vertical; font-size: 0.85rem; }
+
+/* Home: where "now" is on today's timetable */
+.tt-now { position: absolute; height: 2px; margin-top: -1px; background: #E53935; pointer-events: none; z-index: 6;
+  transition: top 1s linear; }
+.tt-now::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #E53935; }

@@ -44,7 +44,8 @@ def _overlapping(date, track, s, e):
 
 
 def _checkpoint(op):
-    """Before a grid change that deletes or overwrites something, save an Undo point for it."""
+    """Before a grid change that deletes or overwrites something, save an Undo point for it. Quiet:
+    no Undo bar pops up on the timetable, but Cmd/Ctrl+Z still brings it back."""
     from venato import undo
     kind = op["kind"]
     if kind == "paint":
@@ -52,20 +53,20 @@ def _checkpoint(op):
         covered = _overlapping(op["date"], op["track"], s, e)
         if covered:
             what = ", ".join(dict.fromkeys(covered))
-            undo.checkpoint(f"Erased {what}" if not op.get("block") else f"Painted over {what}")
+            undo.checkpoint(f"Erased {what}" if not op.get("block") else f"Painted over {what}", quiet=True)
     elif kind == "delete":
         b = store.get_block(op["id"])
-        undo.checkpoint(f"Deleted {b['label']}" if b else "Deleted a block")
+        undo.checkpoint(f"Deleted {b['label']}" if b else "Deleted a block", quiet=True)
     elif kind == "upsert":
-        undo.checkpoint(f"Edited {op['entry'].get('label') or 'a block'}")
+        undo.checkpoint(f"Edited {op['entry'].get('label') or 'a block'}", quiet=True)
     elif kind == "hide_outlook":
-        undo.checkpoint("Removed an Outlook event from the timetable")
+        undo.checkpoint("Removed an Outlook event from the timetable", quiet=True)
     elif kind == "move":
         b = store.get_block(op["id"])
         what = b["label"] if b else "the block"
         length = lambda start, end: store.slot_of(end) - store.slot_of(start)
         resized = b and length(b["start"], b["end"]) != length(op["start"], op["end"])
-        undo.checkpoint(f"Changed {what}'s times" if resized else f"Moved {what}")      # an edge dragged, or the whole block
+        undo.checkpoint(f"Changed {what}'s times" if resized else f"Moved {what}", quiet=True)      # an edge dragged, or the whole block
 
 
 def apply_grid_op(op):
@@ -83,7 +84,7 @@ def apply_grid_op(op):
     """
     if op["kind"] == "batch":
         from venato import undo
-        undo.checkpoint(op.get("label") or "Changed several blocks", quiet=bool(op.get("quiet")))
+        undo.checkpoint(op.get("label") or "Changed several blocks", quiet=True)    # no bar; Cmd/Ctrl+Z undoes
         for sub in op.get("ops") or []:
             _apply(sub)
         return
@@ -173,15 +174,15 @@ def _on_outlook_toggle(key):
 
 def _sync_text():
     """'Synced 5 min ago', or an offline note. Never mentions the calendar URL."""
-    if not outlook.ics_url():
-        return {"text": "Outlook not connected", "error": False,
-                "detail": "Connect your Outlook calendar in Settings → Calendar."}
+    if not outlook.ics_url() and not outlook.extra_calendars():
+        return {"text": "No calendar connected", "error": False,
+                "detail": "Connect Outlook, Google or Apple calendars in Settings → Calendar."}
     status = st.session_state.get("outlook_status") or {}
     when = outlook.ago(status.get("synced_at") or outlook.last_synced())
     if status.get("error"):
         return {"text": f"Offline · events from {when}", "error": True,
-                "detail": f"Outlook sync failed: {status['error']} Showing the last synced events."}
-    return {"text": f"Synced {when}", "error": False, "detail": "Outlook calendar (read only)"}
+                "detail": f"Calendar sync failed: {status['error']} Showing the last synced events."}
+    return {"text": f"Synced {when}", "error": False, "detail": "Calendars (read only)"}
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +214,7 @@ def render_grid(days, key="timetable", single=False, readonly=False):
     data = {
         "days": [d.isoformat() for d in days],
         "today": store.local_today().isoformat(),
+        "nowMin": (lambda n: n.hour * 60 + n.minute + n.second / 60)(store.local_now()),   # Home's time line
         "groups": store.groups(),
         "categories": [
             {"id": r.id, "name": r.name, "colour": r.colour, "textColour": r.text_colour,

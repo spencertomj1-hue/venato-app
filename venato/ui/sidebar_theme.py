@@ -44,8 +44,14 @@ def apply():
     /* Only while it's open: closed, it takes no room, so the page slides across to fill it. */
     [data-testid="stSidebar"] {{ transition: width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease, transform 0.3s ease; }}
     [data-testid="stSidebar"][data-collapsed="false"] {{
-        width: 12.25rem !important; min-width: 12.25rem !important; max-width: 12.25rem !important;   /* grows with the text size */
+        width: 9.4rem !important; min-width: 9.4rem !important; max-width: 9.4rem !important;   /* grows with the text size */
     }}
+    /* The menu boxes sit close to the screen edge, with the same small gap on the right. */
+    [data-testid="stSidebarContent"] {{
+        padding-left: 0.75rem !important; padding-right: 0.75rem !important;
+        scrollbar-gutter: auto !important;         /* no empty scrollbar space on either side */
+    }}
+    [data-testid="stSidebarUserContent"] {{ padding-left: 0 !important; padding-right: 0 !important; margin-left: 0 !important; }}
     [data-testid="stSidebar"][data-collapsed="true"] {{
         width: 0 !important; min-width: 0 !important; max-width: 0 !important;
     }}

@@ -15,22 +15,25 @@ usually claude.exe in ~/.local/bin (or an npm claude.cmd).
 """
 
 import asyncio
+import atexit
 import getpass
+import hashlib
 import json
 import os
 import shutil
+import threading
+import time
 
 import claude_agent_sdk
 import keyring
 import requests
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from claude_agent_sdk import (
-    ClaudeAgentOptions, CLINotFoundError, ResultMessage, create_sdk_mcp_server, query, tool,
+    ClaudeAgentOptions, ClaudeSDKClient, CLINotFoundError, ResultMessage, StreamEvent, create_sdk_mcp_server, tool,
 )
 
 from venato import regional
@@ -53,7 +56,7 @@ CLAUDE_CANDIDATES = [
     "~/.bun/bin/claude.exe",
 ]
 
-LOGIN_HELP = ("Claude isn't set up yet. In Settings → Claude, paste an Anthropic API key, or sign in to Claude Code. "
+LOGIN_HELP = ("Claude isn't set up yet. In Settings → Assistant, paste an Anthropic API key, or sign in to Claude Code. "
               "Then try again.")
 
 
@@ -177,29 +180,45 @@ def _env(claude_path):
     return env
 
 
+# The model the assistant runs on unless venato_config.json names another ("model": "...").
+DEFAULT_MODEL = "claude-haiku-5-5"
+DEFAULT_EFFORT = "low"      # quick answers; "effort" in venato_config.json overrides it
+
+
 # ---------------------------------------------------------------------------
-# System prompt (rebuilt for every message so "today" is always right)
+# System prompt. It holds nothing that changes from minute to minute (the time and today's
+# details go at the top of each message instead, see context()), so a Claude session can
+# stay open between messages and the prompt can be cached.
 # ---------------------------------------------------------------------------
 
+def _block_prompts():
+    """A paragraph from each switched-on block that has one."""
+    from venato import blocks
+    text = "\n".join(b.prompt.strip("\n") for b in blocks.enabled() if b.prompt)
+    return f"\n{text}\n" if text else ""
+
+
 def system_prompt(now=None):
-    now = now or store.local_now()
     return f"""You are the assistant built into Venato, the user's personal life-tracking app.
 You change their data only through the venato tools. You have no other tools.
 
-Right now it is {now:%A %d %B %Y, %H:%M} ({store.zone_name()}). Today's date is {now:%Y-%m-%d}.
-Work out relative dates ("tomorrow", "next Tuesday", "last night") from this, and always pass
+Each message starts with a [Now] section: the current date and time, and a snapshot of today
+(timetable, habits, to-dos, deadlines, applications). Use it instead of looking those up, and
+work out relative dates ("tomorrow", "next Tuesday", "last night") from it. Always pass
 dates to tools as YYYY-MM-DD. Weeks start on {store.week_start_name()}. Tools always take 24-hour
 "HH:mm" times and litres; the user sees {regional.clock()} times and water in {regional.water_unit()}, so
 use those when talking to them (e.g. "64 oz" -> water=1.89).
 
 What the app tracks
-- Daily log: per date, mood 1-5, sleep hours, energy 1-5, water drunk (litres) and the day's notes,
+- Daily log: per date, mood 1-10, energy 1-10, productivity 1-10 (self-rated), sleep hours, water drunk (litres)
+  and the day's notes,
   which are its journal entry (log_day for the numbers; write_journal for the notes). "drank 2 litres today" -> water=2; a 500 ml bottle is 0.5; glasses are about 0.25 L.
   water is the day's total: for "another 500 ml", check the day first (query_entries) and add to it.
 - Habits: named habits ticked per day, with streaks (set_habit, add_habit, list_habits). A habit is
   either every day or has a weekly target ("gym 3 times a week" -> add_habit("Gym", times_per_week=3),
   or set_habit_target for an existing one); weekly ones count ticks per week.
-  Only add a new habit if the user clearly asks for one.
+  Only add a new habit if the user clearly asks for one. rename_habit renames one; delete_habit
+  (needs confirmation) removes it and all its ticks.
 - Timetable: every day has two tracks, "plan" (what they intend to do) and "actual"
   (what they really did). If they describe something that already happened ("I went to the gym
   from 6 to 7"), use actual; if it's an intention ("I'll study 2-4 tomorrow"), use plan.
@@ -221,7 +240,7 @@ What the app tracks
     weekdays_only if the user says when ("only mornings", "not at weekends"), and
     max_block_hours for how long each sitting should be (default 2).
   - Categories and their colours, and which category an activity uses by default, are changed
-    only by you (edit_category, set_activity_default); there are no editors in the app for them.
+    with edit_category and set_activity_default (the user can also use "Adjust categories" on the Timetable page).
     Use hex colours (e.g. "make Gym dark green" -> #1B7F3B). Ask before creating a new category.
   - Events from the user's Outlook calendar are imported into the plan track. query_blocks lists them
     with ids starting "outlook:". The user can adjust them like their own blocks: update_block turns one
@@ -230,6 +249,8 @@ What the app tracks
 
 - Weekly review: "how did my week go?" / "review last week" -> weekly_review (date = a day in that week).
   Give a short, honest summary with one or two observations; don't list every number.
+  The review asks two questions; save_review_answers stores the user's answers ("what went well:
+  ...", "next week I'll ..."), in their own words.
 - Deadlines: things due on a date ("essay due Friday", "apply for the internship by 15 Nov") ->
   add_deadline(title, due). They show on Home with a countdown. complete_deadline ticks one off;
   edit_deadline changes it; delete_deadline needs confirmation. To make time for one, use plan_time
@@ -243,6 +264,7 @@ What the app tracks
     title in the current day/week/month (pass period or date to narrow it down, or the id from
     list_todos). If several match, ask which one. uncomplete_todo unticks.
   - repeat=true gives the to-do a fresh unticked copy every new period ("every week").
+  - edit_todo renames it, changes its notes or repeat, or moves it to another list (move_to="weekly" etc.).
   - delete_todo needs the user's confirmation.
 
 - Goals: measurable targets for a month or a year (period "monthly" or "yearly"), with a progress bar,
@@ -272,8 +294,21 @@ What the app tracks
   - disconnect_people and delete_person need the user's confirmation.
   - Times the user sees or speaks to someone go in their interaction log: "had coffee with Priya,
     talked about her thesis" -> log_interaction(person="Priya", note="Coffee; talked about her thesis")
-    (date defaults to today; "yesterday" etc. -> pass the date). person_history lists them. If the
-    person isn't in the network yet, ask whether to add them first.
+    (date defaults to today; "yesterday" etc. -> pass the date). person_history lists them (with ids);
+    delete_interaction removes one (needs confirmation). If the person isn't in the network yet, ask
+    whether to add them first.
+
+- Applications: the Applications page is a table of things the user has applied for, or means to
+  (jobs, internships, grad schemes, courses). Each has industry, company, route (e.g. "Graduate scheme",
+  "Internship", "Spring week"), description, contact (contact / lead: who they know there or who to ask),
+  deadline, status and notes. Status is one of: {", ".join(store.APP_STATUSES)}.
+  - "I applied to Acme's internship, deadline 1 Dec" -> add_application(company="Acme", route="Internship",
+    status="Applied", deadline=...). New ones default to "To apply".
+  - "got an interview at Acme" -> edit_application(application="Acme", status="Interview"). Use
+    append_notes=true to add to the notes rather than replace them. list_applications shows them
+    (filter by status or words); delete_application needs confirmation.
+  - Applying for something with a deadline doesn't also need add_deadline unless they ask: the table
+    has its own countdown.
 
 - Journal: the day's notes in the Daily Log (one entry per day). "journal: today was rough, ...",
   "note for today: ..." or "write in my journal that ..." -> write_journal(text) in the user's own words (first person; tidy
@@ -283,7 +318,7 @@ What the app tracks
   when asked.
 
 {tools.list_categories().text}
-
+{_block_prompts()}
 Confirmations
 Deleting, or overwriting/trimming existing data, never happens straight away: the tool returns
 a preview and the user gets Confirm / Cancel buttons in the chat panel. When that happens, say
@@ -295,6 +330,55 @@ Style
 - Ask one short question when something is ambiguous instead of guessing.
 - No markdown headings or tables; plain sentences.
 """
+
+
+# ---------------------------------------------------------------------------
+# [Now]: the time and a snapshot of today, put at the top of every message
+# ---------------------------------------------------------------------------
+
+CONTEXT_LINES = 12          # at most this many lines per section
+CONTEXT_EXTRAS = []         # more sections, as (title, function returning text) (the private copy adds one)
+
+
+def _section(title, text):
+    lines = [l for l in str(text or "").splitlines() if l.strip()]
+    if len(lines) > CONTEXT_LINES:
+        lines = lines[:CONTEXT_LINES] + [f"... and {len(lines) - CONTEXT_LINES} more (use the list tool for all)"]
+    return f"{title}:\n" + ("\n".join(lines) if lines else "(none)")
+
+
+def context(now=None):
+    """What Claude would otherwise look up first: today's and tomorrow's timetable, today's log,
+    habits, current to-dos, open deadlines and active applications (with ids)."""
+    now = now or store.local_now()
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+    parts = [f"It is {now:%A %d %B %Y, %H:%M} ({store.zone_name()}). Today is {today.isoformat()}."]
+    sections = [
+        ("Timetable today and tomorrow", lambda: tools.query_blocks(today.isoformat(), tomorrow.isoformat()).text),
+        ("Today's log", lambda: tools.query_entries(today.isoformat(), today.isoformat()).text),
+        ("Habits", lambda: tools.list_habits(today).text),
+        ("To-dos", lambda: tools.list_todos().text),
+        ("Deadlines", lambda: tools.list_deadlines().text),
+        ("Applications in progress", lambda: "\n".join(
+            l for l in tools.list_applications().text.splitlines()
+            if not any(f": {s}" in l for s in ("Accepted", "Rejected", "Withdrawn")))),
+    ] + list(CONTEXT_EXTRAS) + _block_contexts()
+    for title, get in sections:
+        try:
+            parts.append(_section(title, get() if callable(get) else get))
+        except Exception:                # a snapshot must never stop the message being sent
+            continue
+    return "\n\n".join(parts)
+
+
+def _block_contexts():
+    from venato import blocks
+    return [(b.name, b.context) for b in blocks.enabled() if b.context]
+
+
+def with_context(text, now=None):
+    return f"[Now]\n{context(now)}\n[/Now]\n\n{text}"
 
 
 # ---------------------------------------------------------------------------
@@ -317,12 +401,20 @@ TODO_REF = _schema(["todo"], todo={"type": "string", "description": "the to-do's
 GOAL_REF = {"goal": {"type": "string", "description": "the goal's title (or part of it), or its id"},
             "period": GOAL_PERIOD, "date": {**DATE, "description": "a day in the goal's month/year, if not the current one"}}
 
+APP_STATUS = {"type": "string", "enum": store.APP_STATUSES}
+APP_PROPS = {"company": {"type": "string"}, "industry": {"type": "string"},
+             "route": {"type": "string", "description": "e.g. Graduate scheme, Internship, Spring week"},
+             "description": {"type": "string"},
+             "contact": {"type": "string", "description": "contact / lead: who they know there, or who to ask"},
+             "deadline": DATE, "status": APP_STATUS, "notes": {"type": "string"}}
+
 TOOL_SPECS = [
-    ("log_day", "Set mood/sleep/energy/water/notes for a date. Fields not given are left as they are.",
+    ("log_day", "Set mood/sleep/energy/productivity/water/notes for a date (scores 1-10). Fields not given are left as they are.",
      _schema(["date"], date=DATE,
-             mood={"type": "integer", "minimum": 1, "maximum": 5},
+             mood={"type": "integer", "minimum": 1, "maximum": 10},
              sleep={"type": "number", "description": "hours slept"},
-             energy={"type": "integer", "minimum": 1, "maximum": 5},
+             energy={"type": "integer", "minimum": 1, "maximum": 10},
+             productivity={"type": "integer", "minimum": 1, "maximum": 10, "description": "how productive the day felt"},
              water={"type": "number", "description": "litres of water drunk that day (the total)"},
              notes={"type": "string"},
              append_notes={"type": "boolean", "description": "add to existing notes instead of replacing"}),
@@ -462,6 +554,31 @@ TOOL_SPECS = [
      "and/or entries containing all the words in query.",
      _schema([], date=DATE, start_date=DATE, end_date=DATE, query={"type": "string"},
              limit={"type": "integer", "description": "at most 31, default 10"}), tools.read_journal),
+    ("rename_habit", "Rename a habit (its ticks and streaks stay).",
+     _schema(["habit_name", "new_name"], habit_name={"type": "string"}, new_name={"type": "string"}),
+     tools.rename_habit),
+    ("delete_habit", "Delete a habit and all its ticks (needs the user's confirmation).",
+     _schema(["habit_name"], habit_name={"type": "string"}), tools.delete_habit),
+    ("edit_todo", "Change a to-do's title, notes or repeat, and/or move it to the day, week or month list.",
+     {**TODO_REF, "properties": {**TODO_REF["properties"], "title": {"type": "string"}, "notes": {"type": "string"},
+                                 "repeat": {"type": "boolean"}, "move_to": TODO_PERIOD}}, tools.edit_todo),
+    ("delete_interaction", "Remove a logged meeting with someone (id from person_history, or words from its note).",
+     _schema(["person", "interaction"], person={"type": "string"}, interaction={"type": "string"}),
+     tools.delete_interaction),
+    ("save_review_answers", "Save the user's answers to the weekly review's questions: what went well, what to change.",
+     _schema([], went_well={"type": "string"}, to_change={"type": "string"},
+             date={**DATE, "description": "any day in the week (default: the latest review week)"}),
+     tools.save_review_answers),
+    ("list_applications", "List applications (with ids), optionally by status or matching words.",
+     _schema([], status=APP_STATUS, query={"type": "string"}), tools.list_applications),
+    ("add_application", "Add an application (a job, internship, course...). At least a company or what it's for.",
+     _schema([], **APP_PROPS), tools.add_application),
+    ("edit_application", "Change an application's fields, found by company (or id). Only pass what changes.",
+     _schema(["application"], application={"type": "string", "description": "company / route words, or its id"},
+             append_notes={"type": "boolean", "description": "add to the notes instead of replacing them"},
+             **APP_PROPS), tools.edit_application),
+    ("delete_application", "Delete an application (needs the user's confirmation).",
+     _schema(["application"], application={"type": "string"}), tools.delete_application),
     ("find_people", "List people in the network (with ids, groups and connections), optionally filtered by a search.",
      _schema([], query={"type": "string"}), tools.find_people),
     ("set_activity_default", "Set which category an activity label (e.g. 'Lecture') uses by default.",
@@ -497,10 +614,20 @@ def _make_server(state):
             return {"content": [{"type": "text", "text": text}]}
         return handler
 
-    return create_sdk_mcp_server("venato", tools=[wrap(*spec) for spec in TOOL_SPECS])
+    return create_sdk_mcp_server("venato", tools=[wrap(*spec) for spec in tool_specs()])
 
 
-ALLOWED_TOOLS = [f"mcp__venato__{spec[0]}" for spec in TOOL_SPECS]
+def tool_specs():
+    """The built-in tools, plus those of every switched-on block."""
+    from venato import blocks
+    return TOOL_SPECS + [spec for b in blocks.enabled() for spec in b.tools]
+
+
+def allowed_tools():
+    return [f"mcp__venato__{spec[0]}" for spec in tool_specs()]
+
+
+ALLOWED_TOOLS = [f"mcp__venato__{spec[0]}" for spec in TOOL_SPECS]   # the built-in ones (kept for scripts)
 
 
 # ---------------------------------------------------------------------------
@@ -530,27 +657,6 @@ def _with_history(text, history):
     return f"Conversation so far (for context):\n{lines}\n\nNew message from the user:\n{text}"
 
 
-async def _ask(prompt, claude_path, state):
-    AGENT_DIR.mkdir(parents=True, exist_ok=True)
-    cfg = load_config()
-    options = ClaudeAgentOptions(
-        system_prompt=system_prompt(),
-        mcp_servers={"venato": _make_server(state)},
-        allowed_tools=ALLOWED_TOOLS,
-        tools=[],                      # no built-in tools (Bash, files, web...)
-        permission_mode="dontAsk",     # anything not allowed above is refused
-        setting_sources=[], strict_mcp_config=True, skills=[],   # ignore the user's own Claude config
-        cli_path=claude_path, cwd=str(AGENT_DIR), env=_env(claude_path),
-        extra_args={"no-session-persistence": None},             # don't write the chat to disk
-        max_turns=15, model=cfg.get("model"),
-    )
-    turn = Turn()
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, ResultMessage):
-            turn.reply = (message.result or "").strip()
-    return turn
-
-
 def _friendly(error):
     msg = str(error)
     low = msg.lower()
@@ -561,26 +667,233 @@ def _friendly(error):
     return f"Claude ran into a problem: {msg}"
 
 
-def run_turn(text, history=()):
+# ---------------------------------------------------------------------------
+# Claude sessions: one Claude Code process per browser tab, kept open between messages
+# (starting one costs most of a second), on one background event loop. Replies stream:
+# a Job holds the text so far while Claude is still writing.
+# ---------------------------------------------------------------------------
+
+TURN_TIMEOUT = 300           # seconds before a message is given up on
+IDLE_CLOSE = 15 * 60         # a session unused this long is closed
+TIMINGS = store.DATA_DIR / "logs" / "assistant.jsonl"     # how long each message took (no message text)
+
+TOOL_STATUS = [              # (word in the tool's name, what the chat shows while it runs)
+    ("application", "Updating your applications"), ("problem", "Updating your problem sets"),
+    ("module", "Updating your problem sets"), ("journal", "Writing in your journal"),
+    ("review", "Updating your weekly review"), ("todo", "Updating your to-dos"),
+    ("goal", "Updating your goals"), ("deadline", "Updating your deadlines"),
+    ("habit", "Updating your habits"), ("person", "Updating your network"), ("people", "Updating your network"),
+    ("group", "Updating your network"), ("interaction", "Updating your network"),
+    ("block", "Updating your timetable"), ("plan_time", "Finding free time"), ("category", "Updating categories"),
+    ("activity", "Updating categories"), ("outlook", "Updating categories"), ("log_day", "Updating your daily log"),
+]
+
+
+def _status(tool_name):
+    name = tool_name.rsplit("__", 1)[-1]
+    if name.startswith(("list_", "query_", "read_", "find_", "get_")) or name in ("weekly_review", "person_history"):
+        return "Looking that up"
+    return next((label for word, label in TOOL_STATUS if word in name), "Working on it")
+
+
+class Job:
+    """One message being answered in the background."""
+
+    def __init__(self, turn=None):
+        self.partial = ""        # the reply so far, while it's being written
+        self.status = ""         # e.g. "Updating your timetable" while a tool runs
+        self.turn = turn         # the finished Turn
+        self.started = time.monotonic()
+        self.future = None
+        self.key = None
+
+    @classmethod
+    def finished(cls, turn):
+        return cls(turn)
+
+    @property
+    def done(self):
+        if self.turn is None and time.monotonic() - self.started > TURN_TIMEOUT:
+            if self.future:
+                self.future.cancel()
+            _drop(self.key)
+            self.turn = Turn(error="Claude took too long to answer. Try again.")
+        return self.turn is not None
+
+    def wait(self):
+        while not self.done:
+            time.sleep(0.05)
+        return self.turn
+
+
+class _Session:
+    def __init__(self):
+        self.client = None
+        self.signature = None
+        self.state = TurnState()
+        self.fresh = True        # no messages yet: send the recent chat along with the first one
+        self.last_used = time.monotonic()
+
+
+_loop = None
+_loop_lock = threading.Lock()
+_sessions = {}
+
+
+def _event_loop():
+    global _loop
+    with _loop_lock:
+        if _loop is None:
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_forever, name="venato-claude", daemon=True).start()
+            _loop = loop
+            atexit.register(_close_all)
+    return _loop
+
+
+def _options(state, claude_path):
+    return ClaudeAgentOptions(
+        system_prompt=system_prompt(),
+        mcp_servers={"venato": _make_server(state)},
+        allowed_tools=allowed_tools(),
+        tools=[],                      # no built-in tools (Bash, files, web...)
+        permission_mode="dontAsk",     # anything not allowed above is refused
+        setting_sources=[], strict_mcp_config=True, skills=[],   # ignore the user's own Claude config
+        cli_path=claude_path, cwd=str(AGENT_DIR), env=_env(claude_path),
+        extra_args={"no-session-persistence": None},             # don't write the chat to disk
+        max_turns=15, model=load_config().get("model") or DEFAULT_MODEL,
+        include_partial_messages=True,                           # stream the reply as it's written
+        effort=load_config().get("effort") or DEFAULT_EFFORT,
+    )
+
+
+def _signature(claude_path):
+    """Anything that needs a fresh session when it changes: the prompt, the model, the key."""
+    key = api_key() or ""
+    parts = (claude_path, system_prompt(), tuple(allowed_tools()), load_config().get("model") or DEFAULT_MODEL, load_config().get("effort"),
+             hashlib.sha256(key.encode()).hexdigest())
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
+
+
+async def _close(sess):
+    client, sess.client = sess.client, None
+    if client:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
+def _drop(key):
+    sess = _sessions.pop(key, None)
+    if sess and sess.client and _loop:
+        asyncio.run_coroutine_threadsafe(_close(sess), _loop)
+
+
+def _close_all():
+    if not _loop:
+        return
+    try:
+        asyncio.run_coroutine_threadsafe(
+            asyncio.gather(*(_close(s) for s in list(_sessions.values()))), _loop).result(timeout=5)
+    except Exception:
+        pass
+
+
+async def _run(key, text, history, job, claude_path, timing):
+    now = time.monotonic()
+    for other_key, other in list(_sessions.items()):          # tidy up tabs closed long ago
+        if other_key != key and now - other.last_used > IDLE_CLOSE:
+            _sessions.pop(other_key, None)
+            await _close(other)
+    sess = _sessions.setdefault(key, _Session())
+    signature = _signature(claude_path)
+    if sess.client is None or sess.signature != signature or now - sess.last_used > IDLE_CLOSE:
+        await _close(sess)
+        AGENT_DIR.mkdir(parents=True, exist_ok=True)
+        sess.state, sess.fresh = TurnState(), True
+        client = ClaudeSDKClient(_options(sess.state, claude_path))
+        t = time.monotonic()
+        await client.connect()
+        sess.client, sess.signature = client, signature
+        timing["connect_s"] = round(time.monotonic() - t, 2)
+    sess.last_used = time.monotonic()
+    sess.state.pending, sess.state.changed = [], False       # the tool server keeps this same object
+    prompt = with_context(_with_history(text, history) if sess.fresh else text)
+    sess.fresh = False
+
+    turn = Turn()
+    await sess.client.query(prompt)
+    async for message in sess.client.receive_response():
+        if isinstance(message, StreamEvent):
+            event = message.event or {}
+            block = event.get("content_block") or {}
+            delta = event.get("delta") or {}
+            if event.get("type") == "content_block_start" and block.get("type") == "tool_use":
+                job.status, job.partial = _status(block.get("name", "")), ""
+                timing["tool_calls"] = timing.get("tool_calls", 0) + 1
+            elif event.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
+                timing.setdefault("first_text_s", round(time.monotonic() - job.started, 2))
+                job.status = ""
+                job.partial += delta.get("text", "")
+        elif isinstance(message, ResultMessage):
+            turn.reply = (message.result or "").strip()
+            if message.is_error and not turn.reply:
+                turn.error = _friendly(" ".join(message.errors or []) or message.subtype)
+            usage = message.usage or {}
+            timing.update(input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
+                          cache_read=usage.get("cache_read_input_tokens"),
+                          cache_write=usage.get("cache_creation_input_tokens"))
+    turn.pending, turn.changed = list(sess.state.pending), sess.state.changed
+    sess.last_used = time.monotonic()
+    return turn
+
+
+def _log_timing(timing):
+    try:
+        TIMINGS.parent.mkdir(parents=True, exist_ok=True)
+        if TIMINGS.exists() and TIMINGS.stat().st_size > 1_000_000:          # keep it small
+            TIMINGS.replace(TIMINGS.with_suffix(".old.jsonl"))
+        with TIMINGS.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(timing) + "\n")
+    except OSError:
+        pass
+
+
+def start_turn(text, history=(), key="default"):
     """
-    Send one chat message to Claude, with the recent conversation as context
-    (history: (role, text) pairs). Blocks until done; safe to call from Streamlit.
+    Start answering one chat message in the background and return its Job straight away.
+    history: the recent (role, text) pairs, sent along only when the session is new
+    (an open session remembers the conversation itself). key: one session per browser tab.
     """
     claude_path = find_claude()
     if not claude_path:
-        return Turn(error=(
-            "Couldn't find Claude. Paste an Anthropic API key in Settings → Claude (or install Claude Code); "
-            f"if it's installed somewhere unusual, set its path in {CONFIG_PATH} as {{\"claude_path\": \"/path/to/claude\"}}."))
+        return Job.finished(Turn(error=(
+            "Couldn't find Claude. Paste an Anthropic API key in Settings → Assistant (or install Claude Code); "
+            f"if it's installed somewhere unusual, set its path in {CONFIG_PATH} as {{\"claude_path\": \"/path/to/claude\"}}.")))
+    job = Job()
+    job.key = key
+    timing = {"at": store.stamp(), "model": load_config().get("model") or DEFAULT_MODEL, "quick": False}
 
-    state = TurnState()
-    try:
-        # Run the SDK's asyncio code in its own thread with a fresh event loop,
-        # so it never clashes with Streamlit's.
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            turn = pool.submit(asyncio.run, _ask(_with_history(text, history), claude_path, state)).result(timeout=300)
-    except CLINotFoundError:
-        return Turn(error=f"Couldn't start Claude Code at {claude_path}. Check the path in {CONFIG_PATH}.")
-    except Exception as e:
-        return Turn(error=_friendly(e))
-    turn.pending, turn.changed = state.pending, state.changed
-    return turn
+    def finish(future):
+        try:
+            turn = future.result()
+        except CLINotFoundError:
+            turn = Turn(error=f"Couldn't start Claude Code at {claude_path}. Check the path in {CONFIG_PATH}.")
+            _drop(key)
+        except Exception as e:                   # includes a cancelled (timed-out) turn
+            turn = Turn(error=_friendly(e) if str(e) else "Claude stopped answering. Try again.")
+            _drop(key)
+        timing["total_s"] = round(time.monotonic() - job.started, 2)
+        _log_timing(timing)
+        if job.turn is None:
+            job.turn = turn
+
+    job.future = asyncio.run_coroutine_threadsafe(_run(key, text, history, job, claude_path, timing), _event_loop())
+    job.future.add_done_callback(finish)
+    return job
+
+
+def run_turn(text, history=(), key="default"):
+    """Send one chat message to Claude and wait for the whole reply (scripts and tests)."""
+    return start_turn(text, history, key).wait()

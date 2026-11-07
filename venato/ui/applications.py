@@ -2,9 +2,11 @@
 Applications: a table of everything you've applied for (or mean to): industry, company,
 route, description, contact / lead, deadline, status and notes.
 
-"Add application" adds one. Then edit the table like a spreadsheet: click a cell to change
-it, tick rows and press the bin (or Delete) to remove them. Deletes can be undone.
+"Add application" adds one. Click a cell in the table to change it; text too long for its
+column ends in "…", which shows all of it in a bubble. Status is a coloured pill. Deletes can be undone.
 """
+
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -13,44 +15,58 @@ from venato import regional
 from venato import store
 from venato import undo
 
+HERE = Path(__file__).parent
 PAGE = "Applications"
-EDITOR = "apps_editor"
-IDS = "apps_ids"            # the id behind each row of the table as it was last drawn
+EDITOR = "apps_table"
+ACKED = "apps_acked"        # ops from the table already saved
 COLUMNS = {                 # store field -> column heading
     "industry": "Industry", "company": "Company", "route": "Route", "description": "Description",
     "contact": "Contact / lead", "deadline": "Deadline", "status": "Status", "notes": "Notes",
 }
 FIELD = {v: k for k, v in COLUMNS.items()}
 DONE = {"Accepted", "Rejected", "Withdrawn"}          # finished: no countdown
+COLOURS = {                 # status -> its pill's colour
+    "To apply": "#9E9E9E", "Applied": "#1E88E5", "Online test": "#8E24AA", "Interview": "#FB8C00",
+    "Assessment centre": "#00897B", "Offer": "#43A047", "Accepted": "#1B5E20", "Rejected": "#E53935",
+    "Withdrawn": "#616161",
+}
+
+_table = st.components.v2.component(
+    "venato_applications",
+    html='<div class="ap-root"></div>',
+    css=(HERE / "components" / "apps_component.css").read_text(encoding="utf-8"),
+    js=(HERE / "components" / "apps_component.js").read_text(encoding="utf-8"),
+)
 
 
-def apply_edits(state, ids):
-    """Save st.data_editor's changes ({edited_rows, deleted_rows}, rows numbered as in `ids`).
-    Streamlit starts the count again whenever the table it's given changes, which it does
-    after every save, so each call only holds the latest change."""
-    gone = [ids[int(i)] for i in state.get("deleted_rows", []) if int(i) < len(ids)]
-    gone = [a for a in gone if store.get_application(a)]
-    if gone:
-        names = [store.get_application(a)["company"] or "application" for a in gone]
-        undo.checkpoint(f"Deleted {names[0]}" if len(gone) == 1 else f"Deleted {len(gone)} applications")
-    elif state.get("edited_rows"):
-        undo.checkpoint("Changed an application", quiet=True)
-    for aid in gone:
-        store.delete_application(aid)
-    for i, changes in state.get("edited_rows", {}).items():
-        aid = ids[int(i)] if int(i) < len(ids) else None
-        if aid and aid not in gone and store.get_application(aid):
-            fields = {FIELD[k]: v for k, v in changes.items() if k in FIELD}
-            if "status" in fields and not fields["status"]:
-                fields["status"] = "To apply"
-            store.update_application(aid, **fields)
+def apply_op(op):
+    """Save one op from the table: {kind: "edit", id, field, value} or {kind: "delete", id}."""
+    a = store.get_application(op.get("id"))
+    if not a:
+        return
+    if op["kind"] == "delete":
+        undo.checkpoint(f"Deleted {a['company'] or 'an application'}")
+        store.delete_application(a["id"])
+    elif op["kind"] == "edit" and op.get("field") in COLUMNS:
+        field, value = op["field"], op.get("value")
+        if field == "status" and value not in store.APP_STATUSES:
+            return
+        if a[field] and (value or None) != a[field]:
+            undo.checkpoint(f"Changed {a['company'] or 'an application'}", quiet=True)   # Cmd/Ctrl+Z puts it back
+        store.update_application(a["id"], **{field: value})
 
 
-def _save():
-    try:
-        apply_edits(st.session_state.get(EDITOR) or {}, st.session_state.get(IDS) or [])
-    except ValueError as e:
-        st.toast(str(e), icon=":material/error:")
+def _on_ops():
+    ops = (st.session_state.get(EDITOR) or {}).get("ops") or []
+    acked = st.session_state.setdefault(ACKED, [])
+    for op in ops:
+        if op["opId"] not in acked:
+            try:
+                apply_op(op)
+            except ValueError as e:
+                st.toast(str(e), icon=":material/error:")
+            acked.append(op["opId"])
+    st.session_state[ACKED] = acked[-500:]
 
 
 def _countdown(row, today):
@@ -96,31 +112,13 @@ def render_page():
     if shown:
         rows = [r for r in rows if r["status"] in shown]
 
-    st.session_state[IDS] = [r["id"] for r in rows]
-    table = pd.DataFrame(
-        [{**{COLUMNS[k]: r[k] for k in COLUMNS}, "Due": _countdown(r, today)} for r in rows],
-        columns=[*COLUMNS.values(), "Due"])
-    table["Deadline"] = pd.to_datetime(table["Deadline"]).dt.date
-    text = [c for c in table.columns if c not in ("Deadline", "Status")]
-    table[text] = table[text].fillna("")              # blank, not "None"
-
-    st.data_editor(
-        table, key=EDITOR, on_change=_save, num_rows="delete", hide_index=True, width="stretch",
-        column_order=["Industry", "Company", "Route", "Description", "Contact / lead",
-                      "Deadline", "Due", "Status", "Notes"],
-        column_config={
-            "Industry": st.column_config.TextColumn(width=90),
-            "Company": st.column_config.TextColumn(width=130),
-            "Route": st.column_config.TextColumn(width=110, help="e.g. Graduate scheme, Internship, Spring week"),
-            "Description": st.column_config.TextColumn(width=150),
-            "Contact / lead": st.column_config.TextColumn(width=120, help="Who you know there, or who to ask"),
-            "Deadline": st.column_config.DateColumn(format=regional.date_format(), width=100),
-            "Due": st.column_config.TextColumn(disabled=True, width=90),
-            "Status": st.column_config.SelectboxColumn(options=store.APP_STATUSES, required=True, width=120),
-            "Notes": st.column_config.TextColumn(width=150),
-        },
-    )
-    if table.empty:
+    _table(data={
+        "rows": [{**{k: r[k] for k in COLUMNS}, "id": r["id"], "due": _countdown(r, today),
+                  "deadlineText": regional.numeric_date(r["deadline"]) if r["deadline"] else ""} for r in rows],
+        "statuses": store.APP_STATUSES, "colours": COLOURS, "acked": st.session_state.get(ACKED, []),
+    }, key=EDITOR, on_ops_change=_on_ops)
+    if not rows:
         st.caption("Nothing here yet: add one above." if not shown else "None with that status.")
     else:
-        st.caption("Click a cell to change it · tick rows and press the bin to delete them (Undo brings them back).")
+        st.caption("Click a cell to change it · click … to read the rest · the bin at the end of a row deletes it "
+                   "(Undo brings it back).")

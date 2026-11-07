@@ -83,7 +83,15 @@ def apply_text_colours():
     a:focus-visible, [tabindex]:focus-visible, summary:focus-visible {{ outline: 2px solid {ring}; outline-offset: 2px; }}
     /* ...except the page itself: it's only focusable so arrow keys scroll it, and Safari focuses it
        on a click, so a key press (e.g. Backspace on a block) drew a ring round everything. */
-    [data-testid="stMain"]:focus, [data-testid="stMain"]:focus-visible {{ outline: none !important; }}{dark_buttons}
+    [data-testid="stMain"]:focus, [data-testid="stMain"]:focus-visible,
+    [data-testid="stAppViewContainer"]:focus, [data-testid="stMainBlockContainer"]:focus,
+    [data-testid="stVerticalBlock"]:focus, [data-testid="stElementContainer"]:focus {{ outline: none !important; box-shadow: none; }}
+    /* After a click, nothing gets a focus ring (Safari would draw one on the next key press); Tab turns
+       rings back on (page_fade.py sets html.venato-kbd). Text boxes keep theirs. */
+    html:not(.venato-kbd) :focus:not(input):not(textarea):not([contenteditable="true"]):not([role="combobox"]) {{
+        outline: none !important; }}
+    html:not(.venato-kbd) button:focus, html:not(.venato-kbd) [role="tab"]:focus,
+    html:not(.venato-kbd) [data-testid="stMain"] [tabindex]:focus {{ box-shadow: none !important; }}{dark_buttons}
     [data-testid="stCaptionContainer"] {{ opacity: 1 !important; }}
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color: {caption} !important; }}
     </style>""")

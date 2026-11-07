@@ -117,6 +117,8 @@ def test_wizard_shows_on_a_fresh_data_folder_and_finishes(store, monkeypatch):
     assert at.title[0].value == "Welcome to Venato"
     assert not at.sidebar.radio                                  # no app yet
 
+    at.button(key="wiz_next").click().run()                      # -> blocks: the usual ones ticked
+    assert at.toggle(key="wiz_block_timetable").value is True
     at.button(key="wiz_next").click().run()                      # -> the assistant: optional, off to start with
     assert at.toggle(key="wiz_ai_on").value is False and not at.text_input
     at.toggle(key="wiz_ai_on").set_value(True).run()             # on: how to connect Claude (an API key by default)
@@ -184,6 +186,7 @@ def test_wizard_without_the_assistant(store):
     from venato import setup_checks
     os.remove(store.DATA_DIR / "settings.json")
     at = AppTest.from_file(APP, default_timeout=60).run()
+    at.button(key="wiz_next").click().run()                      # -> blocks
     at.button(key="wiz_next").click().run()                      # -> the assistant (left off)
     at.button(key="wiz_next").click().run()                      # -> Calendar
     at.button(key="wiz_next").click().run()                      # -> straight to Done (no microphone)

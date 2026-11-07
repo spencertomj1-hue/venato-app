@@ -59,7 +59,9 @@ def test_log_day_replacing_notes_needs_confirm(tools, store):
 
 def test_log_day_validation(tools):
     with pytest.raises(tools.ToolError):
-        tools.log_day(DAY, mood=7)
+        tools.log_day(DAY, mood=11)
+    with pytest.raises(tools.ToolError):
+        tools.log_day(DAY, productivity=0)
     with pytest.raises(tools.ToolError):
         tools.log_day("tomorrow", mood=3)
     with pytest.raises(tools.ToolError):
@@ -438,8 +440,8 @@ def test_log_interaction_tools(tools, store, friday):
     assert tools.log_interaction("priya", "Coffee; talked about her thesis").text == \
         "Logged for Priya on Fri 30 Oct: Coffee; talked about her thesis"
     tools.log_interaction("Priya", "Lab meeting", date="2026-10-20")
-    assert tools.person_history("Priya").text.splitlines()[1:] == [
-        "- Fri 30 Oct (2026-10-30): Coffee; talked about her thesis", "- Tue 20 Oct (2026-10-20): Lab meeting"]
+    assert [l.split(", ", 1)[1] for l in tools.person_history("Priya").text.splitlines()[1:]] == [
+        "Fri 30 Oct (2026-10-30): Coffee; talked about her thesis", "Tue 20 Oct (2026-10-20): Lab meeting"]
     assert "Last interaction Fri 30 Oct: Coffee" in tools.find_people().text
     with pytest.raises(tools.ToolError, match="no one called"):
         tools.log_interaction("Zed", "Lunch")

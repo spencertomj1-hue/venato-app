@@ -104,3 +104,29 @@ def test_water_import_export(store):
     store.save_all_data(pd.DataFrame({"date": ["2026-10-30"], "water": [3]}))
     assert store.get_entry("2026-10-30")["water"] == 3.0
     assert store.get_stats(7, today=__import__("datetime").date(2026, 10, 30))["avg_water"] == 2.08
+
+
+def test_scores_moved_to_out_of_ten_once(store):
+    import importlib
+    import sqlite3
+    with store.db() as conn:
+        store.save_entry(conn, "2026-01-01", 4, 7, 3, None)
+        conn.execute("DELETE FROM meta WHERE key = 'scores_out_of_10'")    # as if from before the change
+    store.init_db()
+    store.init_db()                                                           # only doubled once
+    e = store.get_entry("2026-01-01")
+    assert (e["mood"], e["energy"], e["productivity"]) == (8, 6, None)
+    with store.db() as conn:
+        store.save_entry(conn, "2026-01-02", 9, 7, 8, None, productivity=7)
+    assert store.get_entry("2026-01-02")["productivity"] == 7
+    assert store.get_stats(None, today=__import__("datetime").date(2026, 1, 2))["avg_productivity"] == 7
+
+
+def test_old_csv_scores_doubled(store):
+    import pandas as pd
+    store.save_all_data(pd.DataFrame([{"date": "2026-02-01", "mood": 4, "sleep": 7, "energy": 5, "notes": None}]))
+    assert store.get_entry("2026-02-01")["mood"] == 8
+    store.save_all_data(pd.DataFrame([{"date": "2026-02-02", "mood": 4, "sleep": 7, "energy": 5, "productivity": 6,
+                                       "notes": None}]))
+    e = store.get_entry("2026-02-02")
+    assert (e["mood"], e["energy"], e["productivity"]) == (4, 5, 6)

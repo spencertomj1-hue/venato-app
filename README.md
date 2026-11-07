@@ -38,8 +38,22 @@
 
 ## Features
 
+**Pick your blocks.** Venato is built from blocks you switch on in the setup wizard (or Settings → Blocks). Each brings its own page, Home widget and assistant skills, and Home orders the widgets by the priorities you set. The original pages are on by default; the rest are off until you want them:
+
+| Block | What it does |
+|---|---|
+| **Focus** | Pomodoro or stopwatch with auto breaks; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". |
+| **Workouts** | Sets, reps, weight, distance; 1RM, personal bests, progress charts, weekly volume, saved plans; kg/lb, km/mi. "bench 3x8 at 60". |
+| **Food** | Food diary with calorie and macro targets, and a weekly meal planner. "ate a banana". |
+| **Recipes** | Recipes with ingredients and nutrition, and a shopping list grouped by aisle, filled from recipes or the meal plan. "add milk to the shopping list". |
+| **Cut down** | Caffeine, alcohol, smoking, screen time or anything else: daily and weekly limits, one-tap presets, streaks, days free, money saved. "had a coffee". |
+| **Grades** | Modules and weighted assessments, mark needed for your target, UK classification or US GPA, year weightings. "got 68 in acp coursework". |
+| **Money** | Spending and income by category, monthly budgets, savings goals, subscriptions (logged when they renew) and bank CSV import. "spent £12 on lunch". |
+| **Involvement** | Societies, clubs, faith, charities, volunteering, work: your role and duties, goals per organisation, hours, practice, donations, events and tickets. "volunteered 3h at oxfam". |
+| **Health data** | Import Apple Health, Google Fit, Strava and Whoop exports: steps, sleep, heart rate, HRV, recovery, strain, weight, and workouts. |
+
 **Planning**
-- **Weekly timetable** with Plan and Actual columns in 30-minute slots. Drag to add, move and resize blocks; click one and press Backspace to delete it; Shift-drag to select several to move, copy, paste or delete together; ⌘Z / Ctrl+Z to undo.
+- **Weekly timetable** with Plan and Actual columns in 30-minute slots. Drag to add blocks; click a block to select it (click again for details), then drag it to move it or drag its edges to resize; Backspace deletes it; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
 - **Colour-coded categories** in groups ("Life", "Work"), with activities that pick their category automatically ("Lunch" goes to Meals).
 - **Fit time:** say what, how many hours and which days; Venato finds free gaps around your blocks and calendar events and previews the sittings before adding them.
 - **To-dos** for today, this week and this month, in the style of Apple Reminders: drag to reorder, notes, repeating to-dos.
@@ -54,7 +68,7 @@
 - **Weekly review:** pops up after 7pm on Sunday with plan followed, time per category, mood/sleep/energy/water vs last week, habits, to-dos, deadlines, people you saw and two questions to reflect on.
 
 **Applications**
-- **Application tracker:** a table of industry, company, route, description, contact / lead, deadline (with a countdown), status and notes. Edit cells in place, filter by status.
+- **Application tracker:** a table of industry, company, route, description, contact / lead, deadline (with a countdown), status and notes. Compact rows: long text ends in "…" (click it to read it all); click a cell to edit; colour-coded status; filter by status.
 
 **People**
 - **Network:** an interactive map of the people you know, grouped into groups and sub-groups, with who-knows-who links.
@@ -62,7 +76,7 @@
 
 **Everything else**
 - **Search** across to-dos, goals, deadlines, applications, habits, journal, timetable, calendar events, people and past reviews.
-- **Outlook calendar (optional, read only):** your published ICS calendar shows in the Plan column, synced every 15 minutes.
+- **Calendars (optional, read only):** Outlook, Google, Apple (iCloud) or any .ics calendar shows in the Plan column, synced every 15 minutes.
 - **Reminders:** desktop notifications a few minutes before each planned block or event.
 - **Undo** for deletes and overwrites, for two minutes.
 - **Backups:** automatic daily backups (keeps 30) to any folder, e.g. iCloud Drive or OneDrive, plus CSV export/import and journal download.
@@ -120,12 +134,18 @@ The first install downloads about 1 GB of packages; the speech model (about 470 
 
 Claude can only use Venato's own actions. It has no access to your files, terminal or the web.
 
+It runs on **Claude Haiku 5.5** at low effort, kept open between messages, and replies appear as they're written. Short everyday messages ("drank 500ml", "tick gym", "mood 4", "slept 7h", "done finish essay") are handled straight away without asking Claude; their replies start with ⚡ (switch off in Settings → Assistant → Quick commands). To use a different model, set `"model"` (and optionally `"effort"`) in `venato_config.json`.
+
 **Outlook calendar.** In Outlook on the web: Settings → Calendar → Shared calendars → Publish a calendar, pick **Can view all details**, copy the **ICS** link and paste it into Settings → Calendar. The link is stored in the macOS Keychain / Windows Credential Manager. Anyone with that link can see your calendar, so unpublish it in Outlook to revoke it. Some universities and workplaces block publishing.
+
+**Google and Apple calendars.** Settings → Calendar → Other calendars. Google: calendar.google.com → Settings → your calendar → Integrate calendar → **Secret address in iCal format**. Apple: Calendar on a Mac or iCloud.com → Share Calendar → **Public Calendar** → copy the link. Links are kept in the secret store like Outlook's.
+
+**Health data.** Nothing connects live (Google Fit's APIs close in 2026 and Apple Health has no web API), so you import the files the apps export: Apple Health (Health app → your picture → Export All Health Data; the export.zip, or its path for big ones), Google Fit (Google Takeout → Fit → "Daily activity metrics.csv"), Strava (Settings → My Account → Download your data → activities.csv) and Whoop (Settings → Data export). Venato guesses the columns and shows a preview first; importing the same file again never doubles up.
 
 ## Privacy
 
 - **Stays on your computer:** all your data (in `~/Library/Application Support/Venato/` on a Mac, `%APPDATA%\Venato` on Windows, `~/.local/share/Venato` on Linux, never inside the repo), voice recordings and their transcripts, and chat history (memory only, never saved).
-- **Leaves your computer only if you turn it on:** chat messages and the data Claude looks up go to Anthropic; the published Outlook calendar is downloaded from Microsoft; the daily update check asks GitHub for the latest version number.
+- **Leaves your computer only if you turn it on:** chat messages go to Anthropic, each with a short snapshot of today (your timetable for today and tomorrow, today's log, habits, current to-dos, open deadlines and applications in progress, plus a line from each block you've switched on, such as this month's spending or your 7-day health averages) so Claude can answer without looking things up, plus anything else Claude looks up; published calendars you add are downloaded from Microsoft, Google, Apple or wherever they're hosted (imported health and bank files are read on your computer and never sent anywhere); the daily update check asks GitHub for the latest version number.
 
 Nothing else is sent anywhere.
 
@@ -147,7 +167,7 @@ Nothing else is sent anywhere.
 - **[pywebview](https://pywebview.flowrl.com)** for the native desktop window
 - **[Claude Agent SDK](https://docs.claude.com/en/docs/claude-code/sdk)** for the optional assistant
 - **[faster-whisper](https://github.com/SYSTRAN/faster-whisper)** for on-device speech to text
-- **icalendar** / **recurring-ical-events** for Outlook, **keyring** for secrets
+- **icalendar** / **recurring-ical-events** for calendars, **defusedxml** for Apple Health exports, **keyring** for secrets
 - **PyInstaller** and **Inno Setup** for the installers, **GitHub Actions** for tests on Windows, macOS and Linux
 
 ## Roadmap
@@ -156,7 +176,7 @@ From the "Ideas for later" list in [`HANDOVER.md`](HANDOVER.md):
 
 - [ ] Timetable blocks in CSV export/import (to-dos and goals already have CSVs)
 - [ ] "Carry over unfinished" to-dos in the UI (the store function exists)
-- [ ] Streaming chat replies
+- [x] Streaming chat replies
 - [ ] Signed and notarised Mac app
 - [ ] A Linux installer (it runs from source today, in the browser)
 

@@ -45,7 +45,7 @@ button { font: inherit; color: inherit; }
   flex-direction: column;
   justify-content: space-between;
   gap: 4px;
-  min-height: 74px;
+  min-height: 148px;
   padding: 6px 8px;
   border: none;
   border-right: 1px solid var(--line);
@@ -66,17 +66,19 @@ button { font: inherit; color: inherit; }
 .cell.today .num { color: var(--accent); }
 .note svg { width: 11px; height: 11px; fill: none; stroke: var(--muted); stroke-width: 2; }
 
-.stats { display: flex; flex-wrap: wrap; gap: 3px 8px; }
+.stats { display: grid; grid-template-columns: auto auto; justify-content: start; gap: 4px 14px; }
 .stat {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 0.72rem;
+  gap: 5px;
+  font-size: 1.25rem;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
-.stat svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.stat svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .stat.mood { color: color-mix(in srgb, var(--c, var(--muted)) 50%, var(--text)); font-weight: 600; }   /* readable in both modes */
 .stat.sleep svg { fill: currentColor; stroke: none; }
 .stat.energy svg { fill: currentColor; stroke: none; }
 .stat.water svg { fill: currentColor; stroke: none; }
+.cal-key .stat { font-size: 0.75rem; gap: 3px; }                 /* the key stays small; the days' numbers are big */
+.cal-key .stat svg { width: 12px; height: 12px; }

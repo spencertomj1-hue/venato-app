@@ -2,7 +2,7 @@
 Daily Log page (the day's log and habits) and Home's habits.
 
 Daily log: a month calendar (calendar_component.js/.css) showing each day's
-mood, sleep and energy; clicking a day shows its notes, and the form below
+mood, sleep, energy, productivity and water; clicking a day shows its notes, and the form below
 saves the entry for the selected day.
 Habits: tick habits for a day, see streaks, add/remove habits.
 """
@@ -92,7 +92,7 @@ def page_daily_log():
             "today": today.isoformat(),
             "selected": selected.isoformat(),
             "weekStart": regional.week_start(), "weekdays": regional.weekday_names(), "waterUnit": regional.water_short(),
-            "days": {e["date"]: {k: e[k] for k in ("mood", "sleep", "energy", "notes")}
+            "days": {e["date"]: {k: e.get(k) for k in ("mood", "sleep", "energy", "productivity", "notes")}
                      | {"water": regional.water_out(e["water"])}
                      for e in entries.to_dict("records")},
         },
@@ -105,10 +105,11 @@ def page_daily_log():
     with st.container(border=True):
         st.subheader(nice_date(selected), anchor=False)
         if entry:
-            a, b, c, w = st.columns(4)
-            a.metric("Mood", f"{entry['mood']}/5" if entry.get("mood") else "–")
+            a, b, c, p, w = st.columns(5)
+            a.metric("Mood", f"{entry['mood']}/10" if entry.get("mood") else "–")
             b.metric("Sleep", f"{entry['sleep']:g} h" if entry.get("sleep") is not None else "–")
-            c.metric("Energy", f"{entry['energy']}/5" if entry.get("energy") else "–")
+            c.metric("Energy", f"{entry['energy']}/10" if entry.get("energy") else "–")
+            p.metric("Productivity", f"{entry['productivity']}/10" if entry.get("productivity") else "–")
             w.metric("Water", regional.water_text(entry.get("water")))
             st.markdown(entry["notes"].replace("\n", "  \n") if entry.get("notes") else "*No journal entry.*")
         else:
@@ -125,11 +126,13 @@ def page_daily_log():
     # saved entry, so it shows what Claude just wrote instead of a stale draft.
     v = f"{d}_{hashlib.sha1(repr(sorted(entry.items())).encode('utf-8')).hexdigest()[:8]}"
     with st.form(f"entry_form_{v}"):
-        mood = st.slider("Mood", 1, 5, int(entry.get("mood") or 3), key=f"mood_{v}")
+        mood = st.slider("Mood", 1, 10, int(entry.get("mood") or 5), key=f"mood_{v}")
         sleep = st.number_input(
             "Sleep (hours)", 0.0, 24.0, float(entry.get("sleep") or 7.0), step=0.5, key=f"sleep_{v}"
         )
-        energy = st.slider("Energy", 1, 5, int(entry.get("energy") or 3), key=f"energy_{v}")
+        energy = st.slider("Energy", 1, 10, int(entry.get("energy") or 5), key=f"energy_{v}")
+        productivity = st.slider("Productivity", 1, 10, int(entry.get("productivity") or 5), key=f"prod_{v}",
+                                 help="How productive did the day feel?")
         litres = regional.water_unit() == "litres"
         water = st.number_input(f"Water ({regional.water_unit()})", 0.0, 15.0 if litres else 500.0,
                                 regional.water_out(entry.get("water")),
@@ -141,7 +144,7 @@ def page_daily_log():
             with store.db() as conn:
                 if entry:
                     undo.checkpoint(f"Updated the log for {nice_date(selected)}")
-                store.save_entry(conn, d, mood, sleep, energy, notes.strip() or None, regional.water_in(water))
+                store.save_entry(conn, d, mood, sleep, energy, notes.strip() or None, regional.water_in(water), productivity)
             st.toast(f"Saved {nice_date(selected)}.")
             st.rerun()   # refresh the calendar
     if entry:

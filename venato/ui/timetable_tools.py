@@ -135,7 +135,7 @@ def _fit_dialog(day, label="", last=None, category=None):
 # Categories, activity defaults and Outlook's colour
 # ---------------------------------------------------------------------------
 
-@st.dialog("Categories", width="large")
+@st.dialog("Adjust categories", width="large")
 def _categories_dialog():
     cats = store.load_categories().to_dict("records")
     groups = store.groups()
@@ -222,5 +222,5 @@ def toolbar(day):
                 help="Fit hours of something (e.g. 6 h of revision) into your free time"):
         st.session_state.pop(PENDING, None)
         _fit_dialog(day)
-    if c.button("Categories", icon=":material/palette:", key="tt_btn_cats"):
+    if c.button("Adjust categories", icon=":material/palette:", key="tt_btn_cats"):
         _categories_dialog()

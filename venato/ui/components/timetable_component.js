@@ -38,6 +38,35 @@ function isTextField(el) {
 
 // Should a shortcut leave this key press alone? Typing in a box, selected text on the page
 // (so normal copy works), or a dialog open: then the browser does what it normally does.
+// A key the timetable used: Safari puts a focus ring round whatever page element has focus
+// (often the whole page) when a key is pressed, so take the focus off it.
+function dropFocus() {
+  const el = document.activeElement;
+  if (el && el !== document.body && !isTextField(el) && el.blur) el.blur();
+}
+
+// The "?" panel at the top right: everything you can do on the timetable.
+function helpHtml(single) {
+  const key = (k) => `<kbd>${k}</kbd>`;
+  const items = [
+    ["Plan and Actual", "Each day has two columns: <b>Plan</b> is what you mean to do, <b>Actual</b> is what you really did."],
+    ["Add a block", "Pick a category from the key, then drag down a column. The block takes the category's name; rename it in its details."],
+    ["Put a category down", "Click it again, or press " + key("Esc") + ". With no category picked, dragging selects instead of adding."],
+    ["Select", "Point at a block to select it (moving off deselects it). Click it to see its details, edit it or delete it."],
+    ["Move or resize", "Drag a block to move it (to another time, day, or between Plan and Actual). Drag its top or bottom edge to change when it starts or ends."],
+    ["Select several", "Drag from empty time with no category picked (or holding " + key("Shift") + ") to draw a box: every block it touches is selected. " + key("Shift") + " or " + key(MOD.replace("+", "")) + "-click adds or removes one. Drag any selected block to move them all."],
+    ["Copy and paste", key(MOD + "C") + " copies the block you're pointing at (or the selected ones); point at a time and " + key(MOD + "V") + " pastes them there, layout kept, on any day or week."],
+    ["Delete and undo", key("Delete") + " or " + key("Backspace") + " removes the block you're pointing at (or the selected ones); " + key(MOD + "Z") + " brings them back."],
+    ["Right-click", "Right-click a block to edit it straight away."],
+    ["Outlook", "Outlook events show in Plan. ↻ syncs now; the Outlook button shows or hides them. Moving or deleting one only changes Venato, never Outlook."],
+    ["Fit time", "<b>Fit time</b> (above) finds free gaps for hours of something, e.g. 6 hours of revision, and shows you before adding them."],
+    ["Categories", "<b>Adjust categories</b> (above) adds, renames and recolours categories, and sets which category an activity uses."],
+  ];
+  if (!single) items.push(["Change week", "‹ Today › at the top, the date box, or swipe sideways on a trackpad."]);
+  return `<div class="tt-help-h">How the timetable works</div><dl>` +
+    items.map(([t, d]) => `<dt>${t}</dt><dd>${d}</dd>`).join("") + "</dl>";
+}
+
 function leaveShortcutAlone(e) {
   if (isTextField(e.composedPath()[0])) return true;
   const sel = window.getSelection && String(window.getSelection() || "");
@@ -130,11 +159,19 @@ export default function (component) {
 class Timetable {
   constructor(root) {
     this.root = root;
+    // Focus rings only for keyboard users: Tab turns them on, any click turns them off. (Safari
+    // focuses things on a click, so a later key press used to draw a grey ring.)
+    if (!window.__ttRoots) {
+      window.__ttRoots = new Set();           // (the roots may be inside shadow DOM, so keep them, don't query)
+      const set = (on) => window.__ttRoots.forEach((r) => (r.isConnected ? r.classList.toggle("kbd", on) : window.__ttRoots.delete(r)));
+      document.addEventListener("keydown", (e) => { if (e.key === "Tab") set(true); }, true);
+      document.addEventListener("pointerdown", () => set(false), true);
+    }
+    window.__ttRoots.add(root);
     this.entries = new Map();   // id -> entry (server data + pending ops)
     this.pending = [];          // ops not yet acknowledged by Python
     this.brush = recall("tt-brush");   // category id, or null
     if (this.brush === "eraser" || this.brush === "select") this.brush = null;   // tools that no longer exist
-    this.label = recall("tt-label") || "";
     this.drag = null;           // {di, track, a, b} while painting
     this.picked = new Set();    // selected blocks: entry ids, or "outlook:<uid>"
     this.selected = [];         // cells currently highlighted
@@ -147,16 +184,24 @@ class Timetable {
       const mod = IS_MAC ? e.metaKey : e.ctrlKey;
       if (mod && !e.shiftKey && !e.altKey && (e.key === "c" || e.key === "v") && this.data && !this.data.readonly) {
         if (leaveShortcutAlone(e)) return;
-        if (e.key === "c" ? this.copyBlock() : this.pasteBlock()) e.preventDefault();
+        if (e.key === "c" ? this.copyBlock() : this.pasteBlock()) { e.preventDefault(); dropFocus(); }
         return;
       }
       if ((e.key === "Delete" || e.key === "Backspace") && this.picked.size && this.data && !this.data.readonly) {
         if (leaveShortcutAlone(e)) return;
         e.preventDefault();
         this.deletePicked();
+        dropFocus();
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && !leaveShortcutAlone(e)) {
+        e.preventDefault();                        // nothing selected: do nothing at all (and leave no focus ring)
+        dropFocus();
         return;
       }
       if (e.key !== "Escape") return;
+      const help = this.root.querySelector(".tt-help");
+      if (help && !help.hidden) { this.toggleHelp(false); this.root.querySelector(".tt-help-btn").focus(); return; }
       // Esc closes whatever is open first; with nothing open, it puts the category down.
       if (!this.drag && !this.blockDrag && !this.marquee && !this.groupDrag && !this.popover && !this.picked.size
           && this.brush && this.data && !this.data.readonly && !isTextField(e.composedPath()[0])) this.clearBrush();
@@ -166,6 +211,8 @@ class Timetable {
       if (this.returnFocus) { this.returnFocus.focus(); this.returnFocus = null; }
     };
     this.onOutside = (e) => {
+      const help = this.root.querySelector(".tt-help");
+      if (help && !help.hidden && !e.composedPath().some((el) => el.classList && (el.classList.contains("tt-help") || el.classList.contains("tt-help-btn")))) this.toggleHelp(false);
       if (this.popover && !e.composedPath().includes(this.popover) && !e.composedPath().includes(this.wrapEl)) this.closePopover();
     };
   }
@@ -178,6 +225,7 @@ class Timetable {
     SLOTS = data.slots || 36;
     FIRST_MIN = data.firstMin ?? 7 * 60;
     DATEFMT = data.dateFormat || "DD/MM/YYYY";
+    this.nowAt = { min: data.nowMin, ms: Date.now() };   // the time in the user's zone when Python drew this
     this.cats = new Map(data.categories.map((c) => [c.id, c]));
     this.dayIndex = new Map(data.days.map((d, i) => [d, i]));
 
@@ -361,8 +409,9 @@ class Timetable {
           <button class="tt-ol-toggle" title="Show or hide Outlook events">${CAL_ICON}Outlook</button>
         </div>
         <div class="tt-tools">
-          <input class="tt-label" list="tt-labels" placeholder="Label, e.g. Lecture" title="Label for new blocks" aria-label="Label for new blocks">
           <datalist id="tt-labels"></datalist>
+          <button class="tt-help-btn" aria-expanded="false" aria-controls="tt-help" title="How the timetable works">?</button>
+          <div class="tt-help" id="tt-help" role="dialog" aria-label="How the timetable works" hidden>${helpHtml(this.data.single)}</div>
         </div>
       </div>
       <div class="tt-legend">${key}</div>
@@ -377,9 +426,9 @@ class Timetable {
             <tbody>${rows.join("")}</tbody>
           </table>
           <div class="tt-blocks" aria-hidden="true"></div>
+          <div class="tt-lines" aria-hidden="true"></div>
         </div>
       </div>
-      <div class="tt-hint">Drag down a column to add · drag a block to move it, or its top or bottom edge to change the time · click it to select it and see details · Shift-drag to pick several · Delete or Backspace removes · ${MOD}C / ${MOD}V copy and paste${this.data.single ? "" : " · swipe sideways to change week"}</div>
       <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details)"></div>`;
 
     // Blocks are positioned from the cells, so redo them when the size changes.
@@ -395,8 +444,6 @@ class Timetable {
       this.cells[+td.dataset.d][td.dataset.t][+td.dataset.s] = td;
     });
 
-    this.labelInput = this.root.querySelector(".tt-label");
-    this.labelInput.value = this.label;
     this.bindEvents();
     this.showBrush();
   }
@@ -493,44 +540,103 @@ class Timetable {
 
   // Draw each entry as one rounded block laid over its slot cells.
   // Home (view only): shrink the rows so the whole day fits in the window, no scrolling.
+  // Shrink (or grow) the rows so the whole day fits in the window without scrolling:
+  // Home down to 9px rows, the Timetable page down to 10px (still big enough to drag in).
   fitToWindow() {
-    if (!this.data.readonly || !this.wrapEl) return;
-    const card = this.root.querySelector(".tt-card").getBoundingClientRect();
-    const head = this.root.querySelector("thead").getBoundingClientRect().height;
-    const legend = this.root.querySelector(".tt-legend").getBoundingClientRect().height;
+    if (!this.wrapEl || !this.cells || !this.cells[0]) return;
+    const min = this.data.readonly ? 9 : 10, max = 18;
     const main = document.querySelector(".stMainBlockContainer");
     const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24;
-    // window height minus everything above the rows and everything below them
-    const room = window.innerHeight - card.top - head - legend - 10 - bottomPad - 6;
-    let row = Math.max(9, Math.min(18, Math.floor(room / SLOTS)));
-    this.root.style.setProperty("--row-h", `${row}px`);
-    // Borders and margins make the estimate a little off: check where the key really
-    // ends and take any overshoot back out of the rows.
-    const over = this.root.querySelector(".tt-legend").getBoundingClientRect().bottom + bottomPad - window.innerHeight;
-    if (over > 0 && row > 9) {
-      row = Math.max(9, row - Math.ceil(over / SLOTS));
+    const bottom = () => Math.max(...[".tt-card", ".tt-legend"].map((sel) => {
+      const r = this.root.querySelector(sel)?.getBoundingClientRect();
+      return r && r.height ? r.bottom : 0;
+    }));
+    let row = parseFloat(getComputedStyle(this.root).getPropertyValue("--row-h")) || 18;
+    for (let i = 0; i < 3; i++) {        // a few times: borders make the first guess a little off
+      const over = bottom() + bottomPad - window.innerHeight;
+      row = Math.max(min, Math.min(max, Math.floor(row - over / SLOTS)));
       this.root.style.setProperty("--row-h", `${row}px`);
     }
   }
 
+
+  // Home only: a thin red line across today at the current time, moving down as time passes.
+  drawNow() {
+    let line = this.wrapEl && this.wrapEl.querySelector(".tt-now");
+    const di = this.data && this.data.readonly && this.data.nowMin != null ? this.dayIndex.get(this.data.today) : undefined;
+    let m = di === undefined ? -1 : this.nowAt.min + (Date.now() - this.nowAt.ms) / 60000 - FIRST_MIN;
+    if (m < 0 && di !== undefined) m += 24 * 60;          // after midnight, when the day runs past it
+    const slot = m / 30;
+    if (di === undefined || slot < 0 || slot >= SLOTS || !this.cells[di]) { if (line) line.remove(); return; }
+    const origin = this.wrapEl.getBoundingClientRect();
+    const cell = this.cells[di].plan[Math.floor(slot)].getBoundingClientRect();
+    const end = (this.cells[di].actual[Math.floor(slot)] || this.cells[di].plan[Math.floor(slot)]).getBoundingClientRect();
+    if (!line) {
+      line = document.createElement("div");
+      line.className = "tt-now";
+      line.setAttribute("aria-hidden", "true");
+      this.wrapEl.appendChild(line);
+    }
+    line.style.top = `${cell.top - origin.top + (slot - Math.floor(slot)) * cell.height}px`;
+    line.style.left = `${cell.left - origin.left}px`;
+    line.style.width = `${end.right - cell.left}px`;
+    clearTimeout(this.nowTimer);
+    this.nowTimer = setTimeout(() => this.drawNow(), 30000);    // keep it moving
+  }
+
+  // A thin line under each half hour, across every day (over the blocks too).
+  drawLines() {
+    const el = this.root.querySelector(".tt-lines");
+    if (!el || !this.cells[0]) return;
+    const origin = this.wrapEl.getBoundingClientRect();
+    const days = this.cells.length;
+    const left = this.cells[0].plan[0].getBoundingClientRect().left - origin.left;
+    const right = (this.cells[days - 1].actual[0] || this.cells[days - 1].plan[0]).getBoundingClientRect().right - origin.left;
+    let html = "";
+    for (let s = 0; s < SLOTS - 1; s++) {
+      const td = this.cells[0].plan[s];
+      const top = td.getBoundingClientRect().bottom - origin.top - 1;
+      const hour = td.parentElement.classList.contains("half");
+      html += `<i class="${hour ? "h" : ""}" style="top:${top}px;left:${left}px;width:${right - left}px"></i>`;
+    }
+    el.innerHTML = html;
+  }
+
+  // Where a block goes: exactly over the tiles it covers (the same gaps and rounded corners),
+  // so blocks and empty tiles line up. The gaps come from the CSS (--gap, --day-gap).
+  boxStyle(first, last, origin) {
+    const css = getComputedStyle(this.root);
+    const gap = parseFloat(css.getPropertyValue("--gap")) || 2.5;
+    const dayGap = parseFloat(css.getPropertyValue("--day-gap")) || 7;
+    const a = first.getBoundingClientRect(), b = last.getBoundingClientRect();
+    const border = parseFloat(getComputedStyle(last).borderBottomWidth) || 0;
+    const left = a.left - origin.left + (first.classList.contains("first") ? dayGap : gap);
+    const top = a.top - origin.top + gap;
+    const right = a.right - origin.left - gap;
+    const bottom = b.bottom - origin.top - border - gap;
+    return `left:${left}px;top:${top}px;width:${right - left}px;height:${bottom - top}px;`;
+  }
+
   layoutBlocks() {
+    this.drawNow();
+    this.drawLines();
     if (!this.blocks) return;
     const origin = this.wrapEl.getBoundingClientRect();
     this.blocksEl.innerHTML = this.blocks
       .map(({ en, di, s, e, outlook }) => {
-        const first = this.cells[di][en.track][s].getBoundingClientRect();
-        const last = this.cells[di][en.track][e - 1].getBoundingClientRect();
+        const firstTd = this.cells[di][en.track][s], lastTd = this.cells[di][en.track][e - 1];
+        const first = firstTd.getBoundingClientRect(), last = lastTd.getBoundingClientRect();
         const cat = this.cats.get(en.categoryId);
         const bg = cat ? cat.colour : "#9e9e9e";
         const fg = (cat && cat.textColour) || contrastText(bg);
         const tall = last.bottom - first.top >= 30;   // room for the time line under the title
         if (outlook) {
-          return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
-            `width:${first.width}px;height:${last.bottom - first.top}px;background:${esc(bg)};color:${fg}">` +
+          return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+            `background:${esc(bg)};color:${fg}">` +
             `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="left:${first.left - origin.left}px;top:${first.top - origin.top}px;` +
-          `width:${first.width}px;height:${last.bottom - first.top}px;background:${esc(bg)};color:${fg}">` +
+        return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+          `background:${esc(bg)};color:${fg}">` +
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
       .join("");
@@ -538,27 +644,14 @@ class Timetable {
 
   // ---------- Brush ----------
 
-  setBrush(id, { fromLabel = false } = {}) {
+  setBrush(id) {
     this.brush = id;
     remember("tt-brush", id);
-    const cat = this.cats.get(id);
-    // Picking a category fills in its name, unless the typed label already maps to it.
-    if (cat && !fromLabel && this.mapLabel(this.labelInput.value) !== id) {
-      this.labelInput.value = cat.name;
-      this.label = cat.name;
-      remember("tt-label", cat.name);
-    }
     this.showBrush();
   }
 
-  // Nothing picked: a drag just asks for a category, and the label it filled in goes.
+  // Nothing picked: dragging empty time draws a selection box instead of adding.
   clearBrush() {
-    const cat = this.cats.get(this.brush);
-    if (cat && this.labelInput.value.trim() === cat.name) {
-      this.labelInput.value = "";
-      this.label = "";
-      remember("tt-label", "");
-    }
     this.brush = null;
     remember("tt-brush", null);
     this.showBrush();
@@ -596,17 +689,11 @@ class Timetable {
     this.root.querySelector(".tt-ol-toggle").addEventListener("click", () =>
       this.trigger("outlook", { show: !this.data.showOutlook }));
 
+    this.root.querySelector(".tt-help-btn").addEventListener("click", () => this.toggleHelp());
     this.root.querySelectorAll("[data-nav]").forEach((el) =>
       el.addEventListener("click", () => this.nav({ dir: +el.dataset.nav })));
     this.root.querySelector(".tt-goto").addEventListener("change", (e) => {
       if (e.target.value) this.nav({ date: e.target.value });
-    });
-
-    this.labelInput.addEventListener("input", () => {
-      this.label = this.labelInput.value;
-      remember("tt-label", this.label);
-      const id = this.mapLabel(this.label);
-      if (id && this.cats.has(id)) this.setBrush(id, { fromLabel: true });
     });
 
     table.addEventListener("mousedown", (e) => {
@@ -625,8 +712,10 @@ class Timetable {
       const di = +td.dataset.d, track = td.dataset.t, slot = +td.dataset.s;
       const hit = this.blockAt(di, track, slot);
       const hitId = hit && this.idOf(hit);
-      const selecting = e.shiftKey;
-      if (selecting && hit && e.shiftKey) {         // Shift-click a block: add it to / take it out of the selection
+      const adding = e.shiftKey || (IS_MAC ? e.metaKey : e.ctrlKey);   // Shift or Cmd/Ctrl: add to the selection
+      // Dragging empty time draws a selection box with Shift / Cmd / Ctrl held, or when no category is picked.
+      const selecting = adding || (!hit && !this.cats.has(this.brush));
+      if (adding && hit) {                          // Shift / Cmd / Ctrl-click a block: add it to / take it out of the selection
         const next = new Set(this.picked);
         next.has(hitId) ? next.delete(hitId) : next.add(hitId);
         this.setPicked([...next]);
@@ -638,12 +727,28 @@ class Timetable {
         this.highlight();
         return;
       }
-      if (selecting) {                              // drag a box to select every block it touches
-        this.marquee = { di0: di, t0: track, s0: slot, di1: di, t1: track, s1: slot, add: e.shiftKey };
+      // The top or bottom edge of any block (selected or not): resize it straight away.
+      if (hit && !selecting && !(this.picked.has(hitId) && this.picked.size > 1)) {
+        const { s0, e0 } = this.spanOf(hit);
+        const zone = this.zoneAt(di, track, s0, e0, e.clientY);
+        if (zone !== "move") {
+          const fresh = !(this.picked.size === 1 && this.picked.has(hitId));   // a first click only selects it
+          if (fresh) this.setPicked([hitId]);
+          this.blockDrag = { hit, zone, di, track, downSlot: slot, s0, e0, target: { di, track, s: s0, e: e0 }, moved: false,
+                             fresh };
+          this.highlight();
+          return;
+        }
+      }
+      // An unselected block: a click selects it; dragging from it draws a box that selects
+      // every block it touches. Empty time draws a box too when no category is picked.
+      if (selecting || (hit && !this.picked.has(hitId))) {
+        this.marquee = { di0: di, t0: track, s0: slot, di1: di, t1: track, s1: slot, add: adding,
+                         from: hit && !adding ? hitId : null };
         this.highlight();
         return;
       }
-      if (hit) {                                    // on a block: move it, or drag its top / bottom edge
+      if (hit) {                                    // the selected block: move it, or drag its top / bottom edge
         const { s0, e0 } = this.spanOf(hit);
         this.blockDrag = { hit, zone: this.zoneAt(di, track, s0, e0, e.clientY), di, track, downSlot: slot, s0, e0,
                            target: { di, track, s: s0, e: e0 }, moved: false };
@@ -665,12 +770,15 @@ class Timetable {
       this.hoverCell = td ? { di: +td.dataset.d, track: td.dataset.t, slot: +td.dataset.s } : null;
       const hit = td && this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
       this.hoverBlock(hit ? (hit.outlook ? `outlook:${hit.ev.id}` : hit.entry.id) : null);
-      if (!hit) { table.style.cursor = ""; return; }
+      const adding = e.shiftKey || (IS_MAC ? e.metaKey : e.ctrlKey);
+      if (!hit) { table.style.cursor = td && (adding || !this.cats.has(this.brush)) ? "crosshair" : ""; return; }
       const { s0, e0 } = this.spanOf(hit);
       const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
-      table.style.cursor = e.shiftKey ? "pointer"
-        : this.picked.has(this.idOf(hit)) && this.picked.size > 1 ? "grab"
-        : zone === "move" ? "grab" : "ns-resize";
+      const inGroup = this.picked.has(this.idOf(hit)) && this.picked.size > 1;
+      table.style.cursor = adding ? "pointer"
+        : zone !== "move" && !inGroup ? "ns-resize"                         // any block's edge: drag to resize
+        : !this.picked.has(this.idOf(hit)) ? "pointer"                     // not selected: a click selects it
+        : "grab";
     });
     table.addEventListener("mouseleave", () => {
       this.hoverCell = null;
@@ -739,6 +847,7 @@ class Timetable {
   }
 
   detach() {
+    clearTimeout(this.nowTimer);
     window.removeEventListener("resize", this.onWindowResize);
     window.removeEventListener("mousedown", this.onOutside);
     if (this.resizeObserver) this.resizeObserver.disconnect();
@@ -811,13 +920,6 @@ class Timetable {
   setPicked(ids) {
     this.picked = new Set(ids);
     this.blocksEl.querySelectorAll(".blk").forEach((el) => el.classList.toggle("picked", this.picked.has(el.dataset.id)));
-    const hint = this.root.querySelector(".tt-hint");
-    if (this.hintText === undefined) this.hintText = hint.textContent;
-    const n = this.picked.size;
-    hint.textContent = n > 1
-      ? `${n} blocks selected · drag one to move them all · ${MOD}C to copy · Delete to remove · Esc to clear`
-      : n === 1 ? `1 block selected · ${MOD}C to copy · Delete to remove · Shift-click or Shift-drag to select more`
-      : this.hintText;
   }
 
   endMarquee() {
@@ -827,11 +929,14 @@ class Timetable {
     this.root.querySelector("table").style.cursor = "";
     const c0 = Math.min(col(m.di0, m.t0), col(m.di1, m.t1)), c1 = Math.max(col(m.di0, m.t0), col(m.di1, m.t1));
     const s0 = Math.min(m.s0, m.s1), s1 = Math.max(m.s0, m.s1);
+    if (m.from && c0 === c1 && s0 === s1) { this.setPicked([m.from]); return; }   // a click on a block: select it
     const inside = this.blocks.filter((b) => {
       const c = col(b.di, b.en.track);
       return c >= c0 && c <= c1 && b.s <= s1 && b.e > s0;
     }).map((b) => (b.outlook ? `outlook:${b.en.id}` : b.en.id));
     this.setPicked(m.add ? [...this.picked, ...inside] : inside);
+    // A box over empty time with no category picked: they probably meant to add a block.
+    if (!inside.length && !m.add && (s1 > s0 || c1 > c0)) this.flashHint("Pick a category first to add a block");
   }
 
   dragGroupTo(di, slot) {
@@ -863,7 +968,7 @@ class Timetable {
     this.groupDrag = null;
     this.highlight();
     this.root.querySelector("table").style.cursor = "";
-    if (!g.moved) { this.setPicked([this.idOf(g.hit)]); this.openCard(g.hit); return; }   // a click: just that one
+    if (!g.moved) { this.setPicked([this.idOf(g.hit)]); return; }   // a click: just that one (click again for details)
     const ops = this.placeOps(g.items, (it) => ({ di: it.di + g.ddi, track: it.track, s: it.s + g.ds, e: it.e + g.ds }));
     this.commit([{ opId: uid(), kind: "batch", label: `Moved ${g.items.length} blocks`, ops }]);
     this.setPicked(g.items.map((it) => (it.outlook ? `ol:${it.en.id}` : it.en.id)));
@@ -945,11 +1050,16 @@ class Timetable {
     return y - top <= edge ? "start" : bottom - y <= edge ? "end" : "move";
   }
 
+  // Hovering a block selects it (and moving off deselects it), so Delete, dragging and a
+  // click for details act on it straight away. A selection of several (Shift / a box) stays put.
   hoverBlock(id) {
     if (this.hovered === id) return;
     this.hovered = id;
     this.blocksEl.querySelectorAll(".blk.hover").forEach((b) => b.classList.remove("hover"));
     if (id) this.blocksEl.querySelector(`[data-id="${CSS.escape(id)}"]`)?.classList.add("hover");
+    if (!this.data.readonly && this.picked.size <= 1 && !this.drag && !this.blockDrag && !this.marquee && !this.groupDrag) {
+      this.setPicked(id ? [id] : []);
+    }
   }
 
   dragBlockTo(di, track, slot) {
@@ -972,7 +1082,11 @@ class Timetable {
     this.blockDrag = null;
     this.highlight();
     this.root.querySelector("table").style.cursor = "";
-    if (!bd.moved) { this.setPicked([this.idOf(bd.hit)]); this.openCard(bd.hit); return; }   // a click: select it, and its card
+    if (!bd.moved) {                                 // a second click: its details (a first one just selected it)
+      this.setPicked([this.idOf(bd.hit)]);
+      if (!bd.fresh) this.openCard(bd.hit);
+      return;
+    }
     const t = bd.target;
     const where = { date: this.data.days[t.di], track: t.track, start: slotTime(t.s), end: slotTime(t.e) };
     const ops = bd.hit.outlook
@@ -1000,21 +1114,23 @@ class Timetable {
     }
     const cat = this.cats.get(this.brush);
     if (!cat) {
-      this.flashHint("Pick a category (or type a label) first");
+      this.flashHint("Pick a category first");
       return;
     }
-    const label = this.labelInput.value.trim() || cat.name;
+    const label = cat.name;                     // renamed in its details (click it twice)
     this.paintRange(drag.di, drag.track, drag.a, drag.b, { label, categoryId: cat.id });
   }
 
-  flashHint(text, warn = true) {
-    const hint = this.root.querySelector(".tt-hint");
-    if (this.hintText === undefined) this.hintText = hint.textContent;   // the usual hint, to put back
-    hint.textContent = text;
-    hint.classList.toggle("warn", warn);
-    clearTimeout(this.hintTimer);
-    this.hintTimer = setTimeout(() => { hint.textContent = this.hintText; hint.classList.remove("warn"); }, warn ? 2000 : 4000);
+  toggleHelp(open) {
+    const help = this.root.querySelector(".tt-help"), btn = this.root.querySelector(".tt-help-btn");
+    if (!help) return;
+    open = open ?? help.hidden;
+    help.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
   }
+
+  flashHint() {}                      // the timetable doesn't show messages (they pushed the grid about)
+
 
   // ---------- Right-click editor ----------
 

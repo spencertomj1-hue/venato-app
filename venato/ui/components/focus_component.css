@@ -1,0 +1,36 @@
+.fc-root {
+  --text: var(--st-text-color, #31333f);
+  --bg: var(--st-background-color, #fff);
+  --soft: var(--st-secondary-background-color, #f6f7f9);
+  --accent: var(--st-primary-color, #ff4b4b);
+  --break: #2e9e6a;
+  font: inherit;
+  color: var(--text);
+}
+.fc { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "ring mid" "btns btns";
+      gap: 14px 22px; align-items: center; }
+.fc-ring { grid-area: ring; width: 170px; height: 170px; transform: rotate(-90deg); }
+.fc-ring circle { fill: none; stroke-width: 9; }
+.fc-ring .track { stroke: color-mix(in srgb, var(--text) 10%, transparent); }
+.fc-ring .fill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray 0.9s linear; }
+.fc.break .fc-ring .fill { stroke: var(--break); }
+.fc-mid { grid-area: mid; }
+.fc-time { font-size: 3.4rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.fc-label { margin-top: 6px; font-size: 1rem; opacity: 0.8; }
+.fc-btns { grid-area: btns; display: flex; gap: 8px; flex-wrap: wrap; }
+.fc-btns button {
+  font: inherit; font-size: 0.9rem; padding: 7px 16px; border-radius: 999px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--text) 25%, transparent); background: var(--bg); color: var(--text);
+}
+.fc-btns button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fc.break .fc-btns button.primary { background: var(--break); border-color: var(--break); }
+.fc-btns button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Home: small */
+.fc.compact { grid-template-columns: auto 1fr; gap: 8px 14px; }
+.fc.compact .fc-ring { width: 64px; height: 64px; }
+.fc.compact .fc-ring circle { stroke-width: 11; }
+.fc.compact .fc-time { font-size: 1.6rem; }
+.fc.compact .fc-label { font-size: 0.82rem; margin-top: 2px; }
+.fc.compact .fc-btns button { font-size: 0.78rem; padding: 4px 11px; }
+@media (prefers-reduced-motion: reduce) { .fc-ring .fill { transition: none; } }

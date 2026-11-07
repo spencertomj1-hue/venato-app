@@ -27,7 +27,8 @@ def fake_claude(store, monkeypatch):
         tools.add_block("2026-10-29", "plan", "07:00", "09:00", "Sleep")
         return assistant.Turn(reply="Added Sleep 07:00–09:00.", changed=True)
 
-    monkeypatch.setattr(assistant, "run_turn", run_turn)
+    monkeypatch.setattr(assistant, "start_turn",
+                        lambda text, history=(), key=None: assistant.Job.finished(run_turn(text, history)))
     return calls
 
 
@@ -70,7 +71,8 @@ def test_preview_waits_for_confirm(store, fake_claude):
 
 def test_claude_error_is_shown_not_raised(store, monkeypatch):
     from venato import assistant
-    monkeypatch.setattr(assistant, "run_turn", lambda text, history=(): assistant.Turn(error=assistant.LOGIN_HELP))
+    monkeypatch.setattr(assistant, "start_turn",
+                        lambda text, history=(), key=None: assistant.Job.finished(assistant.Turn(error=assistant.LOGIN_HELP)))
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.session_state["chat_queue"] = "hi"
     at.session_state["chat_busy"] = "thinking"
@@ -131,3 +133,16 @@ def test_confirm_button_runs_the_change_with_undo(store, monkeypatch):
     state["chat_pending"]["p2"] = result.pending
     chat._on_confirm()
     assert state["chat_messages"][-1]["text"] == "Cancelled."
+
+
+def test_quick_command_skips_claude(store, fake_claude):
+    """'drank 500ml' is done straight away: Claude isn't asked."""
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.session_state["chat_messages"] = [{"role": "user", "text": "drank 500ml"}]
+    at.session_state["chat_queue"] = "drank 500ml"
+    at.session_state["chat_busy"] = "thinking"
+    at.run()
+    assert not at.exception
+    assert fake_claude == []
+    assert at.session_state["chat_messages"][-1]["text"].startswith("⚡ Water:")
+    assert store.get_entry(store.local_today().isoformat())["water"] == 0.5

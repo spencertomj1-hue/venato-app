@@ -82,7 +82,10 @@ def disconnect():
         except Exception:
             pass
     CACHE.unlink(missing_ok=True)
-    store.replace_outlook([])
+    if extra_calendars():
+        sync()
+    else:
+        store.replace_outlook([])
 
 
 # ---------------------------------------------------------------------------
@@ -287,34 +290,132 @@ def last_synced():
     return datetime.fromtimestamp(CACHE.stat().st_mtime) if CACHE.exists() else None
 
 
-def sync(today=None, fetcher=fetch):
-    """
-    Download, parse and store the calendar. If the download fails, the cached copy
-    is used so the timetable keeps showing events. Returns a status dict:
-    {ok, error, synced_at, count}.
-    """
-    url = ics_url()
-    if not url:
-        return {"ok": False, "error": "No Outlook calendar is set up.", "synced_at": None, "count": 0}
-
+def _rows_for(url, cache, today, fetcher, prefix=""):
+    """(rows, error) for one calendar; falls back to its cached copy when the download fails."""
     error = None
     try:
         data = fetcher(url)
         rows = to_rows(parse(data, today))     # check it parses before replacing the cache
-        CACHE.write_bytes(data)
+        cache.write_bytes(data)
     except SyncError as e:
         error, rows = str(e), None
     except Exception as e:                     # a malformed calendar
         error, rows = f"Couldn't read the calendar ({type(e).__name__}).", None
-
-    if rows is None and CACHE.exists():
+    if rows is None and cache.exists():
         try:
-            rows = to_rows(parse(CACHE.read_bytes(), today))   # re-parse so the window moves on
+            rows = to_rows(parse(cache.read_bytes(), today))   # re-parse so the window moves on
         except Exception:
             rows = None
-    if rows is not None:
+    if rows is not None and prefix:
+        rows = [{**r, "uid": prefix + r["uid"]} for r in rows]
+    return rows, error
+
+
+def sync(today=None, fetcher=fetch):
+    """
+    Download, parse and store the calendars (Outlook and any others added). If a download
+    fails, that calendar's cached copy is used so the timetable keeps showing its events.
+    Returns a status dict: {ok, error, synced_at, count}.
+    """
+    url = ics_url()
+    others = extra_calendars()
+    if not url and not others:
+        return {"ok": False, "error": "No calendar is set up.", "synced_at": None, "count": 0}
+    errors, rows, any_rows = [], [], False
+    jobs = ([(url, CACHE, "", "Outlook")] if url else []) + \
+           [(c["url"], _extra_cache(c["id"]), f"cal{c['id']}|", c["name"]) for c in others]
+    for u, cache, prefix, name in jobs:
+        got, error = _rows_for(u, cache, today, fetcher, prefix)
+        if error:
+            errors.append(f"{name}: {error}" if len(jobs) > 1 else error)
+        if got is not None:
+            rows += got
+            any_rows = True
+    if any_rows:
         store.replace_outlook(rows)
-    return {"ok": error is None, "error": error, "synced_at": last_synced(), "count": len(rows or [])}
+    return {"ok": not errors, "error": "; ".join(errors) or None, "synced_at": last_synced(), "count": len(rows)}
+
+
+# ---------------------------------------------------------------------------
+# Other calendars (Google, iCloud, any published .ics): their links are in the Keychain too
+# ---------------------------------------------------------------------------
+
+EXTRA_ACCOUNT = "extra-calendars"
+MAX_EXTRA = 10
+
+
+def _extra_cache(cid):
+    return store.DATA_DIR / f".calendar_{cid}.ics"
+
+
+def extra_calendars():
+    """[{id, name, url}] of the other calendars (the links come from the Keychain)."""
+    import json
+    try:
+        raw = keyring.get_password(KEYCHAIN_SERVICE, EXTRA_ACCOUNT)
+        items = json.loads(raw) if raw else []
+        return [c for c in items if isinstance(c, dict) and {"id", "name", "url"} <= set(c)]
+    except Exception:
+        return []
+
+
+def _save_extra(items):
+    import json
+    if items:
+        keyring.set_password(KEYCHAIN_SERVICE, EXTRA_ACCOUNT, json.dumps(items))
+    else:
+        try:
+            keyring.delete_password(KEYCHAIN_SERVICE, EXTRA_ACCOUNT)
+        except Exception:
+            pass
+
+
+def check_any_link(text):
+    """A secret / public calendar link from Google, iCloud or anywhere: https (webcal:// is
+    turned into https://), and not a local or private address. Returns (url, provider)."""
+    import ipaddress
+    url = (text or "").strip().strip("\"'<> ")
+    if url.lower().startswith("webcal://"):
+        url = "https://" + url[9:]
+    parts = urlparse(url)
+    if parts.scheme != "https" or not parts.hostname:
+        raise LinkError("Paste the calendar's link: it starts with https:// (or webcal://).")
+    host = parts.hostname.lower()
+    try:
+        ip = ipaddress.ip_address(host)
+        if not ip.is_global:
+            raise LinkError("That's a local network address, not a calendar on the internet.")
+    except ValueError:
+        if host == "localhost" or host.endswith((".local", ".localhost", ".internal")):
+            raise LinkError("That's a local network address, not a calendar on the internet.")
+    provider = ("Google" if host == "calendar.google.com" else "iCloud" if host.endswith("icloud.com")
+                else "Outlook" if any(host == h or host.endswith("." + h) for h in OUTLOOK_HOSTS) else "Other")
+    if provider == "Google" and "/ical/" not in parts.path:
+        raise LinkError("Use the \"Secret address in iCal format\" from Google Calendar's settings (it ends in basic.ics).")
+    return url, provider
+
+
+def add_calendar(name, url, data):
+    """Save another calendar (after try_link worked) and sync everything."""
+    import uuid
+    items = extra_calendars()
+    if len(items) >= MAX_EXTRA:
+        raise LinkError(f"You can add up to {MAX_EXTRA} calendars.")
+    if any(c["url"] == url for c in items) or url == ics_url():
+        raise LinkError("That calendar is already added.")
+    cid = uuid.uuid4().hex[:10]
+    _save_extra(items + [{"id": cid, "name": str(name or "Calendar").strip()[:40] or "Calendar", "url": url}])
+    _extra_cache(cid).write_bytes(data)
+    return sync(fetcher=lambda u: data if u == url else fetch(u))
+
+
+def remove_calendar(cid):
+    _save_extra([c for c in extra_calendars() if c["id"] != cid])
+    _extra_cache(cid).unlink(missing_ok=True)
+    if ics_url() or extra_calendars():
+        sync()
+    else:
+        store.replace_outlook([])
 
 
 def ago(when, now=None):

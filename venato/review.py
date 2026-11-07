@@ -94,7 +94,7 @@ def summary(first):
     # --- Daily log, against the week before ---
     this = store.entries_between(days[0], days[-1]).to_dict("records")
     prev = store.entries_between((first - timedelta(days=7)).isoformat(), (first - timedelta(days=1)).isoformat()).to_dict("records")
-    log = {k: {"now": _avg(this, k), "before": _avg(prev, k)} for k in ("mood", "sleep", "energy", "water")}
+    log = {k: {"now": _avg(this, k), "before": _avg(prev, k)} for k in ("mood", "sleep", "energy", "productivity", "water")}
 
     # --- Habits ---
     targets, habits = store.habit_targets(), []

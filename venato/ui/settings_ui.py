@@ -23,7 +23,7 @@ from venato import store
 from venato import undo
 from venato import system
 
-STEPS = [("Welcome", ":material/waving_hand:"), ("Assistant", ":material/chat:"),
+STEPS = [("Welcome", ":material/waving_hand:"), ("Blocks", ":material/widgets:"), ("Assistant", ":material/chat:"),
          ("Calendar", ":material/calendar_month:"), ("Microphone", ":material/mic:"), ("Done", ":material/check_circle:")]
 
 
@@ -128,6 +128,46 @@ def outlook_guide(prefix):
             st.markdown(f"- **{ev['title']}** · {ev['when']}")
 
 
+def other_calendars(prefix):
+    """Google, iCloud and other published calendars, shown alongside Outlook in the timetable."""
+    items = outlook.extra_calendars()
+    for c in items:
+        x, y = st.columns([4, 1], vertical_alignment="center")
+        x.markdown(f":material/event: **{c['name']}**")
+        if y.button("Remove", key=f"{prefix}_cal_rm_{c['id']}", icon=":material/link_off:"):
+            outlook.remove_calendar(c["id"])
+            st.session_state.pop("outlook_status", None)
+            st.rerun()
+    with st.expander("Add a Google, Apple (iCloud) or other calendar", icon=":material/add:", expanded=False):
+        st.markdown(
+            "**Google:** calendar.google.com → ⚙ Settings → your calendar → **Integrate calendar** → copy the "
+            "**Secret address in iCal format**.  \n"
+            "**Apple:** Calendar app (Mac) or iCloud.com → right-click the calendar → **Share Calendar** → tick "
+            "**Public Calendar** → copy the link (webcal://…).  \n"
+            "**Anything else:** any calendar link ending in .ics.")
+        st.info("Anyone with the link can see that calendar, so it's kept in the "
+                f"{system.SECRET_STORE}, never shown again. Venato only reads it.", icon=":material/visibility:")
+        with st.form(f"{prefix}_cal_add", clear_on_submit=True, border=False):
+            a, b = st.columns([1, 3])
+            name = a.text_input("Name", placeholder="e.g. Personal")
+            link = b.text_input("Calendar link", type="password", placeholder="https://calendar.google.com/…/basic.ics")
+            go = st.form_submit_button("Add calendar", icon=":material/link:")
+        if go:
+            try:
+                url, provider = outlook.check_any_link(link)
+                with st.spinner("Checking the link…"):
+                    found = outlook.try_link(url)
+                    st.session_state["outlook_status"] = outlook.add_calendar(name or provider, url, found["data"])
+                st.success(f"Added. Found {found['count']} events in the next 2 weeks.", icon=":material/check_circle:")
+                st.rerun()
+            except outlook.LinkError as e:
+                st.error(str(e), icon=":material/error:")
+            except outlook.SyncError as e:
+                st.error(outlook.friendly(e).replace("Outlook", "the calendar"), icon=":material/error:")
+            except Exception as e:
+                st.error(f"That link didn't give a calendar Venato can read ({type(e).__name__}).", icon=":material/error:")
+
+
 def calendar_status(prefix):
     """Connected? Last sync, Sync now, Disconnect."""
     if not outlook.ics_url():
@@ -205,9 +245,12 @@ def needs_wizard():
     return st.session_state.get("wizard_open") or not setup_checks.load_settings().get("wizard_done")
 
 
+MIC = 4          # STEPS index of the microphone step
+
+
 def _go(step):
-    if step == 3 and not store.ai_enabled():          # the microphone is only for the assistant
-        step = 4 if st.session_state.get("wizard_step", 0) < 3 else 2
+    if step == MIC and not store.ai_enabled():        # the microphone is only for the assistant
+        step = MIC + 1 if st.session_state.get("wizard_step", 0) < MIC else MIC - 1
     st.session_state["wizard_step"] = step
 
 
@@ -233,7 +276,7 @@ def wizard():
             st.markdown(
                 "Venato keeps track of your days:\n\n"
                 "- :material/calendar_view_week: a **timetable** of what you planned and what you actually did\n"
-                "- :material/mood: a **daily log** of mood, sleep, energy and water, a journal, and your **habits**\n"
+                "- :material/mood: a **daily log** of mood, energy and productivity (out of 10), sleep and water, a journal, and your **habits**\n"
                 "- :material/checklist: **to-dos** and **goals**, and a map of the **people** you know\n"
                 "- :material/chat: optionally, a **Claude assistant** that can update it all for you\n\n"
                 f":material/lock: **Your data stays on your {system.COMPUTER}.** Nothing is uploaded (unless you switch on "
@@ -241,16 +284,23 @@ def wizard():
                 "anything and set it up later in **Settings**."
             )
         elif step == 1:
+            st.header(f"{icon} Choose your blocks", anchor=False)
+            from venato.ui import blocks_ui
+            if store.load_settings().get("blocks") is None:
+                from venato import blocks
+                blocks.save(blocks.chosen_keys())      # start from the usual ones, ticked
+            blocks_ui.section("wiz")
+        elif step == 2:
             st.header(f"{icon} Claude assistant (optional)", anchor=False)
             st.markdown(AI_PITCH)
             if ai_switch("wiz"):
                 claude_section("wiz")
-        elif step == 2:
+        elif step == 3:
             st.header(f"{icon} Outlook calendar (optional)", anchor=False)
             st.markdown("Show your Outlook events (classes, meetings) in the timetable. Venato only reads them.")
             if not calendar_status("wiz"):
                 outlook_guide("wiz")
-        elif step == 3:
+        elif step == MIC:
             st.header(f"{icon} Microphone", anchor=False)
             mic_section("wiz")
         else:
@@ -402,15 +452,18 @@ def _updates_section():
 def page_settings():
     st.header("Settings", anchor=False)
     ai = store.ai_enabled()
-    names = [":material/palette: Appearance", ":material/public: Region", ":material/calendar_month: Calendar",
+    names = [":material/widgets: Blocks", ":material/palette: Appearance", ":material/public: Region", ":material/calendar_month: Calendar",
              ":material/chat: Assistant",
              ":material/notifications: Reminders", ":material/database: Data", ":material/info: About"]
     if ai:
-        names.insert(4, ":material/mic: Voice")       # voice input is for the assistant
-    tabs = dict(zip(["look", "region", "cal", "claude", "mic", "remind", "data", "about"] if ai else
-                    ["look", "region", "cal", "claude", "remind", "data", "about"], st.tabs(names)))
+        names.insert(5, ":material/mic: Voice")       # voice input is for the assistant
+    tabs = dict(zip(["blocks", "look", "region", "cal", "claude", "mic", "remind", "data", "about"] if ai else
+                    ["blocks", "look", "region", "cal", "claude", "remind", "data", "about"], st.tabs(names)))
     look, region, cal, claude, mic, remind, data, about = (
         tabs.get(k) for k in ("look", "region", "cal", "claude", "mic", "remind", "data", "about"))
+    with tabs["blocks"]:
+        from venato.ui import blocks_ui
+        blocks_ui.section("set")
     with look:
         appearance_section()
     with region:
@@ -423,12 +476,20 @@ def page_settings():
                 outlook_guide("set")
         else:
             outlook_guide("set")
+        st.subheader("Other calendars", anchor=False)
+        other_calendars("set")
     with claude:
         st.subheader("Claude assistant", anchor=False)
         st.markdown(AI_PITCH)
         if ai_switch("set") != ai:
             st.rerun()                                   # show or hide the chat box straight away
         if ai:
+            quick_on = st.toggle(
+                "Quick commands", value=store.load_settings().get("quick_commands", True), key="set_quick",
+                help="Short everyday messages like \"drank 500ml\", \"tick gym\" or \"mood 4\" are done "
+                     "straight away without asking Claude (their reply starts with ⚡). Anything else still goes to Claude.")
+            if quick_on != store.load_settings().get("quick_commands", True):
+                store.save_settings(quick_commands=quick_on)
             claude_section("set")
     if mic:
         with mic:
@@ -479,7 +540,7 @@ def _data_section():
     st.subheader("Import", anchor=False)
     st.write(
         f"Use the same format as the export: a `date` column (YYYY-MM-DD), optional "
-        f"`mood`, `sleep`, `energy`, `water` (litres), `notes` columns, and `{store.HABIT_PREFIX}<name>` columns "
+        f"`mood`, `sleep`, `energy`, `productivity` (scores out of 10), `water` (litres), `notes` columns, and `{store.HABIT_PREFIX}<name>` columns "
         f"containing true/false or 1/0."
     )
     uploaded = st.file_uploader("CSV file", type="csv")
