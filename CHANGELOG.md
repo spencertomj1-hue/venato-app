@@ -9,6 +9,8 @@ Venato was called **Arete** up to 1.1.1.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-07
+
 ### Added
 - Daily log: a self-rated productivity score for each day, out of 10, in the log, the calendar, Stats, the weekly review, the assistant ("productivity 8") and CSV export / import.
 - Blocks: pick the parts of Venato you want in the setup wizard or Settings → Blocks. Each has its own page, Home widget, assistant tools and quick commands; Home shows the widgets in the order you set. Existing installs keep their current pages.
@@ -121,7 +123,8 @@ First public version.
 - Read-only Outlook calendar via a published ICS link.
 - Claude chat box with on-device voice input.
 
-[Unreleased]: https://github.com/spencertomj1-hue/venato-app/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/spencertomj1-hue/venato-app/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/spencertomj1-hue/venato-app/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/spencertomj1-hue/venato-app/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/spencertomj1-hue/venato-app/compare/v1.1...v1.1.1
 [1.1.0]: https://github.com/spencertomj1-hue/venato-app/compare/v1.0.0...v1.1
