@@ -30,7 +30,8 @@ def test_summary_numbers(review, store):
     tools = importlib.reload(tools)
     tools.add_block("2026-10-27", "plan", "09:00", "11:00", "Revision", category="Study")
     tools.add_block("2026-10-27", "actual", "09:00", "10:00", "Revision", category="Study")
-    tools.add_block("2026-10-27", "actual", "10:00", "11:00", "Scrolling", category="Distracted")
+    # The day was materialised by the first correction, so this one overwrites "Revision as planned": confirm it.
+    tools.add_block("2026-10-27", "actual", "10:00", "11:00", "Scrolling", category="Distracted").pending.run()
     with store.db() as conn:
         store.save_entry(conn, "2026-10-27", 4, 7.0, 3, "Good day", 2.0)
         store.save_entry(conn, "2026-10-20", 2, 6.0, 2, None)    # the week before

@@ -16,10 +16,13 @@ def _goals_page():
 
 
 def _goals_home():
-    from venato.ui import deadlines, goals, todos
+    from venato import pace
+    from venato.ui import deadlines, goal_time, goals, todos
+    ctx = pace.Ctx()                       # one look at the timetable for both goal widgets
+    goal_time.needs_you(ctx)               # goals behind or short this week, with "N h to plan"
     todos.render_home()
     deadlines.render_home()
-    goals.render_home()
+    goals.render_home(ctx)                 # every goal: bar, "by today" tick, one status line
 
 
 def _log_page():

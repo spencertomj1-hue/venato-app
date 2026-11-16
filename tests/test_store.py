@@ -84,10 +84,12 @@ def test_stats(store):
     with store.db() as conn:
         store.set_habit_done(conn, hid, "2026-10-29", True)
     store.paint("2026-10-29", "actual", 4, 8, {"label": "Lecture", "category_id": "classes"})
+    store.paint("2026-10-28", "actual", 4, 8, {"label": "Lecture", "category_id": "classes"})    # not confirmed
+    store.mark_confirmed("2026-10-29")
     s = store.get_stats(7, today=date(2026, 10, 29))
     assert s["avg_mood"] == 3 and s["avg_sleep"] == 7 and s["avg_energy"] == 4
     assert s["habit_completion_pct"] == {"Read": round(100 / 7, 1)}
-    assert s["timetable_hours"]["actual"] == {"Classes": 2.0}
+    assert s["timetable_hours"]["actual"] == {"Classes": 2.0} and s["days_confirmed"] == 1
 
 
 def test_water_import_export(store):

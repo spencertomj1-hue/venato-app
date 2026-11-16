@@ -46,7 +46,7 @@ def _overlapping(date, track, s, e):
 def _checkpoint(op):
     """Before a grid change that deletes or overwrites something, save an Undo point for it. Quiet:
     no Undo bar pops up on the timetable, but Cmd/Ctrl+Z still brings it back."""
-    from venato import undo
+    from venato import undo     # (confirming a day never overwrites anything: no Undo point needed)
     kind = op["kind"]
     if kind == "paint":
         s, e = store.slot_of(op["start"]), store.slot_of(op["end"])
@@ -61,6 +61,11 @@ def _checkpoint(op):
         undo.checkpoint(f"Edited {op['entry'].get('label') or 'a block'}", quiet=True)
     elif kind == "hide_outlook":
         undo.checkpoint("Removed an Outlook event from the timetable", quiet=True)
+    elif kind == "add_suggestion":                       # nothing is overwritten, but Cmd/Ctrl+Z takes it back
+        undo.checkpoint(f"Added a suggested sitting of {op['block']['label']}", quiet=True)
+    elif kind in ("skip", "replace", "retime"):          # corrections on the one timeline
+        what = {"skip": "Marked as not done", "replace": "Changed what happened", "retime": "Changed the times"}[kind]
+        undo.checkpoint(f"{what} on {op['date']}", quiet=True)
     elif kind == "move":
         b = store.get_block(op["id"])
         what = b["label"] if b else "the block"
@@ -80,8 +85,18 @@ def apply_grid_op(op):
       {kind: "detach_outlook", uid}   turn it into the user's own block (id "ol:<uid>")
       {kind: "batch", label, ops: [...]}   several of the above (a group moved, pasted or deleted):
                                      one Undo point for all of them, labelled e.g. "Moved 3 blocks"
+    One timeline (store, "One timeline"), each materialising the day first:
+      {kind: "skip", date, start, end}                    didn't happen
+      {kind: "replace", date, start, end, block, newId}   did something else, or something unplanned
+      {kind: "retime", date, fromStart, fromEnd, start, end, block, newId}   change times
+      {kind: "confirm_day", date}                         all as planned
+      {kind: "add_suggestion", date, start, end, block}   one suggested sitting, added to the Plan if still free
     Painting over an Outlook event detaches it first (store.paint), so it's trimmed like any block.
+    In the side-by-side view, filling in a day's Actual by hand confirms it (it's the truth as it is).
     """
+    if store.timetable_view() == "split":
+        for d in _actual_days(op):
+            store.mark_confirmed(d)
     if op["kind"] == "batch":
         from venato import undo
         undo.checkpoint(op.get("label") or "Changed several blocks", quiet=True)    # no bar; Cmd/Ctrl+Z undoes
@@ -96,7 +111,41 @@ def apply_grid_op(op):
     _apply(op)
 
 
+def _actual_days(op):
+    """The days whose Actual track an op changes (for the side-by-side view)."""
+    if op["kind"] == "batch":
+        return {d for sub in op.get("ops") or [] for d in _actual_days(sub)}
+    if op["kind"] in ("paint", "move") and op.get("track") == "actual":
+        return {op["date"]}
+    if op["kind"] == "upsert" and op["entry"].get("track") == "actual":
+        return {op["entry"]["date"]}
+    if op["kind"] == "delete":
+        b = store.get_block(op["id"])
+        return {b["date"]} if b and b["track"] == "actual" else set()
+    return set()
+
+
+def _block(b):
+    return {"label": b["label"], "category_id": b["categoryId"], "details": b.get("details")} if b else None
+
+
 def _apply(op):
+    kind = op["kind"]
+    if kind == "skip":
+        store.correct(op["date"], store.slot_of(op["start"]), store.slot_of(op["end"]), None)
+    elif kind == "replace":
+        store.correct(op["date"], store.slot_of(op["start"]), store.slot_of(op["end"]), _block(op["block"]),
+                      new_id=op.get("newId"))
+    elif kind == "retime":
+        store.retime(op["date"], store.slot_of(op["fromStart"]), store.slot_of(op["fromEnd"]),
+                     store.slot_of(op["start"]), store.slot_of(op["end"]), _block(op["block"]), new_id=op.get("newId"))
+    elif kind == "confirm_day":
+        store.confirm_day(op["date"])
+    elif kind == "add_suggestion":
+        from venato.ui import goal_time
+        goal_time.add_suggestion(op["date"], op["start"], op["end"], _block(op["block"]), new_id=op.get("newId"))
+    if kind in ("skip", "replace", "retime", "confirm_day", "add_suggestion"):
+        return
     if op["kind"] == "paint":
         s, e = store.slot_of(op["start"]), store.slot_of(op["end"])
         block = op.get("block")
@@ -193,20 +242,86 @@ def render_page():
     day = st.session_state.setdefault("tt_day", store.local_today())
     monday = store.week_start_of(day)            # the week's first day: Monday, or Sunday if chosen
     # Fit time / Categories: the same things Claude can do, by hand.
-    from venato.ui import timetable_tools
+    from venato import pace
+    from venato.ui import goal_time, timetable_tools
     timetable_tools.toolbar(day)
-    from venato.ui import goal_time              # goal chips: hours each goal has this week, and its budget
-    goal_time.strip(monday)
-    render_grid([monday + timedelta(days=i) for i in range(7)])
+    ctx = pace.Ctx()                             # one look at the timetable for the bar, the grid and the panel
+    sugg = goal_time.suggestions_for(monday, ctx)
+    goal_time.suggestion_bar(monday, sugg, ctx)
+    grid, panel = st.columns([4, 1.3], gap="medium")     # the panel stacks under the grid on narrow screens
+    with grid:
+        render_grid([monday + timedelta(days=i) for i in range(7)], suggestions=sugg)
+    with panel:
+        goal_time.planner(monday, ctx)
+
+
+# ---------------------------------------------------------------------------
+# Home's end-of-day prompt (one timeline): "Anything not go to plan today?"
+# ---------------------------------------------------------------------------
+
+def prompt_days(now=None):
+    """Days to ask about: today once its last planned block has passed, and yesterday, if not confirmed
+    yet and not dismissed. Never anything older (no nagging)."""
+    now = now or store.local_now()
+    today = store.local_today()
+    gone = set(store.load_settings().get("eod_dismissed") or [])
+    status = store.day_status(today - timedelta(days=1), today)
+    out = []
+    for day in (today, today - timedelta(days=1)):
+        iso = day.isoformat()
+        if iso in gone or status.get(iso, {}).get("confirmed"):
+            continue
+        if day == today and not store.day_ended(iso, now):
+            continue
+        if day < today and store.slots_gone(iso, now) < store.SLOTS:
+            continue                                 # (yesterday's late night isn't over yet)
+        if day < today or store.blocks_between(iso, iso) or store.outlook_between(iso, iso):
+            out.append(day)
+    return out
+
+
+def _confirm_all(day):
+    store.confirm_day(day)
+    st.toast("Confirmed: the day went as planned", icon=":material/task_alt:")
+
+
+def _review(day):
+    st.session_state["tt_day"] = day
+    st.session_state["page"] = "Timetable"         # the sidebar radio's key; callbacks run before it's drawn
+
+
+def _dismiss(day):
+    gone = list(store.load_settings().get("eod_dismissed") or [])
+    store.save_settings(eod_dismissed=sorted(set(gone[-30:] + [day.isoformat()])))
+
+
+def end_of_day_prompt():
+    """Home: for today (once its Plan is over) and yesterday, if unconfirmed: All as planned / Review / Not now."""
+    for day in prompt_days():
+        when = "today" if day == store.local_today() else "yesterday"
+        with st.container(border=True, key=f"eod_{day.isoformat()}"):
+            st.markdown(f"**Anything not go to plan {when}?**")
+            st.caption(f"{regional.long_date(day)} is assumed to have gone as planned until you confirm it.")
+            row = st.container(horizontal=True, gap="small")
+            row.button("All as planned", key=f"eod_ok_{day}", type="primary", icon=":material/task_alt:",
+                       on_click=_confirm_all, args=(day,), help=f"Confirm {when} went as planned")
+            row.button("Review", key=f"eod_review_{day}", icon=":material/edit_calendar:",
+                       on_click=_review, args=(day,), help=f"Open {when} on the Timetable to correct it")
+            row.button("Not now", key=f"eod_no_{day}", type="tertiary", on_click=_dismiss, args=(day,),
+                       help="Hide this; the day stays unconfirmed")
 
 
 def render_today():
-    """Just today's Plan / Actual (the Home page): same grid, view only, no week navigation."""
-    render_grid([store.local_today()], key="timetable_today", single=True, readonly=True)
+    """Just today (the Home page) as one timeline: what happened before now, the Plan after. View only."""
+    render_grid([store.local_today()], key="timetable_today", single=True, readonly=True, view="one")   # whatever the setting
 
 
-def render_grid(days, key="timetable", single=False, readonly=False):
-    """Draw the grid for the given days; returns the categories and label map it used."""
+def render_grid(days, key="timetable", single=False, readonly=False, view=None, suggestions=()):
+    """Draw the grid for the given days; returns the categories and label map it used.
+    view: "one" (one timeline) or "split" (Plan and Actual side by side); default: the setting."""
+    view = view or store.timetable_view()
+    status = store.day_status(days[0], days[-1])
+    now = store.local_now()
     categories = store.load_categories()
     entries = store.blocks_between(days[0].isoformat(), days[-1].isoformat())
     label_map = store.load_label_map()
@@ -232,6 +347,12 @@ def render_grid(days, key="timetable", single=False, readonly=False):
         "acked": st.session_state.get("tt_acked", []),
         "single": single,
         "readonly": readonly,
+        "view": view,
+        # Suggested sittings for hours goals that are short (dashed, in free time; click one to add it).
+        "suggestions": list(suggestions),
+        # One timeline: per day, the slots that have passed, how far the Actual is the truth, and confirmed.
+        "dayState": {d.isoformat(): {"gone": store.slots_gone(d, now), **status.get(d.isoformat(), {"upto": 0, "confirmed": False})}
+                     for d in days},
         # Outlook events (Plan; all-day ones as header chips). The user can remove or change them.
         "showOutlook": show_outlook,
         "outlook": [

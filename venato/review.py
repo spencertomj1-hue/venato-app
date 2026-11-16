@@ -58,13 +58,6 @@ def _slot_maps(day):
     return plan, actual
 
 
-def _slots_gone(day, now):
-    """How many of a timetable day's slots have started by `now` (all of them for a past day)."""
-    from datetime import datetime, time
-    start = datetime.combine(store._as_date(day), time(store.FIRST_MIN // 60, store.FIRST_MIN % 60))
-    return max(0, min(store.SLOTS, int((now - start).total_seconds() // 1800)))
-
-
 def summary(first):
     """Everything the review shows for the week starting `first` (a date)."""
     first = store._as_date(first)
@@ -77,10 +70,15 @@ def summary(first):
     names, colours = dict(zip(cats["id"], cats["name"])), dict(zip(cats["id"], cats["colour"]))
     hours, planned, matched = {}, 0, 0
     now = store.local_now()
+    # Only confirmed days count: an unconfirmed day's Plan is just assumed to have happened.
+    confirmed = set(store.confirmed_days(days[0], days[-1]))
+    so_far = sum(1 for d in days if store.slots_gone(d, now) > 0)       # days of the week begun by now
     for d in days:
+        if d not in confirmed:
+            continue
         plan, actual = _slot_maps(d)
         # Only time that's already happened counts (for "this week so far").
-        cutoff = _slots_gone(d, now)
+        cutoff = store.slots_gone(d, now)
         plan = {k: v for k, v in plan.items() if k < cutoff}
         actual = {k: v for k, v in actual.items() if k < cutoff}
         for track, slots in (("plan", plan), ("actual", actual)):
@@ -119,11 +117,12 @@ def summary(first):
 
     journal = store.journal_entries(first=days[0], last=days[-1])
     people = store.interactions_between(first, last)
-    has_data = bool(hours or any(this) or any(h["ticks"] for h in habits) or weekly or daily or journal or people)
+    has_data = bool(hours or store.blocks_between(days[0], days[-1]) or any(this) or any(h["ticks"] for h in habits) or weekly or daily or journal or people)
     return {
         "first": first, "last": last, "complete": last < today, "has_data": has_data,
         "time": time, "planned_hours": planned / 2, "actual_hours": sum(h["actual"] for h in time),
         "followed_pct": round(100 * matched / planned) if planned else None,
+        "days_confirmed": len(confirmed), "days_so_far": so_far,
         "log": log, "days_logged": len(this),
         "habits": habits,
         "todos": {"weekly_done": sum(t["done"] for t in weekly), "weekly": len(weekly),
@@ -140,7 +139,8 @@ def as_text(s):
     lines = [f"Week {s['first']} to {s['last']}" + ("" if s["complete"] else " (so far)")]
     if s["planned_hours"] or s["actual_hours"]:
         lines.append(f"Time: {s['planned_hours']:g} h planned, {s['actual_hours']:g} h logged as done"
-                     + (f", {s['followed_pct']}% of the Plan followed" if s["followed_pct"] is not None else ""))
+                     + (f", {s['followed_pct']}% of the Plan followed" if s["followed_pct"] is not None else "")
+                     + f" (from {s['days_confirmed']} of {s['days_so_far']} days confirmed)")
         lines.append("By category (plan / actual): " + ", ".join(
             f"{t['category']} {t['plan']:g}/{t['actual']:g} h" for t in s["time"]))
     for k, v in s["log"].items():

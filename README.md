@@ -31,7 +31,7 @@
 
 ## Why this?
 
-- **Plan vs Actual, side by side.** Every day on the timetable has two columns: what you meant to do and what you really did. The weekly review then tells you how much of your plan you followed, per category. Notion and Daylio don't do that out of the box.
+- **Plan once, then see what really happened.** The timetable is one timeline: your Plan from now on, and for time that has passed, what happened. You don't log your day twice: confirm it went to plan in one tap, or correct the bits that didn't ("didn't happen", "change times", "did something else"). The weekly review then tells you how much of your plan you followed, per category, counting only the days you've confirmed. Notion and Daylio don't do that out of the box.
 - **Your data never leaves your computer.** No account, no server, no cloud sync. Everything is one SQLite file in your data folder, the app only listens on `127.0.0.1`, and voice is transcribed locally.
 - **Everything in one place.** Timetable, daily log (mood, sleep, energy, water), journal, habits with streaks, to-dos, goals, deadlines and a map of the people you know, all linked: tick a habit and the goal it counts towards moves; a deadline shows on the timetable and gets a reminder.
 - **Optional Claude assistant.** Type or say "Fit 6 hours of revision into next week around my lectures" or "Mood 4, slept 7.5 hours, tick reading". It works through a fixed set of Venato actions, previews anything destructive for you to confirm, and is off unless you switch it on. Everything also works by hand.
@@ -53,13 +53,17 @@
 | **Health data** | Import Apple Health, Google Fit, Strava and Whoop exports: steps, sleep, heart rate, HRV, recovery, strain, weight, and workouts. |
 
 **Planning**
-- **Weekly timetable** with Plan and Actual columns in 30-minute slots. Drag to add blocks; click a block to select it (click again for details), then drag it to move it or drag its edges to resize; Backspace deletes it; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
+- **Weekly timetable as one timeline** in 30-minute slots: the Plan from now on; passed time shows what happened. A day is *assumed* to have gone as planned (faded, dashed, "?") until you confirm it (Confirm under the day, "Confirm week as planned", or Home's "Anything not go to plan today?"). Click a passed block for **Didn't happen** (hatched and struck through), **Change times** (or drag its edges) or **Did something else**; drag across empty passed time to add something unplanned (outlined). Stats and goals count confirmed days only and say how many. Prefer two columns? Settings → Region → Timetable view → Plan and Actual. Drag to add blocks; click a block to select it (click again for details), then drag it to move it or drag its edges to resize; Backspace deletes it; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
 - **Colour-coded categories** in groups ("Life", "Work"), with activities that pick their category automatically ("Lunch" goes to Meals).
 - **Fit time:** say what, how many hours and which days; Venato finds free gaps around your blocks and calendar events and previews the sittings before adding them.
 - **To-dos** for today, this week and this month, in the style of Apple Reminders: drag to reorder, notes, repeating to-dos.
-- **Goals** for the month or year with progress bars, updated by hand, linked to a habit, or counted from your timetable's Actual hours in a category (or one activity).
-- **Goals that know your week:** each hours goal gets a chip above the timetable ("Revision 6/9 h", amber when short; click to fit the rest into free time). Venato works out your free time (timetable hours minus calendar events and other blocks), what each goal needs this week including hours carried from slow weeks, whether you're on track, behind, slipping or can't make it, and when you'll finish at your recent pace. It plans extra for time that usually slips, shares a crowded week between goals by priority, offers to lower a target, carry it into next month or borrow hours from a lower goal, suggests goals from what you already do, and nudges you mid-week if what's planned won't cover a goal.
+- **Goals** for the month or year, updated by hand, linked to a habit, or counted from your timetable's Actual hours in a category (or one activity). Each goal's card has a state badge and a small pace chart: progress so far, an even pace to the target, where you'll end up at your recent rate, and today. Beside them, "Where this week's N h free go" splits the week's free time between your goals in one bar, and goals that can't be finished in time get a card offering to lower the target, carry the rest over or take hours from a lower goal.
+- **Goals that know your week:** beside the timetable, a "Plan this week" panel shows your free hours per day, each hours goal's week as a bar (done, planned, not planned yet, carried over) with "Fit N h", "Plan all goals" and "I'm away" for each day. When goals are short, the grid draws where their time would fit as dashed suggested sittings in free gaps: click one to add just that sitting, "Add all to Plan", or dismiss them for the week (Show suggestions turns them off). Venato works out your free time (timetable hours minus calendar events and other blocks), what each goal needs this week including hours carried from slow weeks, whether you're on track, behind, slipping or can't make it, and when you'll finish at your recent pace. It plans extra for time that usually slips, shares a crowded week between goals by priority, offers to lower a target, carry it into next month or borrow hours from a lower goal, suggests goals from what you already do, and nudges you mid-week if what's planned won't cover a goal.
 - **Deadlines** with countdowns, reminders the day before and on the day, and "Make time" to plan hours for them.
+
+**Home**
+- Today as one timeline (what happened so far, the Plan from now), the agenda, and an end-of-day prompt: "Anything not go to plan today?" with **All as planned** or **Review**.
+- **Needs you this week:** only the goals that are behind or short of time, each with its state and "N h to plan", and Plan my goals. Every goal's bar (with a "should be here by today" tick and one status line) is in the Goals card; to-dos, deadlines, habits and search as before.
 
 **Tracking**
 - **Daily log:** a month calendar of mood, sleep, energy and water. Click a day to tick habits and write notes.
@@ -77,7 +81,7 @@
 
 **Everything else**
 - **Search** across to-dos, goals, deadlines, applications, habits, journal, timetable, calendar events, people and past reviews.
-- **Calendars (optional, read only):** Outlook, Google, Apple (iCloud) or any .ics calendar shows in the Plan column, synced every 15 minutes.
+- **Calendars (optional, read only):** Outlook, Google, Apple (iCloud) or any .ics calendar shows in your Plan, synced every 15 minutes.
 - **Reminders:** desktop notifications a few minutes before each planned block or event.
 - **Undo** for deletes and overwrites, for two minutes.
 - **Backups:** automatic daily backups (keeps 30) to any folder, e.g. iCloud Drive or OneDrive, plus CSV export/import and journal download.
@@ -89,13 +93,13 @@
 
 *All screenshots use made-up demo data.*
 
-| Weekly timetable | Asking Claude |
+| Weekly timetable: suggested sittings and the planner | Asking Claude |
 |---|---|
 | ![Weekly timetable](assets/timetable.png) | ![Chat](assets/chat.png) |
 | **Daily log** | **Settings** |
 | ![Daily log](assets/daily-log.png) | ![Settings](assets/settings.png) |
-| **Goal chips on the timetable** | **Goals: pace and this week's time** |
-| ![Goal chips above the timetable](assets/goal-chips.png) | ![Goals page](assets/goals.png) |
+| **Last week as one timeline: confirmed, corrected, assumed** | **Goals: pace charts and where the week's free time goes** |
+| ![Last week on the timetable](assets/timetable-past.png) | ![Goals page](assets/goals.png) |
 
 ## Quick start
 

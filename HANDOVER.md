@@ -59,8 +59,9 @@ venato/                         The app's code, as a package (imported as `from 
     timetable_tools.py         Buttons above the grid: Add block, Fit time, Categories (dialogs calling the same tools.py functions as Claude)
     daily_log.py               Daily Log page (month calendar, day card, the day's habits, entry form with the journal box, past entries) and Home's habits
     todos.py                   Home's to-do cards
-    goals.py                   Goals page and Home's goal bars (native Streamlit widgets + an HTML bar, with the "by today" tick)
-    goal_time.py               Goal chips above the timetable, Away days, Share hours; the Goals page's budget, pace lines, offers and suggestions
+    goals.py                   Goals page (cards in two columns per section, side panel) and Home's goal bars (with the "by today" tick)
+    goal_chart.py              The Goals page's pace chart: an SVG drawn as an <img> (st.html strips inline SVG), alt text with the numbers; legend() once per page
+    goal_time.py               Timetable: the "Plan this week" panel (free hours per day, goal bars with Fit N h, Plan all goals, I'm away) and suggested sittings; Share hours; the Goals page's pace lines, offers and suggestions
     deadlines.py               Deadlines section (Goals page) and Home's list, with "Make time"
     review.py                  Weekly review pop-up and Stats' history
     home.py, stats.py          Home (agenda, widgets) and Stats pages
@@ -110,6 +111,7 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
 | `goal_week` | The user's split of a week between hours goals: `goal_id` (cascade), `week_start`, `hours`. None = automatic |
 | `tt_outlook_away` | All-day calendar events marked "I'm away" (that day has no free time for goals); kept across syncs |
 | `away_days` | Days marked "I'm away" by hand (`date`), no calendar event needed |
+| `tt_day_status` | One timeline (§5f): `date` (PK), `confirmed_at` (NULL = not confirmed), `upto` ("HH:mm": the day's Actual is the truth before this). Made by `_day_status_table` on first run, marking every day that already had Actual blocks confirmed |
 
 Notes on the schema:
 - **New installs** are seeded with generic categories (groups "Life" and "Work") and activity defaults, in `DEFAULT_CATEGORIES` / `DEFAULT_LABEL_MAP`. Groups are read from the data (`store.groups()`), so a user's own groups work too.
@@ -127,9 +129,9 @@ Notes on the schema:
   - The component sends ops with an `opId`: `paint`, `upsert`, `delete`, `hide_outlook` and `detach_outlook`.
   - Python applies them in `timetable.apply_grid_op` and acknowledges them in `data.acked`. The JS replays unacknowledged ops on top of incoming data, so a slow rerun never makes the grid flicker.
   - A paint carries the new block's id (`newId`), so both sides agree on it.
-- **Views:** `render_page` is the week (editable). `render_today` is Home's single day: view only, with rows sized to fit the window (`fitToWindow`) and the key wrapped underneath.
+- **Views:** `render_page` is the week (editable). `render_today` is Home's single day: view only, always one timeline, with rows sized to fit the window (`fitToWindow`) and the key wrapped underneath. `render_grid(view=)` picks one timeline (`"one"`) or Plan and Actual (`"split"`); the default is `store.timetable_view()` (settings.json `timetable_view`; missing = `"one"`, set to `"split"` for installs that already had blocks).
 - **Clicking a block** grows it and opens a details card (title, time, category, location, description), with Edit and Delete/Remove buttons except on Home. A drag paints, and a click with the eraser erases.
-- **Block text** is black unless the fill is dark (`contrastText`, luminance threshold 90).
+- **Block text** is black or white, whichever has the higher WCAG contrast with the fill (`contrastText`).
 
 ## 5b. To-dos and goals
 
@@ -151,7 +153,7 @@ Two different things:
 - **Value:** `goals_in` / `get_goal` add `value` (current progress), `kind` (`hours` / `habit` / `count`), `habit` and `category` (names). Linked to a habit, `value` is the number of days that habit was ticked within the period; counting timetable hours, it's the Actual hours of that category (and label) in the period, from `store.goal_hours`; otherwise it's the hand-kept `progress`. Deleting the habit or category unlinks the goal (back to `progress`).
 - **Goals page:** two bordered sections (Monthly, Yearly), each with ‹ › and a "This month / This year" jump (`goals_start_<period>`). Each goal shows `value / target unit`, a percentage and a bar. Hand-kept goals have − / + (via `add_goal_progress`); every goal has a ⋯ popover to edit it (including the "Update it myself" / "Count a habit's ticks" choice) or delete it. "New goal" is a popover with the same form.
 - **Bars:** HTML in the theme's primary colour (`st.progress` uses a different one), the same on both pages.
-- **Home:** this month's and this year's goals as bars, with "See all" (a button whose callback sets the sidebar radio, `page`).
+- **Home:** this month's and this year's goals as bars in a card, with "See all" (a button whose callback sets the sidebar radio, `page`), the "by today" tick and one status line each (`goals.status_line`). Above the to-dos, `goal_time.needs_you` lists only goals behind or short this week ("N h to plan") with Plan my goals; both share one `pace.Ctx` (`blocks/core._goals_home`).
 
 ## 5c. Network
 
@@ -178,7 +180,20 @@ Two different things:
 - **Negotiation:** `negotiation(goal)` when remaining > what the goal can get after higher-priority goals (`available_for`), or unreachable: offers lower / carry / take, applied by `tools.resolve_goal` (a Pending; the UI calls `undo.checkpoint`). `goal_offers_dismissed` in settings.json.
 - **Suggestions:** categories / activities with 2 h+ of Actual time in 3 of the last 4 weeks and no goal counting them; dismissals in `goal_suggestions_dismissed`. Categories in `pace.NEVER_SUGGEST` (Sleep, by id or name) are never suggested.
 - **Nudge:** `notify.goal_nudges` → `pace.nudges`: from midday on the week's third day, once per goal per week (`goal_nudged` in settings.json, so restarts don't repeat it).
-- **Claude:** `goal_pace`, `week_budget`, `plan_goals` (shares free gaps between goals via `tools._place`, the same placement `plan_time` uses), and a line in the [Now] snapshot. Buttons: the chips / Plan my goals / Share hours / pace lines.
+- **Claude:** `goal_pace`, `week_budget`, `plan_goals` (shares free gaps between goals via `tools._place`, the same placement `plan_time` uses), and a line in the [Now] snapshot. Buttons: the planner panel / Plan my goals / Share hours / pace lines.
+- **Timetable planner (`goal_time.planner`)**: beside the grid (`st.columns`, so it stacks on narrow screens): free hours per day (`week_capacity`), each goal's bar (`_bar`, CSS once from `bar_style()`) with "Fit N h" (`_fit_goal` → `timetable_tools.open_fit`), Plan all goals, Share hours when over budget, I'm away checkboxes. It replaced the chip strip. For a week that's over it's "How the week went": `_score(w, all_confirmed)` per goal (done of that week's need; "missed" only when every day is confirmed, else "short so far") and a count of unconfirmed days.
+- **Goals page:** each card: badge (`goal_time.badge`), the value, `goal_chart.chart(p, ctx)` (history from `pace.history`: confirmed-day Actual per day, a point a week for yearly goals; even pace dashed grey; projection dotted from today at `p["rate"]`; a today line), then `goal_chart.week_line` + `p["details"]`. Side panel: `goal_time.free_split` (week_budget allocs per goal + Unclaimed, colours `GOAL_COLOURS` validated light/dark with the dataviz checker), `offers`, `suggestions`.
+- **Suggested sittings:** `tools.goal_spots(date)` is the placement `plan_goals` uses (so "Add all to Plan" adds exactly what's drawn). `goal_time.suggestions_for(first)` turns it into grid data (`data.suggestions`, ids `sg:<day>:<HH:mm>`); the JS draws them dashed only where the Plan is still free and the slot hasn't passed (`addGhosts`). A click sends `add_suggestion`; Python paints it only if those slots are still free (`goal_time.add_suggestion`). Settings: `show_suggestions` (default on), `suggestions_dismissed` (week starts).
+
+## 5f. One timeline (Plan, corrected into the Actual)
+
+- **Data stays two tracks.** `tt_entries` keeps `plan` and `actual`; only the grid merges them. Review, stats, Focus and the assistant read Actual as before, filtered to **confirmed days** (`store.confirmed_days`).
+- **Materialise** (`store.materialise(day, conn, now, confirm)`): copies the day's passed Plan (own blocks + visible timed calendar events, `_plan_items`) into every **empty** Actual slot between the old `upto` and the slots gone by now (`store.slots_gone`), never over an Actual block (Focus, hand-entered). Ids are `m:<day>:<HH:mm>` so the JS mirror agrees. Idempotent. A past day becomes confirmed; today only with `confirm=True`. Calendar events are copied as ordinary blocks; the event itself is never hidden or detached.
+- **Corrections** (all materialise first): `store.correct(day, s, e, block|None)` (didn't happen / did something else / unplanned), `store.retime(day, s0, e0, s, e, block)`, `store.confirm_day`. Side-by-side grid edits to the Actual call `store.mark_confirmed` instead (the user's own Actual is the truth; nothing copied).
+- **Grid:** `data.view`, `data.dayState[date] = {gone, upto, confirmed}`. In one-timeline mode `cells[d].plan` and `.actual` are the same column; slots ≥ `gone` behave exactly like the Plan column; passed slots are "pieces" (`paintOne`: actual / assumed / unplanned / skipped, never colour alone: ✓ ? + ✕, dashed, outline, hatching). New ops `skip`, `replace`, `retime`, `confirm_day` (opId + ack as usual; `materialiseLocal` mirrors the store). Confirm buttons in the header are `tabindex=-1` (the table is `aria-hidden`); the block list has the keyboard equivalent.
+- **Prompts:** Home's `timetable.end_of_day_prompt()`: today once `store.day_ended` (its last Plan item has passed), and yesterday, if unconfirmed; "Not now" stores the date in settings `eod_dismissed`. Timetable toolbar: "Confirm week as planned (N days)" → `tools.confirm_day(..., preview=True)` (a Pending).
+- **Assistant:** `confirm_day`, `skip_block`; `add_block` / `update_block` / `delete_block` on the Actual materialise first.
+- **Goals (`pace.py`):** `goal_hours(track="actual")` counts confirmed days only (`data["confirmed"]`). `Ctx.hours(days="confirmed"|"unconfirmed")` keeps Plan-vs-Actual on the same days (follow-through, `plan_so_far`/slipping). `week_goals` adds `assumed` (passed Plan on unconfirmed days, included in `covered` so it isn't planned twice), `confirmed_days`, `days_so_far`. The trailing rate is per confirmed day.
 
 ## 6. Outlook import (`outlook.py`)
 

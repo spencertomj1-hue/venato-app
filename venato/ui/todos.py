@@ -79,6 +79,7 @@ def render_home():
         sections.append({"period": period, "start": start.isoformat(),
                          "title": store.period_title(period, start, today),
                          "goals": store.todos_for(period, start), "limit": HOME_LIMIT})
-    st.markdown("**To-dos**")                 # same style as Home's Habits and Goals headings
-    data = {"today": today.isoformat(), "sections": sections, "acked": st.session_state.get("todo_acked", [])}
-    _todos_component(data=data, key="home_todos", on_ops_change=_on_ops)
+    with st.container(border=True, key="home_todos_card"):   # a card, like Home's Goals (Home A)
+        st.markdown("**To-dos**")
+        data = {"today": today.isoformat(), "sections": sections, "acked": st.session_state.get("todo_acked", [])}
+        _todos_component(data=data, key="home_todos", on_ops_change=_on_ops)

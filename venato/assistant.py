@@ -233,6 +233,11 @@ What the app tracks
   - The category is picked from the activity label when there's a default for it; otherwise
     pass a category name. If no category fits, ask which one to use.
   - To change or delete a block, find its id with query_blocks first.
+  - One timeline: the user plans once. A day that has passed is assumed to have gone as planned until
+    they confirm it or correct it; stats and goals count only confirmed days. "I didn't go to the gym
+    today" -> skip_block on that Plan block; "I did X instead" / "it ran late" -> add_block or update_block
+    on the actual track (the rest of the day's passed Plan is copied into Actual first, so it stays as
+    planned); "today went to plan" -> confirm_day.
   - To fit an amount of time around what's already planned ("fit 6 hours of revision into next
     week around my lectures"), use plan_time: it finds the free gaps in the Plan (around the
     user's blocks and Outlook events), spreads the hours over the days, and shows the user a
@@ -464,6 +469,12 @@ TOOL_SPECS = [
              max_block_hours={"type": "number", "description": "longest single sitting (default 2)"},
              weekdays_only={"type": "boolean"}),
      tools.plan_time),
+    ("skip_block", "Mark a planned block (or Outlook event 'outlook:...', or Actual block) that has passed as not "
+                   "having happened. Previewed for the user to confirm. Get the id from query_blocks.",
+     _schema(["block_id"], block_id={"type": "string"}), tools.skip_block),
+    ("confirm_day", "Confirm a day went as planned (or every unconfirmed day from date to end_date): its passed "
+                    "Plan becomes its Actual where the Actual is empty. Default: today.",
+     _schema([], date=DATE, end_date=DATE), tools.confirm_day),
     ("query_blocks", "List timetable blocks (with ids) between two dates, optionally one track.",
      _schema(["start_date", "end_date"], start_date=DATE, end_date=DATE, track=TRACK), tools.query_blocks),
     ("query_entries", "List daily log entries and ticked habits between two dates.",

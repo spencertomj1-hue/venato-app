@@ -9,6 +9,7 @@ import streamlit as st
 
 from venato import regional
 from venato import store
+from venato.ui import appearance
 from venato.ui import chat
 from venato.ui import search
 from venato.ui import timetable
@@ -54,7 +55,7 @@ def _agenda():
       .ag-dot {{ width: 9px; height: 9px; border-radius: 3px; flex: none; }}
       .ag-time {{ min-width: 6.5em; white-space: nowrap; flex: none; opacity: 0.8; font-variant-numeric: tabular-nums; }}
       .ag-label {{ min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-      .ag-now {{ margin-left: auto; font-size: 0.72rem; font-weight: 600; color: #ff4b4b; }}
+      .ag-now {{ margin-left: auto; font-size: 0.72rem; font-weight: 600; color: {appearance.accent()}; }}
       .ag-empty {{ opacity: 0.78; font-size: 0.86rem; }}
       .ag-ol {{ margin-left: 6px; padding: 0 6px; border: 1px solid rgba(128,128,128,.45); border-radius: 999px;
                 font-size: 0.64rem; font-weight: 500; opacity: 0.75; }}
@@ -71,6 +72,7 @@ def page_home():
     if blocks.is_on("timetable"):
         left, right = st.columns([2, 3], gap="large")
         with left:
+            timetable.end_of_day_prompt()            # "Anything not go to plan today?"
             _agenda()
             timetable.render_today()
         columns = [right]

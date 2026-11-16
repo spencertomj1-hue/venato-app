@@ -144,41 +144,53 @@ def _edit_goal(g, ids=None):
 # ---------------------------------------------------------------------------
 
 def _goal_row(g, ctx=None, neighbours=None):
-    with st.container(border=True):
+    """One goal as a card: title, state badge, − / + (kept by hand) and ⋯; its number; the pace chart
+    (from now on) or a bar (past periods); short detail lines, and this week's numbers for hours goals."""
+    from venato import pace
+    from venato.ui import goal_chart, goal_time
+    p = pace.goal_pace(g, ctx) if ctx is not None else None
+    with st.container(border=True, key=f"goal_card_{g['id']}"):
         text, minus, plus, more = st.columns([5, 1, 1, 1.4], vertical_alignment="center")
-        pct = round(100 * fraction(g))
-        text.markdown(f"**{escape(g['title'])}**  \n:gray[{escape(amount(g))} · {pct}%]")
+        badge = f"  \n{goal_time.badge(p['state'])}" if p and p["state"] != "upcoming" else ""
+        text.markdown(f"**{goal_time.md(g['title'])}**{badge}")
         if g["kind"] != "count":
             minus.empty()
             plus.empty()
         else:
-            minus.button("", icon=":material/remove:", key=f"minus_{g['id']}", help="Take 1 off",
+            minus.button("", icon=":material/remove:", key=f"minus_{g['id']}", help=f"Take 1 off {g['title']}",
                          on_click=store.add_goal_progress, args=(g["id"], -1), disabled=g["value"] <= 0)
-            plus.button("", icon=":material/add:", key=f"plus_{g['id']}", help="Add 1",
+            plus.button("", icon=":material/add:", key=f"plus_{g['id']}", help=f"Add 1 to {g['title']}",
                         on_click=store.add_goal_progress, args=(g["id"], 1))
         with more:
             _edit_goal(g, neighbours)
-        st.html(f'<div class="hg-bar">{_fill(g)}</div>' + BAR_CSS.replace("ACCENT", _accent()))
+        unit = f" {g['unit']}" if g["unit"] else ""
+        st.markdown(f"### {_num(g['value'])} :gray[of {_num(g['target'])}{goal_time.md(unit)} · {round(100 * fraction(g))}%]")
+        svg = goal_chart.chart(p, ctx) if p else ""
+        if svg:
+            st.html(svg)
+        else:
+            st.html(f'<div class="hg-bar">{_fill(g)}</div>' + BAR_CSS.replace("ACCENT", _accent()))
+        lines = list(p.get("details") or []) if p else []
+        week = goal_chart.week_line(p) if p else ""
+        if week:
+            lines.insert(0, week)
+        if lines:
+            st.caption("  \n".join(goal_time.md(x) for x in lines))
         if g["habit"]:
             st.caption(f":material/sync: Counted from the habit **{escape(g['habit'])}**")
         elif g["category"]:
             what = f"{g['label']} ({g['category']})" if g.get("label") else g["category"]
-            st.caption(f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**")
-        if ctx is not None:
-            from venato import pace
-            from venato.ui import goal_time
-            p = pace.goal_pace(g, ctx)
-            if p["state"] not in ("upcoming",):
-                goal_time.pace_line(p)
+            st.caption(f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**, "
+                       "on days you've confirmed")
 
 
-def _section(period, today):
+def _section(period, today, now_ctx=None):
     start = st.session_state.setdefault(_start_key(period), store.start_of_period(period, today))
     current = start == store.start_of_period(period, today)
     goals = store.goals_in(period, start)
     done = sum(fraction(g) >= 1 for g in goals)
     from venato import pace
-    ctx = pace.Ctx() if store.start_of_period(period, today) <= start else None    # pace for now and later
+    ctx = (now_ctx or pace.Ctx()) if store.start_of_period(period, today) <= start else None    # pace for now and later
     with st.container(border=True):
         st.subheader(f"{NAMES[period]} :gray[{done}/{len(goals)}]", anchor=False)
         prev, label, nxt, back = st.columns([1, 4, 1, 3], vertical_alignment="center")
@@ -190,8 +202,10 @@ def _section(period, today):
         if not current:
             back.button(CURRENT[period], key=f"now_{period}", on_click=_shift, args=(period, 0))
         ids = [g["id"] for g in goals]
-        for g in goals:
-            _goal_row(g, ctx, ids)
+        cols = st.columns(2, gap="small")
+        for i, g in enumerate(goals):
+            with cols[i % 2]:
+                _goal_row(g, ctx, ids)
         if not goals:
             st.caption("No goals yet.")
         _new_goal(period, start)
@@ -203,13 +217,17 @@ def render_page():
     today = store.local_today()
     from venato import pace
     from venato.ui import goal_time
+    from venato.ui import goal_chart
     ctx = pace.Ctx()
-    goal_time.offers(ctx)
-    goal_time.suggestions(ctx)
-    goal_time.budget_panel(ctx)
-    for col, period in zip(st.columns(2, gap="medium"), store.GOAL_PERIODS):
-        with col:
-            _section(period, today)
+    main, side = st.columns([2.3, 1], gap="medium")      # the side panel stacks under on narrow screens
+    with main:
+        st.html(goal_chart.legend())                    # once, for every goal's pace chart
+        for period in store.GOAL_PERIODS:
+            _section(period, today, ctx)
+    with side:
+        goal_time.free_split(ctx)                       # where this week's free time goes, by goal
+        goal_time.offers(ctx)                           # "X can't be finished in time"
+        goal_time.suggestions(ctx)
     from venato.ui import deadlines
     deadlines.render_section()
 
@@ -219,7 +237,8 @@ def render_page():
 # ---------------------------------------------------------------------------
 
 def _accent():
-    return st.get_option("theme.primaryColor") or "#ff4b4b"
+    from venato.ui import appearance
+    return appearance.accent()                 # the theme's accent in light or dark (#C62828 / #FF6B6B)
 
 
 def _fill(g):
@@ -233,10 +252,6 @@ BAR_CSS = """<style>
 </style>"""
 
 
-CHECK = ('<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" '
-         'fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>')
-
-
 def _marker(g, today):
     """The "should be here by today" tick on a goal's bar (an even pace through its month or year)."""
     from venato import pace
@@ -248,35 +263,64 @@ def _marker(g, today):
     return f'<span class="hg-mark" role="img" aria-label="{escape(text)}" title="{escape(text)}" style="left:{pct:.1f}%"></span>'
 
 
-def render_home():
+STATUS_ICON = {"done": "✓", "on_track": "✓", "behind": "⚠", "slipping": "⚠", "unreachable": "✕", "ended": "■",
+               "upcoming": "○"}
+
+
+def status_line(p):
+    """One short line for Home: the state (icon + word, never colour alone) and how far off today's pace."""
+    from venato import pace
+    g, state = p["goal"], p["state"]
+    text = pace.STATES[state]
+    if state == "behind" and p["expected"] - p["value"] >= 0.05:
+        text += f": {pace.amount(g, p['expected'] - p['value'])} under today's pace"
+    elif state == "behind" and p.get("late"):
+        text += f": {p['late']} days late at this rate"
+    elif state == "slipping":
+        text += ": done is trailing the Plan this week"
+    elif state == "unreachable":
+        text += ": not enough time left"
+    return f"{STATUS_ICON[state]} {text}"
+
+
+def render_home(ctx=None):
+    """Home's Goals card (Home A): each current goal's bar with the "should be here by today" tick and one status line."""
+    from venato import pace
+    from venato.ui import appearance
     today = store.local_today()
+    ctx = ctx or pace.Ctx()
     accent = _accent()
+    warn, ok = ("#FBBF24", "#4ADE80") if appearance.is_dark() else ("#B45309", "#146C2E")
+    tone = {"done": ok, "on_track": ok, "behind": warn, "slipping": warn, "unreachable": warn}
     rows = []
     for period in store.GOAL_PERIODS:
         for g in store.goals_in(period, today):
             pct = 100 * fraction(g)
             when = "this month" if period == "monthly" else "this year"
+            p = pace.goal_pace(g, ctx)
             rows.append(
                 f'<div class="hg-row{" done" if pct >= 100 else ""}">'
                 f'<div class="hg-top"><span class="hg-title">{escape(g["title"])}</span>'
                 f'<span class="hg-when">{when}</span>'
-                f'<span class="hg-amount">{CHECK if pct >= 100 else ""}{escape(amount(g))}</span></div>'
-                f'<div class="hg-track"><div class="hg-bar">{_fill(g)}</div>{_marker(g, today)}</div></div>'
+                f'<span class="hg-amount">{"✓ " if pct >= 100 else ""}{escape(amount(g))}</span></div>'
+                f'<div class="hg-track"><div class="hg-bar">{_fill(g)}</div>{_marker(g, today)}</div>'
+                f'<div class="hg-status" style="color:{tone.get(p["state"], "inherit")}">{escape(status_line(p))}</div></div>'
             )
-    head, link = st.columns([4, 1], vertical_alignment="center")
-    head.markdown("**Goals**")
-    link.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
-    body = "".join(rows) or '<div class="hg-empty">No goals for this month or year yet.</div>'
-    st.html(f"""<style>
-      .hg {{ display: grid; gap: 9px; }}
-      .hg-top {{ display: flex; align-items: baseline; gap: 8px; font-size: 0.86rem; margin-bottom: 3px; }}
-      .hg-title {{ font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-      .hg-when {{ font-size: 0.72rem; opacity: 0.78; white-space: nowrap; }}
-      .hg-amount {{ margin-left: auto; display: inline-flex; align-items: center; gap: 4px; opacity: 0.75;
-                    font-variant-numeric: tabular-nums; white-space: nowrap; }}
-      .hg-row.done .hg-amount {{ color: {accent}; opacity: 1; font-weight: 600; }}
-      .hg-empty {{ opacity: 0.78; font-size: 0.86rem; }}
-      .hg-track {{ position: relative; }}
-      .hg-mark {{ position: absolute; top: -3px; width: 2px; height: 13px; margin-left: -1px; border-radius: 1px;
-                  background: currentColor; opacity: 0.8; }}
-    </style><div class="hg">{body}</div>""" + BAR_CSS.replace("ACCENT", accent))
+    with st.container(border=True, key="home_goals_card"):
+        head, link = st.columns([4, 1], vertical_alignment="center")
+        head.markdown("**Goals**")
+        link.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
+        body = "".join(rows) or '<div class="hg-empty">No goals for this month or year yet.</div>'
+        st.html(f"""<style>
+          .hg {{ display: grid; gap: 12px; }}
+          .hg-top {{ display: flex; align-items: baseline; gap: 8px; font-size: 0.88rem; margin-bottom: 4px; }}
+          .hg-title {{ font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+          .hg-when {{ font-size: 0.72rem; opacity: 0.78; white-space: nowrap; }}
+          .hg-amount {{ margin-left: auto; opacity: 0.8; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+          .hg-row.done .hg-amount {{ color: {accent}; opacity: 1; font-weight: 600; }}
+          .hg-status {{ font-size: 0.8rem; margin-top: 5px; }}
+          .hg-empty {{ opacity: 0.78; font-size: 0.86rem; }}
+          .hg-track {{ position: relative; }}
+          .hg-mark {{ position: absolute; top: -4px; width: 2px; height: 15px; margin-left: -1px; border-radius: 1px;
+                      background: currentColor; opacity: 0.85; }}
+        </style><div class="hg">{body}</div>""" + BAR_CSS.replace("ACCENT", accent))

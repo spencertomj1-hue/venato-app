@@ -14,7 +14,7 @@ import os
 import random
 import sys
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -41,8 +41,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from venato import store  # noqa: E402  (needs VENATO_DATA_DIR set first)
 
 random.seed(7)
-TODAY = date.today()
-MONDAY = TODAY - timedelta(days=TODAY.weekday())
+TODAY = store.local_today()
+MONDAY = store.week_start_of(TODAY)
 
 NOTES = [
     "Good focus in the morning, slow afternoon.", "Long walk by the river after dinner.",
@@ -78,24 +78,28 @@ def main():
     store.init_db()                                     # generic categories and activity defaults
     store.save_settings(wizard_done=True)
 
-    # --- Timetable: this week, plan and actual, up to today ---
-    for i in range(7):
+    # --- Timetable: last week's and this week's Plan (one timeline: the user plans once) ---
+    for i in range(-7, 7):
         day = MONDAY + timedelta(days=i)
         plan = WEEKDAY_PLAN if day.weekday() < 5 else WEEKEND_PLAN
         for start, end, label, cat in plan:
             store.paint(day.isoformat(), "plan", store.slot_of(start), store.slot_of(end),
                         {"label": label, "category_id": cat})
-            if day > TODAY:
-                continue
-            if random.random() < 0.15:                  # skipped it...
-                if random.random() < 0.6:
-                    store.paint(day.isoformat(), "actual", store.slot_of(start), store.slot_of(end),
-                                {"label": "Phone", "category_id": "distracted"})
-                continue
-            drift = random.choice([0, 0, 0, 30, -30])
-            s, e = store.slot_of(shifted(start, drift)), store.slot_of(shifted(end, drift))
-            if e > s:
-                store.paint(day.isoformat(), "actual", s, e, {"label": label, "category_id": cat})
+    # Days already over: the first confirmed, with corrections (the gym skipped, phone instead of the
+    # project for an hour, an unplanned walk); the others left unconfirmed (shown as "assumed").
+    s = store.slot_of
+    past = [MONDAY + timedelta(days=i) for i in range(-7, 7) if MONDAY + timedelta(days=i) < TODAY]
+    for n, day in enumerate(past):
+        iso = day.isoformat()
+        if n in (0, 1, 3):                                  # confirmed as planned
+            store.confirm_day(iso)
+        if n == 0:
+            store.correct(iso, s("17:30"), s("18:30"), None)
+            store.correct(iso, s("14:00"), s("15:00"), {"label": "Phone", "category_id": "distracted"})
+            store.correct(iso, s("16:00"), s("17:00"), {"label": "Walk", "category_id": "exercise"})
+            store.confirm_day(iso)
+        elif n == 2:
+            store.retime(iso, s("11:00"), s("12:30"), s("11:30"), s("13:00"), {"label": "Study", "category_id": "study"})
 
     # --- A few fake "Outlook" events (imported calendar) ---
     rows = []
@@ -136,7 +140,7 @@ def main():
                     store.set_habit_done(conn, habit_id, (TODAY - timedelta(days=back)).isoformat(), True)
 
     # --- Earlier weeks: study planned but only partly done (follow-through), and guitar most evenings ---
-    for week in range(1, 7):
+    for week in range(2, 8):
         for d in range(5):
             day = (MONDAY - timedelta(weeks=week) + timedelta(days=d)).isoformat()
             store.paint(day, "plan", store.slot_of("11:00"), store.slot_of("12:30"), {"label": "Study", "category_id": "study"})
@@ -146,10 +150,13 @@ def main():
             if week <= 4 and d in (0, 2, 3):
                 store.paint(day, "actual", store.slot_of("21:30"), store.slot_of("22:30"),
                             {"label": "Guitar", "category_id": "rest"})
+        for d in range(7):                                  # those weeks were confirmed day by day
+            store.mark_confirmed(MONDAY - timedelta(weeks=week) + timedelta(days=d))
 
     # --- Goals: two that count timetable hours, one counting a habit, one kept by hand ---
     store.add_goal("Study", "monthly", TODAY, 30, "h", category_id="study")
     store.add_goal("Side project", "monthly", TODAY, 25, "h", category_id="projects")
+    store.add_goal("Learn Spanish", "monthly", TODAY, 300, "h", category_id="study", label="Spanish")   # can't be done in time
     store.add_goal("Exercise", "monthly", TODAY, 16, "sessions", habit_id=store.find_habit("Exercise")[0])
     books = store.add_goal("Read books", "yearly", TODAY, 20, "books")
     store.set_goal_progress(books["id"], 14)

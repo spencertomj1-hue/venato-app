@@ -241,9 +241,34 @@ def open_plan_goals(week):
     _plan_goals_dialog(week)
 
 
+@st.dialog("Confirm the week as planned")
+def _confirm_week_dialog(first, last):
+    st.caption("For each day that has passed and isn't confirmed yet, what you planned becomes what happened, "
+               "wherever you haven't recorded anything else. Stats and goals then count those days.")
+    if _confirm_box("Confirm"):
+        return
+    try:
+        r = tools.confirm_day(first.isoformat(), last.isoformat(), preview=True)
+    except tools.ToolError as e:
+        st.error(_for_people(str(e)), icon=":material/error:")
+        return
+    if r.pending:
+        st.session_state[PENDING] = r.pending
+        _confirm_box("Confirm")
+    else:
+        st.info(r.text, icon=":material/info:")
+
+
 def toolbar(day):
     row = st.container(horizontal=True, gap="small")     # sized to the text, so bigger text never truncates
     b = c = row
+    first = store.week_start_of(day)
+    waiting = store.unconfirmed_days(first, min(first + timedelta(days=6), store.local_today()))
+    if waiting and row.button(f"Confirm week as planned ({len(waiting)} day{'s' if len(waiting) > 1 else ''})",
+                              icon=":material/task_alt:", key="tt_btn_confirm_week",
+                              help="Days that have passed are only assumed to have gone as planned until you confirm them"):
+        st.session_state.pop(PENDING, None)
+        _confirm_week_dialog(first, first + timedelta(days=6))
     if b.button("Fit time", icon=":material/event_available:", key="tt_btn_fit",
                 help="Fit hours of something (e.g. 6 h of revision) into your free time"):
         st.session_state.pop(PENDING, None)
