@@ -76,13 +76,30 @@ def due_deadlines(now, sent):
     return out
 
 
+def goal_nudges(now, sent):
+    """[(key, title, body)]: one mid-week nudge per hours goal that can't be hit this week with what's
+    planned (pace.nudges; remembered in settings.json so it's once a week even across restarts)."""
+    try:
+        from venato import pace
+        out = []
+        for goal_id, week, title, body in pace.nudges(now):
+            key = f"{now.date().isoformat()}|goal|{goal_id}"
+            if key not in sent:
+                pace.mark_nudged(goal_id, week)
+                out.append((key, title, body))
+        return out
+    except Exception:                          # a goal problem must never stop the other reminders
+        log.exception("Goal nudge check failed")
+        return []
+
+
 def check(sent, now=None):
     """Announce whatever is due; returns what was sent."""
     on, minutes = settings()
     if not on:
         return []
     now = now or store.local_now()
-    out = due(now, minutes, sent) + due_deadlines(now, sent)
+    out = due(now, minutes, sent) + due_deadlines(now, sent) + goal_nudges(now, sent)
     for key, title, body in out:
         sent.add(key)
         system.notify(title, body)

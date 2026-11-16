@@ -102,9 +102,26 @@ def _new_goal(period, start):
             st.rerun()
 
 
-def _edit_goal(g):
-    with st.popover("", icon=":material/more_horiz:", help="Edit or delete"):
+def _move(ids, goal_id, step):
+    """Move a goal up or down its list: the order is its priority when goals compete for time."""
+    i = ids.index(goal_id)
+    j = i + step
+    if 0 <= j < len(ids):
+        ids = list(ids)
+        ids[i], ids[j] = ids[j], ids[i]
+        store.reorder_goals(ids)
+
+
+def _edit_goal(g, ids=None):
+    with st.popover("", icon=":material/more_horiz:", help="Edit, move or delete"):
         key = f"edit_{g['id']}"
+        if ids and len(ids) > 1:
+            up, down = st.columns(2)
+            up.button("Move up", icon=":material/arrow_upward:", key=f"{key}_up", width="stretch",
+                      disabled=ids[0] == g["id"], on_click=_move, args=(ids, g["id"], -1),
+                      help="Higher goals get free time first when goals compete for it")
+            down.button("Move down", icon=":material/arrow_downward:", key=f"{key}_down", width="stretch",
+                        disabled=ids[-1] == g["id"], on_click=_move, args=(ids, g["id"], 1))
         values = _goal_form(key, g)
         if g["kind"] == "count":
             progress = st.number_input("Progress so far", min_value=0.0, step=1.0, value=float(g["progress"]), format="%g",
@@ -126,7 +143,7 @@ def _edit_goal(g):
 # Goals page
 # ---------------------------------------------------------------------------
 
-def _goal_row(g):
+def _goal_row(g, ctx=None, neighbours=None):
     with st.container(border=True):
         text, minus, plus, more = st.columns([5, 1, 1, 1.4], vertical_alignment="center")
         pct = round(100 * fraction(g))
@@ -140,13 +157,19 @@ def _goal_row(g):
             plus.button("", icon=":material/add:", key=f"plus_{g['id']}", help="Add 1",
                         on_click=store.add_goal_progress, args=(g["id"], 1))
         with more:
-            _edit_goal(g)
+            _edit_goal(g, neighbours)
         st.html(f'<div class="hg-bar">{_fill(g)}</div>' + BAR_CSS.replace("ACCENT", _accent()))
         if g["habit"]:
             st.caption(f":material/sync: Counted from the habit **{escape(g['habit'])}**")
         elif g["category"]:
             what = f"{g['label']} ({g['category']})" if g.get("label") else g["category"]
             st.caption(f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**")
+        if ctx is not None:
+            from venato import pace
+            from venato.ui import goal_time
+            p = pace.goal_pace(g, ctx)
+            if p["state"] not in ("upcoming",):
+                goal_time.pace_line(p)
 
 
 def _section(period, today):
@@ -154,6 +177,8 @@ def _section(period, today):
     current = start == store.start_of_period(period, today)
     goals = store.goals_in(period, start)
     done = sum(fraction(g) >= 1 for g in goals)
+    from venato import pace
+    ctx = pace.Ctx() if store.start_of_period(period, today) <= start else None    # pace for now and later
     with st.container(border=True):
         st.subheader(f"{NAMES[period]} :gray[{done}/{len(goals)}]", anchor=False)
         prev, label, nxt, back = st.columns([1, 4, 1, 3], vertical_alignment="center")
@@ -164,8 +189,9 @@ def _section(period, today):
                    help=f"Next {'month' if period == 'monthly' else 'year'}")
         if not current:
             back.button(CURRENT[period], key=f"now_{period}", on_click=_shift, args=(period, 0))
+        ids = [g["id"] for g in goals]
         for g in goals:
-            _goal_row(g)
+            _goal_row(g, ctx, ids)
         if not goals:
             st.caption("No goals yet.")
         _new_goal(period, start)
@@ -175,6 +201,12 @@ def render_page():
     st.header("Goals", anchor=False)
     st.caption("Measurable targets for the month or year, and deadlines. Day-to-day to-dos live on Home.")
     today = store.local_today()
+    from venato import pace
+    from venato.ui import goal_time
+    ctx = pace.Ctx()
+    goal_time.offers(ctx)
+    goal_time.suggestions(ctx)
+    goal_time.budget_panel(ctx)
     for col, period in zip(st.columns(2, gap="medium"), store.GOAL_PERIODS):
         with col:
             _section(period, today)
@@ -205,6 +237,17 @@ CHECK = ('<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><pa
          'fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>')
 
 
+def _marker(g, today):
+    """The "should be here by today" tick on a goal's bar (an even pace through its month or year)."""
+    from venato import pace
+    should = pace.expected(g, today)
+    if fraction(g) >= 1 or should <= 0:
+        return ""
+    pct = 100 * min(should / g["target"], 1.0)
+    text = f"Should be at {_num(round(should, 1))} of {_num(g['target'])} by today"
+    return f'<span class="hg-mark" role="img" aria-label="{escape(text)}" title="{escape(text)}" style="left:{pct:.1f}%"></span>'
+
+
 def render_home():
     today = store.local_today()
     accent = _accent()
@@ -218,7 +261,7 @@ def render_home():
                 f'<div class="hg-top"><span class="hg-title">{escape(g["title"])}</span>'
                 f'<span class="hg-when">{when}</span>'
                 f'<span class="hg-amount">{CHECK if pct >= 100 else ""}{escape(amount(g))}</span></div>'
-                f'<div class="hg-bar">{_fill(g)}</div></div>'
+                f'<div class="hg-track"><div class="hg-bar">{_fill(g)}</div>{_marker(g, today)}</div></div>'
             )
     head, link = st.columns([4, 1], vertical_alignment="center")
     head.markdown("**Goals**")
@@ -233,4 +276,7 @@ def render_home():
                     font-variant-numeric: tabular-nums; white-space: nowrap; }}
       .hg-row.done .hg-amount {{ color: {accent}; opacity: 1; font-weight: 600; }}
       .hg-empty {{ opacity: 0.78; font-size: 0.86rem; }}
+      .hg-track {{ position: relative; }}
+      .hg-mark {{ position: absolute; top: -3px; width: 2px; height: 13px; margin-left: -1px; border-radius: 1px;
+                  background: currentColor; opacity: 0.8; }}
     </style><div class="hg">{body}</div>""" + BAR_CSS.replace("ACCENT", accent))
