@@ -414,4 +414,4 @@ th.day .dstate .confirm:hover { background: color-mix(in srgb, var(--accent) 12%
   color: var(--text);
   z-index: 0;
 }
-.blk.ghost span { opacity: 1; color: var(--muted); }
+.blk.ghost span { opacity: 1; color: var(--text); }

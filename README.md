@@ -93,13 +93,13 @@
 
 *All screenshots use made-up demo data.*
 
-| Weekly timetable | Asking Claude |
+| Weekly timetable: suggested sittings and the planner | Asking Claude |
 |---|---|
 | ![Weekly timetable](assets/timetable.png) | ![Chat](assets/chat.png) |
 | **Daily log** | **Settings** |
 | ![Daily log](assets/daily-log.png) | ![Settings](assets/settings.png) |
-| **Goal chips on the timetable** | **Goals: pace and this week's time** |
-| ![Goal chips above the timetable](assets/goal-chips.png) | ![Goals page](assets/goals.png) |
+| **Last week as one timeline: confirmed, corrected, assumed** | **Goals: pace charts and where the week's free time goes** |
+| ![Last week on the timetable](assets/timetable-past.png) | ![Goals page](assets/goals.png) |
 
 ## Quick start
 

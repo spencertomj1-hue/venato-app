@@ -131,7 +131,7 @@ Notes on the schema:
   - A paint carries the new block's id (`newId`), so both sides agree on it.
 - **Views:** `render_page` is the week (editable). `render_today` is Home's single day: view only, always one timeline, with rows sized to fit the window (`fitToWindow`) and the key wrapped underneath. `render_grid(view=)` picks one timeline (`"one"`) or Plan and Actual (`"split"`); the default is `store.timetable_view()` (settings.json `timetable_view`; missing = `"one"`, set to `"split"` for installs that already had blocks).
 - **Clicking a block** grows it and opens a details card (title, time, category, location, description), with Edit and Delete/Remove buttons except on Home. A drag paints, and a click with the eraser erases.
-- **Block text** is black unless the fill is dark (`contrastText`, luminance threshold 90).
+- **Block text** is black or white, whichever has the higher WCAG contrast with the fill (`contrastText`).
 
 ## 5b. To-dos and goals
 

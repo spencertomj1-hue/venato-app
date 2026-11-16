@@ -139,12 +139,13 @@ function weekTitle(first, last) {
   return `${start} – ${b.getDate()} ${mon(b)} ${b.getFullYear()}`;
 }
 
-// Block text is black, except on genuinely dark fills (deep purple, pure red...),
-// where it's white. Deliberately lenient: mid colours like Uni blue stay black.
+// Block text is black or white, whichever contrasts more with the fill (WCAG), so it's 4.5:1 or
+// better on any category colour: black on mid colours and bright red, white on deep purple or navy.
 function contrastText(hex) {
   const n = parseInt(hex.slice(1), 16);
-  const [r, g, b] = [n >> 16, (n >> 8) & 255, n & 255];
-  return 0.299 * r + 0.587 * g + 0.114 * b > 90 ? "#000000" : "#ffffff";
+  const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const L = 0.2126 * lin(n >> 16) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  return (L + 0.05) / 0.05 >= 1.05 / (L + 0.05) ? "#000000" : "#ffffff";
 }
 
 const uid = () =>
@@ -1611,6 +1612,7 @@ class Timetable {
     if (this.data.readonly) return;
     const on = (sel, fn) => { const el = card.querySelector(sel); if (el) el.addEventListener("click", fn); };
     on(".undo-skip", () => { this.replacePiece(p, this.pieceBlock(p)); this.closePopover(); });
+    if (p.kind === "skipped") return;                // (its card has just "It did happen")
     on(".skip", () => { this.skipPiece(p); this.closePopover(); });
     const show = (which) => {
       for (const [btn, form] of [[".times", ".f-times"], [".other", ".f-other"]]) {

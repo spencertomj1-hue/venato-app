@@ -156,7 +156,7 @@ def main():
     # --- Goals: two that count timetable hours, one counting a habit, one kept by hand ---
     store.add_goal("Study", "monthly", TODAY, 30, "h", category_id="study")
     store.add_goal("Side project", "monthly", TODAY, 25, "h", category_id="projects")
-    store.add_goal("Learn Spanish", "monthly", TODAY, 120, "h", category_id="study", label="Spanish")   # can't be done in time
+    store.add_goal("Learn Spanish", "monthly", TODAY, 300, "h", category_id="study", label="Spanish")   # can't be done in time
     store.add_goal("Exercise", "monthly", TODAY, 16, "sessions", habit_id=store.find_habit("Exercise")[0])
     books = store.add_goal("Read books", "yearly", TODAY, 20, "books")
     store.set_goal_progress(books["id"], 14)
