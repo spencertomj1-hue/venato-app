@@ -274,6 +274,10 @@ What the app tracks
     that habit was ticked in the period), or counted from timetable hours (category="Study", optionally
     label="Revision": the Actual hours in that category/activity). For a habit-linked goal, tick the habit
     with set_habit instead; for an hours goal, add the time to the Actual track.
+  - Hours goals get only the week's free time (timetable hours minus calendar events and other blocks).
+    "am I on track?" -> goal_pace; "do I have time for my goals this week?" -> week_budget;
+    "plan my goals this week" -> plan_goals (a preview; it never moves anything). The [Now] section has
+    a one-line goal summary.
   - "set a goal of 12 gym sessions this month" -> add_goal(title="Gym", target=12, unit="sessions").
     If a habit with a matching name exists, ask whether to count that habit or update it by hand.
   - edit_goal changes the title, target, unit or linked habit; delete_goal needs the user's confirmation.
@@ -362,6 +366,7 @@ def context(now=None):
         ("Habits", lambda: tools.list_habits(today).text),
         ("To-dos", lambda: tools.list_todos().text),
         ("Deadlines", lambda: tools.list_deadlines().text),
+        ("Goals this week", lambda: _goals_snapshot(now)),
         ("Applications in progress", lambda: "\n".join(
             l for l in tools.list_applications().text.splitlines()
             if not any(f": {s}" in l for s in ("Accepted", "Rejected", "Withdrawn")))),
@@ -372,6 +377,11 @@ def context(now=None):
         except Exception:                # a snapshot must never stop the message being sent
             continue
     return "\n\n".join(parts)
+
+
+def _goals_snapshot(now):
+    from venato import pace
+    return pace.snapshot(pace.Ctx(now))
 
 
 def _block_contexts():
@@ -518,6 +528,17 @@ TOOL_SPECS = [
     ("list_goals", "List goals with progress and ids for the month and year containing a date (default today).",
      _schema([], period=GOAL_PERIOD, date=DATE), tools.list_goals),
     ("delete_goal", "Delete a goal, found by title (or id).", _schema(["goal"], **GOAL_REF), tools.delete_goal),
+    ("goal_pace", "How a goal (or, with no goal, every current goal) is doing: on track/behind/slipping/can't be "
+     "reached, this week's need with carried debt, projected finish, and how much to plan.",
+     _schema([], **GOAL_REF), tools.goal_pace),
+    ("week_budget", "A week's free time (timetable hours minus fixed time) against what each hours goal needs, "
+     "in priority order.", _schema([], date={**DATE, "description": "any day in the week (default this week)"}),
+     tools.week_budget),
+    ("plan_goals", "Fill what each hours goal is short this week into the Plan's free gaps (a preview the user "
+     "confirms). Never moves or overwrites anything.",
+     _schema([], date={**DATE, "description": "any day in the week (default this week)"},
+             earliest=TIME, latest=TIME, max_block_hours={"type": "number", "description": "longest sitting (default 2)"}),
+     tools.plan_goals),
     ("add_person", "Add someone to the user's network.",
      _schema(["name"], name={"type": "string"}, description={"type": "string", "description": "who they are / how the user knows them"},
              works_for={"type": "string", "description": "company, university or team"},

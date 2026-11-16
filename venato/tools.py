@@ -510,46 +510,13 @@ def _first_future_slot(day):
     return min(store.SLOTS, max(0, -(-int(gone) // 30)))
 
 
-def plan_time(label, hours, start_date, end_date, category=None, earliest="09:00", latest="21:00",
-              max_block_hours=2, weekdays_only=False, confirmed=False):
+def _place(days, free, need, chunk):
     """
-    Fit `hours` of an activity into the free gaps of the Plan between two dates,
-    around the user's blocks and Outlook events, spread across the days (one
-    block per day per round, up to max_block_hours each). Always previewed first.
+    Put `need` slots into the free runs ({day: [(start, end)]}, used up as it goes), one sitting of up
+    to `chunk` slots per day per round so it spreads out, with a half-hour break after each sitting.
+    Returns [(day, start slot, end slot)].
     """
-    label = str(label).strip()
-    if not label:
-        raise ToolError("Say what to plan (a label, e.g. 'Revision').")
-    try:
-        need = round(float(hours) * 2)                       # in 30-minute slots
-    except (TypeError, ValueError):
-        raise ToolError("hours must be a number, e.g. 6.")
-    if need < 1:
-        raise ToolError("hours must be at least 0.5.")
-    first_day, last_day = _date_range(start_date, end_date, max_days=31)
-    # The default 09:00-21:00 window is cut to the timetable's hours if they're shorter.
-    lo = _slot(earliest, False) if earliest != "09:00" or _in_day("09:00") else 0
-    hi = _slot(latest, True) if latest != "21:00" or _in_day("21:00", True) else store.SLOTS
-    if hi <= lo:
-        raise ToolError("latest must be after earliest.")
-    chunk = max(1, round(float(max_block_hours) * 2))
-    cid = _category(label, category)
-    days = _days_between(first_day, last_day, bool(weekdays_only))
-    if not days:
-        raise ToolError("There are no days in that range (check weekdays_only).")
-    days = [d for d in days if _first_future_slot(d) < hi]           # nothing in the past
-    if not days:
-        raise ToolError("Those days are already over; pick days from today on.")
-
-    # If it needs fewer sittings than there are days, try evenly spaced days first
-    # (6 h in 2 h sittings over a week: Mon, Wed, Fri rather than Mon, Tue, Wed).
-    sittings = -(-need // chunk)
-    if sittings < len(days):
-        spaced = [days[round(i * (len(days) - 1) / max(sittings - 1, 1))] for i in range(sittings)]
-        days = list(dict.fromkeys(spaced + days))
-    free = {d: store.free_runs(d, max(lo, _first_future_slot(d)), hi) for d in days}
-    placed = []                                              # (day, start slot, end slot)
-    left = need
+    placed, left = [], need
     while left > 0:
         progress = False
         for d in days:                                       # one block per day per round: spreads it out
@@ -567,6 +534,58 @@ def plan_time(label, hours, start_date, end_date, category=None, earliest="09:00
             progress = True
         if not progress:
             break
+    return placed
+
+
+def _spaced(days, need, chunk):
+    """If it needs fewer sittings than there are days, try evenly spaced days first
+    (6 h in 2 h sittings over a week: Mon, Wed, Fri rather than Mon, Tue, Wed)."""
+    sittings = -(-need // chunk)
+    if sittings < len(days):
+        spaced = [days[round(i * (len(days) - 1) / max(sittings - 1, 1))] for i in range(sittings)]
+        days = list(dict.fromkeys(spaced + days))
+    return days
+
+
+def _window(earliest, latest):
+    """Slots for earliest..latest; the default 09:00-21:00 is cut to the timetable's hours if they're shorter."""
+    lo = _slot(earliest, False) if earliest != "09:00" or _in_day("09:00") else 0
+    hi = _slot(latest, True) if latest != "21:00" or _in_day("21:00", True) else store.SLOTS
+    if hi <= lo:
+        raise ToolError("latest must be after earliest.")
+    return lo, hi
+
+
+def plan_time(label, hours, start_date, end_date, category=None, earliest="09:00", latest="21:00",
+              max_block_hours=2, weekdays_only=False, confirmed=False):
+    """
+    Fit `hours` of an activity into the free gaps of the Plan between two dates,
+    around the user's blocks and Outlook events, spread across the days (one
+    block per day per round, up to max_block_hours each). Always previewed first.
+    """
+    label = str(label).strip()
+    if not label:
+        raise ToolError("Say what to plan (a label, e.g. 'Revision').")
+    try:
+        need = round(float(hours) * 2)                       # in 30-minute slots
+    except (TypeError, ValueError):
+        raise ToolError("hours must be a number, e.g. 6.")
+    if need < 1:
+        raise ToolError("hours must be at least 0.5.")
+    first_day, last_day = _date_range(start_date, end_date, max_days=31)
+    lo, hi = _window(earliest, latest)
+    chunk = max(1, round(float(max_block_hours) * 2))
+    cid = _category(label, category)
+    days = _days_between(first_day, last_day, bool(weekdays_only))
+    if not days:
+        raise ToolError("There are no days in that range (check weekdays_only).")
+    days = [d for d in days if _first_future_slot(d) < hi]           # nothing in the past
+    if not days:
+        raise ToolError("Those days are already over; pick days from today on.")
+
+    days = _spaced(days, need, chunk)
+    free = {d: store.free_runs(d, max(lo, _first_future_slot(d)), hi) for d in days}
+    placed = _place(days, free, need, chunk)
 
     if not placed:
         return Result(f"There's no free time in the Plan between {earliest} and {latest} on those days.")
@@ -1218,6 +1237,118 @@ def read_journal(date=None, start_date=None, end_date=None, query=None, limit=10
     if not rows:
         return Result("No journal entries found.")
     return Result("\n\n".join(f"## {nice_day(r['date'])} ({r['date']})\n{r['text']}" for r in rows))
+
+
+# ---------------------------------------------------------------------------
+# Goals and the timetable: pace, the week's budget, planning goal time
+# (the Goals page and the Timetable's goal chips call these too)
+# ---------------------------------------------------------------------------
+
+def _pace_ctx():
+    from venato import pace
+    return pace.Ctx(_now())
+
+
+def goal_pace(goal=None, period=None, date=None):
+    """How one goal (or every current goal) is doing: on track / behind / slipping / can't be reached,
+    this week's need with any carried debt, the projected finish, and what to plan."""
+    from venato import pace
+    ctx = _pace_ctx()
+    if goal:
+        found = [_find_goal(goal, period, date)]
+    else:
+        found = [g for per in store.GOAL_PERIODS for g in store.goals_in(per, ctx.today)]
+    if not found:
+        return Result("No goals this month or year.")
+    return Result("\n".join(f"- {g['title']} ({_amount(g)}): {pace.goal_pace(g, ctx)['line']}" for g in found))
+
+
+def week_budget(date=None):
+    """Free time in a week (default this one) against what every hours goal needs, goal by goal in priority order."""
+    from venato import pace
+    ctx = _pace_ctx()
+    day = _day(date) if date else ctx.today
+    b = pace.week_budget(day, ctx)
+    lines = [f"Week of {nice_day(b['week_start'].isoformat())}: {b['text']}"]
+    for w in b["goals"]:
+        g = w["goal"]
+        extra = f", the budget is {pace.fmt(w['budget_short'])} h short" if w["budget_short"] > pace.TOLERANCE else ""
+        lines.append(f"- {g['title']}: {pace.fmt(w['covered'])}/{pace.fmt(w['want'])} h covered "
+                     f"({pace.debt_text(g, w['need'], w['baseline'])}){extra}")
+    return Result("\n".join(lines))
+
+
+def plan_goals(date=None, earliest="09:00", latest="21:00", max_block_hours=2, confirmed=False):
+    """
+    Fill what each hours goal is short this week (default this one) into the Plan's free gaps,
+    goal by goal in priority order, within what the week's budget gives it. Only free time is used:
+    nothing fixed is moved or overwritten. Always previewed first.
+    """
+    from venato import pace
+    ctx = _pace_ctx()
+    day = _day(date) if date else ctx.today.isoformat()
+    lo, hi = _window(earliest, latest)
+    chunk = max(1, round(float(max_block_hours) * 2))
+    free, placed = {}, []                                   # free gaps shared by all goals
+    for w in pace.week_goals(day, ctx):
+        g = w["goal"]
+        add = min(w["want"] - w["covered"], w["alloc"] - w["planned_future"])
+        if w["over"] or add < pace.TOLERANCE:
+            continue
+        days = [d for d in _days_between(max(w["first"], ctx.today).isoformat(), w["last"].isoformat(), False)
+                if _first_future_slot(d) < hi]
+        for d in days:
+            free.setdefault(d, store.free_runs(d, max(lo, _first_future_slot(d)), hi))
+        need = round(pace.half_up(add) * 2)
+        spots = _place(_spaced(days, need, chunk), free, need, chunk)
+        if spots:
+            placed.append((g, sorted(spots)))
+    if not placed:
+        return Result("Nothing to plan: every hours goal has enough time planned this week, or there's no free time left.")
+    parts = []
+    for g, spots in placed:
+        got = sum(e - s for _, s, e in spots) / 2
+        when = "; ".join(f"{nice_day(d)} {store.slot_time(s)}–{store.slot_time(e)}" for d, s, e in spots)
+        parts.append(f"{got:g} h of {g['label'] or g['title']} for {g['title']}: {when}")
+    summary = "Plan " + ". ".join(parts)
+    if not confirmed:
+        return Result("", pending=Pending(summary, lambda: plan_goals(date, earliest, latest, max_block_hours, True)))
+    for g, spots in placed:
+        for d, s, e in spots:
+            store.paint(d, "plan", s, e, {"label": g["label"] or g["title"], "category_id": g["category_id"],
+                                          "details": None})
+    return Result(f"Done: {summary}.", changed=True)
+
+
+def resolve_goal(goal, offer, confirmed=False):
+    """
+    Take one of the offers for a goal that can't be finished with the time left (pace.negotiation):
+    "lower" its target to what's reachable, "carry" the rest into the next month/year, or "take" hours
+    from a lower-priority goal. Always previewed first.
+    """
+    from venato import pace
+    g = _find_goal(goal)
+    n = pace.negotiation(g, _pace_ctx())
+    chosen = next((o for o in (n["offers"] if n else []) if o["kind"] == offer), None)
+    if not chosen:
+        return Result(f"{g['title']} doesn't need that any more.")
+    if not confirmed:
+        return Result("", pending=Pending(f"{g['title']}: {chosen['text']}",
+                                          lambda: resolve_goal(g["id"], offer, True)))
+    if offer in ("lower", "carry"):
+        store.update_goal(g["id"], target=chosen["target"])
+    if offer == "carry":
+        start = store.shift_period(g["period"], g["period_start"], 1)
+        same = [x for x in store.goals_in(g["period"], start) if x["title"].lower() == g["title"].lower()]
+        if same:
+            store.update_goal(same[0]["id"], target=float(same[0]["target"]) + chosen["carry"])
+        else:
+            store.add_goal(g["title"], g["period"], start, chosen["carry"], g["unit"], g["habit_id"],
+                           category_id=g["category_id"], label=g["label"])
+    if offer == "take":
+        other = store.get_goal(chosen["other"])
+        store.update_goal(other["id"], target=float(other["target"]) - chosen["hours"])
+    return Result(f"Done: {g['title']}: {chosen['text']}.", changed=True)
 
 
 # ---------------------------------------------------------------------------

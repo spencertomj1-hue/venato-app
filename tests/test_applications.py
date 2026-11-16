@@ -157,7 +157,8 @@ def test_every_tool_is_registered(store):
     assistant = importlib.reload(assistant)
     offered = {spec[0] for spec in assistant.TOOL_SPECS}
     helpers = {"nice_day", "describe_block", "todo_list_name", "describe_todo", "describe_deadline",
-               "describe_goal", "describe_person", "describe_application"}
+               "describe_goal", "describe_person", "describe_application",
+               "resolve_goal"}           # the Goals page's negotiation buttons (not one of Claude's tools)
     actions = {n for n, f in inspect.getmembers(tools, inspect.isfunction)
                if f.__module__ == tools.__name__ and not n.startswith("_") and n not in helpers}
     assert actions <= offered, actions - offered
