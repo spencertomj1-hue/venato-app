@@ -57,7 +57,8 @@
 - **Colour-coded categories** in groups ("Life", "Work"), with activities that pick their category automatically ("Lunch" goes to Meals).
 - **Fit time:** say what, how many hours and which days; Venato finds free gaps around your blocks and calendar events and previews the sittings before adding them.
 - **To-dos** for today, this week and this month, in the style of Apple Reminders: drag to reorder, notes, repeating to-dos.
-- **Goals** for the month or year with progress bars, updated by hand or linked to a habit.
+- **Goals** for the month or year with progress bars, updated by hand, linked to a habit, or counted from your timetable's Actual hours in a category (or one activity).
+- **Goals that know your week:** each hours goal gets a chip above the timetable ("Revision 6/9 h", amber when short; click to fit the rest into free time). Venato works out your free time (timetable hours minus calendar events and other blocks), what each goal needs this week including hours carried from slow weeks, whether you're on track, behind, slipping or can't make it, and when you'll finish at your recent pace. It plans extra for time that usually slips, shares a crowded week between goals by priority, offers to lower a target, carry it into next month or borrow hours from a lower goal, suggests goals from what you already do, and nudges you mid-week if what's planned won't cover a goal.
 - **Deadlines** with countdowns, reminders the day before and on the day, and "Make time" to plan hours for them.
 
 **Tracking**
@@ -177,6 +178,7 @@ From the "Ideas for later" list in [`HANDOVER.md`](HANDOVER.md):
 - [ ] Timetable blocks in CSV export/import (to-dos and goals already have CSVs)
 - [ ] "Carry over unfinished" to-dos in the UI (the store function exists)
 - [x] Streaming chat replies
+- [x] Goals connected to the weekly timetable (capacity, pace, debt, honest forecasts, competing goals)
 - [ ] Signed and notarised Mac app
 - [ ] A Linux installer (it runs from source today, in the browser)
 

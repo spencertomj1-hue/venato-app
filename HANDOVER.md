@@ -42,6 +42,10 @@ venato/                         The app's code, as a package (imported as `from 
   store.py                     ALL SQL; timetable painting rules; settings.json; stats. No Streamlit.
   tools.py                     What Claude can do: plain functions over store.py, previews for destructive changes
   assistant.py                 Claude via claude-agent-sdk: finds the CLI, system prompt, in-process "venato" MCP server
+  quick.py                     Quick commands ("drank 500ml", "tick gym"): handled without Claude via the same tools.py actions
+  pace.py                      Goals meet the timetable: capacity, budget, pace, debt, follow-through, negotiation, suggestions (§5e). No SQL, no Streamlit
+  blocks/                      Optional blocks (Focus, Workouts, Food, Recipes, Cut down, Grades, Money, Involvement, Health):
+                               each has its own tables, migrations, tools, prompt, context and page (core.py: the Block shape)
   voice.py                     Microphone recording (sounddevice) and local transcription (faster-whisper)
   outlook.py                   Read-only Outlook import: link checks, Keychain, fetch, recurrence expansion, sync
   notify.py                    Reminders: a background thread that notifies before Plan blocks / Outlook events start
@@ -55,7 +59,14 @@ venato/                         The app's code, as a package (imported as `from 
     timetable_tools.py         Buttons above the grid: Add block, Fit time, Categories (dialogs calling the same tools.py functions as Claude)
     daily_log.py               Daily Log page (month calendar, day card, the day's habits, entry form with the journal box, past entries) and Home's habits
     todos.py                   Home's to-do cards
-    goals.py                   Goals page and Home's goal bars (native Streamlit widgets + an HTML bar)
+    goals.py                   Goals page and Home's goal bars (native Streamlit widgets + an HTML bar, with the "by today" tick)
+    goal_time.py               Goal chips above the timetable, Away days, Share hours; the Goals page's budget, pace lines, offers and suggestions
+    deadlines.py               Deadlines section (Goals page) and Home's list, with "Make time"
+    review.py                  Weekly review pop-up and Stats' history
+    home.py, stats.py          Home (agenda, widgets) and Stats pages
+    applications.py            Applications page (apps_component.*)
+    blocks_ui.py               Settings → Blocks; one page module per block (focus.py, money.py, ...)
+    undo_bar.py, page_fade.py  The Undo bar; the fade between pages
     network.py                 Network page: the web's Python side, plus the add / edit dialogs (incl. the interaction log)
     chat.py                    The chat bar / Home ask box, and its flow (send → transcribe → Claude → rerun)
     settings_ui.py             First-run wizard and the Settings page
@@ -95,17 +106,19 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
 | `deadlines` | `id`, `title`, `due` (date), `notes`, `done`, `done_at`, `created_at`. UI in `ui/deadlines.py` (Goals page section, Home list); chips on the timetable header (`outlookAllDay` with `deadline: true`) and agenda; `notify.due_deadlines` announces today/tomorrow once a day from 9 am |
 | `net_interactions` | Times the user met/spoke to someone: `id`, `person_id` (cascade), `date`, `note`, `created_at` |
 | `net_links` | Undirected connections: `a`, `b` (always `a < b`, enforced by a CHECK), `reason`. Cascade-deleted with either person |
-| `goals` | `id`, `title`, `period` (monthly/yearly), `period_start`, `target`, `unit`, `progress` (kept by hand), `habit_id` (NULL = by hand; `ON DELETE SET NULL`), `ord`, `created_at` |
+| `goals` | `id`, `title`, `period` (monthly/yearly), `period_start`, `target`, `unit`, `progress` (kept by hand), `habit_id` (NULL = by hand; `ON DELETE SET NULL`), `ord` (also its priority), `created_at`, `category_id` (counts timetable hours; `ON DELETE SET NULL`; never together with `habit_id`), `label` (optional: only that activity) |
+| `goal_week` | The user's split of a week between hours goals: `goal_id` (cascade), `week_start`, `hours`. None = automatic |
+| `tt_outlook_away` | All-day calendar events marked "I'm away" (that day has no free time for goals); kept across syncs |
 
 Notes on the schema:
 - **New installs** are seeded with generic categories (groups "Life" and "Work") and activity defaults, in `DEFAULT_CATEGORIES` / `DEFAULT_LABEL_MAP`. Groups are read from the data (`store.groups()`), so a user's own groups work too.
 - **`end` is an SQL keyword** and must be quoted.
 - **Migrations:** columns added later are added by `_add_column` in `init_db`, so existing databases keep working. `_goals_became_todos` handles databases from before the to-do / goal split: their `goals` table (which held to-dos) is backed up to `backups/life-…-before-todos.db`, renamed to `todos` (with `goal_rollover` → `todo_rollover`), and its yearly to-dos dropped.
-- **`settings.json`** holds `ai_enabled` (the optional assistant; `store.ai_enabled()`, missing = on for older installs, the wizard writes it and defaults it off), `wizard_done`, `outlook_category`, `reminders` (default on) and `reminder_minutes` (default 5), `auto_backup` (default on), `backup_keep` (30) and `backup_folder` (default data folder/backups). `setup_checks.auto_backup_if_due()` runs on the reminder thread: one backup a day, pruning only plain `life-YYYY-MM-DD-HHMMSS.db` files. Use `store.load_settings` / `save_settings`.
+- **`settings.json`** holds `goal_inflate`, `goal_nudged`, `goal_offers_dismissed`, `goal_suggestions_dismissed` (§5e), `ai_enabled` (the optional assistant; `store.ai_enabled()`, missing = on for older installs, the wizard writes it and defaults it off), `wizard_done`, `outlook_category`, `reminders` (default on) and `reminder_minutes` (default 5), `auto_backup` (default on), `backup_keep` (30) and `backup_folder` (default data folder/backups). `setup_checks.auto_backup_if_due()` runs on the reminder thread: one backup a day, pruning only plain `life-YYYY-MM-DD-HHMMSS.db` files. Use `store.load_settings` / `save_settings`.
 
 ## 5. Timetable
 
-- **Grid:** 36 half-hour slots from 07:00 to 01:00. Slots after midnight belong to the **previous** day (`slot_of` / `slot_time`).
+- **Grid:** half-hour slots from settings `day_start` to `day_end` (default 07:00 to 01:00, 36 slots; `store.SLOTS` / `FIRST_MIN`, see §9). Slots after midnight belong to the **previous** day (`slot_of` / `slot_time`).
 - **`store.plan_paint` is the single source of truth for editing.** Filling slots s..e-1 trims or splits overlapped blocks, and touching blocks with the same label and category merge. It returns `(ops, affected)`, where `affected` = blocks with a different label/category that get overwritten (used for confirm previews).
   - `store.paint` applies it. In the Plan track it first **detaches** any Outlook event in the way, so those are trimmed like any block.
   - The grid's JS has a display-only copy (`planPaint`) so edits show instantly. If you change the rules, change both; `tests/test_store.py` pins the behaviour.
@@ -134,7 +147,7 @@ Two different things:
 - **Editors:** the new-to-do, title and notes boxes are redrawn with their text, caret and focus after every rerun (`restoreEditor`), so typing is never lost.
 
 **Goals:**
-- **Value:** `goals_in` / `get_goal` add `value` (current progress) and `habit` (the linked habit's name). Linked to a habit, `value` is the number of days that habit was ticked within the period; otherwise it's the hand-kept `progress`. Deleting the habit unlinks the goal (back to `progress`).
+- **Value:** `goals_in` / `get_goal` add `value` (current progress), `kind` (`hours` / `habit` / `count`), `habit` and `category` (names). Linked to a habit, `value` is the number of days that habit was ticked within the period; counting timetable hours, it's the Actual hours of that category (and label) in the period, from `store.goal_hours`; otherwise it's the hand-kept `progress`. Deleting the habit or category unlinks the goal (back to `progress`).
 - **Goals page:** two bordered sections (Monthly, Yearly), each with ‹ › and a "This month / This year" jump (`goals_start_<period>`). Each goal shows `value / target unit`, a percentage and a bar. Hand-kept goals have − / + (via `add_goal_progress`); every goal has a ⋯ popover to edit it (including the "Update it myself" / "Count a habit's ticks" choice) or delete it. "New goal" is a popover with the same form.
 - **Bars:** HTML in the theme's primary colour (`st.progress` uses a different one), the same on both pages.
 - **Home:** this month's and this year's goals as bars, with "See all" (a button whose callback sets the sidebar radio, `page`).
@@ -152,6 +165,19 @@ Two different things:
 
 - **Journal = the day's notes (`entries.notes`):** `get_journal` / `save_journal` / `append_journal` / `journal_entries` work on that column (`save_journal` leaves the numbers alone and drops a row left empty). Databases from when the journal had its own `journal` table get it folded into notes by `_journal_became_notes` (appended unless already there) and the table dropped. In the Daily Log the form's widget keys include a hash of the saved entry, so if Claude adds to the day the box shows it instead of a stale draft. Search is `LIKE` per word (wildcards escaped). Claude: `write_journal` appends a paragraph (replace=true needs confirmation), `read_journal` by day, range and/or words. Settings → Data downloads it as Markdown.
 - **Reminders (`notify.py`):** `notify.start()` in `app.py` starts one daemon thread per process (skipped when `VENATO_NO_REMINDERS` is set, as the tests do). Every 30 s `check()` reads the settings, finds Plan blocks and visible timed Outlook events from yesterday's and today's timetable days (times before 07:00 are the next calendar day) that start within `reminder_minutes` (or started under a minute ago), and announces each once (key: date|start|label). `system.notify` runs `osascript` (macOS; shows as from Script Editor), a PowerShell toast (Windows) or `notify-send` (Linux), passing the text as arguments / environment variables so nothing in it runs as code.
+
+## 5e. Goals and the timetable (`pace.py`, `ui/goal_time.py`)
+
+- **One helper:** `store.goal_hours(goal, first, last, track, data=None, window=None)` counts an hours goal's category (and label: exact for blocks, contained in the title for calendar events) in a track. The Plan includes visible timed calendar events in that category; detached ones (`ol:` blocks) never count. `pace.Ctx` reads the blocks and events once per page and passes them as `data`; `window(day)` cuts a day to some slots (`ctx.past` / `ctx.future`).
+- **Capacity:** per day, the slots from now on that aren't fixed. Fixed = visible timed calendar events + Plan blocks that serve no hours goal active that day (+ every `ol:` block). Time already planned for a goal counts as free for goals. Past days and away days have none; all-day events don't block. Past `calendar_horizon()` (8 weeks, the sync window) a day uses the average fixed load for its weekday and is flagged `estimate`. Sleep isn't subtracted.
+- **Need and debt:** `week_need` spreads what was left at the start of the week (now, for later weeks) over the days left, times the week's days in the period (partial weeks work). Baseline = target × days / period days; need − baseline is the carried debt. Computed, never stored.
+- **Follow-through:** Actual ÷ Plan for the goal over the last 6 complete weeks with a Plan, needing 3 of them, clamped 30–100%. `want` = done + rest of need ÷ follow-through (or `goal_week`'s hours). Setting `goal_inflate` (default on) switches the inflation off.
+- **Budget / competition:** `week_goals` hands the rest of the week's capacity out top-down by priority (`ord`, monthly first on a tie) as `alloc`; `budget_short` is what doesn't fit. Count goals (books, money) get pace and debt but no budget. Yearly goals are budgeted week by week like monthly ones.
+- **Pace states:** done; unreachable (hours: remaining > free time left; habit: remaining > days left); behind (covered < want this week; habit/count: below the even-pace line and late at the trailing rate); slipping (planned enough, but Actual trails Plan this week by 1 h+); on track. Projection: the last 28 days' rate (hand-kept: the period so far).
+- **Negotiation:** `negotiation(goal)` when remaining > what the goal can get after higher-priority goals (`available_for`), or unreachable: offers lower / carry / take, applied by `tools.resolve_goal` (a Pending; the UI calls `undo.checkpoint`). `goal_offers_dismissed` in settings.json.
+- **Suggestions:** categories / activities with 2 h+ of Actual time in 3 of the last 4 weeks and no goal counting them; dismissals in `goal_suggestions_dismissed`.
+- **Nudge:** `notify.goal_nudges` → `pace.nudges`: from midday on the week's third day, once per goal per week (`goal_nudged` in settings.json, so restarts don't repeat it).
+- **Claude:** `goal_pace`, `week_budget`, `plan_goals` (shares free gaps between goals via `tools._place`, the same placement `plan_time` uses), and a line in the [Now] snapshot. Buttons: the chips / Plan my goals / Share hours / pace lines.
 
 ## 6. Outlook import (`outlook.py`)
 
@@ -174,7 +200,7 @@ Two different things:
 
 - **Optional:** everything must work by hand. With `ai_enabled` off there's no chat bar, no Home ask box, no Voice tab, and hints don't mention Venato/Claude. Anything Claude can change needs a UI too: when adding a tool, add (or reuse) a button/dialog, ideally calling the same `tools.py` function so rules and Confirm previews match (see `ui/timetable_tools.py`).
 
-- **The agent:** `claude_agent_sdk.query` drives the `claude` CLI: the user's installed Claude Code if `find_claude()` finds one, otherwise the copy bundled inside the SDK (`bundled_claude()`).
+- **The agent:** a persistent `claude_agent_sdk.ClaudeSDKClient` per conversation (kept open between messages, replies streamed with `include_partial_messages`) drives the `claude` CLI: the user's installed Claude Code if `find_claude()` finds one, otherwise the copy bundled inside the SDK (`bundled_claude()`).
 - **Signing in:** an Anthropic API key (pasted in the wizard/Settings, checked with Anthropic's free `GET /v1/models`, stored with `keyring` as service `Venato`, account `anthropic-api-key`; or `$ANTHROPIC_API_KEY`) is passed to the CLI as `ANTHROPIC_API_KEY`, which it prefers over a login. Otherwise the user's Claude Code login is used. `setup_checks.claude_status()` reports which.
 - **Isolation:**
   - `tools=[]` (no built-in tools) and `allowed_tools` = only `mcp__venato__*`, with `permission_mode="dontAsk"`.
@@ -191,7 +217,7 @@ Two different things:
   - `log_day` also takes `water` (litres, the day's total; changing it needs no confirmation since it's a running total).
   - Journal: `write_journal`, `read_journal`. Network interactions: `log_interaction`, `person_history`.
   - To-dos: `add_todo`, `complete_todo`, `uncomplete_todo`, `list_todos`, `delete_todo` (confirm first).
-  - Goals: `add_goal`, `log_goal_progress`, `set_goal_progress`, `edit_goal`, `list_goals`, `delete_goal` (confirm first). Progress tools refuse habit-linked goals and point Claude at `set_habit`.
+  - Goals: `goal_pace`, `week_budget`, `plan_goals` (§5e), `add_goal` (habit or category/label), `log_goal_progress`, `set_goal_progress`, `edit_goal`, `list_goals`, `delete_goal` (confirm first). Progress tools refuse habit-linked goals and point Claude at `set_habit`.
   - Both are found by id or title in the current periods: exact title, then part of a title, then the most shared words ("finish problem sheet" → "Problem sheet 4"). Several matches is an error that lists them, so Claude asks.
   - The prompt tells Claude that "today's goals" / "this week's goals" mean to-dos, since goals are only monthly or yearly.
 - **Confirm-first:** anything that deletes data or overwrites/trims other data returns `Result(pending=Pending(summary, run))`. The UI shows Confirm/Cancel, and `run()` re-runs the tool with `confirmed=True` against current data.
