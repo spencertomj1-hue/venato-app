@@ -195,6 +195,8 @@ def render_page():
     # Fit time / Categories: the same things Claude can do, by hand.
     from venato.ui import timetable_tools
     timetable_tools.toolbar(day)
+    from venato.ui import goal_time              # goal chips: hours each goal has this week, and its budget
+    goal_time.strip(monday)
     render_grid([monday + timedelta(days=i) for i in range(7)])
 
 

@@ -9,6 +9,19 @@ Venato was called **Arete** up to 1.1.1.
 
 ## [Unreleased]
 
+### Added
+- Goals: a third way to track progress, "Count timetable hours": the Actual hours of a category, or of one activity in it. Deleting the category turns the goal back into one you update yourself.
+- Goals meet the timetable: a week's free time is its timetable hours minus calendar events and Plan blocks that serve no goal (nothing fixed is ever moved). Calendar events in a goal's category count towards that goal. All-day events don't block time unless you mark "I'm away" (Timetable → Away days; kept across syncs). Weeks beyond the 8 weeks calendar sync reaches are estimated from the average load.
+- Pace for every goal (hours, habit and hand-kept, in their own unit): on track / behind / slipping / can't be reached, this week's need with hours carried from earlier weeks ("9 h this week (6 h + 3 h carried)"), and a projected finish from the last 4 weeks ("11 days late at this rate").
+- Honest forecasts: follow-through (Actual ÷ Plan over the last 6 weeks) inflates what to plan ("plan 16 h to land 10 h"); Settings → Region → "Plan extra for time that usually slips" turns it off.
+- Timetable: a chip per hours goal above the week, amber when short; clicking opens Fit time pre-filled with the shortfall. "Plan my goals" fills every goal's shortfall into free time, top goal first, with a preview.
+- Competing goals: list order is priority (Move up / Move down in a goal's ⋯ menu). When goals want more than the week's free time, "Share hours" shows which are short and lets you split the week your way.
+- Goals page: this week's time budget, cards for goals that can't be finished (lower the target, carry the rest into next month or year, or take hours from a lower goal; all undoable, "Not now" hides them), and suggested goals ("3 h/week of Guitar. Make it a goal?").
+- Home: a "should be here by today" tick on each goal bar.
+- Away days: tick any day of the week as "I'm away" (Timetable → Away days), with or without a calendar event. Sleep is never suggested as a goal.
+- Weekly review: a goal pace section. One mid-week notification per goal when what's planned can't cover it.
+- Assistant: `goal_pace`, `week_budget` and `plan_goals` tools, goals can count timetable hours (`category`, `label`), and a goals line in its snapshot of today.
+
 ## [1.3.0] - 2026-11-07
 
 ### Added

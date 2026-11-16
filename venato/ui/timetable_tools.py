@@ -96,7 +96,7 @@ def _confirm_box(yes="Confirm"):
 # ---------------------------------------------------------------------------
 
 @st.dialog("Fit time into your Plan", width="large")
-def _fit_dialog(day, label="", last=None, category=None):
+def _fit_dialog(day, label="", last=None, category=None, hours=6.0):
     st.caption("Finds free gaps in your Plan (around your blocks and Outlook events) and spreads the "
                "hours over the days, with a break between sittings. You'll see the times before anything is added.")
     if _confirm_box("Add to Plan"):
@@ -107,7 +107,7 @@ def _fit_dialog(day, label="", last=None, category=None):
     with st.form("tt_fit_form", border=False):
         a, b = st.columns([2, 1])
         label = a.text_input("What", value=label, placeholder="e.g. Revision")
-        hours = b.number_input("Hours in total", 0.5, 60.0, 6.0, step=0.5)
+        hours = b.number_input("Hours in total", 0.5, 60.0, float(min(60.0, max(0.5, hours))), step=0.5)
         options = [AUTO] + _category_names()
         category = st.selectbox("Category", options, key="tt_fit_cat",
                                 index=options.index(category) if category in options else 0)
@@ -208,11 +208,37 @@ def _categories_dialog():
 # The toolbar
 # ---------------------------------------------------------------------------
 
-def open_fit(label, last):
-    """Fit time for something specific (e.g. a deadline), finishing by `last`."""
+def open_fit(label, last, category=None, hours=6.0, first=None):
+    """Fit time for something specific (a deadline, a goal that's short), finishing by `last`."""
     st.session_state.pop(PENDING, None)
     names = _category_names()
-    _fit_dialog(store.local_today(), label, last, "Study" if "Study" in names else None)
+    if category not in names:
+        category = "Study" if "Study" in names else None
+    _fit_dialog(first or store.local_today(), label, last, category, hours)
+
+
+@st.dialog("Plan time for your goals", width="large")
+def _plan_goals_dialog(week):
+    st.caption("Fills what each goal that counts timetable hours is short this week into free time in your "
+               "Plan, top goal first. Nothing already there is moved or overwritten.")
+    if _confirm_box("Add to Plan"):
+        return
+    try:
+        r = tools.plan_goals(week.isoformat())
+    except tools.ToolError as e:
+        st.error(_for_people(str(e)), icon=":material/error:")
+        return
+    if r.pending:
+        st.session_state[PENDING] = r.pending
+        _confirm_box("Add to Plan")
+    else:
+        st.info(r.text, icon=":material/info:")
+
+
+def open_plan_goals(week):
+    """Plan my goals: tools.plan_goals for the week containing `week`, previewed with Confirm / Cancel."""
+    st.session_state.pop(PENDING, None)
+    _plan_goals_dialog(week)
 
 
 def toolbar(day):

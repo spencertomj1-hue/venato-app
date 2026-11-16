@@ -135,6 +135,25 @@ def main():
                 if back < 5 and name == "Read 20 pages" or random.random() < rate:   # a current streak
                     store.set_habit_done(conn, habit_id, (TODAY - timedelta(days=back)).isoformat(), True)
 
+    # --- Earlier weeks: study planned but only partly done (follow-through), and guitar most evenings ---
+    for week in range(1, 7):
+        for d in range(5):
+            day = (MONDAY - timedelta(weeks=week) + timedelta(days=d)).isoformat()
+            store.paint(day, "plan", store.slot_of("11:00"), store.slot_of("12:30"), {"label": "Study", "category_id": "study"})
+            if random.random() < 0.65:
+                store.paint(day, "actual", store.slot_of("11:00"), store.slot_of("12:30"),
+                            {"label": "Study", "category_id": "study"})
+            if week <= 4 and d in (0, 2, 3):
+                store.paint(day, "actual", store.slot_of("21:30"), store.slot_of("22:30"),
+                            {"label": "Guitar", "category_id": "rest"})
+
+    # --- Goals: two that count timetable hours, one counting a habit, one kept by hand ---
+    store.add_goal("Study", "monthly", TODAY, 30, "h", category_id="study")
+    store.add_goal("Side project", "monthly", TODAY, 25, "h", category_id="projects")
+    store.add_goal("Exercise", "monthly", TODAY, 16, "sessions", habit_id=store.find_habit("Exercise")[0])
+    books = store.add_goal("Read books", "yearly", TODAY, 20, "books")
+    store.set_goal_progress(books["id"], 14)
+
     print(f"Demo data created in: {FOLDER}")
     print(f"Run the app on it:    VENATO_DATA_DIR='{FOLDER}' .venv/bin/streamlit run app.py")
 

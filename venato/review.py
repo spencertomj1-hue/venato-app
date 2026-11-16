@@ -113,6 +113,10 @@ def summary(first):
     due = [d for d in all_deadlines if days[0] <= d["due"] <= days[-1]]
     upcoming = [d for d in all_deadlines if not d["done"] and last < store._as_date(d["due"]) <= last + timedelta(days=7)]
 
+    # --- Goals: each one's week against what it needed then, and its pace now ---
+    from venato import pace
+    goals = pace.review_rows(first)
+
     journal = store.journal_entries(first=days[0], last=days[-1])
     people = store.interactions_between(first, last)
     has_data = bool(hours or any(this) or any(h["ticks"] for h in habits) or weekly or daily or journal or people)
@@ -126,7 +130,7 @@ def summary(first):
                   "daily_done": sum(t["done"] for t in daily), "daily": len(daily)},
         "deadlines": {"met": [d for d in due if d["done"]], "missed": [d for d in due if not d["done"]],
                       "upcoming": upcoming},
-        "journal": journal, "people": people,
+        "journal": journal, "people": people, "goals": goals,
         "review": store.get_review(first),
     }
 
@@ -150,6 +154,8 @@ def as_text(s):
     if d["met"] or d["missed"] or d["upcoming"]:
         lines.append(f"Deadlines: met {[x['title'] for x in d['met']]}, missed {[x['title'] for x in d['missed']]}, "
                      f"next week {[x['title'] + ' ' + x['due'] for x in d['upcoming']]}")
+    if s.get("goals"):
+        lines.append("Goal pace: " + "; ".join(x["text"] for x in s["goals"]))
     if s["people"]:
         lines.append("Saw: " + "; ".join(f"{p['person']} ({p['note']})" for p in s["people"]))
     if s["journal"]:

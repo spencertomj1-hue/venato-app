@@ -85,6 +85,14 @@ def render(first, key):
             for x in dl["upcoming"]:
                 st.markdown(f":material/schedule: Next week: {x['title']}, {regional.day_month(x['due'])}")
     with right:
+        if s.get("goals"):
+            from venato.ui import goal_time
+            st.markdown("**Goal pace**")
+            for x in s["goals"]:
+                icon = goal_time.ICONS[x["state"]]
+                tone = goal_time.TONE.get(x["state"])
+                text = goal_time.md(x["text"])
+                st.markdown(f"{icon} " + (f":{tone}[{text}]" if tone else text))
         if s["people"]:
             st.markdown("**People you saw**")
             for p in s["people"]:

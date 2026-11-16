@@ -430,6 +430,16 @@ def region_section():
     st.caption(f"{length} hours a day. Anything after midnight counts as the day before, like a late night. "
                "Blocks outside these hours stay saved; widen the hours again to see them.")
 
+    st.subheader("Goals and your timetable")
+    inflate = store.load_settings().get("goal_inflate", True)
+    new = st.toggle("Plan extra for time that usually slips", value=inflate, key="region_goal_inflate",
+                    help="Goals that count timetable hours compare what you planned with what you did over the "
+                         "last 6 weeks. If you usually do 60% of what you plan, Fit time suggests planning more "
+                         "so you still land the hours. Off: plan exactly what the goal needs.")
+    if new != inflate:
+        store.save_settings(goal_inflate=new)
+        st.rerun()
+
 
 def _updates_section():
     from venato import updates
