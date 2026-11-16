@@ -299,6 +299,7 @@ def init_db():
         )
         _scores_out_of_ten(conn)
         _day_status_table(conn)
+        _forget_future_status(conn)
         if conn.execute("SELECT COUNT(*) FROM tt_categories").fetchone()[0] == 0:
             conn.executemany(
                 "INSERT INTO tt_categories VALUES (?, ?, ?, ?, ?, ?)",
@@ -474,10 +475,19 @@ def _day_status_table(conn):
                upto         TEXT                -- Actual is the truth for this day's slots before this time
            )""")
     full = slot_time(SLOTS)
-    conn.execute("INSERT INTO tt_day_status SELECT DISTINCT date, ?, ? FROM tt_entries WHERE track = 'actual'",
-                 (stamp(), full))
+    conn.execute("INSERT INTO tt_day_status SELECT DISTINCT date, ?, ? FROM tt_entries "
+                 "WHERE track = 'actual' AND date < ?", (stamp(), full, local_today().isoformat()))
     if conn.execute("SELECT 1 FROM tt_entries LIMIT 1").fetchone() and "timetable_view" not in load_settings():
         save_settings(timetable_view="split")
+
+
+def _forget_future_status(conn):
+    """
+    A day that hasn't started can't be confirmed or part-done. The first version of tt_day_status
+    marked every day with an Actual block confirmed, future ones too (repeating blocks, a hand-filled
+    week ahead): drop those, so they start unconfirmed when they come.
+    """
+    conn.execute("DELETE FROM tt_day_status WHERE date > ?", (local_today().isoformat(),))
 
 
 def _add_column(conn, table, column, kind):
@@ -1477,6 +1487,8 @@ def materialise(day, conn=None, now=None, confirm=False):
             return materialise(day, conn, now, confirm)
     day = _as_date(day).isoformat()
     upto, done = slots_gone(day, now), _upto(conn, day)
+    if not upto:                                         # not started yet: nothing to make true or confirm
+        return []
     ops = materialise_ops(day, _plan_items(conn, day), blocks_for(conn, day, "actual"), done, upto) if upto > done else []
     apply_block_ops(conn, ops)
     whole = upto >= SLOTS or confirm
@@ -1494,7 +1506,10 @@ def confirm_day(day, now=None):
 
 
 def mark_confirmed(day):
-    """The side-by-side view: the user filled in this day's Actual by hand, so it's the truth as it is."""
+    """The side-by-side view: the user filled in this day's Actual by hand, so it's the truth as it is.
+    Not for a day that hasn't started: filling in the future isn't a record of what happened."""
+    if not slots_gone(day):
+        return
     with db() as conn:
         conn.execute("INSERT INTO tt_day_status (date, confirmed_at, upto) VALUES (?, ?, ?) ON CONFLICT(date) DO UPDATE "
                      "SET confirmed_at = COALESCE(confirmed_at, excluded.confirmed_at), upto = excluded.upto",
@@ -1511,6 +1526,21 @@ def unconfirmed_days(first, last, now=None):
             out.append(iso)
         d += timedelta(days=1)
     return out
+
+
+def unconfirmed_days_with_blocks(now=None):
+    """Every past (or today's finished) unconfirmed day that has something on it: a Plan or Actual
+    block, or a visible timed calendar event. What "Confirm all" covers."""
+    today = (now or local_now()).date().isoformat()
+    with db() as conn:
+        days = [r[0] for r in conn.execute(
+            "SELECT date FROM tt_entries WHERE date <= ? UNION SELECT date FROM tt_outlook WHERE date <= ? "
+            "AND all_day = 0 AND uid NOT IN (SELECT uid FROM tt_outlook_hidden) ORDER BY date",
+            (today, today))]
+    if not days:
+        return []
+    status = day_status(days[0], days[-1])
+    return [d for d in days if slots_gone(d, now) >= SLOTS and not status.get(d, {}).get("confirmed")]
 
 
 def correct(day, s, e, block, new_id=None, now=None):

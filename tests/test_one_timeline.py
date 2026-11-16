@@ -217,3 +217,58 @@ def test_home_all_as_planned_and_timetable_views(store):
         store.save_settings(timetable_view=view)
         at.sidebar.radio[0].set_value("Timetable").run()
         assert not at.exception
+
+
+# --- Future days are never confirmed ---
+
+def test_migration_and_repair_leave_future_days_unconfirmed(store, monkeypatch):
+    monkeypatch.setattr(store, "local_today", lambda: date(2026, 11, 11))
+    put(store, "2026-11-10", "07:00", "08:00", "Sleep", "sleep", track="actual")
+    put(store, "2026-11-12", "07:00", "08:00", "Sleep", "sleep", track="actual")    # a day ahead
+    with sqlite3.connect(store.DB_PATH) as conn:
+        conn.execute("DROP TABLE tt_day_status")
+    store.init_db()
+    assert store.confirmed_days("2026-11-01", "2026-11-30") == ["2026-11-10"]
+    with sqlite3.connect(store.DB_PATH) as conn:                                   # as the first version left it
+        conn.execute("INSERT INTO tt_day_status VALUES ('2026-11-13', 'x', '23:30')")
+    store.init_db()
+    assert store.day_status("2026-11-12", "2026-11-30") == {}
+
+
+def test_a_future_day_cant_be_confirmed(store):
+    from venato.ui import timetable
+    ahead = "2026-11-13"
+    put(store, ahead, "09:00", "10:00", "Gym", "exercise")
+    store.confirm_day(ahead, now=NOW)
+    assert store.confirmed_days(ahead, ahead) == [] and actual(store, ahead) == []
+    store.save_settings(timetable_view="split")
+    timetable.apply_grid_op({"kind": "paint", "date": "2099-01-01", "track": "actual", "start": "09:00",
+                             "end": "10:00", "block": {"label": "Gym", "categoryId": "exercise"}, "newId": "f"})
+    assert store.day_status("2099-01-01", "2099-01-01") == {}                     # filling in the future: not a record
+
+
+def test_confirm_all_covers_every_week_with_blocks_only(store):
+    from venato import tools
+    tools = importlib.reload(tools)
+    tools._now = lambda: NOW
+    put(store, "2026-10-20", "09:00", "10:00", "Gym", "exercise")                 # weeks back
+    put(store, DAY, "09:00", "10:00", "Gym", "exercise")
+    put(store, "2026-11-11", "09:00", "10:00", "Gym", "exercise")                 # today: not over
+    put(store, "2026-11-13", "09:00", "10:00", "Gym", "exercise")                 # ahead
+    assert store.unconfirmed_days_with_blocks(now=NOW) == ["2026-10-20", DAY]     # empty days aren't listed
+    r = tools.confirm_all()
+    assert r.pending and "2 days" in r.pending.summary
+    r.pending.run()
+    assert store.confirmed_days("2026-10-01", "2026-11-30") == ["2026-10-20", DAY]
+    assert tools.confirm_all().text.startswith("Nothing to confirm")
+
+
+def test_timetable_confirm_all_button(store):
+    old = date.fromordinal(store.local_today().toordinal() - 20).isoformat()
+    put(store, old, "09:00", "10:00", "Gym", "exercise")
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.sidebar.radio[0].set_value("Timetable").run()
+    btn = [b for b in at.button if b.key == "tt_btn_confirm_all"]
+    assert btn and btn[0].label == "Confirm all (1 day)"
+    btn[0].click().run()                            # the dialog's preview (clicking inside it: checked in a browser)
+    assert not at.exception and any("Confirm 1 day as planned" in w.value for w in at.warning)

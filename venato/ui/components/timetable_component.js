@@ -374,7 +374,7 @@ class Timetable {
       }
     }
     st.upto = Math.max(upto, done);
-    if (upto >= SLOTS || confirm) st.confirmed = true;
+    if (upto >= SLOTS || (confirm && upto > 0)) st.confirmed = true;     // never a day that hasn't started
   }
 
   // Apply ops locally, queue them, and send everything still pending.

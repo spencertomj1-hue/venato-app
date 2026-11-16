@@ -541,6 +541,24 @@ def confirm_day(date=None, end_date=None, confirmed=False, preview=False):
     return Result(f"Done: {summary}.", changed=True)
 
 
+def confirm_all(confirmed=False):
+    """
+    Confirm every past day that isn't confirmed yet and has something on it, in one go: each one's Plan
+    becomes its Actual wherever the Actual is empty. Always previewed first. "Confirm all" on the Timetable.
+    """
+    days = store.unconfirmed_days_with_blocks(now=_now())
+    if not days:
+        return Result("Nothing to confirm: every day that has passed is confirmed already.")
+    n = len(days)
+    summary = (f"Confirm {n} day{'s' if n > 1 else ''} as planned: " + ", ".join(nice_day(d) for d in days) if n <= 7
+               else f"Confirm {n} days as planned, {nice_day(days[0])} to {nice_day(days[-1])}")
+    if not confirmed:
+        return Result("", pending=Pending(summary, lambda: confirm_all(True)))
+    for d in days:
+        store.confirm_day(d, now=_now())
+    return Result(f"Done: {summary}.", changed=True)
+
+
 def _days_between(first, last, weekdays_only):
     d, out = date.fromisoformat(first), []
     while d <= date.fromisoformat(last):
