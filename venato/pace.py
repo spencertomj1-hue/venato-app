@@ -383,6 +383,17 @@ def week_budget(week, ctx=None):
             "over": need > cap["hours"] + TOLERANCE, "goals": goals, "days": cap["days"], "text": text}
 
 
+def week_text(goal, need, baseline):
+    """"9 h needed this week, 3 h of it carried over" (or "(2 h ahead)") for the Goals page."""
+    carried = need - baseline
+    text = f"{amount(goal, need)} needed this week"
+    if carried >= 0.05:
+        text += f", {amount(goal, carried)} of it carried over"
+    elif carried <= -0.05:
+        text += f" ({amount(goal, -carried)} ahead)"
+    return text
+
+
 def debt_text(goal, need, baseline):
     """"9 h this week (6 h + 3 h carried)", or "(6 h − 2 h ahead)"."""
     carried = need - baseline
@@ -462,6 +473,7 @@ def goal_pace(goal, ctx=None):
         state = "behind" if value < p["expected"] - 1e-9 and (p["late"] is None or p["late"] > 0) else "on_track"
     p["state"] = state
     p["line"] = _pace_line(p)
+    p["details"] = _details(p)
     return p
 
 
@@ -494,6 +506,24 @@ def _pace_line(p):
             parts.append(f"only {fmt(p['available'])} h free before the end"
                          + (" (estimated)" if p["available_estimate"] else ""))
     return " · ".join(parts)
+
+
+def _details(p):
+    """The pace in short plain lines for the Goals page (the state itself is shown as a badge)."""
+    g = p["goal"]
+    if p["state"] in ("done", "ended", "upcoming"):
+        return []
+    out = [week_text(g, p["need"], p["baseline"])]
+    proj = _projection(p)
+    if proj:
+        out.append(proj[0].upper() + proj[1:])
+    w = p["week"]
+    if w and w["factor"] > 1 and w["want"] > w["done"]:
+        out.append(f"Plan {fmt(w['want'] - w['done'])} h to land {fmt(max(0.0, w['need'] - w['done']))} h: "
+                   f"you usually do {round(100 * w['follow'])}% of what you plan")
+    if p["state"] == "unreachable" and g["kind"] == "hours":
+        out.append(f"Only {fmt(p['available'])} h free before the end" + (" (estimated)" if p["available_estimate"] else ""))
+    return out
 
 
 def pace_all(ctx=None):

@@ -151,11 +151,20 @@ def split_dialog(week):
 # Goals page
 # ---------------------------------------------------------------------------
 
+BADGE = {"done": "green", "on_track": "green", "behind": "orange", "slipping": "orange", "unreachable": "red",
+         "ended": "gray", "upcoming": "gray"}
+
+
+def badge(state):
+    """The state as a small coloured badge with an icon (so it's never colour alone)."""
+    return f":{BADGE[state]}-badge[{ICONS[state]} {pace.STATES[state]}]"
+
+
 def pace_line(p):
-    """One goal's pace under its bar."""
-    tone = TONE.get(p["state"])
-    text = md(p["line"])
-    st.markdown(f"{ICONS[p['state']]} " + (f":{tone}[{text}]" if tone else f":gray[{text}]"))
+    """One goal's pace under its bar: a state badge, then the details in muted text."""
+    st.markdown(badge(p["state"]))
+    if p.get("details"):
+        st.caption("  \n".join(md(d) for d in p["details"]))
 
 
 def _confirm_box():
@@ -199,7 +208,7 @@ def budget_panel(ctx=None):
             g = w["goal"]
             gap = f" · :orange[{pace.fmt(w['short'])} h short]" if w["short"] >= pace.TOLERANCE else ""
             st.markdown(f"**{md(g['title'])}** {pace.fmt(w['covered'])}/{pace.fmt(w['want'])} h{gap}  \n"
-                        f":gray[{md(pace.debt_text(g, w['need'], w['baseline']))}]")
+                        f":gray[{md(pace.week_text(g, w['need'], w['baseline']))}]")
         row = st.container(horizontal=True, gap="small")
         if any(w["short"] >= pace.TOLERANCE for w in budget["goals"]):
             if row.button("Plan my goals", icon=":material/auto_awesome_motion:", key="goals_plan",
