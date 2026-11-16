@@ -89,10 +89,8 @@ def render(first, key):
             from venato.ui import goal_time
             st.markdown("**Goal pace**")
             for x in s["goals"]:
-                icon = goal_time.ICONS[x["state"]]
-                tone = goal_time.TONE.get(x["state"])
-                text = goal_time.md(x["text"])
-                st.markdown(f"{icon} " + (f":{tone}[{text}]" if tone else text))
+                st.markdown(f"{goal_time.badge(x['state'])} {goal_time.md(x['goal']['title'])}  \n"
+                            f":gray[{goal_time.md(x['text'].split(': ', 1)[1].rsplit(' · ', 1)[0])}]")
         if s["people"]:
             st.markdown("**People you saw**")
             for p in s["people"]:
