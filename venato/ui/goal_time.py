@@ -195,6 +195,81 @@ def _offer(goal_id, kind):
         st.toast(r.text)
 
 
+def _bar(w, accent, warn):
+    """One goal's week as a bar: done (solid), planned (light), the rest of what it wants (track),
+    and the part of the need carried over from earlier weeks (hatched). Text is never colour alone."""
+    g = w["goal"]
+    want, done, planned = w["want"], w["done"], w["planned_future"]
+    scale = max(want, done + planned, 0.01)
+    pct = lambda x: f"{100 * max(0.0, min(x, scale)) / scale:.2f}%"
+    carried = max(0.0, w["need"] - w["baseline"]) * w["factor"]
+    short = w["short"]
+    f = pace.fmt
+    label = (f"{g['title']}: {f(done)} h done and {f(planned)} h planned of {f(want)} h this week"
+             + (f", including {f(carried)} h carried over" if carried >= 0.05 else "")
+             + (f", {f(short)} h short" if short >= pace.TOLERANCE else ""))
+    hatch = (f'<i class="wb-carry" style="left:{pct(want - carried)};width:{pct(carried)}" '
+             f'title="{f(carried)} h carried over from earlier weeks"></i>') if carried >= 0.05 else ""
+    tick = f'<i class="wb-tick" style="left:{pct(want)}" title="Wants {f(want)} h"></i>' if done + planned > want else ""
+    note = [pace.week_text(g, w["need"], w["baseline"])]
+    if w["factor"] > 1 and want > done:
+        note.append(f"plans {f(want - done)} h to land {f(max(0.0, w['need'] - done))} h")
+    status = (f'<span class="wb-short">⚠ {f(short)} h short</span>' if short >= pace.TOLERANCE
+              else '<span class="wb-ok">✓ covered</span>')
+    return f"""<div class="wb-row" role="img" aria-label="{escape(label)}">
+      <div class="wb-top"><b>{escape(g['title'])}</b>
+        <span class="wb-num">{f(done + planned)} / {f(want)} h</span>{status}</div>
+      <div class="wb-track">
+        <i class="wb-done" style="width:{pct(done)}" title="{f(done)} h done"></i>
+        <i class="wb-plan" style="width:{pct(planned)}" title="{f(planned)} h planned"></i>
+        <i class="wb-rest" title="{f(max(0.0, want - done - planned))} h not planned yet"></i>
+        {hatch}{tick}
+      </div>
+      <div class="wb-note">{escape(' · '.join(note))}</div>
+    </div>"""
+
+
+def week_bars(rows):
+    """Every hours goal's week as a bar, with one legend (Done / Planned / Carried over)."""
+    from venato.ui import appearance
+    dark = appearance.is_dark()
+    accent = appearance.accent()
+    warn = "#FBBF24" if dark else "#B45309"
+    ok = "#4ADE80" if dark else "#146C2E"
+    bars = "".join(_bar(w, accent, warn) for w in rows)
+    return f"""<style>
+      .wb {{ display: grid; gap: 14px; margin: 2px 0 4px; }}
+      .wb-legend {{ display: flex; gap: 16px; font-size: 0.78rem; opacity: 0.8; flex-wrap: wrap; }}
+      .wb-legend span {{ display: inline-flex; align-items: center; gap: 6px; }}
+      .wb-key {{ width: 14px; height: 8px; border-radius: 4px; display: inline-block; }}
+      .wb-top {{ display: flex; align-items: baseline; gap: 10px; font-size: 0.92rem; margin-bottom: 5px; }}
+      .wb-num {{ margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }}
+      .wb-short {{ color: {warn}; font-size: 0.82rem; font-weight: 600; white-space: nowrap; }}
+      .wb-ok {{ color: {ok}; font-size: 0.82rem; font-weight: 600; white-space: nowrap; }}
+      .wb-track {{ position: relative; display: flex; gap: 2px; height: 10px; }}
+      .wb-track > i {{ display: block; height: 100%; border-radius: 4px; flex: none; }}
+      .wb-track > i[style*="width:0.00%"] {{ display: none; }}
+      .wb-done {{ background: {accent}; }}
+      .wb-plan {{ background: {accent}; opacity: 0.4; }}
+      .wb-rest {{ flex: 1 1 auto !important; background: rgba(128,128,128,0.18); }}
+      .wb-carry {{ position: absolute; top: 0; bottom: 0; border-radius: 4px; pointer-events: auto;
+                   background: repeating-linear-gradient(45deg, transparent 0 3px, rgba(128,128,128,0.55) 3px 4.5px); }}
+      .wb-tick {{ position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: currentColor; opacity: 0.7; }}
+      .wb-note {{ font-size: 0.8rem; opacity: 0.78; margin-top: 4px; }}
+      .wb-legend .wb-carry-key {{ background: repeating-linear-gradient(45deg, transparent 0 3px, rgba(128,128,128,0.7) 3px 4.5px);
+                                 border: 1px solid rgba(128,128,128,0.4); }}
+    </style>
+    <div class="wb">
+      <div class="wb-legend" aria-hidden="true">
+        <span><i class="wb-key" style="background:{accent}"></i>Done</span>
+        <span><i class="wb-key" style="background:{accent};opacity:0.4"></i>Planned</span>
+        <span><i class="wb-key" style="background:rgba(128,128,128,0.18)"></i>Not planned yet</span>
+        <span><i class="wb-key wb-carry-key"></i>Carried over from earlier weeks</span>
+      </div>
+      {bars}
+    </div>"""
+
+
 def budget_panel(ctx=None):
     """This week's budget for hours goals, with Plan my goals / Share hours."""
     ctx = ctx or _ctx()
@@ -204,11 +279,7 @@ def budget_panel(ctx=None):
     with st.container(border=True):
         st.subheader("This week's time", anchor=False)
         st.markdown((":orange[" if budget["over"] else "") + md(budget["text"]) + ("]" if budget["over"] else ""))
-        for w in budget["goals"]:
-            g = w["goal"]
-            gap = f" · :orange[{pace.fmt(w['short'])} h short]" if w["short"] >= pace.TOLERANCE else ""
-            st.markdown(f"**{md(g['title'])}** {pace.fmt(w['covered'])}/{pace.fmt(w['want'])} h{gap}  \n"
-                        f":gray[{md(pace.week_text(g, w['need'], w['baseline']))}]")
+        st.html(week_bars(budget["goals"]))
         row = st.container(horizontal=True, gap="small")
         if any(w["short"] >= pace.TOLERANCE for w in budget["goals"]):
             if row.button("Plan my goals", icon=":material/auto_awesome_motion:", key="goals_plan",
