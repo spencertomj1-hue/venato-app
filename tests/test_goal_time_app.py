@@ -147,3 +147,18 @@ def test_home_needs_you_lists_only_goals_that_need_something(store):
     assert "Behind" in html and "Done" in html                                     # one status line per goal
     assert at.button(key="home_plan_goals")
     assert behind["id"]
+
+
+def test_past_week_scorecard(store, monkeypatch):
+    from venato import pace
+    from venato.ui import goal_time
+    now = datetime(2026, 11, 18, 10, 0)                              # Wednesday; last week is over
+    g = store.add_goal("Study", "monthly", "2026-11-01", 30, "h", category_id="study")
+    store.paint("2026-11-10", "actual", store.slot_of("09:00"), store.slot_of("11:00"), {"label": "Study", "category_id": "study"})
+    store.mark_confirmed("2026-11-10")
+    w = [x for x in pace.week_goals("2026-11-09", pace.Ctx(now)) if x["goal"]["id"] == g["id"]][0]
+    assert w["over"] and w["done"] == 2
+    short = goal_time._score(w, all_confirmed=False)
+    assert "done 2 of" in short and "short so far" in short and "missed" not in short    # unconfirmed days: not "missed"
+    assert "✕ missed by" in goal_time._score(w, all_confirmed=True)
+    assert "✓ hit" in goal_time._score({**w, "need": 2}, all_confirmed=True)

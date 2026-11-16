@@ -166,16 +166,18 @@ def planner(first, ctx=None):
     ctx = ctx or _ctx()
     budget = pace.week_budget(first, ctx)
     first = budget["week_start"]
+    ended = first + timedelta(days=6) < ctx.today            # a past week: a scorecard, nothing to plan
+    confirmed, so_far = ctx.confirmed(first, first + timedelta(days=6))
     with st.container(border=True, key="tt_planner"):
-        st.markdown("**Plan this week**")
+        st.markdown("**How the week went**" if ended else "**Plan this week**")
         st.caption(f"Free hours for goals per day · {pace.fmt(budget['capacity'])} h in all")
         st.html(_free_bars(budget["days"]))
         rows = [w for w in budget["goals"]]
         if rows:
-            st.html(bar_style())
+            st.html(bar_style(legend=not all(w["over"] for w in rows)))   # (a past week: just "done of")
             for w in rows:
                 g = w["goal"]
-                st.html(_bar(w))
+                st.html(_score(w, confirmed == so_far) if w["over"] else _bar(w))
                 if w["short"] >= pace.TOLERANCE and not w["over"]:
                     if st.button(f"Fit {pace.fmt(pace.half_up(w['short']))} h", key=f"tt_fit_goal_{g['id']}",
                                  icon=":material/event_available:",
@@ -187,14 +189,14 @@ def planner(first, ctx=None):
                              help="Fill what each goal is short into free time, top goal first. You'll see it first."):
                     from venato.ui import timetable_tools
                     timetable_tools.open_plan_goals(first)
-            if budget["over"] and st.button("Share hours", icon=":material/balance:", key="tt_split_goals",
+            if budget["over"] and not ended and st.button("Share hours", icon=":material/balance:", key="tt_split_goals",
                                             width="stretch",
                                             help="Goals want more than the week's free time: choose who gets what"):
                 split_dialog(first)
-            confirmed, so_far = ctx.confirmed(first, first + timedelta(days=6))
-            if so_far:
-                st.caption(f"Done is counted from the {confirmed} of {so_far} day{'s' if so_far != 1 else ''} "
-                           "you've confirmed so far.")
+            if so_far and confirmed < so_far:
+                n = so_far - confirmed
+                st.caption(f":material/pending: {n} day{'s' if n != 1 else ''} not confirmed: confirm "
+                           f"{'them' if n != 1 else 'it'} to count {'their' if n != 1 else 'its'} hours.")
         all_day = [e for e in store.outlook_between(first.isoformat(), (first + timedelta(days=6)).isoformat())
                    if e["all_day"]]
         _away_boxes(first, all_day)
@@ -330,7 +332,35 @@ def _bar(w):
     </div>"""
 
 
-def bar_style():
+def _score(w, all_confirmed):
+    """A week that's over, for one goal: done of what it needed that week, as a bar and in words. "Missed"
+    only when every day is confirmed; otherwise it's short *on the confirmed days* (the rest may count yet)."""
+    g = w["goal"]
+    f = pace.fmt
+    done, need = w["done"], w["need"]
+    scale = max(need, done, 0.01)
+    pct = lambda x: f"{100 * max(0.0, min(x, scale)) / scale:.2f}%"
+    gap = need - done
+    if gap < pace.TOLERANCE:
+        status, words = '<span class="wb-ok">✓ hit</span>', "hit"
+    elif all_confirmed:
+        status, words = f'<span class="wb-short">✕ missed by {f(gap)} h</span>', f"missed by {f(gap)} h"
+    else:
+        status, words = (f'<span class="wb-short">⚠ {f(gap)} h short so far</span>',
+                         f"{f(gap)} h short on the days confirmed so far")
+    label = f"{g['title']}: {f(done)} h done of the {f(need)} h it needed that week, {words}"
+    return f"""<div class="wb-row" role="img" aria-label="{escape(label)}">
+      <div class="wb-top"><b>{escape(g['title'])}</b>
+        <span class="wb-num">done {f(done)} of {f(need)} h</span></div>
+      <div class="wb-track">
+        <i class="wb-done" style="width:{pct(done)}" title="{f(done)} h done"></i>
+        <i class="wb-rest" title="{f(max(0.0, need - done))} h not done"></i>
+      </div>
+      <div class="wb-note">{status}</div>
+    </div>"""
+
+
+def bar_style(legend=True):
     """The CSS for _bar (once per page) and the one legend: Done / Planned / Not planned yet / Carried over."""
     from venato.ui import appearance
     dark = appearance.is_dark()
@@ -360,12 +390,12 @@ def bar_style():
                                  border: 1px solid rgba(128,128,128,0.4); }}
       .wb-row {{ margin: 2px 0 2px; }}
     </style>
-      <div class="wb-legend" aria-hidden="true">
+      """ + ("" if not legend else f"""      <div class="wb-legend" aria-hidden="true">
         <span><i class="wb-key" style="background:{accent}"></i>Done</span>
         <span><i class="wb-key" style="background:{accent};opacity:0.4"></i>Planned</span>
         <span><i class="wb-key" style="background:rgba(128,128,128,0.18)"></i>Not planned yet</span>
         <span><i class="wb-key wb-carry-key"></i>Carried over</span>
-      </div>"""
+      </div>""")
 
 
 # Categorical colours for goals in the free-time bar (validated with the dataviz skill's checker: lightness band,
