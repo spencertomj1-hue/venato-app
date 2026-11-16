@@ -384,6 +384,7 @@ def set_week_start(name):
     with db() as conn:
         conn.execute(f"UPDATE todos SET period_start = date(period_start, '{shift}') WHERE period = 'weekly'")
         conn.execute(f"UPDATE todo_rollover SET period_start = date(period_start, '{shift}') WHERE period = 'weekly'")
+        conn.execute(f"UPDATE goal_week SET week_start = date(week_start, '{shift}')")
     save_settings(week_start=name)
 
 
@@ -1859,15 +1860,15 @@ def reorder_goals(ids):
 
 
 def goal_week_hours(week_start):
-    """{goal id: hours} the user chose for each goal in the week starting `week_start` (empty = automatic)."""
+    """{goal id: hours} the user chose for each goal in the week containing `week_start` (empty = automatic)."""
     with db() as conn:
         return {gid: h for gid, h in conn.execute("SELECT goal_id, hours FROM goal_week WHERE week_start = ?",
-                                                   (_as_date(week_start).isoformat(),))}
+                                                   (week_start_of(week_start).isoformat(),))}
 
 
 def set_goal_week_hours(week_start, split):
     """Save the week's split of hours between goals ({goal id: hours}); an empty split goes back to automatic."""
-    week = _as_date(week_start).isoformat()
+    week = week_start_of(week_start).isoformat()
     with db() as conn:
         conn.execute("DELETE FROM goal_week WHERE week_start = ?", (week,))
         conn.executemany("INSERT INTO goal_week VALUES (?, ?, ?)",
