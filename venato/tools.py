@@ -831,6 +831,8 @@ def _amount(goal, n=None):
 def describe_goal(g):
     when = store.period_title(g["period"], g["period_start"])
     how = f", counted from the habit {g['habit']}" if g["habit"] else ""
+    if g.get("category"):
+        how = f", counted from Actual hours of {g['label'] + ' (' + g['category'] + ')' if g.get('label') else g['category']}"
     return f"'{g['title']}' ({when}: {_amount(g)}{how})"
 
 
@@ -861,8 +863,17 @@ def _find_goal(goal, period=None, date=None):
     raise ToolError(f"There's no goal matching '{goal}' this month or year. Use list_goals to find it.")
 
 
-def add_goal(title, target, period="monthly", unit=None, habit=None, date=None):
-    """A measurable goal for the month or year containing `date` (default today)."""
+def _goal_category(category):
+    cid = store.resolve_category(category=str(category))
+    if cid is None:
+        names = ", ".join(store.load_categories()["name"])
+        raise ToolError(f"There's no category '{category}'. Categories: {names}.")
+    return cid
+
+
+def add_goal(title, target, period="monthly", unit=None, habit=None, date=None, category=None, label=None):
+    """A measurable goal for the month or year containing `date` (default today). With a category (and
+    optionally an activity label) it counts the timetable's Actual hours instead of a hand-kept number."""
     per = _period(period, store.GOAL_PERIODS)
     try:
         target = float(target)
@@ -876,7 +887,11 @@ def add_goal(title, target, period="monthly", unit=None, habit=None, date=None):
     day = _period_day(date)
     if any(g["title"].lower() == title.lower() for g in store.goals_in(per, day)):
         return Result(f"There's already a goal called '{title}' for {store.period_title(per, day)}.")
-    g = store.add_goal(title, per, day, target, unit, _habit_id(habit))
+    if habit and category:
+        raise ToolError("A goal counts either a habit's ticks or timetable hours, not both.")
+    cid = _goal_category(category) if category else None
+    g = store.add_goal(title, per, day, target, (unit or "h") if cid else unit, _habit_id(habit),
+                       category_id=cid, label=label if cid else None)
     return Result(f"Added the goal {describe_goal(g)}.", changed=True)
 
 
@@ -886,6 +901,9 @@ def log_goal_progress(goal, amount=1, period=None, date=None):
     if g["habit"]:
         raise ToolError(f"{describe_goal(g)} counts the habit {g['habit']} automatically. "
                         "Tick the habit instead (set_habit).")
+    if g["kind"] == "hours":
+        raise ToolError(f"{describe_goal(g)} counts timetable hours automatically. Add the time to the Actual "
+                        "track instead (add_block).")
     store.add_goal_progress(g["id"], float(amount))
     g = store.get_goal(g["id"])
     return Result(f"Updated {describe_goal(g)}.", changed=True)
@@ -894,16 +912,17 @@ def log_goal_progress(goal, amount=1, period=None, date=None):
 def set_goal_progress(goal, value, period=None, date=None):
     """Set a goal's progress to an exact number."""
     g = _find_goal(goal, period, date)
-    if g["habit"]:
-        raise ToolError(f"{describe_goal(g)} counts the habit {g['habit']} automatically; it can't be set by hand.")
+    if g["kind"] != "count":
+        raise ToolError(f"{describe_goal(g)} is counted automatically; it can't be set by hand.")
     old = g["value"]
     store.set_goal_progress(g["id"], float(value))
     g = store.get_goal(g["id"])
     return Result(f"Set {describe_goal(g)} (was {store._num(old)}).", changed=True)
 
 
-def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit=False, period=None, date=None):
-    """Change a goal's title, target, unit, or which habit (if any) it counts."""
+def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit=False, period=None, date=None,
+              category=None, label=None, unlink_category=False):
+    """Change a goal's title, target, unit, or what (a habit, timetable hours, or nothing) it counts."""
     g = _find_goal(goal, period, date)
     changes = {}
     if title:
@@ -918,8 +937,16 @@ def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit
         changes["habit_id"] = _habit_id(habit)
     elif unlink_habit:
         changes["habit_id"] = None
+    if habit and category:
+        raise ToolError("A goal counts either a habit's ticks or timetable hours, not both.")
+    if category:
+        changes["category_id"] = _goal_category(category)
+    elif unlink_category:
+        changes["category_id"] = None
+    if label is not None:
+        changes["label"] = label
     if not changes:
-        raise ToolError("Say what to change: title, target, unit, habit or unlink_habit.")
+        raise ToolError("Say what to change: title, target, unit, habit, category, label, unlink_habit or unlink_category.")
     store.update_goal(g["id"], **changes)
     return Result(f"Updated: {describe_goal(store.get_goal(g['id']))}.", changed=True)
 
@@ -943,6 +970,8 @@ def list_goals(period=None, date=None):
         for g in goals:
             pct = round(100 * min(g["value"] / g["target"], 1))
             how = f"; counts habit {g['habit']}" if g["habit"] else ""
+            if g.get("category"):
+                how = f"; counts Actual hours of {g['label'] + ' (' + g['category'] + ')' if g.get('label') else g['category']}"
             lines.append(f"- {g['title']}: {_amount(g)} ({pct}%) (id {g['id']}{how})")
     return Result("\n".join(lines))
 

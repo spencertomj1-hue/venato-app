@@ -17,7 +17,7 @@ from venato import undo
 PAGE = "Goals"                                  # sidebar label (also what "See all" switches to)
 NAMES = {"monthly": "Monthly", "yearly": "Yearly"}
 CURRENT = {"monthly": "This month", "yearly": "This year"}
-BY_HAND, BY_HABIT = "Update it myself", "Count a habit's ticks"
+BY_HAND, BY_HABIT, BY_HOURS = "Update it myself", "Count a habit's ticks", "Count timetable hours"
 
 
 def _num(x):
@@ -55,8 +55,10 @@ def _go_to_goals():
 # ---------------------------------------------------------------------------
 
 def _goal_form(key, goal=None):
-    """Title, target, unit and how progress is tracked. Returns the values, or None if the habit choice is missing."""
+    """Title, target, unit and how progress is tracked. Returns the values, or None if a habit choice is missing."""
     habits = dict(store.get_habits())                       # id -> name
+    cats = store.load_categories()
+    categories = dict(zip(cats["id"], cats["name"]))        # id -> name
     title = st.text_input("Goal", value=goal["title"] if goal else "", key=f"{key}_title",
                           placeholder="e.g. Gym")
     a, b = st.columns(2)
@@ -64,25 +66,37 @@ def _goal_form(key, goal=None):
                             key=f"{key}_target")
     unit = b.text_input("Unit (optional)", value=(goal["unit"] or "") if goal else "", key=f"{key}_unit",
                         placeholder="sessions, km, books…")
-    linked = bool(goal and goal["habit_id"] is not None)
-    how = st.radio("Progress", [BY_HAND, BY_HABIT], index=1 if linked else 0, key=f"{key}_how", horizontal=True,
-                   help="Count a habit's ticks: every day you tick that habit in the period adds 1.")
-    habit_id = None
+    mode = 2 if goal and goal.get("kind") == "hours" else 1 if goal and goal["habit_id"] is not None else 0
+    how = st.radio("Progress", [BY_HAND, BY_HABIT, BY_HOURS], index=mode, key=f"{key}_how", horizontal=True,
+                   help="Count a habit's ticks: every day you tick that habit in the period adds 1. "
+                        "Count timetable hours: the hours in your timetable's Actual track in a category "
+                        "(and, if you like, only one activity) add up by themselves.")
+    values = {"title": title.strip(), "target": target, "unit": unit.strip() or None, "habit_id": None,
+              "category_id": None, "label": None}
     if how == BY_HABIT:
         if not habits:
             st.caption("You have no habits yet. Add one on the Daily Log page, or update this goal yourself.")
             return None
         ids = list(habits)
-        habit_id = st.selectbox("Habit", ids, format_func=habits.get, key=f"{key}_habit",
-                                index=ids.index(goal["habit_id"]) if linked and goal["habit_id"] in ids else 0)
-    return {"title": title.strip(), "target": target, "unit": unit.strip() or None, "habit_id": habit_id}
+        values["habit_id"] = st.selectbox("Habit", ids, format_func=habits.get, key=f"{key}_habit",
+                                          index=ids.index(goal["habit_id"]) if mode == 1 and goal["habit_id"] in ids else 0)
+    elif how == BY_HOURS:
+        ids = list(categories)
+        c, d = st.columns(2)
+        values["category_id"] = c.selectbox("Category", ids, format_func=categories.get, key=f"{key}_cat",
+                                            index=ids.index(goal["category_id"]) if mode == 2 and goal["category_id"] in ids else 0)
+        values["label"] = d.text_input("Only this activity (optional)", value=(goal.get("label") or "") if mode == 2 else "",
+                                       key=f"{key}_label", placeholder="e.g. Guitar").strip() or None
+        values["unit"] = values["unit"] or "h"
+    return values
 
 
 def _new_goal(period, start):
     with st.popover("New goal", icon=":material/add:", width="stretch"):
         values = _goal_form(f"new_{period}")
         if st.button("Add goal", key=f"new_{period}_add", type="primary", disabled=not values or not values["title"]):
-            store.add_goal(values["title"], period, start, values["target"], values["unit"], values["habit_id"])
+            store.add_goal(values["title"], period, start, values["target"], values["unit"], values["habit_id"],
+                           category_id=values["category_id"], label=values["label"])
             for k in [k for k in st.session_state if k.startswith(f"new_{period}_")]:
                 del st.session_state[k]                      # an empty form next time
             st.rerun()
@@ -92,14 +106,14 @@ def _edit_goal(g):
     with st.popover("", icon=":material/more_horiz:", help="Edit or delete"):
         key = f"edit_{g['id']}"
         values = _goal_form(key, g)
-        if not g["habit"]:
+        if g["kind"] == "count":
             progress = st.number_input("Progress so far", min_value=0.0, step=1.0, value=float(g["progress"]), format="%g",
                                        key=f"{key}_progress")
         save, delete = st.columns(2)
         if save.button("Save", key=f"{key}_save", type="primary", width="stretch",
                        disabled=not values or not values["title"]):
             store.update_goal(g["id"], **values)
-            if not g["habit"] and values["habit_id"] is None:
+            if g["kind"] == "count" and values["habit_id"] is None and values["category_id"] is None:
                 store.set_goal_progress(g["id"], progress)
             st.rerun()
         if delete.button("Delete", key=f"{key}_delete", icon=":material/delete:", width="stretch"):
@@ -117,7 +131,7 @@ def _goal_row(g):
         text, minus, plus, more = st.columns([5, 1, 1, 1.4], vertical_alignment="center")
         pct = round(100 * fraction(g))
         text.markdown(f"**{escape(g['title'])}**  \n:gray[{escape(amount(g))} · {pct}%]")
-        if g["habit"]:
+        if g["kind"] != "count":
             minus.empty()
             plus.empty()
         else:
@@ -130,6 +144,9 @@ def _goal_row(g):
         st.html(f'<div class="hg-bar">{_fill(g)}</div>' + BAR_CSS.replace("ACCENT", _accent()))
         if g["habit"]:
             st.caption(f":material/sync: Counted from the habit **{escape(g['habit'])}**")
+        elif g["category"]:
+            what = f"{g['label']} ({g['category']})" if g.get("label") else g["category"]
+            st.caption(f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**")
 
 
 def _section(period, today):

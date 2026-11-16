@@ -278,6 +278,23 @@ def init_db():
         _add_column(conn, "tt_outlook", "description", "TEXT")
         _add_column(conn, "net_groups", "parent_id", "TEXT")
         _add_column(conn, "entries", "productivity", "INTEGER")    # 1-10, self-rated
+        # Goals that count timetable hours: Actual time in a category (and optionally one activity label).
+        _add_column(conn, "goals", "category_id", "TEXT REFERENCES tt_categories(id) ON DELETE SET NULL")
+        _add_column(conn, "goals", "label", "TEXT")
+        conn.executescript(
+            """
+            -- The hours the user chose to give each goal in a week, when goals compete for time
+            CREATE TABLE IF NOT EXISTS goal_week (
+                goal_id    TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+                week_start TEXT NOT NULL,                -- YYYY-MM-DD, the week's first day
+                hours      REAL NOT NULL,
+                PRIMARY KEY (goal_id, week_start)
+            );
+            -- All-day calendar events the user marked "I'm away" (that day has no free time).
+            -- Kept across syncs, like tt_outlook_hidden.
+            CREATE TABLE IF NOT EXISTS tt_outlook_away (uid TEXT PRIMARY KEY);
+            """
+        )
         _scores_out_of_ten(conn)
         if conn.execute("SELECT COUNT(*) FROM tt_categories").fetchone()[0] == 0:
             conn.executemany(
@@ -1632,7 +1649,7 @@ def save_todos(df, replace=False):
 # ---------------------------------------------------------------------------
 
 GOAL_PERIODS = ("monthly", "yearly")
-GOAL_COLS = "id, title, period, period_start, target, unit, progress, habit_id, ord, created_at"
+GOAL_COLS = "id, title, period, period_start, target, unit, progress, habit_id, ord, created_at, category_id, label"
 
 
 def _num(x):
@@ -1640,20 +1657,81 @@ def _num(x):
     return int(x) if float(x).is_integer() else float(x)
 
 
+def _goal_matches(goal, category_id, label, event=False):
+    """Does a block (or, with event=True, a calendar event's title) count towards an hours goal?
+    Same category, and if the goal names an activity label: that label (any case; for an event,
+    the label anywhere in its title)."""
+    if not goal.get("category_id") or category_id != goal["category_id"]:
+        return False
+    want = (goal.get("label") or "").strip().lower()
+    have = (label or "").strip().lower()
+    return not want or (want in have if event else have == want)
+
+
+def goal_hours(goal, first, last, track, data=None, window=None):
+    """
+    Hours of an hours goal's category (and label, if it has one) in one track between two days
+    (inclusive). The Plan also counts visible timed calendar events in that category, which serve
+    the goal; detached calendar events (blocks with ids "ol:...") are fixed time and never count.
+    Every goal calculation (value, pace, budget, forecast) goes through here.
+
+    data:   {"blocks": [...], "events": [...]} already read for a range covering first..last
+            (blocks_between / outlook_between rows), to save queries in loops.
+    window: window(day) -> (lo, hi): count only slots lo..hi-1 of that day (default: the whole day).
+    """
+    if not goal.get("category_id"):
+        return 0.0
+    first, last = _as_date(first).isoformat(), _as_date(last).isoformat()
+    if first > last:
+        return 0.0
+    if data is None:
+        data = {"blocks": blocks_between(first, last, track),
+                "events": outlook_between(first, last) if track == "plan" else []}
+
+    def slots(day, s, e):
+        lo, hi = window(day) if window else (0, SLOTS)
+        return max(0, min(e, hi, SLOTS) - max(s, lo, 0))
+
+    total = 0
+    for b in data["blocks"]:
+        if (b["track"] == track and first <= b["date"] <= last and not str(b["id"]).startswith("ol:")
+                and _goal_matches(goal, b["category_id"], b["label"])):
+            total += slots(b["date"], slot_of(b["start"]), slot_of(b["end"]))
+    events = [ev for ev in data.get("events") or []
+              if track == "plan" and not ev["all_day"] and ev["start"] and first <= ev["date"] <= last]
+    if events:
+        cat = outlook_category("")
+        for ev in events:
+            if _goal_matches(goal, cat, ev["title"], event=True):
+                total += slots(ev["date"], slot_of(ev["start"]), slot_of(ev["end"]))
+    return total / 2
+
+
 def _with_value(conn, row):
-    """A goal row plus `value` (its current progress) and `habit` (the linked habit's name, or None)."""
+    """
+    A goal row plus `value` (its current progress), `kind` ("hours", "habit" or "count"),
+    `habit` (the linked habit's name, or None) and `category` (the counted category's name, or None).
+    """
     g = dict(row)
     g["target"], g["progress"] = _num(g["target"]), _num(g["progress"])
-    g["habit"] = None
+    g["habit"] = g["category"] = None
     g["value"] = g["progress"]
+    g["kind"] = "count"
+    end = end_of_period(g["period"], g["period_start"]).isoformat()
     if g["habit_id"] is not None:
         name = conn.execute("SELECT name FROM habits WHERE id = ?", (g["habit_id"],)).fetchone()
-        end = end_of_period(g["period"], g["period_start"]).isoformat()
         g["habit"] = name[0] if name else None
+        g["kind"] = "habit"
         g["value"] = conn.execute(
             "SELECT COUNT(*) FROM habit_log WHERE habit_id = ? AND date BETWEEN ? AND ?",
             (g["habit_id"], g["period_start"], end),
         ).fetchone()[0]
+    elif g.get("category_id"):
+        name = conn.execute("SELECT name FROM tt_categories WHERE id = ?", (g["category_id"],)).fetchone()
+        if name:                                   # (a category that's gone: back to the hand-kept number)
+            g["category"] = name[0]
+            g["kind"] = "hours"
+            g["value"] = _num(goal_hours(g, g["period_start"], end, "actual"))
     return g
 
 
@@ -1665,6 +1743,18 @@ def goals_in(period, start):
         rows = conn.execute(f"SELECT {GOAL_COLS} FROM goals WHERE period = ? AND period_start = ? ORDER BY ord, created_at",
                             (period, start)).fetchall()
         return [_with_value(conn, r) for r in rows]
+
+
+def goals_overlapping(first, last):
+    """Every goal whose month or year overlaps first..last (dates), monthly before yearly, each in list order."""
+    first, last = _as_date(first), _as_date(last)
+    out = []
+    for period in GOAL_PERIODS:
+        start = start_of_period(period, first)
+        while start <= last:
+            out += goals_in(period, start)
+            start = shift_period(period, start, 1)
+    return out
 
 
 def get_goal(goal_id):
@@ -1681,8 +1771,17 @@ def _check_target(target):
     return target
 
 
-def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None):
-    """Add a goal to the month or year containing `day`; returns it."""
+def _check_tracking(conn, habit_id, category_id):
+    """A goal counts a habit's ticks or timetable hours, never both; the category must exist."""
+    if habit_id is not None and category_id:
+        raise ValueError("A goal counts either a habit's ticks or timetable hours, not both.")
+    if category_id and not conn.execute("SELECT 1 FROM tt_categories WHERE id = ?", (category_id,)).fetchone():
+        raise ValueError(f"There's no category {category_id}.")
+
+
+def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None, category_id=None, label=None):
+    """Add a goal to the month or year containing `day`; returns it. category_id (and optionally an
+    activity label) makes it count the Actual hours of that category instead of a hand-kept number."""
     title = str(title).strip()
     if not title:
         raise ValueError("A goal needs a title.")
@@ -1690,20 +1789,21 @@ def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None)
         raise ValueError(f"Goals are monthly or yearly, not {period}.")
     start = start_of_period(period, day).isoformat()
     goal_id = goal_id or uuid.uuid4().hex
+    label = (label or "").strip() or None if category_id else None
     with db() as conn:
+        _check_tracking(conn, habit_id, category_id)
         conn.execute(
             f"INSERT OR IGNORE INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, 0, ?, "
-            "(SELECT COALESCE(MAX(ord) + 1, 0) FROM goals WHERE period = ? AND period_start = ?), ?)",
+            "(SELECT COALESCE(MAX(ord) + 1, 0) FROM goals WHERE period = ? AND period_start = ?), ?, ?, ?)",
             (goal_id, title, period, start, _check_target(target), (unit or "").strip() or None, habit_id,
-             period, start, stamp()),
+             period, start, stamp(), category_id or None, label),
         )
     return get_goal(goal_id)
 
 
-
-
-def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP):
-    """Change a goal's title, target, unit or linked habit (habit_id=None unlinks it)."""
+def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP, category_id=KEEP, label=KEEP):
+    """Change a goal's title, target, unit, linked habit or counted category (None unlinks them).
+    Linking a habit unlinks the category and the other way round."""
     fields = {}
     if title is not KEEP:
         fields["title"] = str(title).strip()
@@ -1715,8 +1815,23 @@ def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP):
         fields["unit"] = (unit or "").strip() or None
     if habit_id is not KEEP:
         fields["habit_id"] = habit_id
+        if habit_id is not None and category_id is KEEP:
+            fields["category_id"] = fields["label"] = None
+    if category_id is not KEEP:
+        fields["category_id"] = category_id or None
+        if category_id:
+            if habit_id is KEEP:
+                fields["habit_id"] = None
+        else:
+            fields["label"] = None
+    if label is not KEEP and fields.get("category_id", True):
+        fields["label"] = (label or "").strip() or None
     if fields:
         with db() as conn:
+            if "habit_id" in fields or "category_id" in fields:
+                old = conn.execute("SELECT habit_id, category_id FROM goals WHERE id = ?", (goal_id,)).fetchone()
+                if old:
+                    _check_tracking(conn, fields.get("habit_id", old[0]), fields.get("category_id", old[1]))
             conn.execute(f"UPDATE goals SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
                          (*fields.values(), goal_id))
 
@@ -1743,11 +1858,50 @@ def reorder_goals(ids):
         conn.executemany("UPDATE goals SET ord = ? WHERE id = ?", [(i, gid) for i, gid in enumerate(ids)])
 
 
+def goal_week_hours(week_start):
+    """{goal id: hours} the user chose for each goal in the week starting `week_start` (empty = automatic)."""
+    with db() as conn:
+        return {gid: h for gid, h in conn.execute("SELECT goal_id, hours FROM goal_week WHERE week_start = ?",
+                                                   (_as_date(week_start).isoformat(),))}
+
+
+def set_goal_week_hours(week_start, split):
+    """Save the week's split of hours between goals ({goal id: hours}); an empty split goes back to automatic."""
+    week = _as_date(week_start).isoformat()
+    with db() as conn:
+        conn.execute("DELETE FROM goal_week WHERE week_start = ?", (week,))
+        conn.executemany("INSERT INTO goal_week VALUES (?, ?, ?)",
+                         [(gid, week, max(0.0, float(h))) for gid, h in split.items()])
+
+
+def away_uids():
+    """All-day calendar events the user marked "I'm away"."""
+    with db() as conn:
+        return {r[0] for r in conn.execute("SELECT uid FROM tt_outlook_away")}
+
+
+def set_away(uid, away):
+    """Mark an all-day calendar event as "I'm away" (that day has no free time for goals), or not."""
+    with db() as conn:
+        if away:
+            conn.execute("INSERT OR IGNORE INTO tt_outlook_away VALUES (?)", (uid,))
+        else:
+            conn.execute("DELETE FROM tt_outlook_away WHERE uid = ?", (uid,))
+
+
+def calendar_horizon():
+    """The last day calendar sync reaches (8 weeks ahead), or None with no calendar events at all."""
+    with db() as conn:
+        last = conn.execute("SELECT MAX(date) FROM tt_outlook").fetchone()[0]
+    return local_today() + timedelta(weeks=8) if last else None
+
+
 def load_goals():
     """Every goal, for export (the linked habit by name, so the CSV makes sense on its own)."""
     return _read(f"""SELECT g.id, g.title, g.period, g.period_start, g.target, g.unit, g.progress,
-                            h.name AS habit, g.ord, g.created_at
+                            h.name AS habit, c.name AS category, g.label, g.ord, g.created_at
                      FROM goals g LEFT JOIN habits h ON h.id = g.habit_id
+                     LEFT JOIN tt_categories c ON c.id = g.category_id
                      ORDER BY g.period_start, g.period, g.ord""")
 
 
@@ -1762,6 +1916,7 @@ def save_goals(df, replace=False):
         if replace:
             conn.execute("DELETE FROM goals")
         habits = {name.lower(): hid for hid, name in conn.execute("SELECT id, name FROM habits")}
+        cats = {name.lower(): cid for cid, name in conn.execute("SELECT id, name FROM tt_categories")}
         for row in df.to_dict("records"):
             title = _clean(row.get("title"), str)
             period = (_clean(row.get("period"), str) or "").strip().lower()
@@ -1771,13 +1926,17 @@ def save_goals(df, replace=False):
             day = _clean(row.get("period_start"), str)
             start = start_of_period(period, pd.to_datetime(day).date() if day else local_today()).isoformat()
             habit = _clean(row.get("habit"), str)
+            habit_id = habits.get(habit.strip().lower()) if habit else None
+            category = _clean(row.get("category"), str)
+            category_id = cats.get(category.strip().lower()) if category and habit_id is None else None
             ord_ = _clean(row.get("ord"), int)
             conn.execute(
-                f"INSERT OR REPLACE INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT OR REPLACE INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (_clean(row.get("id"), str) or uuid.uuid4().hex, title.strip(), period, start, target,
                  _clean(row.get("unit"), str), max(0.0, _clean(row.get("progress"), float) or 0.0),
-                 habits.get(habit.strip().lower()) if habit else None, count if ord_ is None else ord_,
-                 _clean(row.get("created_at"), str) or stamp()),
+                 habit_id, count if ord_ is None else ord_,
+                 _clean(row.get("created_at"), str) or stamp(), category_id,
+                 (_clean(row.get("label"), str) or None) if category_id else None),
             )
             count += 1
     return count
