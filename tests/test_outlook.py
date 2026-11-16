@@ -58,8 +58,8 @@ def test_rows_snap_clip_and_date_rule(outlook):
     rows = by_title(outlook.to_rows(outlook.parse(FIXTURE, TODAY)))
     assert rows["Tutorial"] == [("2026-10-29", "09:00", "10:00")]            # 09:10-09:50 snaps outwards
     assert rows["Early gym"] == [("2026-10-29", "07:00", "08:00")]      # 06:00 clipped to the grid
-    assert rows["Late lab"] == [("2026-10-30", "23:30", "01:00")]       # crosses midnight, ends 00:45 -> 01:00
-    assert rows["Night owl"] == [("2026-10-30", "00:00", "01:00")]      # starts 00:15 on the 31st -> the 30th
+    assert rows["Late lab"] == [("2026-10-30", "23:30", "00:45")]       # crosses midnight, ends 00:45
+    assert rows["Night owl"] == [("2026-10-30", "00:15", "00:45")]      # starts 00:15 on the 31st -> the 30th
     assert rows["US call"] == [("2026-10-29", "08:00", "09:00")]
 
 
@@ -124,8 +124,8 @@ def test_category_and_overlaps(outlook, store):
     assert store.outlook_category("Chemistry 101") == "classes"   # Outlook events use one category
     assert store.outlook_category("Night owl") == "classes"
     assert "Outlook" not in set(store.load_categories()["name"])   # no separate category
-    assert [r["title"] for r in store.outlook_overlaps("2026-10-29", 4, 5)] == ["Tutorial"]   # 09:00-09:30
-    assert store.outlook_overlaps("2026-10-29", 6, 8) == []
+    assert [r["title"] for r in store.outlook_overlaps("2026-10-29", 8, 10)] == ["Tutorial"]   # 09:00-09:30
+    assert store.outlook_overlaps("2026-10-29", 12, 16) == []                                    # 10:00-11:00
 
 
 def test_ago(outlook):

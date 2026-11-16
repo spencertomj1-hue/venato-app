@@ -1,10 +1,12 @@
 """
-Daily Log page (the day's log and habits) and Home's habits.
+Daily Log page: everything happens in the journal, a book with one page per day.
+The left page has the day's mood, energy and sleep, its training session(s) and its
+habits to tick; the right page is the journal itself. Under the book: "Jump to a day"
+(the month calendar) and "Manage habits". Home's habits are here too.
 
-Daily log: a month calendar (calendar_component.js/.css) showing each day's
-mood, sleep, energy, productivity and water; clicking a day shows its notes, and the form below
-saves the entry for the selected day.
-Habits: tick habits for a day, see streaks, add/remove habits.
+Journal: journal_component.js/.css draws the book; journal.py saves pages and turns
+"quoted" text into that day's to-dos and ^marked^ text into that week's.
+The month calendar (calendar_component.*) is folded away under "Jump to a day".
 """
 
 import hashlib
@@ -13,6 +15,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from venato import journal
 from venato import regional
 from venato import store
 from venato import undo
@@ -24,6 +27,13 @@ _calendar_component = st.components.v2.component(
     html='<div class="cal-root"></div>',
     css=(HERE / "components" / "calendar_component.css").read_text(encoding="utf-8"),
     js=(HERE / "components" / "calendar_component.js").read_text(encoding="utf-8"),
+)
+
+_journal_component = st.components.v2.component(
+    "journal",
+    html='<div class="jn-root"></div>',
+    css=(HERE / "components" / "journal_component.css").read_text(encoding="utf-8"),
+    js=(HERE / "components" / "journal_component.js").read_text(encoding="utf-8"),
 )
 
 
@@ -52,21 +62,30 @@ def prompt_for(day):
     return PROMPTS[day.toordinal() % len(PROMPTS)]
 
 
+def _short(d):
+    return f"{d:%a} {d.day} {d:%b}"
+
+
 # ---------------------------------------------------------------------------
-# Daily log
+# Calendar and journal callbacks
 # ---------------------------------------------------------------------------
+
+def _go_to(day):
+    st.session_state["log_day"] = day
+    st.session_state["log_month"] = day.replace(day=1)
+
 
 def _on_select():
     picked = (st.session_state["log_calendar"]["select"] or {}).get("date")
     if picked:
         st.session_state["log_day"] = date.fromisoformat(picked)
+        st.session_state["journal_open"] = True
 
 
 def _on_month():
     nav = st.session_state["log_calendar"]["nav"] or {}
     if nav.get("dir") == 0:
-        st.session_state["log_day"] = store.local_today()
-        st.session_state["log_month"] = store.local_today().replace(day=1)
+        _go_to(store.local_today())
         return
     month = st.session_state["log_month"]
     # First day of the previous / next month.
@@ -74,81 +93,111 @@ def _on_month():
     st.session_state["log_month"] = shifted.replace(day=1)
 
 
+def _on_journal_open():
+    st.session_state["journal_open"] = bool((st.session_state["journal"]["open"] or {}).get("open"))
+    st.session_state.pop("journal_notice", None)
+
+
+def _on_journal_save():
+    value = st.session_state["journal"]["save"] or {}
+    day = value.get("date")
+    if not day or day > store.local_today().isoformat():
+        return
+    added = journal.save(day, value.get("text", ""), make_todos=bool(value.get("final")))
+    if added:
+        names = {"daily": "that day's", "weekly": "that week's"}
+        st.session_state["journal_notice"] = "Added to to-dos: " + "; ".join(
+            f"{title} ({names[period]})" for period, title in added)
+
+
+def _on_journal_log():
+    value = st.session_state["journal"]["log"] or {}
+    if value.get("field") in store.ENTRY_FIELDS and value.get("date", "9") <= store.local_today().isoformat():
+        store.set_entry_field(value["date"], value["field"], value.get("value"))
+
+
+def _on_journal_track():
+    value = st.session_state["journal"]["track"] or {}
+    if store.find_day_tracker(value.get("id")) and value.get("date", "9") <= store.local_today().isoformat():
+        store.set_day_value(value["date"], value["id"], value.get("value"))
+
+
+def _on_journal_habit():
+    value = st.session_state["journal"]["habit"] or {}
+    if value.get("id") is not None and value.get("date", "9") <= store.local_today().isoformat():
+        with store.db() as conn:
+            store.set_habit_done(conn, int(value["id"]), value["date"], bool(value.get("done")))
+
+
+def _on_journal_session():
+    value = st.session_state["journal"]["session"] or {}
+    if value.get("id"):
+        store.update_session(value["id"], done=bool(value.get("done")))
+
+
+def _on_journal_nav():
+    day = (st.session_state["journal"]["nav"] or {}).get("date")
+    if day:
+        _go_to(min(date.fromisoformat(day), store.local_today()))
+        st.session_state.pop("journal_notice", None)
+
+
 PAGE = "Daily Log"      # sidebar label (also what Home's habits "Manage" switches to)
+
+
+def _journal(selected, today):
+    d = selected.isoformat()
+    entry = store.get_entry(d)
+    logged = store.day_values(d)
+    habits = [{"id": hid, "name": name, "done": d in store.get_habit_dates(hid)} for hid, name in store.get_habits()]
+    plan = store.active_plan()
+    sessions = [{"id": s["id"], "title": s["title"], "km": f"{s['distance_km']:g}" if s["distance_km"] else None,
+                 "done": s["done"]} for s in (store.plan_sessions(plan["id"]) if plan else []) if s["date"] == d]
+    _journal_component(
+        data={
+            "open": st.session_state.get("journal_open", False),
+            "date": selected.isoformat(), "today": today.isoformat(),
+            "title": f"{selected:%A} {selected.day} {selected:%B %Y}",
+            "prevTitle": _short(selected - timedelta(days=1)),
+            "text": entry.get("notes") or "", "notice": st.session_state.get("journal_notice"),
+            "mood": entry.get("mood"), "energy": entry.get("energy"), "sleep": entry.get("sleep"),
+            "trackers": [{**t, "value": logged.get(t["id"])} for t in store.day_trackers()],
+            "habits": habits, "sessions": sessions,
+        },
+        key="journal", on_open_change=_on_journal_open, on_save_change=_on_journal_save,
+        on_nav_change=_on_journal_nav, on_log_change=_on_journal_log, on_habit_change=_on_journal_habit,
+        on_session_change=_on_journal_session, on_track_change=_on_journal_track,
+    )
 
 
 def page_daily_log():
     st.header("Daily Log", anchor=False)
     today = store.local_today()
-    selected = st.session_state.setdefault("log_day", today)
+    selected = min(st.session_state.setdefault("log_day", today), today)
     month = st.session_state.setdefault("log_month", today.replace(day=1))
 
-    # --- Month calendar (6 weeks from the Monday on/before the 1st) ---
-    first = store.week_start_of(month)
-    entries = store.entries_between(first.isoformat(), (first + timedelta(days=41)).isoformat())
-    _calendar_component(
-        data={
-            "month": f"{month:%Y-%m}",
-            "today": today.isoformat(),
-            "selected": selected.isoformat(),
-            "weekStart": regional.week_start(), "weekdays": regional.weekday_names(), "waterUnit": regional.water_short(),
-            "days": {e["date"]: {k: e.get(k) for k in ("mood", "sleep", "energy", "productivity", "notes")}
-                     | {"water": regional.water_out(e["water"])}
-                     for e in entries.to_dict("records")},
-        },
-        key="log_calendar", on_select_change=_on_select, on_nav_change=_on_month,
-    )
+    _journal(selected, today)
 
-    # --- The selected day ---
-    d = selected.isoformat()
-    entry = store.get_entry(d)
-    with st.container(border=True):
-        st.subheader(nice_date(selected), anchor=False)
-        if entry:
-            a, b, c, p, w = st.columns(5)
-            a.metric("Mood", f"{entry['mood']}/10" if entry.get("mood") else "–")
-            b.metric("Sleep", f"{entry['sleep']:g} h" if entry.get("sleep") is not None else "–")
-            c.metric("Energy", f"{entry['energy']}/10" if entry.get("energy") else "–")
-            p.metric("Productivity", f"{entry['productivity']}/10" if entry.get("productivity") else "–")
-            w.metric("Water", regional.water_text(entry.get("water")))
-            st.markdown(entry["notes"].replace("\n", "  \n") if entry.get("notes") else "*No journal entry.*")
-        else:
-            st.caption("Nothing logged for this day yet.")
-
-    _habits_for(selected, today)
-
-    # --- Save an entry for the selected day ---
-    if selected > today:
-        st.info("You can't log a day that hasn't happened yet. Pick today or an earlier day.")
-        return
-    st.subheader("Save entry", anchor=False)
-    # Widget keys include the date, so the form reloads when you pick another day, and a hash of the
-    # saved entry, so it shows what Claude just wrote instead of a stale draft.
-    v = f"{d}_{hashlib.sha1(repr(sorted(entry.items())).encode('utf-8')).hexdigest()[:8]}"
-    with st.form(f"entry_form_{v}"):
-        mood = st.slider("Mood", 1, 10, int(entry.get("mood") or 5), key=f"mood_{v}")
-        sleep = st.number_input(
-            "Sleep (hours)", 0.0, 24.0, float(entry.get("sleep") or 7.0), step=0.5, key=f"sleep_{v}"
+    # --- Month calendar (6 weeks from the week's first day on/before the 1st), to jump to a day ---
+    with st.expander("Jump to a day", icon=":material/calendar_month:"):
+        first = store.week_start_of(month)
+        entries = store.entries_between(first.isoformat(), (first + timedelta(days=41)).isoformat())
+        _calendar_component(
+            data={
+                "month": f"{month:%Y-%m}",
+                "today": today.isoformat(),
+                "selected": selected.isoformat(),
+                "weekStart": regional.week_start(), "weekdays": regional.weekday_names(),
+                "waterUnit": regional.water_short(),
+                "days": {e["date"]: {k: e.get(k) for k in ("mood", "sleep", "energy", "productivity", "notes")}
+                         | {"water": regional.water_out(e.get("water"))}
+                         for e in entries.to_dict("records")},
+            },
+            key="log_calendar", on_select_change=_on_select, on_nav_change=_on_month,
         )
-        energy = st.slider("Energy", 1, 10, int(entry.get("energy") or 5), key=f"energy_{v}")
-        productivity = st.slider("Productivity", 1, 10, int(entry.get("productivity") or 5), key=f"prod_{v}",
-                                 help="How productive did the day feel?")
-        litres = regional.water_unit() == "litres"
-        water = st.number_input(f"Water ({regional.water_unit()})", 0.0, 15.0 if litres else 500.0,
-                                regional.water_out(entry.get("water")),
-                                step=0.25 if litres else 4.0, format="%.2f" if litres else "%.0f",
-                                placeholder="e.g. 2", key=f"water_{v}_{regional.water_unit()}", help="Leave empty if you didn't track it.")
-        notes = st.text_area("Journal", entry.get("notes") or "", height=260, key=f"notes_{v}",
-                             placeholder=prompt_for(selected), help="The day's notes: write as much as you like.")
-        if st.form_submit_button(f"Save {nice_date(selected)}", type="primary"):
-            with store.db() as conn:
-                if entry:
-                    undo.checkpoint(f"Updated the log for {nice_date(selected)}")
-                store.save_entry(conn, d, mood, sleep, energy, notes.strip() or None, regional.water_in(water), productivity)
-            st.toast(f"Saved {nice_date(selected)}.")
-            st.rerun()   # refresh the calendar
-    if entry:
-        st.caption("An entry already exists for this day — saving will update it.")
+
+    _manage_habits()
+    _manage_trackers()
 
     _past_entries()
 
@@ -215,7 +264,8 @@ def render_home_habits():
         _, current, per_week = store.habit_progress(habit_id, done, today)
         key = f"home_habit_{habit_id}_{d}"
         tick, week, streak = st.columns([5, 3, 2], vertical_alignment="center")
-        tick.checkbox(name, value=d in done, key=key, on_change=_toggle_habit, args=(habit_id, d, key))
+        st.session_state[key] = d in done          # always what's saved (it may have been ticked in the journal)
+        tick.checkbox(name, key=key, on_change=_toggle_habit, args=(habit_id, d, key))
         cells = "".join(
             f'<i class="{"on" if x.isoformat() in done else ""}{" today" if x == today else ""}" '
             f'title="{x:%a} {x.day} {x:%b}"></i>' for x in days)
@@ -231,22 +281,42 @@ def render_home_habits():
 OFTEN = ["Every day"] + [f"{n} time{'s' * (n > 1)} a week" for n in range(1, 8)]
 
 
-def _habits_for(day, today):
-    """The selected day's habits to tick (not for future days), with streaks, and adding/removing habits."""
-    st.subheader("Habits", anchor=False)
-    d = day.isoformat()
-    habits = store.get_habits()
-    if not habits:
-        st.caption("No habits yet. Add one below.")
-    for habit_id, name in habits:
-        done_dates = store.get_habit_dates(habit_id)
-        progress, _, _ = store.habit_progress(habit_id, done_dates, min(day, today))
-        key = f"habit_{habit_id}_{d}"
-        left, right = st.columns([3, 2])
-        left.checkbox(name, value=d in done_dates, key=key, disabled=day > today,
-                      on_change=_toggle_habit, args=(habit_id, d, key))
-        right.caption(progress)
+def _manage_trackers():
+    """The user's own day trackers: numbers to log each day on the journal's left page."""
+    trackers = store.day_trackers()
+    with st.expander("Manage trackers"):
+        st.caption("Numbers you want to log each day, e.g. *Reading · hours · 0.5* or *Coffee · cups · 1*. "
+                   "They appear on the journal's left page and in Stats.")
+        with st.form("add_tracker", clear_on_submit=True):
+            a, b, c, go = st.columns([3, 2, 1, 1], vertical_alignment="bottom")
+            name = a.text_input("New tracker")
+            unit = b.text_input("Unit", placeholder="e.g. hours, times")
+            step = c.number_input("Step", 0.25, 100.0, 1.0, 0.25, help="How much + and − change it by")
+            if go.form_submit_button("Add") and name.strip():
+                try:
+                    store.add_day_tracker(name, unit, step)
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
+        for t in trackers:
+            a, b, c, x = st.columns([3, 2, 1, 1], vertical_alignment="bottom")
+            name = a.text_input("Name", t["name"], key=f"trk_name_{t['id']}")
+            unit = b.text_input("Unit", t["unit"], key=f"trk_unit_{t['id']}")
+            step = c.number_input("Step", 0.25, 100.0, float(t["step"]), 0.25, key=f"trk_step_{t['id']}")
+            if (name, unit, step) != (t["name"], t["unit"], float(t["step"])):
+                try:
+                    store.update_day_tracker(t["id"], name=name, unit=unit, step=step)
+                except ValueError as e:
+                    st.error(str(e))
+            if x.button("Remove", key=f"trk_del_{t['id']}", help="Also deletes what's been logged for it"):
+                undo.checkpoint(f"Removed the tracker '{t['name']}' and its history")
+                store.delete_day_tracker(t["id"])
+                st.rerun()
 
+
+def _manage_habits():
+    """Add, rename and remove habits (ticking them is on the journal's left page and on Home)."""
+    habits = store.get_habits()
     with st.expander("Manage habits"):
         with st.form("add_habit", clear_on_submit=True):
             a, b, c = st.columns([3, 2, 1], vertical_alignment="bottom")
@@ -268,6 +338,18 @@ def _habits_for(day, today):
 
         if habits:
             names = {name: habit_id for habit_id, name in habits}
+            with st.form("rename_habit", clear_on_submit=True):
+                a, b = st.columns(2)
+                old = a.selectbox("Rename a habit", list(names))
+                new = b.text_input("New name")
+                if st.form_submit_button("Rename") and new.strip():
+                    try:
+                        store.rename_habit(names[old], new)
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(str(e))
+            st.caption("Renaming keeps its history and streaks.")
+
             to_remove = st.selectbox("Remove a habit", list(names))
             st.caption("Removing a habit also deletes its history (you can undo it straight after).")
             if st.button("Remove habit"):

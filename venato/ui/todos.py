@@ -38,7 +38,11 @@ def apply_op(op):
     if kind == "add":
         t = op["goal"]
         if t["title"].strip():
-            store.add_todo(t["title"], t["period"], t["period_start"], todo_id=t["id"])   # idempotent per id
+            # Added while Home is filtered to a category: it goes in that category.
+            group = st.session_state.get("home_td_filter")
+            details = {"group_id": group} if group and group != "all" else {}
+            store.add_todo(t["title"], t["period"], t["period_start"], todo_id=t["id"],   # idempotent per id
+                           repeat=t["period"] in store.REPEAT_BY_DEFAULT, **details)
     elif kind == "toggle":
         store.set_todo_done(op["id"], op["done"])
     elif kind == "edit":
@@ -70,15 +74,28 @@ def _on_ops():
 
 
 def render_home():
-    """Today's, this week's and this month's to-dos, side by side (stacked when narrow)."""
+    """
+    Today's and this week's to-dos, side by side (stacked when narrow), with the user's to-do
+    categories as filters above, "Add" (the To-dos page's pop-up) and "See all".
+    """
+    from venato.ui import todo_page
     store.roll_todos()
     today = store.local_today()
+    groups = {g["id"]: g for g in store.todo_groups()}
+    with st.container(horizontal=True, vertical_alignment="center"):
+        st.markdown("**To-dos**", width="stretch")
+        add = st.button("Add", key="home_td_add", icon=":material/add:", type="tertiary",
+                        help="New to-do with a date, category and how long it takes")
+        st.button("See all", key="home_td_all", type="tertiary", on_click=todo_page.go_to_page)
+    chosen = todo_page.filter_pills(groups, "home_td_filter")     # its own row, so the pills can wrap
+    if add:
+        todo_page.add_dialog(chosen)
     sections = []
-    for period in store.TODO_PERIODS:
+    for period in store.HOME_TODO_PERIODS:
         start = store.start_of_period(period, today)
+        todos = [t for t in store.todos_for(period, start) if chosen is None or t["group_id"] == chosen]
         sections.append({"period": period, "start": start.isoformat(),
                          "title": store.period_title(period, start, today),
-                         "goals": store.todos_for(period, start), "limit": HOME_LIMIT})
-    st.markdown("**To-dos**")                 # same style as Home's Habits and Goals headings
+                         "goals": todos, "limit": HOME_LIMIT})
     data = {"today": today.isoformat(), "sections": sections, "acked": st.session_state.get("todo_acked", [])}
     _todos_component(data=data, key="home_todos", on_ops_change=_on_ops)

@@ -137,7 +137,7 @@ EX_COLS = ("id", "name", "kind", "muscle", "notes")
 
 
 def _seed(conn):
-    if conn.execute("SELECT COUNT(*) FROM wk_exercises").fetchone()[0] == 0:
+    if store.use_presets() and conn.execute("SELECT COUNT(*) FROM wk_exercises").fetchone()[0] == 0:
         conn.executemany("INSERT INTO wk_exercises (id, name, kind, muscle, created_at) VALUES (?, ?, ?, ?, ?)",
                          [(_id(), n, k, m, store.stamp()) for n, k, m in STARTER])
 

@@ -9,8 +9,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+import keyring
+from keyring.errors import KeyringError
+
 IS_MAC = sys.platform == "darwin"
 IS_WINDOWS = sys.platform == "win32"
+
+OLD_NAME = "Arete"                # the app's first name (ARETE_ environment variables still work)
+OLD_NAMES = ("Veneto", "Arete")   # earlier names, newest first: data and saved keys come across from them
+SECRET_SERVICE = "Venato"
+SECRET_ACCOUNTS = ("anthropic-api-key", "partner-ics-url", "outlook-ics-url", "strava-app", "strava-tokens")
 
 
 def default_data_dir(name="Venato"):
@@ -22,9 +30,6 @@ def default_data_dir(name="Venato"):
     return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / name
 
 
-OLD_NAME = "Arete"            # the app's name before it became Venato
-
-
 def env(name, default=None):
     """An environment variable VENATO_<name>, or the older ARETE_<name> (from before the rename)."""
     return os.environ.get(f"VENATO_{name}") or os.environ.get(f"{OLD_NAME.upper()}_{name}") or default
@@ -32,19 +37,50 @@ def env(name, default=None):
 
 def data_dir():
     """The data folder: $VENATO_DATA_DIR, else the standard place. The first time Venato runs on a
-    computer that had Arete, the old data folder is copied across (the old one is left as it was,
-    as a backup)."""
+    computer that had it under an earlier name (Veneto, Arete), that data folder is copied across
+    (the old one is left as it was, as a backup)."""
     chosen = env("DATA_DIR")
     if chosen:
         return Path(chosen)
-    new, old = default_data_dir(), default_data_dir(OLD_NAME)
-    if not new.exists() and old.is_dir():
-        import shutil
-        try:
-            shutil.copytree(old, new)
-        except OSError:
-            return old                    # couldn't copy: keep using the old folder rather than lose anything
+    new = default_data_dir()
+    if not new.exists():
+        old = next((d for d in map(default_data_dir, OLD_NAMES) if d.is_dir()), None)
+        if old:
+            import shutil
+            try:
+                shutil.copytree(old, new)
+            except OSError:
+                return old                # couldn't copy: keep using the old folder rather than lose anything
     return new
+
+
+def _move_old_secrets():
+    """Copy saved keys and links from the earlier names to Venato's (never over one already there).
+    The old copies stay, so an older version of the app still finds them."""
+    for old in OLD_NAMES:
+        for account in SECRET_ACCOUNTS:
+            try:
+                secret = keyring.get_password(old, account)
+                if not secret:
+                    continue
+                if not keyring.get_password(SECRET_SERVICE, account):
+                    keyring.set_password(SECRET_SERVICE, account, secret)
+            except KeyringError:
+                pass
+
+
+_migrated = False
+
+
+def migrate_from_old_name():
+    """Bring an install from an earlier name across: its saved keys and links, and (through
+    data_dir) its data folder. Once per run; not for tests or the demo (VENATO_DATA_DIR set)."""
+    global _migrated
+    if _migrated or env("DATA_DIR"):
+        return
+    _migrated = True
+    _move_old_secrets()
+    data_dir()
 
 
 def open_folder(path):

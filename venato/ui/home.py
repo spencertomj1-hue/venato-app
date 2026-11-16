@@ -30,7 +30,7 @@ def _agenda():
     blocks.sort(key=lambda b: store.slot_of(b["start"]))
     colours = dict(zip(*[store.load_categories()[c] for c in ("id", "colour")]))
     now = store.local_now()
-    now_slot = store.slot_of(f"{now:%H}:{now.minute // 30 * 30:02d}")
+    now_slot = store.slot_of(f"{now:%H}:{now.minute // store.SLOT_MIN * store.SLOT_MIN:02d}")
 
     rows = []
     for b in blocks:
@@ -77,7 +77,7 @@ def page_home():
     else:
         right = None
         columns = list(st.columns(2, gap="large"))
-    if store.ai_enabled():
+    if store.ai_enabled() and store.load_settings().get("home_ask", True):   # Settings › Assistant
         with columns[0]:
             chat.render(inline=True)
     for i, widget in enumerate(widgets):

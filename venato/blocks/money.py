@@ -114,6 +114,8 @@ C_COLS = ("id", "name", "kind", "budget", "ord")
 def _seed(conn):
     if conn.execute("SELECT COUNT(*) FROM mn_categories").fetchone()[0]:
         return
+    if not store.use_presets():                 # nothing preset: the user makes their own
+        return
     rows = [(_id(), n, "spend", None, i) for i, n in enumerate(SPEND)] + \
            [(_id(), n, "income", None, 100 + i) for i, n in enumerate(INCOME)]
     conn.executemany("INSERT INTO mn_categories VALUES (?, ?, ?, ?, ?)", rows)

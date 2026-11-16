@@ -10,6 +10,7 @@ too. Nothing user-specific is kept in the project folder.
 
 import json
 import os
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -27,14 +28,15 @@ DB_PATH = Path(system.env("DB") or DATA_DIR / "life.db")
 # Habits appear as extra columns in the History table and CSV, named "habit: <name>".
 HABIT_PREFIX = "habit: "
 
-# Timetable: half-hour slots from day_start to day_end (default 07:00 to 01:00 the next day,
-# 36 slots). Set in Settings -> Region; _apply_day_hours() keeps SLOTS and FIRST_MIN in step.
+# Timetable: quarter-hour slots from day_start to day_end (default 07:00 to 01:00 the next day,
+# 72 slots). Set in Settings -> Region; _apply_day_hours() keeps SLOTS and FIRST_MIN in step.
+SLOT_MIN = 15
 DAY_START, DAY_END = 7, 1           # defaults (hours); an end at or before the start is the next morning
-SLOTS = 36
+SLOTS = 18 * 60 // SLOT_MIN
 FIRST_MIN = 7 * 60
 TRACKS = ("plan", "actual")
 
-# The categories a new install starts with: generic, and editable by asking Claude.
+# The categories a new install starts with: generic, and editable under the timetable or by asking Claude.
 # (id, name, colour, text colour, group) in key order.
 DEFAULT_CATEGORIES = [
     ("sleep", "Sleep", "#D0D0D0", None, "Life"),
@@ -133,7 +135,7 @@ def init_db():
                 id          TEXT PRIMARY KEY,
                 date        TEXT NOT NULL,     -- day the row belongs to (after-midnight slots too)
                 track       TEXT NOT NULL CHECK (track IN ('plan', 'actual')),
-                start       TEXT NOT NULL,     -- "HH:mm", 30-min aligned
+                start       TEXT NOT NULL,     -- "HH:mm", on a quarter hour
                 "end"       TEXT NOT NULL,     -- "HH:mm", exclusive; may be "01:00"
                 label       TEXT NOT NULL,
                 category_id TEXT,
@@ -183,6 +185,53 @@ def init_db():
             -- The last period each kind of repeating to-do was copied into (see roll_todos).
             CREATE TABLE IF NOT EXISTS todo_rollover (period TEXT PRIMARY KEY, period_start TEXT NOT NULL);
 
+            -- Start Working: one row per unit of work (an email sent, a networking contact, a public post),
+            -- counted towards the level it was done in.
+            CREATE TABLE IF NOT EXISTS work_log (
+                id    TEXT PRIMARY KEY,
+                track TEXT NOT NULL,                     -- a bar's key (the user's own: settings work_bars)
+                level INTEGER NOT NULL,
+                at    TEXT NOT NULL
+            );
+            -- Start Working's session list: what the user said needs doing today, in order. Each
+            -- item can be linked to a to-do and/or a bar; ticking it ticks those too.
+            CREATE TABLE IF NOT EXISTS work_session (
+                id      TEXT PRIMARY KEY,
+                day     TEXT NOT NULL,
+                ord     INTEGER NOT NULL,
+                title   TEXT NOT NULL,
+                done    INTEGER NOT NULL DEFAULT 0,
+                todo_id TEXT,                            -- a to-do it ticks off
+                track   TEXT,                            -- a bar it adds to
+                amount  INTEGER NOT NULL DEFAULT 1       -- how many it adds (e.g. "send 5 emails")
+            );
+            -- Start Working's plan: every task gets a decision (me / delegate / drop), to force delegation.
+            CREATE TABLE IF NOT EXISTS work_plan (
+                id       TEXT PRIMARY KEY,
+                title    TEXT NOT NULL,
+                decision TEXT,                           -- NULL (not decided yet), 'me', 'delegate' or 'drop'
+                who      TEXT,                           -- who it's delegated to
+                done     INTEGER NOT NULL DEFAULT 0,
+                created  TEXT NOT NULL,
+                decided  TEXT
+            );
+            -- The Start Working pot: +5 for each level completed, minus what's spent.
+            CREATE TABLE IF NOT EXISTS work_wallet (
+                id     TEXT PRIMARY KEY,
+                at     TEXT NOT NULL,
+                amount REAL NOT NULL,                    -- positive = earned, negative = spent
+                kind   TEXT NOT NULL,                    -- 'earned', or the key of the pot it was spent on
+                note   TEXT
+            );
+
+            -- The user's own to-do categories (e.g. "At home repairs"), separate from the timetable's.
+            CREATE TABLE IF NOT EXISTS todo_groups (
+                id     TEXT PRIMARY KEY,
+                name   TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                colour TEXT NOT NULL,
+                ord    INTEGER NOT NULL DEFAULT 0
+            );
+
             -- Goals: measurable targets for a month or a year, e.g. "Gym 12 sessions"
             CREATE TABLE IF NOT EXISTS goals (
                 id           TEXT PRIMARY KEY,
@@ -220,6 +269,96 @@ def init_db():
                 PRIMARY KEY (a, b),
                 CHECK (a < b)
             );
+
+            -- Training: a plan (e.g. 8 weeks to a half marathon) and its sessions
+            CREATE TABLE IF NOT EXISTS training_plans (
+                id         TEXT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                race_date  TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS training_sessions (
+                id          TEXT PRIMARY KEY,
+                plan_id     TEXT NOT NULL REFERENCES training_plans(id) ON DELETE CASCADE,
+                week        INTEGER NOT NULL,
+                date        TEXT NOT NULL,
+                kind        TEXT NOT NULL,      -- easy, long, tempo, intervals, race_pace, strength, shakeout, race
+                title       TEXT NOT NULL,
+                distance_km REAL,               -- planned; NULL for strength
+                details     TEXT,
+                done        INTEGER NOT NULL DEFAULT 0,
+                actual_km   REAL,               -- what was really run (NULL = as planned)
+                notes       TEXT,
+                done_at     TEXT,
+                ord         INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS training_sessions_day ON training_sessions (date);
+
+            -- Joint calendar (joint.py): busy times from the user's and their partner's calendars.
+            -- Fully replaced per person on every refresh. Titles only for events marked "!".
+            CREATE TABLE IF NOT EXISTS joint_events (
+                who       TEXT NOT NULL CHECK (who IN ('me', 'partner')),
+                uid       TEXT NOT NULL,
+                date      TEXT NOT NULL,
+                start_min INTEGER,            -- minutes after midnight; NULL if all-day
+                end_min   INTEGER,            -- exclusive, up to 1440
+                title     TEXT,               -- NULL = just blocked-out time
+                all_day   INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (who, uid)
+            );
+            CREATE INDEX IF NOT EXISTS joint_events_day ON joint_events (date);
+
+            -- Gym log: sessions and their exercises (weight, sets, reps)
+            CREATE TABLE IF NOT EXISTS gym_sessions (
+                id         TEXT PRIMARY KEY,
+                date       TEXT NOT NULL,
+                title      TEXT NOT NULL,
+                notes      TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS gym_exercises (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL REFERENCES gym_sessions(id) ON DELETE CASCADE,
+                ord        INTEGER NOT NULL DEFAULT 0,
+                exercise   TEXT NOT NULL,
+                sets       INTEGER,
+                reps       INTEGER,
+                weight_kg  REAL
+            );
+            CREATE INDEX IF NOT EXISTS gym_sessions_day ON gym_sessions (date);
+
+            -- Strava activities (strava.py), read only
+            CREATE TABLE IF NOT EXISTS strava_activities (
+                id          TEXT PRIMARY KEY,
+                date        TEXT NOT NULL,
+                start       TEXT,
+                name        TEXT,
+                sport       TEXT,              -- Strava's sport_type, e.g. Run, TrailRun, Ride
+                distance_km REAL,
+                moving_min  REAL,
+                elevation_m REAL,
+                avg_hr      REAL,
+                session_id  TEXT               -- the training session it ticked off, if any
+            );
+            CREATE INDEX IF NOT EXISTS strava_day ON strava_activities (date);
+
+            -- To-dos the journal made from "quoted" / ^marked^ text, so re-saving never adds them twice
+            CREATE TABLE IF NOT EXISTS journal_todos (
+                date   TEXT NOT NULL,          -- the journal page
+                period TEXT NOT NULL,          -- daily / weekly
+                title  TEXT NOT NULL COLLATE NOCASE,
+                PRIMARY KEY (date, period, title)
+            );
+
+            -- Day trackers: the user's own numbers for each day (their list is in settings.json)
+            CREATE TABLE IF NOT EXISTS day_values (
+                date    TEXT NOT NULL,
+                tracker TEXT NOT NULL,         -- the tracker's id
+                value   REAL NOT NULL,
+                PRIMARY KEY (date, tracker)
+            );
+
             -- Times the user saw or spoke to someone ("had coffee, talked about X")
             CREATE TABLE IF NOT EXISTS net_interactions (
                 id         TEXT PRIMARY KEY,
@@ -270,23 +409,47 @@ def init_db():
         conn.executescript(blocks.schema_sql())
         for migrate in blocks.migrations():
             migrate(conn)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS category_rules (
+                id          INTEGER PRIMARY KEY,
+                word        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                category_id TEXT NOT NULL
+            )""")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS event_status (
+                id   TEXT PRIMARY KEY,      -- a block's id, or "ol:<uid>" for an Outlook event
+                done INTEGER NOT NULL       -- 1 = done (green), 0 = not done (black)
+            )""")
         # Columns added after the first release.
         _add_column(conn, "tt_entries", "details", "TEXT")
         _add_column(conn, "entries", "water", "REAL")
         _add_column(conn, "habits", "per_week", "INTEGER")          # NULL = every day; else N times a week
         _journal_became_notes(conn)
         _add_column(conn, "tt_outlook", "description", "TEXT")
+        _add_column(conn, "tt_outlook", "teams", "INTEGER NOT NULL DEFAULT 0")
         _add_column(conn, "net_groups", "parent_id", "TEXT")
+        _add_column(conn, "goals", "kind", "TEXT NOT NULL DEFAULT 'target'")   # 'target' (a number) or 'simple' (done / not yet)
+        _add_column(conn, "goals", "done_at", "TEXT")
+        _add_column(conn, "training_sessions", "block_id", "TEXT")             # its block on the timetable, if any
+        # 1 = the user took it off the timetable (deleted its block), so it isn't put back automatically
+        _add_column(conn, "training_sessions", "off_timetable", "INTEGER NOT NULL DEFAULT 0")
+        _add_column(conn, "todos", "off_timetable", "INTEGER NOT NULL DEFAULT 0")
+        _add_column(conn, "todos", "due", "TEXT")              # done by this day (NULL: the end of its list's period)
+        _add_column(conn, "todos", "place", "TEXT")            # 'home', 'laptop' or NULL (anywhere)
+        _add_column(conn, "todos", "category_id", "TEXT")      # timetable category (NULL: the To-dos one)
+        _add_column(conn, "todos", "minutes", "INTEGER")       # how long it should take (NULL: 30)
+        _add_column(conn, "todos", "group_id", "TEXT")
+        _add_column(conn, "goals", "category", "TEXT")         # a goal category's name (colours in settings)         # the user's to-do category (todo_groups), NULL: none                          # when a simple goal was achieved
         _add_column(conn, "entries", "productivity", "INTEGER")    # 1-10, self-rated
         _scores_out_of_ten(conn)
-        if conn.execute("SELECT COUNT(*) FROM tt_categories").fetchone()[0] == 0:
+        if use_presets() and conn.execute("SELECT COUNT(*) FROM tt_categories").fetchone()[0] == 0:
             conn.executemany(
                 "INSERT INTO tt_categories VALUES (?, ?, ?, ?, ?, ?)",
                 [(cid, name, col, txt, grp, i) for i, (cid, name, col, txt, grp) in enumerate(DEFAULT_CATEGORIES)],
             )
-        if conn.execute("SELECT COUNT(*) FROM tt_label_map").fetchone()[0] == 0:
+        if use_presets() and conn.execute("SELECT COUNT(*) FROM tt_label_map").fetchone()[0] == 0:
             conn.executemany("INSERT INTO tt_label_map VALUES (?, ?)", DEFAULT_LABEL_MAP.items())
-        if conn.execute("SELECT COUNT(*) FROM net_groups").fetchone()[0] == 0:
+        if use_presets() and conn.execute("SELECT COUNT(*) FROM net_groups").fetchone()[0] == 0:
             conn.executemany("INSERT INTO net_groups (id, name, colour, ord) VALUES (?, ?, ?, ?)",
                              [(gid, name, colour, i) for i, (gid, name, colour) in enumerate(DEFAULT_NET_GROUPS)])
 
@@ -295,6 +458,15 @@ def init_db():
 # ---------------------------------------------------------------------------
 # Settings (settings.json in the data folder)
 # ---------------------------------------------------------------------------
+
+def use_presets():
+    """
+    Whether a new install starts with example lists: timetable categories, activity defaults,
+    network groups, and the blocks' starter lists. Off: everything starts empty and is the user's
+    own. settings.json "presets": true (or $VENATO_PRESETS=1, as the tests use) turns them on.
+    """
+    return system.env("PRESETS") == "1" or bool(load_settings().get("presets"))
+
 
 def settings_path():
     return DATA_DIR / "settings.json"
@@ -412,7 +584,7 @@ def day_length(start, end):
 def _apply_day_hours():
     global SLOTS, FIRST_MIN
     start, end = day_hours()
-    FIRST_MIN, SLOTS = start * 60, 2 * day_length(start, end)
+    FIRST_MIN, SLOTS = start * 60, 60 // SLOT_MIN * day_length(start, end)
 
 
 def _goals_became_todos(conn):
@@ -488,6 +660,98 @@ def save_entry(conn, day, mood, sleep, energy, notes, water=KEEP, productivity=K
         f"ON CONFLICT(date) DO UPDATE SET {', '.join(f'{c} = excluded.{c}' for c in cols)}",
         (day, *cols.values()),
     )
+
+
+ENTRY_FIELDS = {"mood": (1, 10), "energy": (1, 10), "sleep": (0, 24)}
+DECIMAL_FIELDS = ("sleep",)
+
+
+def set_entry_field(day, field, value):
+    """Set one ENTRY_FIELDS value for a day, keeping the rest of its entry (and its journal page)."""
+    lo, hi = ENTRY_FIELDS[field]
+    value = None if value is None else max(lo, min(hi, float(value) if field in DECIMAL_FIELDS else int(value)))
+    with db() as conn:
+        conn.execute(f"INSERT INTO entries (date, {field}) VALUES (?, ?) "
+                     f"ON CONFLICT(date) DO UPDATE SET {field} = excluded.{field}", (str(day), value))
+
+
+# ---------------------------------------------------------------------------
+# Day trackers: numbers the user chose to log each day (e.g. "Reading, hours, 0.5" or
+# "Coffee, cups, 1"). Their list is in settings.json ("day_trackers": [{id, name, unit, step}]),
+# so nothing about them is in the code; the values are in day_values.
+# ---------------------------------------------------------------------------
+
+def day_trackers():
+    return [dict(t) for t in load_settings().get("day_trackers", [])]
+
+
+def find_day_tracker(ref):
+    """A tracker by id or name (any case), or None."""
+    ref = str(ref or "").strip().lower()
+    return next((t for t in day_trackers() if t["id"] == ref or t["name"].lower() == ref), None)
+
+
+def add_day_tracker(name, unit="", step=1):
+    """Add a tracker; returns it. Raises ValueError for a missing or taken name, or a bad step."""
+    name, unit = str(name or "").strip(), str(unit or "").strip()
+    if not name:
+        raise ValueError("A tracker needs a name.")
+    if find_day_tracker(name):
+        raise ValueError(f"There's already a tracker called '{name}'.")
+    step = float(step or 1)
+    if step <= 0:
+        raise ValueError("The step must be more than 0.")
+    tracker = {"id": uuid.uuid4().hex[:10], "name": name, "unit": unit, "step": step}
+    save_settings(day_trackers=day_trackers() + [tracker])
+    return tracker
+
+
+def update_day_tracker(tracker_id, **changes):
+    trackers = day_trackers()
+    for t in trackers:
+        if t["id"] == tracker_id:
+            if "name" in changes:
+                name = str(changes["name"] or "").strip()
+                if not name:
+                    raise ValueError("A tracker needs a name.")
+                if any(o["id"] != tracker_id and o["name"].lower() == name.lower() for o in trackers):
+                    raise ValueError(f"There's already a tracker called '{name}'.")
+                t["name"] = name
+            if "unit" in changes:
+                t["unit"] = str(changes["unit"] or "").strip()
+            if "step" in changes and float(changes["step"] or 0) > 0:
+                t["step"] = float(changes["step"])
+    save_settings(day_trackers=trackers)
+
+
+def delete_day_tracker(tracker_id):
+    """Remove a tracker and everything logged for it."""
+    save_settings(day_trackers=[t for t in day_trackers() if t["id"] != tracker_id])
+    with db() as conn:
+        conn.execute("DELETE FROM day_values WHERE tracker = ?", (tracker_id,))
+
+
+def set_day_value(day, tracker_id, value):
+    """Set a tracker's number for a day (0 or more); None clears it."""
+    with db() as conn:
+        if value is None:
+            conn.execute("DELETE FROM day_values WHERE date = ? AND tracker = ?", (str(day), tracker_id))
+        else:
+            conn.execute("INSERT OR REPLACE INTO day_values VALUES (?, ?, ?)",
+                         (str(day), tracker_id, max(0.0, min(float(value), 100000.0))))
+
+
+def day_values(day):
+    """{tracker id: value} logged for a day."""
+    with db() as conn:
+        return dict(conn.execute("SELECT tracker, value FROM day_values WHERE date = ?", (str(day),)).fetchall())
+
+
+def day_values_between(first, last):
+    """[(date, tracker id, value)] between two ISO dates (inclusive), oldest first."""
+    with db() as conn:
+        return conn.execute("SELECT date, tracker, value FROM day_values WHERE date BETWEEN ? AND ? ORDER BY date",
+                            (str(first), str(last))).fetchall()
 
 
 def entries_between(first, last):
@@ -969,6 +1233,120 @@ def save_category(cid, name, colour, grp, text_colour=None):
                          (cid, name, colour.upper(), text_colour, grp, order))
 
 
+def category_usage(category_id):
+    """(timetable blocks, activity defaults) that use a category."""
+    with db() as conn:
+        blocks = conn.execute("SELECT COUNT(*) FROM tt_entries WHERE category_id = ?", (category_id,)).fetchone()[0]
+        labels = conn.execute("SELECT COUNT(*) FROM tt_label_map WHERE category_id = ?", (category_id,)).fetchone()[0]
+    return blocks, labels
+
+
+def merge_categories(source_id, target_id):
+    """
+    Fold one category into another: its blocks and activity defaults move to the
+    target (and Outlook events, if they used it), then it leaves the key.
+    """
+    if source_id == target_id:
+        raise ValueError("A category can't be merged into itself.")
+    with db() as conn:
+        conn.execute("UPDATE tt_entries SET category_id = ? WHERE category_id = ?", (target_id, source_id))
+        conn.execute("UPDATE tt_label_map SET category_id = ? WHERE category_id = ?", (target_id, source_id))
+        conn.execute("UPDATE category_rules SET category_id = ? WHERE category_id = ?", (target_id, source_id))
+        conn.execute("DELETE FROM tt_categories WHERE id = ?", (source_id,))
+    settings = load_settings()
+    if settings.get("outlook_category") == source_id:
+        save_settings(outlook_category=target_id)
+    # Remembered so a built-in category (Teams, To-dos) doesn't come back after being deleted.
+    replaced = {k: target_id if v == source_id else v for k, v in settings.get("replaced_categories", {}).items()}
+    replaced.pop(target_id, None)
+    save_settings(replaced_categories={**replaced, source_id: target_id})
+
+
+def category_by_name(name, create=False):
+    """A category's id by name (any case); with create, a new one (in the next colour) if there's none."""
+    name = str(name or "").strip()
+    cats = load_categories()
+    for cid, n in zip(cats["id"], cats["name"]):
+        if n.lower() == name.lower():
+            return cid
+    if not create or not name:
+        return None
+    return add_category(name, GOAL_CATEGORY_COLOURS[len(cats) % len(GOAL_CATEGORY_COLOURS)])
+
+
+def add_category(name, colour, grp=None):
+    """Create a category; returns its id. Raises ValueError if the name is blank or taken."""
+    name = name.strip()
+    cats = load_categories()
+    if not name:
+        raise ValueError("Give the category a name.")
+    if name.lower() in {n.lower() for n in cats["name"]}:
+        raise ValueError(f"There's already a category called '{name}'.")
+    base = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "category"
+    cid, n = base, 2
+    while cid in set(cats["id"]):
+        cid, n = f"{base}_{n}", n + 1
+    save_category(cid, name, colour, grp or (groups() or ["Categories"])[0])
+    return cid
+
+
+def _builtin_category(spec):
+    """A category the app relies on: made when first needed, or what replaced it if the user deleted it."""
+    cid, name, colour, grp = spec
+    ids = get_category_ids()
+    if cid in ids:
+        return cid
+    replacement = load_settings().get("replaced_categories", {}).get(cid)
+    if replacement in ids:
+        return replacement
+    existing = groups()
+    save_category(cid, name, colour, grp if grp in existing or not existing else existing[-1])
+    return cid
+
+
+def load_rules():
+    """Keyword rules as [{id, word, category_id}], longest word first so the most specific wins."""
+    with db() as conn:
+        rows = conn.execute("SELECT id, word, category_id FROM category_rules ORDER BY LENGTH(word) DESC, word").fetchall()
+    return [dict(zip(("id", "word", "category_id"), r)) for r in rows]
+
+
+def _has_word(text, word):
+    """Whole words, any case: 'run' matches 'Morning run' but not 'brunch'. (mapLabel in the grid mirrors this.)"""
+    return re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text or "", re.IGNORECASE) is not None
+
+
+def rule_category(text):
+    """The category the rules give an event called `text`, or None."""
+    return next((r["category_id"] for r in load_rules() if _has_word(text, r["word"])), None)
+
+
+def add_rule(word, category_id, apply_existing=False):
+    """
+    Events containing `word` go in this category (a rule for the same word is replaced).
+    With apply_existing, events already on the timetable follow it too. Returns how many changed.
+    """
+    word = word.strip()
+    if not word:
+        raise ValueError("Type the word to look for.")
+    with db() as conn:
+        conn.execute("INSERT INTO category_rules (word, category_id) VALUES (?, ?) "
+                     "ON CONFLICT(word) DO UPDATE SET category_id = excluded.category_id", (word, category_id))
+    if not apply_existing:
+        return 0
+    with db() as conn:
+        rows = conn.execute("SELECT id, label FROM tt_entries WHERE category_id != ?", (category_id,)).fetchall()
+    ids = [(category_id, bid) for bid, label in rows if rule_category(label) == category_id]
+    with db() as conn:
+        conn.executemany("UPDATE tt_entries SET category_id = ? WHERE id = ?", ids)
+    return len(ids)
+
+
+def delete_rule(rule_id):
+    with db() as conn:
+        conn.execute("DELETE FROM category_rules WHERE id = ?", (rule_id,))
+
+
 def set_label_default(label, category_id):
     """Make an activity label default to a category."""
     with db() as conn:
@@ -985,7 +1363,7 @@ def remove_label_default(label):
 def resolve_category(label=None, category=None):
     """
     Pick a category id. `category` may be an id or a name (any case); otherwise
-    the label is looked up in the label map, then against category names.
+    the label goes through the keyword rules, the label map, then category names.
     Returns None when nothing matches.
     """
     cats = load_categories()
@@ -996,6 +1374,9 @@ def resolve_category(label=None, category=None):
             return key
         return by_name.get(key.lower())
     if label:
+        rule = rule_category(label)
+        if rule:
+            return rule
         lm = load_label_map()
         for lbl, cid in zip(lm["label"], lm["category_id"]):
             if lbl.lower() == label.strip().lower():
@@ -1014,7 +1395,7 @@ def resolve_category(label=None, category=None):
 
 def slot_time(i):
     """Slot index (0..SLOTS) -> "HH:mm". Slot SLOTS is the end of the last slot (01:00 by default)."""
-    m = (FIRST_MIN + 30 * i) % 1440
+    m = (FIRST_MIN + SLOT_MIN * i) % 1440
     return f"{m // 60:02d}:{m % 60:02d}"
 
 
@@ -1024,7 +1405,7 @@ def slot_of(t):
     mins = h * 60 + m
     if mins < FIRST_MIN:
         mins += 1440
-    return round((mins - FIRST_MIN) / 30)
+    return round((mins - FIRST_MIN) / SLOT_MIN)
 
 
 def plan_paint(existing, day, track, s, e, block, new_id=None):
@@ -1201,10 +1582,12 @@ def replace_outlook(rows):
     with db() as conn:
         conn.execute("DELETE FROM tt_outlook")
         conn.executemany(
-            'INSERT OR REPLACE INTO tt_outlook (uid, date, start, "end", title, location, all_day, exact, description) '
-            "VALUES (:uid, :date, :start, :end, :title, :location, :all_day, :exact, :description)",
-            [{"description": None, **r} for r in rows],
+            'INSERT OR REPLACE INTO tt_outlook (uid, date, start, "end", title, location, all_day, exact, description, teams) '
+            "VALUES (:uid, :date, :start, :end, :title, :location, :all_day, :exact, :description, :teams)",
+            [{"description": None, "teams": 0, **r} for r in rows],
         )
+    if any(r.get("teams") for r in rows):
+        teams_category()          # made here, so it already exists when an event is shown or edited
 
 
 def outlook_between(first, last):
@@ -1214,7 +1597,7 @@ def outlook_between(first, last):
     return sorted(rows, key=lambda r: (r["date"], r["all_day"] == 0, slot_of(r["start"]) if r["start"] else -1))
 
 
-OUTLOOK_COLS = 'uid, date, start, "end", title, location, all_day, exact, description'
+OUTLOOK_COLS = 'uid, date, start, "end", title, location, all_day, exact, description, teams'
 
 
 def _visible_outlook(conn, day, s=0, e=None):
@@ -1237,7 +1620,7 @@ def outlook_details(row):
 def _as_block(row):
     """An Outlook event in the shape of one of the user's blocks (as it would be once detached)."""
     return {"id": f"ol:{row['uid']}", "date": row["date"], "track": "plan", "start": row["start"],
-            "end": row["end"], "label": row["title"], "category_id": outlook_category(row["title"]),
+            "end": row["end"], "label": row["title"], "category_id": outlook_category(row["title"], row.get("teams")),
             "details": outlook_details(row)}
 
 
@@ -1288,11 +1671,26 @@ def outlook_signature():
         ).fetchone()
 
 
-def outlook_category(title):
+# Microsoft Teams meetings from Outlook get their own colour.
+TEAMS_CATEGORY = ("teams", "Teams meeting", "#FFD60A", "Work")
+
+
+def teams_category():
+    """The Teams-meeting category, created (yellow, under Work) the first time it's needed."""
+    return _builtin_category(TEAMS_CATEGORY)
+
+
+def outlook_category(title, teams=False):
     """
-    Category for Outlook events: settings.json "outlook_category" (set by asking Claude),
-    else the default, else the first category. (The title is kept for future rules.)
+    Category for Outlook events: a keyword rule, the Teams category for Teams meetings, then
+    settings.json "outlook_category" (set by asking Claude),
+    else the default, else the first category.
     """
+    rule = rule_category(title)
+    if rule:
+        return rule
+    if teams:
+        return teams_category()
     wanted = load_settings().get("outlook_category") or DEFAULT_OUTLOOK_CATEGORY
     ids = list(load_categories()["id"])
     return wanted if wanted in ids else (ids[0] if ids else wanted)
@@ -1339,7 +1737,14 @@ def outlook_overlaps(day, s, e):
 # ---------------------------------------------------------------------------
 
 TODO_PERIODS = ("daily", "weekly", "monthly")
+# New to-dos in these lists repeat unless told otherwise: a weekly to-do comes back,
+# unticked, every Monday (right-click → Repeat turns it off for one).
+REPEAT_BY_DEFAULT = ("weekly",)
 TODO_COLS = 'id, title, notes, period, period_start, done, done_at, "repeat", ord, created_at'
+TODO_DETAILS = "due, place, category_id, minutes, group_id, off_timetable"   # set on the To-dos page
+TODO_SELECT = f"{TODO_COLS}, {TODO_DETAILS}"
+TODO_PLACES = ("home", "laptop")
+TODO_MINUTES = 30                      # how long a to-do takes when the user didn't say
 
 
 def _as_date(day):
@@ -1388,7 +1793,16 @@ def end_of_period(period, start):
 def _todo(row):
     g = dict(row)
     g["done"], g["repeat"] = bool(g["done"]), bool(g["repeat"])
+    if "off_timetable" in g:
+        g["in_diary"] = not g.pop("off_timetable")
     return g
+
+
+def todo_due(todo):
+    """The day a to-do should be done by: its own date, else the last day of its list's period."""
+    if todo.get("due"):
+        return date.fromisoformat(todo["due"])
+    return end_of_period(todo["period"], date.fromisoformat(todo["period_start"]))
 
 
 def _short(d, year=False):
@@ -1424,7 +1838,7 @@ def todos_for(period, start):
     with db() as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            f"SELECT {TODO_COLS} FROM todos WHERE period = ? AND period_start = ? ORDER BY ord, created_at",
+            f"SELECT {TODO_SELECT} FROM todos WHERE period = ? AND period_start = ? ORDER BY ord, created_at",
             (period, start),
         ).fetchall()
     return [_todo(r) for r in rows]
@@ -1433,7 +1847,7 @@ def todos_for(period, start):
 def get_todo(todo_id):
     with db() as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute(f"SELECT {TODO_COLS} FROM todos WHERE id = ?", (todo_id,)).fetchone()
+        row = conn.execute(f"SELECT {TODO_SELECT} FROM todos WHERE id = ?", (todo_id,)).fetchone()
     return _todo(row) if row else None
 
 
@@ -1453,20 +1867,98 @@ def _insert_todo(conn, title, period, start, notes=None, repeat=False, todo_id=N
     return todo_id
 
 
-def add_todo(title, period, day, notes=None, repeat=False, todo_id=None):
-    """Add a to-do to the period containing `day`; returns it."""
+def add_todo(title, period, day, notes=None, repeat=False, todo_id=None, **details):
+    """Add a to-do to the period containing `day` (details: due, place, category_id, minutes, in_diary); returns it."""
     title = str(title).strip()
     if not title:
         raise ValueError("A todo needs a title.")
     start = start_of_period(period, day).isoformat()
     with db() as conn:
         todo_id = _insert_todo(conn, title, period, start, notes or None, repeat, todo_id)
+    if details:
+        update_todo(todo_id, **details)
     return get_todo(todo_id)
 
 
-def set_todo_done(todo_id, done):
-    """Tick or untick a to-do (done_at records when it was ticked)."""
+def list_for_due(due, today=None):
+    """The list a to-do due on `due` belongs in: today's if it's due today or earlier, else this week's."""
+    today = today or local_today()
+    return "daily" if due is not None and _as_date(due) <= today else "weekly"
+
+
+def add_detailed_todo(title, due=None, group_id=None, minutes=None, in_diary=True, notes=None):
+    """A to-do from the To-dos page: it goes in today's or this week's list, by when it's due."""
+    today = local_today()
+    return add_todo(title, list_for_due(due, today), today, notes=notes, due=due, group_id=group_id,
+                    minutes=minutes, in_diary=in_diary)
+
+
+TODO_GROUP_COLOURS = ("#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#F87171", "#2DD4BF", "#FB923C")
+
+
+def todo_groups():
+    """The user's to-do categories in order: [{id, name, colour}]."""
     with db() as conn:
+        rows = conn.execute("SELECT id, name, colour FROM todo_groups ORDER BY ord, name").fetchall()
+    return [{"id": r[0], "name": r[1], "colour": r[2]} for r in rows]
+
+
+def add_todo_group(name, colour=None):
+    """Add a to-do category (or return the one already called that); returns it."""
+    name = str(name).strip()
+    if not name:
+        raise ValueError("A category needs a name.")
+    with db() as conn:
+        row = conn.execute("SELECT id FROM todo_groups WHERE name = ?", (name,)).fetchone()
+        if row:
+            group_id = row[0]
+        else:
+            count = conn.execute("SELECT COUNT(*) FROM todo_groups").fetchone()[0]
+            group_id = uuid.uuid4().hex[:8]
+            conn.execute("INSERT INTO todo_groups VALUES (?, ?, ?, ?)",
+                         (group_id, name, colour or TODO_GROUP_COLOURS[count % len(TODO_GROUP_COLOURS)], count))
+    return next(g for g in todo_groups() if g["id"] == group_id)
+
+
+def update_todo_group(group_id, name=None, colour=None):
+    with db() as conn:
+        if name is not None and str(name).strip():
+            conn.execute("UPDATE todo_groups SET name = ? WHERE id = ?", (str(name).strip(), group_id))
+        if colour:
+            conn.execute("UPDATE todo_groups SET colour = ? WHERE id = ?", (colour, group_id))
+
+
+def delete_todo_group(group_id):
+    """Delete a to-do category; its to-dos stay, with no category."""
+    with db() as conn:
+        conn.execute("UPDATE todos SET group_id = NULL WHERE group_id = ?", (group_id,))
+        conn.execute("DELETE FROM todo_groups WHERE id = ?", (group_id,))
+
+
+def all_open_todos(today=None):
+    """Every unticked to-do in today's and this week's lists, most urgent first (by due day, then list order)."""
+    today = today or local_today()
+    bring_forward_todos(today)
+    todos = todos_for("daily", today) + todos_for("weekly", today)
+    return sorted((t for t in todos if not t["done"]), key=lambda t: (todo_due(t), t["period"], t["ord"]))
+
+
+def done_todos(today=None):
+    """Ticked to-dos from today's and this week's lists, most recently ticked first."""
+    today = today or local_today()
+    todos = todos_for("daily", today) + todos_for("weekly", today)
+    return sorted((t for t in todos if t["done"]), key=lambda t: t["done_at"] or "", reverse=True)
+
+
+TODO_BLOCK, TRAINING_BLOCK = "td:", "tr:"     # ids of blocks Venato puts on the timetable for them
+HOME_TODO_PERIODS = ("daily", "weekly")        # the lists on Home (monthly to-dos are no longer used)
+
+
+def set_todo_done(todo_id, done):
+    """Tick or untick a to-do (done_at records when it was ticked). Ticking takes it off the timetable."""
+    with db() as conn:
+        if done:
+            conn.execute("DELETE FROM tt_entries WHERE id = ?", (TODO_BLOCK + todo_id,))
         conn.execute(
             "UPDATE todos SET done = ?, done_at = CASE WHEN ? THEN COALESCE(done_at, ?) END WHERE id = ?",
             (int(bool(done)), int(bool(done)), stamp(), todo_id),
@@ -1474,8 +1966,21 @@ def set_todo_done(todo_id, done):
 
 
 def update_todo(todo_id, **changes):
-    """Change a to-do's title, notes and/or repeat flag."""
-    fields = {k: v for k, v in changes.items() if k in ("title", "notes", "repeat")}
+    """
+    Change a to-do's title, notes, repeat flag, or details (due, group_id, minutes, in_diary). Changing when, how long or the category frees its timetable slot, so it's placed
+    again; taking it out of the diary removes its block.
+    """
+    if "in_diary" in changes:
+        changes["off_timetable"] = int(not changes.pop("in_diary"))
+    if changes.get("due") is not None:
+        changes["due"] = _as_date(changes["due"]).isoformat()
+    if "place" in changes and changes["place"] not in TODO_PLACES:
+        changes["place"] = None
+    if "minutes" in changes:
+        changes["minutes"] = int(changes["minutes"]) if changes["minutes"] else None
+    replace = {"due", "category_id", "minutes", "off_timetable"} & set(changes)
+    fields = {k: v for k, v in changes.items()
+              if k in ("title", "notes", "repeat", "due", "place", "category_id", "minutes", "group_id", "off_timetable")}
     if "title" in fields:
         fields["title"] = str(fields["title"]).strip()
         if not fields["title"]:
@@ -1489,6 +1994,16 @@ def update_todo(todo_id, **changes):
     sets = ", ".join(f'"{k}" = ?' for k in fields)
     with db() as conn:
         conn.execute(f"UPDATE todos SET {sets} WHERE id = ?", (*fields.values(), todo_id))
+        if replace:
+            conn.execute("DELETE FROM tt_entries WHERE id = ?", (TODO_BLOCK + todo_id,))
+        if fields.get("due"):
+            # Due today or earlier: today's list; later: this week's.
+            today = local_today()
+            period = list_for_due(fields["due"], today)
+            conn.execute("UPDATE todos SET period = ?, period_start = ? WHERE id = ? AND period IN ('daily', 'weekly')",
+                         (period, start_of_period(period, today).isoformat(), todo_id))
+        if "title" in fields:
+            conn.execute("UPDATE tt_entries SET label = ? WHERE id = ?", (fields["title"], TODO_BLOCK + todo_id))
 
 
 def move_target(todo, period, today=None):
@@ -1511,12 +2026,14 @@ def move_todo(todo_id, period, today=None):
     with db() as conn:
         conn.execute("UPDATE todos SET period = ?, period_start = ?, ord = ? WHERE id = ?",
                      (period, start, _next_ord(conn, period, start), todo_id))
+        conn.execute("DELETE FROM tt_entries WHERE id = ?", (TODO_BLOCK + todo_id,))   # re-placed for its new list
     return start
 
 
 def delete_todo(todo_id):
     with db() as conn:
         conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+        conn.execute("DELETE FROM tt_entries WHERE id = ?", (TODO_BLOCK + todo_id,))
 
 
 def reorder_todos(ids):
@@ -1633,6 +2150,8 @@ def save_todos(df, replace=False):
 
 GOAL_PERIODS = ("monthly", "yearly")
 GOAL_COLS = "id, title, period, period_start, target, unit, progress, habit_id, ord, created_at"
+GOAL_SELECT = GOAL_COLS + ", kind, done_at, category"
+GOAL_KINDS = ("simple", "target")   # simple: something to achieve (done / not yet); target: reach a number
 
 
 def _num(x):
@@ -1646,6 +2165,7 @@ def _with_value(conn, row):
     g["target"], g["progress"] = _num(g["target"]), _num(g["progress"])
     g["habit"] = None
     g["value"] = g["progress"]
+    g["done"] = g["kind"] == "simple" and g["progress"] >= 1
     if g["habit_id"] is not None:
         name = conn.execute("SELECT name FROM habits WHERE id = ?", (g["habit_id"],)).fetchone()
         end = end_of_period(g["period"], g["period_start"]).isoformat()
@@ -1662,7 +2182,7 @@ def goals_in(period, start):
     start = start_of_period(period, start).isoformat()
     with db() as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(f"SELECT {GOAL_COLS} FROM goals WHERE period = ? AND period_start = ? ORDER BY ord, created_at",
+        rows = conn.execute(f"SELECT {GOAL_SELECT} FROM goals WHERE period = ? AND period_start = ? ORDER BY ord, created_at",
                             (period, start)).fetchall()
         return [_with_value(conn, r) for r in rows]
 
@@ -1670,7 +2190,7 @@ def goals_in(period, start):
 def get_goal(goal_id):
     with db() as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute(f"SELECT {GOAL_COLS} FROM goals WHERE id = ?", (goal_id,)).fetchone()
+        row = conn.execute(f"SELECT {GOAL_SELECT} FROM goals WHERE id = ?", (goal_id,)).fetchone()
         return _with_value(conn, row) if row else None
 
 
@@ -1681,8 +2201,15 @@ def _check_target(target):
     return target
 
 
-def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None):
-    """Add a goal to the month or year containing `day`; returns it."""
+def add_goal(title, period, day, target=1, unit=None, habit_id=None, goal_id=None, kind="target"):
+    """
+    Add a goal to the month or year containing `day`; returns it.
+    kind "simple": something to achieve ("Sub 19:30 5 km"), ticked off once (no target, unit or habit).
+    """
+    if kind not in GOAL_KINDS:
+        raise ValueError(f"A goal's kind is simple or target, not {kind}.")
+    if kind == "simple":
+        target, unit, habit_id = 1, None, None
     title = str(title).strip()
     if not title:
         raise ValueError("A goal needs a title.")
@@ -1692,19 +2219,26 @@ def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None)
     goal_id = goal_id or uuid.uuid4().hex
     with db() as conn:
         conn.execute(
-            f"INSERT OR IGNORE INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, 0, ?, "
-            "(SELECT COALESCE(MAX(ord) + 1, 0) FROM goals WHERE period = ? AND period_start = ?), ?)",
+            f"INSERT OR IGNORE INTO goals ({GOAL_COLS}, kind) VALUES (?, ?, ?, ?, ?, ?, 0, ?, "
+            "(SELECT COALESCE(MAX(ord) + 1, 0) FROM goals WHERE period = ? AND period_start = ?), ?, ?)",
             (goal_id, title, period, start, _check_target(target), (unit or "").strip() or None, habit_id,
-             period, start, stamp()),
+             period, start, stamp(), kind),
         )
     return get_goal(goal_id)
 
 
 
 
-def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP):
-    """Change a goal's title, target, unit or linked habit (habit_id=None unlinks it)."""
+def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP, kind=KEEP):
+    """Change a goal's title, target, unit, linked habit (habit_id=None unlinks it) or kind."""
     fields = {}
+    if kind is not KEEP:
+        if kind not in GOAL_KINDS:
+            raise ValueError(f"A goal's kind is simple or target, not {kind}.")
+        fields["kind"] = kind
+        if kind == "simple":                      # a number goal becoming done / not yet
+            target, unit, habit_id = 1, None, None
+            fields["progress"], fields["done_at"] = 0, None
     if title is not KEEP:
         fields["title"] = str(title).strip()
         if not fields["title"]:
@@ -1721,10 +2255,47 @@ def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP):
                          (*fields.values(), goal_id))
 
 
+def set_goal_done(goal_id, done=True):
+    """Tick off (or untick) a simple goal."""
+    with db() as conn:
+        conn.execute("UPDATE goals SET progress = ?, done_at = ? WHERE id = ?",
+                     (1 if done else 0, stamp() if done else None, goal_id))
+
+
 def set_goal_progress(goal_id, value):
     """Set a goal's hand-updated progress (never below 0)."""
     with db() as conn:
         conn.execute("UPDATE goals SET progress = MAX(0, ?) WHERE id = ?", (float(value), goal_id))
+
+
+GOAL_CATEGORY_COLOURS = ("#F97316", "#EC4899", "#22C55E", "#3B82F6", "#A855F7", "#EAB308", "#14B8A6", "#EF4444")
+
+
+def goal_categories():
+    """{name: colour} of the user's goal categories (e.g. Work, Side project), in the order they were made."""
+    return dict(load_settings().get("goal_categories", {}))
+
+
+def set_goal_category(goal_id, name):
+    """Put a goal in a category (created, with the next colour, if it's new); None or '' takes it out."""
+    name = (str(name).strip() if name else "") or None
+    if name:
+        cats = goal_categories()
+        match = next((c for c in cats if c.lower() == name.lower()), None)
+        if match:
+            name = match
+        else:
+            cats[name] = GOAL_CATEGORY_COLOURS[len(cats) % len(GOAL_CATEGORY_COLOURS)]
+            save_settings(goal_categories=cats)
+    with db() as conn:
+        conn.execute("UPDATE goals SET category = ? WHERE id = ?", (name, goal_id))
+
+
+def set_goal_category_colour(name, colour):
+    cats = goal_categories()
+    if name in cats:
+        cats[name] = colour
+        save_settings(goal_categories=cats)
 
 
 def add_goal_progress(goal_id, amount):
@@ -1746,7 +2317,7 @@ def reorder_goals(ids):
 def load_goals():
     """Every goal, for export (the linked habit by name, so the CSV makes sense on its own)."""
     return _read(f"""SELECT g.id, g.title, g.period, g.period_start, g.target, g.unit, g.progress,
-                            h.name AS habit, g.ord, g.created_at
+                            h.name AS habit, g.ord, g.created_at, g.kind, g.done_at, g.category
                      FROM goals g LEFT JOIN habits h ON h.id = g.habit_id
                      ORDER BY g.period_start, g.period, g.ord""")
 
@@ -1765,7 +2336,9 @@ def save_goals(df, replace=False):
         for row in df.to_dict("records"):
             title = _clean(row.get("title"), str)
             period = (_clean(row.get("period"), str) or "").strip().lower()
-            target = _clean(row.get("target"), float)
+            kind = (_clean(row.get("kind"), str) or "target").strip().lower()
+            kind = kind if kind in GOAL_KINDS else "target"
+            target = 1.0 if kind == "simple" else _clean(row.get("target"), float)
             if not title or period not in GOAL_PERIODS or not target or target <= 0:
                 continue
             day = _clean(row.get("period_start"), str)
@@ -1773,11 +2346,12 @@ def save_goals(df, replace=False):
             habit = _clean(row.get("habit"), str)
             ord_ = _clean(row.get("ord"), int)
             conn.execute(
-                f"INSERT OR REPLACE INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT OR REPLACE INTO goals ({GOAL_SELECT}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (_clean(row.get("id"), str) or uuid.uuid4().hex, title.strip(), period, start, target,
                  _clean(row.get("unit"), str), max(0.0, _clean(row.get("progress"), float) or 0.0),
                  habits.get(habit.strip().lower()) if habit else None, count if ord_ is None else ord_,
-                 _clean(row.get("created_at"), str) or stamp()),
+                 _clean(row.get("created_at"), str) or stamp(),
+                 kind, _clean(row.get("done_at"), str), _clean(row.get("category"), str)),
             )
             count += 1
     return count
@@ -2060,6 +2634,512 @@ def connections_of(person_id):
 
 
 # ---------------------------------------------------------------------------
+# Putting to-dos and training on the timetable (autoplan.py decides when)
+# ---------------------------------------------------------------------------
+
+TODO_CATEGORY = ("todos", "To-dos", "#B4C7E7", "Life")
+
+
+def todo_category():
+    """The category to-do blocks use, created the first time it's needed."""
+    return _builtin_category(TODO_CATEGORY)
+
+
+def get_category_ids():
+    with db() as conn:
+        return {r[0] for r in conn.execute("SELECT id FROM tt_categories")}
+
+
+def slot_start(day, slot):
+    """When a timetable slot starts, as a naive local datetime."""
+    return datetime.fromisoformat(str(day)) + timedelta(minutes=FIRST_MIN + SLOT_MIN * slot)
+
+
+def free_slot(day, lo, hi, length=1):
+    """The first slot s in lo..hi-length where `length` slots are free of blocks and Outlook events, or None."""
+    with db() as conn:
+        taken = set()
+        for b in blocks_for(conn, day, "plan"):
+            taken |= set(range(slot_of(b["start"]), slot_of(b["end"])))
+        for ev in _visible_outlook(conn, day):
+            taken |= set(range(slot_of(ev["start"]), slot_of(ev["end"])))
+    for s in range(max(lo, 0), min(hi, SLOTS) - length + 1):
+        if not taken & set(range(s, s + length)):
+            return s
+    return None
+
+
+TODO_PAST = "tdx:"       # "tdx:<todo id>:<date>:<start>": where a to-do was, marked done or not done
+
+
+def _set_event_status(event_id, done):
+    with db() as conn:
+        if done is None:
+            conn.execute("DELETE FROM event_status WHERE id = ?", (event_id,))
+        else:
+            conn.execute("INSERT OR REPLACE INTO event_status VALUES (?, ?)", (event_id, int(bool(done))))
+
+
+def clear_event_status(event_id):
+    _set_event_status(event_id, None)
+
+
+def event_statuses():
+    """{event id: True (done) / False (not done)}. A ticked training session counts as done, wherever it was ticked."""
+    with db() as conn:
+        statuses = {i: bool(d) for i, d in conn.execute("SELECT id, done FROM event_status")}
+        statuses.update((r[0], True) for r in conn.execute(
+            "SELECT block_id FROM training_sessions WHERE done = 1 AND block_id IS NOT NULL"))
+    return statuses
+
+
+def _mark_todo(block_id, done):
+    """
+    A to-do's slot went by. The slot stays on the timetable as a record of what happened: done
+    ticks the to-do off; not done leaves it open, so it gets a new slot (autoplan.py).
+    """
+    block = get_block(block_id)
+    if block is None or done is None:
+        return
+    todo_id = block_id[len(TODO_BLOCK):]
+    past_id = f"{TODO_PAST}{todo_id}:{block['date']}:{block['start']}"
+    delete_block(block_id)
+    put_block({**block, "id": past_id})
+    _set_event_status(past_id, done)
+    if done:
+        set_todo_done(todo_id, True)
+
+
+def mark_event(event_id, done):
+    """
+    Mark an event whose time has passed: done True, not done False, or None to clear it.
+    To-dos and training sessions are updated as well.
+    """
+    if event_id.startswith(TODO_BLOCK):
+        _mark_todo(event_id, done)
+        return
+    if event_id.startswith(TODO_PAST):
+        todo_id = event_id.split(":")[1]
+        if get_todo(todo_id):
+            set_todo_done(todo_id, bool(done))         # changing your mind: back on the list if it's not done
+    elif event_id.startswith(TRAINING_BLOCK):
+        with db() as conn:
+            row = conn.execute("SELECT id FROM training_sessions WHERE block_id = ?", (event_id,)).fetchone()
+        if row:
+            update_session(row[0], done=bool(done))
+        if done:
+            done = None                                # the session itself now says it's done
+    _set_event_status(event_id, done)
+
+
+def slot_clash(block):
+    """True if another block or a visible Outlook event overlaps this block."""
+    s, e = slot_of(block["start"]), slot_of(block["end"])
+    with db() as conn:
+        others = [b for b in blocks_for(conn, block["date"], block["track"]) if b["id"] != block["id"]]
+        return bool(_visible_outlook(conn, block["date"], s, e)) or             any(slot_of(b["start"]) < e and slot_of(b["end"]) > s for b in others)
+
+
+def put_block(block):
+    """Add or replace one block as it is (no trimming: callers pick free time)."""
+    with db() as conn:
+        apply_block_ops(conn, [("upsert", block)])
+
+
+def open_todos(today):
+    """Unticked to-dos in today's list and this week's, that the user hasn't taken off the timetable."""
+    day, week = today.isoformat(), start_of_period("weekly", today).isoformat()
+    with db() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT {TODO_SELECT} FROM todos WHERE done = 0 AND off_timetable = 0 AND "
+            "((period = 'daily' AND period_start = ?) OR (period = 'weekly' AND period_start = ?)) ORDER BY period, ord",
+            (day, week)).fetchall()
+    return [_todo(r) for r in rows]
+
+
+def bring_forward_todos(today):
+    """
+    Unticked daily to-dos from earlier days move to today, and unticked weekly ones from earlier
+    weeks to this week, so a to-do stays until it's done (unless that list already has the title).
+    """
+    moved = 0
+    with db() as conn:
+        for period in ("daily", "weekly"):
+            start = start_of_period(period, today).isoformat()
+            existing = _titles(conn, period, start)
+            for tid, title in conn.execute("SELECT id, title FROM todos WHERE period = ? AND period_start < ? "
+                                           "AND done = 0 ORDER BY period_start DESC, ord", (period, start)).fetchall():
+                if title.lower() in existing:
+                    continue
+                conn.execute("UPDATE todos SET period_start = ?, ord = ? WHERE id = ?",
+                             (start, _next_ord(conn, period, start), tid))
+                existing.add(title.lower())
+                moved += 1
+    return moved
+
+
+def clear_todo_blocks():
+    """Take every to-do off the timetable (the ones waiting for a slot and the done / not done
+    records). Returns how many blocks went."""
+    with db() as conn:
+        return conn.execute("DELETE FROM tt_entries WHERE id LIKE ? OR id LIKE ?",
+                            (TODO_BLOCK + "%", TODO_PAST + "%")).rowcount
+
+
+def taken_off_timetable(block_id):
+    """The user deleted an Venato-made block from the timetable: don't put it back automatically."""
+    if block_id.startswith(TODO_BLOCK):
+        with db() as conn:
+            conn.execute("UPDATE todos SET off_timetable = 1 WHERE id = ?", (block_id[len(TODO_BLOCK):],))
+    elif block_id.startswith(TRAINING_BLOCK):
+        with db() as conn:
+            conn.execute("UPDATE training_sessions SET off_timetable = 1, block_id = NULL WHERE block_id = ?", (block_id,))
+
+
+# ---------------------------------------------------------------------------
+# Gym log
+# ---------------------------------------------------------------------------
+
+GYM_FIELDS = ("exercise", "sets", "reps", "weight_kg")
+
+
+def _gym_rows(exercises):
+    rows = []
+    for i, x in enumerate(exercises):
+        name = str(x.get("exercise") or "").strip()
+        if not name:
+            continue
+        num = lambda v, cast: None if v is None or v == "" or (isinstance(v, float) and v != v) else cast(v)
+        rows.append((i, name, num(x.get("sets"), int), num(x.get("reps"), int), num(x.get("weight_kg"), float)))
+    return rows
+
+
+def save_gym_session(day, title, exercises, notes=None, session_id=None):
+    """Add (or, with session_id, replace) a gym session and its exercises. Returns its id."""
+    title = str(title or "").strip() or "Gym"
+    session_id = session_id or uuid.uuid4().hex
+    with db() as conn:
+        conn.execute("INSERT INTO gym_sessions VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
+                     "date = excluded.date, title = excluded.title, notes = excluded.notes",
+                     (session_id, str(day), title, (notes or "").strip() or None,
+                      stamp()))
+        conn.execute("DELETE FROM gym_exercises WHERE session_id = ?", (session_id,))
+        conn.executemany("INSERT INTO gym_exercises (session_id, ord, exercise, sets, reps, weight_kg) "
+                         "VALUES (?, ?, ?, ?, ?, ?)", [(session_id, *r) for r in _gym_rows(exercises)])
+    return session_id
+
+
+def gym_sessions(first=None, last=None, limit=None):
+    """Gym sessions (newest first), each with its `exercises`."""
+    sql, params = "SELECT id, date, title, notes FROM gym_sessions", []
+    if first and last:
+        sql, params = sql + " WHERE date BETWEEN ? AND ?", [first, last]
+    sql += " ORDER BY date DESC, created_at DESC" + (f" LIMIT {int(limit)}" if limit else "")
+    with db() as conn:
+        sessions = [dict(zip(("id", "date", "title", "notes"), r)) for r in conn.execute(sql, params).fetchall()]
+        for s in sessions:
+            s["exercises"] = [dict(zip(GYM_FIELDS, r)) for r in conn.execute(
+                "SELECT exercise, sets, reps, weight_kg FROM gym_exercises WHERE session_id = ? ORDER BY ord",
+                (s["id"],)).fetchall()]
+    return sessions
+
+
+def delete_gym_session(session_id):
+    with db() as conn:
+        conn.execute("DELETE FROM gym_sessions WHERE id = ?", (session_id,))
+
+
+def last_lift(exercise):
+    """The most recent (sets, reps, weight_kg, date) logged for an exercise (any case), or None."""
+    with db() as conn:
+        row = conn.execute("SELECT e.sets, e.reps, e.weight_kg, s.date FROM gym_exercises e "
+                           "JOIN gym_sessions s ON s.id = e.session_id WHERE lower(e.exercise) = lower(?) "
+                           "ORDER BY s.date DESC, s.created_at DESC LIMIT 1", (str(exercise).strip(),)).fetchone()
+    return row
+
+
+# ---------------------------------------------------------------------------
+# Journal (the daily log's notes)
+# ---------------------------------------------------------------------------
+
+def journal_todo_new(day, period, title):
+    """Record that the journal made this to-do; False if it already had (so it isn't added again)."""
+    with db() as conn:
+        cur = conn.execute("INSERT OR IGNORE INTO journal_todos VALUES (?, ?, ?)", (str(day), period, title.strip()))
+        return cur.rowcount == 1
+
+
+# ---------------------------------------------------------------------------
+# Strava (rows made by strava.py)
+# ---------------------------------------------------------------------------
+
+STRAVA_COLS = ("id", "date", "start", "name", "sport", "distance_km", "moving_min", "elevation_m", "avg_hr")
+
+
+def save_strava(rows):
+    """Add or update activities (keeping which training session each one ticked off)."""
+    with db() as conn:
+        for r in rows:
+            conn.execute(
+                f"INSERT INTO strava_activities ({', '.join(STRAVA_COLS)}) VALUES ({', '.join('?' * len(STRAVA_COLS))}) "
+                "ON CONFLICT(id) DO UPDATE SET " + ", ".join(f"{c} = excluded.{c}" for c in STRAVA_COLS[1:]),
+                tuple(r.get(c) for c in STRAVA_COLS))
+
+
+def strava_activities(first=None, last=None, runs_only=False):
+    sql = f"SELECT {', '.join(STRAVA_COLS)}, session_id FROM strava_activities WHERE 1 = 1"
+    params = []
+    if first and last:
+        sql += " AND date BETWEEN ? AND ?"
+        params += [first, last]
+    if runs_only:
+        sql += " AND sport IN ('Run', 'TrailRun', 'VirtualRun')"
+    with db() as conn:
+        rows = conn.execute(sql + " ORDER BY date, start", params).fetchall()
+    return [dict(zip(STRAVA_COLS + ("session_id",), r)) for r in rows]
+
+
+def strava_matched(activity_id, session_id=None):
+    """With a session: record that this activity ticked it off. Without: whether it already did."""
+    with db() as conn:
+        if session_id:
+            conn.execute("UPDATE strava_activities SET session_id = ? WHERE id = ?", (session_id, activity_id))
+            return True
+        row = conn.execute("SELECT session_id FROM strava_activities WHERE id = ?", (activity_id,)).fetchone()
+    return bool(row and row[0])
+
+
+def clear_strava():
+    with db() as conn:
+        conn.execute("DELETE FROM strava_activities")
+
+
+def runs(first=None, last=None):
+    """
+    Every run, oldest first: Strava runs, plus training runs ticked off without a Strava run behind them.
+    Each: {date, label, distance_km, source}.
+    """
+    out = []
+    matched = set()
+    for a in strava_activities(first, last, runs_only=True):
+        out.append({"date": a["date"], "label": a["name"] or "Run", "distance_km": a["distance_km"], "source": "Strava"})
+        if a["session_id"]:
+            matched.add(a["session_id"])
+    plan = active_plan()
+    for s in (plan_sessions(plan["id"]) if plan else []):
+        if not s["done"] or s["kind"] == "strength" or s["id"] in matched:
+            continue
+        if first and last and not first <= s["date"] <= last:
+            continue
+        km = s["actual_km"] if s["actual_km"] is not None else s["distance_km"]
+        if km:
+            out.append({"date": s["date"], "label": s["title"], "distance_km": km, "source": "Training plan"})
+    return sorted(out, key=lambda r: r["date"])
+
+
+def gym_volume():
+    """Per exercise, kg moved each session (weight × sets × reps): [{exercise, date, title, volume}], oldest first."""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT e.exercise, s.date, s.title, SUM(COALESCE(e.weight_kg, 0) * COALESCE(e.sets, 0) * COALESCE(e.reps, 0)) "
+            "FROM gym_exercises e JOIN gym_sessions s ON s.id = e.session_id "
+            "GROUP BY lower(e.exercise), s.id ORDER BY s.date, s.created_at").fetchall()
+    return [{"exercise": x, "date": d, "title": t, "volume": v} for x, d, t, v in rows]
+
+
+# ---------------------------------------------------------------------------
+# Joint calendar (rows made by joint.py)
+# ---------------------------------------------------------------------------
+
+def replace_joint(who, rows):
+    """Replace one person's events in the joint calendar."""
+    with db() as conn:
+        conn.execute("DELETE FROM joint_events WHERE who = ?", (who,))
+        conn.executemany(
+            "INSERT OR REPLACE INTO joint_events VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(who, r["uid"], r["date"], r["start_min"], r["end_min"], r["title"], r["all_day"]) for r in rows])
+
+
+def joint_between(first, last):
+    """[{who, date, start_min, end_min, title, all_day}] between two ISO dates, in time order."""
+    with db() as conn:
+        rows = conn.execute("SELECT who, date, start_min, end_min, title, all_day FROM joint_events "
+                            "WHERE date BETWEEN ? AND ? ORDER BY date, all_day DESC, start_min", (first, last)).fetchall()
+    return [dict(zip(("who", "date", "start_min", "end_min", "title", "all_day"), r)) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Training plan (the plan itself is generated by training.py)
+# ---------------------------------------------------------------------------
+
+SESSION_COLS = "id, plan_id, week, date, kind, title, distance_km, details, done, actual_km, notes, done_at, ord"
+SESSION_SELECT = SESSION_COLS + ", block_id, off_timetable"
+
+
+def _session(row):
+    s = dict(zip(SESSION_SELECT.split(", "), row))
+    s["done"] = bool(s["done"])
+    return s
+
+
+def create_plan(name, start_date, race_date, sessions):
+    """Save a new plan and its sessions (replacing any earlier plan). Returns the plan's id."""
+    plan_id = uuid.uuid4().hex
+    with db() as conn:
+        conn.execute("DELETE FROM training_plans")
+        conn.execute("INSERT INTO training_plans VALUES (?, ?, ?, ?, ?)",
+                     (plan_id, name, str(start_date), str(race_date), stamp()))
+        conn.executemany(
+            f"INSERT INTO training_sessions ({SESSION_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?)",
+            [(uuid.uuid4().hex, plan_id, x["week"], x["date"], x["kind"], x["title"], x["distance_km"],
+              x["details"], x["ord"]) for x in sessions])
+    return plan_id
+
+
+def active_plan():
+    """The current plan as {id, name, start_date, race_date, created_at}, or None."""
+    with db() as conn:
+        row = conn.execute("SELECT id, name, start_date, race_date, created_at FROM training_plans "
+                           "ORDER BY created_at DESC LIMIT 1").fetchone()
+    return dict(zip(("id", "name", "start_date", "race_date", "created_at"), row)) if row else None
+
+
+def plan_sessions(plan_id):
+    with db() as conn:
+        rows = conn.execute(f"SELECT {SESSION_SELECT} FROM training_sessions WHERE plan_id = ? "
+                            "ORDER BY date, ord", (plan_id,)).fetchall()
+    return [_session(r) for r in rows]
+
+
+def get_session(session_id):
+    with db() as conn:
+        row = conn.execute(f"SELECT {SESSION_SELECT} FROM training_sessions WHERE id = ?", (session_id,)).fetchone()
+    return _session(row) if row else None
+
+
+def plan_week(start_date, day):
+    """Which week of the plan a day falls in (weeks run Monday to Sunday, from the plan's first)."""
+    first, d = date.fromisoformat(str(start_date)), date.fromisoformat(str(day))
+    return max(1, (d - timedelta(days=d.weekday()) - (first - timedelta(days=first.weekday()))).days // 7 + 1)
+
+
+def add_session(plan_id, day, kind, title, distance_km=None, details=None):
+    """Add a session to a plan; returns its id."""
+    session_id = uuid.uuid4().hex
+    with db() as conn:
+        start = conn.execute("SELECT start_date FROM training_plans WHERE id = ?", (plan_id,)).fetchone()[0]
+        order = conn.execute("SELECT COALESCE(MAX(ord), -1) + 1 FROM training_sessions WHERE plan_id = ? AND date = ?",
+                             (plan_id, str(day))).fetchone()[0]
+        conn.execute(f"INSERT INTO training_sessions ({SESSION_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?)",
+                     (session_id, plan_id, plan_week(start, day), str(day), kind, title, distance_km, details, order))
+    return session_id
+
+
+def delete_session(session_id):
+    """Delete a session and its timetable block."""
+    with db() as conn:
+        conn.execute("DELETE FROM tt_entries WHERE id = (SELECT block_id FROM training_sessions WHERE id = ?)", (session_id,))
+        conn.execute("DELETE FROM training_sessions WHERE id = ?", (session_id,))
+
+
+def update_session(session_id, **changes):
+    """Change any of: date, title, kind, distance_km, details, done, actual_km, notes."""
+    allowed = {"date", "title", "kind", "distance_km", "details", "done", "actual_km", "notes"}
+    changes = {k: v for k, v in changes.items() if k in allowed}
+    if "done" in changes:
+        changes["done"] = int(bool(changes["done"]))
+        changes["done_at"] = stamp() if changes["done"] else None
+    if not changes:
+        return
+    with db() as conn:
+        conn.execute(f"UPDATE training_sessions SET {', '.join(f'{k} = ?' for k in changes)} WHERE id = ?",
+                     (*changes.values(), session_id))
+        if "done" in changes or "title" in changes:      # its timetable block shows a ✓ once done
+            row = conn.execute("SELECT block_id, title, done FROM training_sessions WHERE id = ?", (session_id,)).fetchone()
+            if row and row[0]:
+                conn.execute("UPDATE tt_entries SET label = ? WHERE id = ?", (("✓ " if row[2] else "") + row[1], row[0]))
+        if "date" in changes:                 # it moves to that week's list; if it's the race, the race date follows
+            start = conn.execute("SELECT p.start_date FROM training_plans p JOIN training_sessions s ON s.plan_id = p.id "
+                                 "WHERE s.id = ?", (session_id,)).fetchone()
+            if start:
+                conn.execute("UPDATE training_sessions SET week = ? WHERE id = ?",
+                             (plan_week(start[0], changes["date"]), session_id))
+            conn.execute("UPDATE training_plans SET race_date = ? WHERE id = "
+                         "(SELECT plan_id FROM training_sessions WHERE id = ? AND kind = 'race')",
+                         (changes["date"], session_id))
+
+
+def delete_plan(plan_id):
+    """Delete a plan, its sessions and their timetable blocks."""
+    with db() as conn:
+        conn.execute("DELETE FROM tt_entries WHERE id IN (SELECT block_id FROM training_sessions WHERE plan_id = ?)",
+                     (plan_id,))
+        conn.execute("DELETE FROM training_plans WHERE id = ?", (plan_id,))
+
+
+def _free_start(conn, day, want, length):
+    """
+    The free start slot nearest to `want` (later first on a tie) where `length` slots are free of
+    the user's blocks and Outlook events, so a training session never covers anything. It looks
+    between 07:00 and 21:30 first, then the whole day. Falls back to `want`.
+    """
+    taken = set()
+    for b in blocks_for(conn, day, "plan"):
+        taken |= set(range(slot_of(b["start"]), slot_of(b["end"])))
+    for ev in _visible_outlook(conn, day):
+        taken |= set(range(slot_of(ev["start"]), slot_of(ev["end"])))
+    last = SLOTS - length
+    want = min(want, last)
+    for latest_end in (slot_of("21:30"), SLOTS):
+        options = [s for s in range(0, min(last, latest_end - length) + 1) if not taken & set(range(s, s + length))]
+        if options:
+            return min(options, key=lambda s: (abs(s - want), s < want))
+    return want
+
+
+def place_session(session_id, start_time, minutes, category_id, label, details=None):
+    """
+    Put a training session on the timetable (Plan) as a block, replacing its old block.
+    It goes at `start_time` or the nearest free time that day. Returns the block.
+    """
+    s = get_session(session_id)
+    length = max(1, -(-int(minutes) // SLOT_MIN))
+    with db() as conn:
+        if s["block_id"]:
+            conn.execute("DELETE FROM tt_entries WHERE id = ?", (s["block_id"],))
+        start = _free_start(conn, s["date"], slot_of(start_time), length)
+        block = {"id": s["block_id"] or f"tr:{session_id}", "date": s["date"], "track": "plan",
+                 "start": slot_time(start), "end": slot_time(min(start + length, SLOTS)),
+                 "label": label, "category_id": category_id, "details": details}
+        apply_block_ops(conn, [("upsert", block)])
+        conn.execute("UPDATE training_sessions SET block_id = ?, off_timetable = 0 WHERE id = ?", (block["id"], session_id))
+    return block
+
+
+def session_moved(block_id, day):
+    """The user dragged a training block to another day: move its session there too."""
+    with db() as conn:
+        row = conn.execute("SELECT id FROM training_sessions WHERE block_id = ?", (block_id,)).fetchone()
+    if row:
+        update_session(row[0], date=str(day))
+
+
+def unplace_session(session_id):
+    """Take a session's block off the timetable."""
+    s = get_session(session_id)
+    with db() as conn:
+        if s and s["block_id"]:
+            conn.execute("DELETE FROM tt_entries WHERE id = ?", (s["block_id"],))
+        conn.execute("UPDATE training_sessions SET block_id = NULL, off_timetable = 1 WHERE id = ?", (session_id,))
+
+
+def session_block(session):
+    """The session's timetable block, or None (also if the user deleted it from the timetable)."""
+    return get_block(session["block_id"]) if session.get("block_id") else None
+
+
+# ---------------------------------------------------------------------------
 # Stats
 # ---------------------------------------------------------------------------
 
@@ -2106,7 +3186,7 @@ def get_stats(days=None, today=None):
     hours = {"plan": {}, "actual": {}}
     for b in blocks_between(first, last):
         name = names.get(b["category_id"], "Uncategorised")
-        h = (slot_of(b["end"]) - slot_of(b["start"])) / 2
+        h = (slot_of(b["end"]) - slot_of(b["start"])) * SLOT_MIN / 60
         hours[b["track"]][name] = hours[b["track"]].get(name, 0) + h
 
     return {
@@ -2119,6 +3199,434 @@ def get_stats(days=None, today=None):
         "timetable_hours": hours,
     }
 
+# ---------------------------------------------------------------------------
+# Start Working: bars that race to each level's targets. When every level bar is full the
+# level is done: the reward goes into the pot and the next level starts from zero. The pot
+# is spent on whatever the user's pots are. A weekly bar starts again every Monday and
+# doesn't count towards levels.
+#
+# Everything about the bars is the user's own, in settings.json (nothing is preset):
+#   work_areas: [{id, name, colour}]          the page's sections, each in its colour
+#   work_bars:  [{key, area, name, verb, weekly, base, step, words}]
+#               base = level 1's target (a weekly bar: its target each week), step = added per level,
+#               words = what links a session-list item to the bar ("email", "reach out")
+#   work_pots:  [{key, name}]                  what the pot can be spent on
+#   work_reward: money per level (default 5); work_questions: the delegation nudges
+# ---------------------------------------------------------------------------
+
+LEVEL_REWARD = 5.0                      # per level, unless the user sets their own
+
+
+def _slug(text):
+    return re.sub(r"[^a-z0-9]+", "_", str(text).lower()).strip("_") or "x"
+
+
+def work_areas():
+    return [dict(a) for a in load_settings().get("work_areas", [])]
+
+
+def work_bars():
+    """Every bar, in the user's order: [{key, area, name, verb, weekly, base, step, words}]."""
+    out = []
+    for b in load_settings().get("work_bars", []):
+        out.append({"key": b["key"], "area": b.get("area"), "name": b.get("name") or b["key"],
+                    "verb": b.get("verb") or b.get("name") or b["key"], "weekly": bool(b.get("weekly")),
+                    "base": max(1, int(b.get("base") or 1)), "step": max(0, int(b.get("step") or 0)),
+                    "words": [w.strip().lower() for w in b.get("words", []) if str(w).strip()]})
+    return out
+
+
+def work_bar(ref):
+    """A bar by key or name (any case), or None."""
+    ref = str(ref or "").strip().lower()
+    return next((b for b in work_bars() if b["key"] == ref or b["name"].lower() == ref), None)
+
+
+def level_tracks():
+    return tuple(b["key"] for b in work_bars() if not b["weekly"])
+
+
+def weekly_tracks():
+    return tuple(b["key"] for b in work_bars() if b["weekly"])
+
+
+def work_pots():
+    return [dict(p) for p in load_settings().get("work_pots", [])]
+
+
+def work_reward():
+    return float(load_settings().get("work_reward", LEVEL_REWARD))
+
+
+def work_questions():
+    return [q for q in load_settings().get("work_questions", []) if str(q).strip()]
+
+
+def save_work_setup(areas=None, bars=None, pots=None, reward=None, questions=None):
+    """
+    Save the user's Start Working setup (any part). Areas, bars and pots without a name are
+    dropped; new ones get a key from their name. A bar's key never changes, so its counts stay.
+    """
+    changes = {}
+    if areas is not None:
+        clean, seen = [], set()
+        for a in areas:
+            name = str(a.get("name") or "").strip()
+            if not name:
+                continue
+            aid = a.get("id") or _slug(name)
+            while aid in seen:
+                aid += "_2"
+            seen.add(aid)
+            clean.append({"id": aid, "name": name, "colour": str(a.get("colour") or "").strip() or
+                          GOAL_CATEGORY_COLOURS[len(clean) % len(GOAL_CATEGORY_COLOURS)]})
+        changes["work_areas"] = clean
+    if bars is not None:
+        clean, seen = [], set()
+        for b in bars:
+            name = str(b.get("name") or "").strip()
+            if not name:
+                continue
+            key = b.get("key") or _slug(name)
+            while key in seen:
+                key += "_2"
+            seen.add(key)
+            words = b.get("words") or []
+            if isinstance(words, str):
+                words = words.split(",")
+            clean.append({"key": key, "area": b.get("area"), "name": name,
+                          "verb": str(b.get("verb") or "").strip() or name, "weekly": bool(b.get("weekly")),
+                          "base": max(1, int(b.get("base") or 1)), "step": max(0, int(b.get("step") or 0)),
+                          "words": [w.strip().lower() for w in words if str(w).strip()]})
+        changes["work_bars"] = clean
+    if pots is not None:
+        clean, seen = [], set()
+        for p in pots:
+            name = str((p.get("name") if isinstance(p, dict) else p) or "").strip()
+            if not name:
+                continue
+            key = (p.get("key") if isinstance(p, dict) else None) or _slug(name)
+            if key not in seen:
+                seen.add(key)
+                clean.append({"key": key, "name": name})
+        changes["work_pots"] = clean
+    if reward is not None:
+        changes["work_reward"] = max(0.0, round(float(reward), 2))
+    if questions is not None:
+        changes["work_questions"] = [str(q).strip() for q in questions if str(q).strip()]
+    if changes:
+        save_settings(**changes)
+
+
+def work_level():
+    return int(load_settings().get("work_level", 1))
+
+
+def work_week_start(today=None):
+    """This week's Monday (London) as an ISO date: weekly bars count from it."""
+    today = today or local_today()
+    return (today - timedelta(days=today.weekday())).isoformat()
+
+
+def work_targets(level):
+    """Each level bar's target at a level: level 1's, plus its step for each level after."""
+    return {b["key"]: b["base"] + b["step"] * (level - 1) for b in work_bars() if not b["weekly"]}
+
+
+def weekly_targets():
+    return {b["key"]: b["base"] for b in work_bars() if b["weekly"]}
+
+
+def _work_counts(conn, level):
+    counts = dict.fromkeys(level_tracks(), 0)
+    for track, n in conn.execute("SELECT track, COUNT(*) FROM work_log WHERE level = ? GROUP BY track", (level,)):
+        if track in counts:
+            counts[track] = n
+    return counts
+
+
+def _weekly_counts(conn):
+    counts = dict.fromkeys(weekly_tracks(), 0)
+    for track, n in conn.execute("SELECT track, COUNT(*) FROM work_log WHERE at >= ? GROUP BY track", (work_week_start(),)):
+        if track in counts:
+            counts[track] = n
+    return counts
+
+
+def work_balance(conn=None):
+    if conn is None:
+        with db() as conn:
+            return work_balance(conn)
+    return round(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM work_wallet").fetchone()[0], 2)
+
+
+def work_state():
+    """Everything the Start Working page shows."""
+    level = work_level()
+    with db() as conn:
+        counts = _work_counts(conn, level)
+        weekly = _weekly_counts(conn)
+        balance = work_balance(conn)
+        wallet = [dict(zip(("at", "amount", "kind", "note"), r)) for r in conn.execute(
+            "SELECT at, amount, kind, note FROM work_wallet ORDER BY at DESC LIMIT 12")]
+        totals = dict.fromkeys(level_tracks() + weekly_tracks(), 0)
+        for track, n in conn.execute("SELECT track, COUNT(*) FROM work_log GROUP BY track"):
+            if track in totals:
+                totals[track] = n
+        spent = {k: -v for k, v in conn.execute(
+            "SELECT kind, SUM(amount) FROM work_wallet WHERE amount < 0 GROUP BY kind")}
+    pots = work_pots()
+    return {"level": level, "targets": work_targets(level), "counts": counts, "totals": totals,
+            "weekly": weekly, "weekly_targets": weekly_targets(),
+            "balance": balance, "wallet": wallet, "reward": work_reward(), "pots": pots,
+            "spent": {p["key"]: round(spent.get(p["key"], 0), 2) for p in pots}}
+
+
+def work_tap(track, delta=1, op_id=None):
+    """
+    One more (delta=1) or one fewer (delta=-1) for a bar at the current level (or, for a
+    weekly bar, this week). When every level bar reaches its target the level is completed.
+    Returns the level completed, or None. Adding is idempotent for a given op_id.
+    """
+    bar = work_bar(track)
+    if not bar:
+        raise ValueError(f"Unknown bar: {track}")
+    track = bar["key"]
+    level = work_level()
+    now = stamp()
+    with db() as conn:
+        if delta > 0:
+            conn.execute("INSERT OR IGNORE INTO work_log VALUES (?, ?, ?, ?)",
+                         (op_id or uuid.uuid4().hex, track, level, now))
+        elif bar["weekly"]:
+            conn.execute("DELETE FROM work_log WHERE id = (SELECT id FROM work_log WHERE track = ? AND at >= ? "
+                         "ORDER BY at DESC LIMIT 1)", (track, work_week_start()))
+        else:
+            conn.execute("DELETE FROM work_log WHERE id = (SELECT id FROM work_log WHERE track = ? AND level = ? "
+                         "ORDER BY at DESC LIMIT 1)", (track, level))
+        targets = work_targets(level)
+        if bar["weekly"] or not targets:
+            return None
+        counts = _work_counts(conn, level)
+        if any(counts[t] < n for t, n in targets.items()):
+            return None
+        conn.execute("INSERT INTO work_wallet VALUES (?, ?, ?, 'earned', ?)",
+                     (uuid.uuid4().hex, now, work_reward(), f"Level {level} complete"))
+    save_settings(work_level=level + 1)
+    return level
+
+
+def work_spend(amount, pot, note=None):
+    """Spend from the pot on one of the user's pots (by key)."""
+    amount = round(float(amount), 2)
+    if pot not in {p["key"] for p in work_pots()}:
+        raise ValueError("That isn't one of your pots.")
+    with db() as conn:
+        if amount <= 0 or amount > work_balance(conn) + 1e-9:
+            raise ValueError("You can't spend more than is in the pot.")
+        conn.execute("INSERT INTO work_wallet VALUES (?, ?, ?, ?, ?)",
+                     (uuid.uuid4().hex, stamp(), -amount, pot,
+                      (str(note).strip() or None) if note else None))
+
+
+# Start Working's session list: at the start of a session the user says (or types) what
+# needs doing; it's split into items, each matched to an open to-do and/or a bar.
+
+_ORDINALS = (r"first(?:ly)?|second(?:ly)?|third(?:ly)?|fourth(?:ly)?|fifth(?:ly)?|sixth(?:ly)?|"
+             r"and then|then|after that|and also|finally|lastly|last of all|next(?=,)|also(?=,)")
+_SPLIT = re.compile(rf"(?:\n|[.;!?](?:\s|$)|\s*\b(?:{_ORDINALS})\b[,:]?\s*|^\s*\d+[.)]\s*|\s\d+[.)]\s)",
+                    re.I | re.M)
+_FILLER = re.compile(r"^(?:(?:ok(?:ay)?|right|so|um+|uh+|and|yeah|well|i'm|i|we|need|needs|have|has|got|to|"
+                     r"want|gotta|should|must|then|going to|gonna)\b[,\s]*)+", re.I)
+_TRAILING = re.compile(r"(?:[,\s]+(?:and|then|so|also))+$", re.I)
+_STOP = {"the", "a", "an", "to", "for", "and", "of", "on", "in", "my", "with", "about", "at", "up", "do", "get",
+         "make", "send", "some", "it", "this", "that", "out", "re", "go", "done", "need", "be"}
+_NUMBERS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve "
+                                       "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split())}
+
+
+def split_session_text(text):
+    """'Firstly email Sam. Secondly, write the newsletter' -> ['Email Sam', 'Write the newsletter']."""
+    items = []
+    for part in _SPLIT.split(str(text or "")):
+        part = _TRAILING.sub("", _FILLER.sub("", (part or "").strip(" ,-–•*"))).strip(" ,.-")
+        if len(part) > 1:
+            items.append(part[0].upper() + part[1:])
+    return items
+
+
+def _words(text):
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _STOP and len(w) > 1}
+
+
+def match_todo(title, todos):
+    """The open to-do a session item is about (most words in common), or None."""
+    from difflib import SequenceMatcher
+    item, best, best_score = _words(title), None, 0.0
+    for t in todos:
+        words = _words(t["title"])
+        if not words or not item:
+            continue
+        common = len(words & item)
+        score = common / len(words)
+        if not (score == 1 or (common >= 2 and score >= 0.6)):
+            score = SequenceMatcher(None, title.lower(), t["title"].lower()).ratio()
+            if score < 0.8:
+                continue
+        if score > best_score:
+            best, best_score = t, score
+    return best
+
+
+def match_track(title):
+    """
+    (bar key, how many) a session item adds to, from the words the user gave each bar; or (None, 1).
+    The longest matching word wins. With a bar whose words include "email", 'Send 5 emails' -> 5.
+    """
+    low = title.lower()
+    best, best_word, words = None, "", []
+    for b in work_bars():
+        for w in b["words"]:
+            if len(w) > len(best_word) and re.search(rf"(?<![a-z0-9]){re.escape(w)}(?:s|es)?(?![a-z0-9])", low):
+                best, best_word, words = b["key"], w, b["words"]
+    if not best:
+        return None, 1
+    # A number only counts right before what it counts: "send 5 emails", not "call Sam at 5".
+    counted = "|".join(re.escape(w) for w in words)
+    n = re.search(rf"\b(\d{{1,3}}|{'|'.join(_NUMBERS)})\s+(?:\w+\s+)?(?:{counted})", low)
+    amount = (int(n.group(1)) if n.group(1).isdigit() else _NUMBERS[n.group(1)]) if n else 1
+    return best, max(1, min(amount, 100))
+
+
+WORK_SESSION_COLS = ("id", "day", "ord", "title", "done", "todo_id", "track", "amount")
+
+
+def session_items(day=None):
+    day = (day or local_today()).isoformat() if not isinstance(day, str) else day
+    with db() as conn:
+        rows = conn.execute(f"SELECT {', '.join(WORK_SESSION_COLS)} FROM work_session WHERE day = ? ORDER BY ord",
+                            (day,)).fetchall()
+    return [{**dict(zip(WORK_SESSION_COLS, r)), "done": bool(r[4])} for r in rows]
+
+
+def add_session_items(titles, day=None, link=True):
+    """Add items to today's session list, each matched to an open to-do and a bar. Returns them."""
+    day = day or local_today()
+    todos = all_open_todos(day) if link else []
+    added = []
+    with db() as conn:
+        start = conn.execute("SELECT COALESCE(MAX(ord), -1) + 1 FROM work_session WHERE day = ?",
+                             (day.isoformat(),)).fetchone()[0]
+        for i, title in enumerate(t.strip() for t in titles if t and t.strip()):
+            todo = match_todo(title, todos) if link else None
+            track, amount = match_track(title) if link else (None, 1)
+            item = {"id": uuid.uuid4().hex, "day": day.isoformat(), "ord": start + i, "title": title,
+                    "done": False, "todo_id": todo["id"] if todo else None, "track": track, "amount": amount}
+            conn.execute(f"INSERT INTO work_session VALUES ({', '.join('?' * len(WORK_SESSION_COLS))})",
+                         tuple(int(item[c]) if c == "done" else item[c] for c in WORK_SESSION_COLS))
+            added.append(item)
+    return added
+
+
+def _session_item(item_id):
+    with db() as conn:
+        r = conn.execute(f"SELECT {', '.join(WORK_SESSION_COLS)} FROM work_session WHERE id = ?", (item_id,)).fetchone()
+    return {**dict(zip(WORK_SESSION_COLS, r)), "done": bool(r[4])} if r else None
+
+
+def tick_session_item(item_id, done=True):
+    """
+    Tick (or untick) a session item, and with it its to-do and its bar. Returns the Start Working
+    level it completed, if adding to the bar finished one, else None.
+    """
+    item = _session_item(item_id)
+    if not item or item["done"] == bool(done):
+        return None
+    with db() as conn:
+        conn.execute("UPDATE work_session SET done = ? WHERE id = ?", (int(bool(done)), item_id))
+    if item["todo_id"] and get_todo(item["todo_id"]):
+        set_todo_done(item["todo_id"], bool(done))
+    levelled = None
+    if item["track"] and work_bar(item["track"]):
+        for _ in range(item["amount"]):
+            levelled = work_tap(item["track"], 1 if done else -1) or levelled
+    return levelled
+
+
+def update_session_item(item_id, **changes):
+    """Change an item's title or what it's linked to (todo_id, track, amount). Only while it isn't ticked."""
+    allowed = {k: v for k, v in changes.items() if k in ("title", "todo_id", "track", "amount")}
+    if not allowed:
+        return
+    with db() as conn:
+        conn.execute(f"UPDATE work_session SET {', '.join(f'{k} = ?' for k in allowed)} WHERE id = ? AND done = 0",
+                     (*allowed.values(), item_id))
+
+
+def delete_session_item(item_id):
+    with db() as conn:
+        conn.execute("DELETE FROM work_session WHERE id = ?", (item_id,))
+
+
+def clear_session(day=None):
+    """Start the list again: today's items go (what they ticked stays ticked)."""
+    with db() as conn:
+        conn.execute("DELETE FROM work_session WHERE day = ?", ((day or local_today()).isoformat(),))
+
+
+# Start Working's plan: triage that makes the user decide, for every task, whether only
+# they can do it.
+
+PLAN_DECISIONS = ("me", "delegate", "drop")
+
+
+def plan_tasks(include_finished=False):
+    """Plan tasks, newest first: undecided ones, then the rest."""
+    with db() as conn:
+        rows = conn.execute("SELECT id, title, decision, who, done, created, decided FROM work_plan "
+                            + ("" if include_finished else "WHERE done = 0 AND COALESCE(decision, '') != 'drop' ")
+                            + "ORDER BY decision IS NOT NULL, created DESC").fetchall()
+    keys = ("id", "title", "decision", "who", "done", "created", "decided")
+    return [{**dict(zip(keys, r)), "done": bool(r[4])} for r in rows]
+
+
+def add_plan_task(title):
+    title = str(title).strip()
+    if not title:
+        raise ValueError("A task needs a name.")
+    with db() as conn:
+        conn.execute("INSERT INTO work_plan (id, title, created) VALUES (?, ?, ?)",
+                     (uuid.uuid4().hex, title, stamp()))
+
+
+def decide_plan_task(task_id, decision, who=None):
+    if decision not in PLAN_DECISIONS:
+        raise ValueError("Decide: me, delegate or drop.")
+    with db() as conn:
+        conn.execute("UPDATE work_plan SET decision = ?, who = ?, decided = ? WHERE id = ?",
+                     (decision, (str(who).strip() or None) if who else None,
+                      stamp(), task_id))
+
+
+def finish_plan_task(task_id, done=True):
+    with db() as conn:
+        conn.execute("UPDATE work_plan SET done = ? WHERE id = ?", (int(bool(done)), task_id))
+
+
+def delete_plan_task(task_id):
+    with db() as conn:
+        conn.execute("DELETE FROM work_plan WHERE id = ?", (task_id,))
+
+
+def delegation_stats(days=7):
+    """How the user decided in the last `days` days: {me, delegate, drop}."""
+    since = (datetime.now(tz()) - timedelta(days=days)).isoformat(timespec="seconds")
+    out = dict.fromkeys(PLAN_DECISIONS, 0)
+    with db() as conn:
+        for decision, n in conn.execute("SELECT decision, COUNT(*) FROM work_plan WHERE decided >= ? "
+                                        "GROUP BY decision", (since,)):
+            out[decision] = n
+    return out
 
 # ---------------------------------------------------------------------------
 # Search: one box for everything (Home)

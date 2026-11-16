@@ -6,7 +6,7 @@ is ever written back to Outlook).
   parse()   expand recurring events (with their exceptions) in a window of 14 days back to
             8 weeks ahead, convert to the user's time zone, skip cancelled events
   to_rows() fit events to the timetable grid (its hours, 07:00-01:00 by default); after-midnight slots belong to the
-            day before, start rounds down / end rounds up to 30 minutes
+            day before, start rounds down / end rounds up to 15 minutes
   sync()    all of the above, storing the rows in tt_outlook. The last good .ics is cached,
             so when offline the timetable keeps showing the cached events.
 
@@ -37,7 +37,7 @@ OUTLOOK_HOSTS = ("outlook.office365.com", "outlook.office.com", "outlook.live.co
 DAYS_BACK = 14
 WEEKS_AHEAD = 8
 TIMEOUT = 10                               # seconds
-SLOT = timedelta(minutes=30)
+SLOT = timedelta(minutes=store.SLOT_MIN)
 
 
 class SyncError(Exception):
@@ -213,6 +213,7 @@ def parse(ics_bytes, today=None):
         else:
             end = start + (timedelta(days=1) if not isinstance(start, datetime) else timedelta(0))
         info = {
+            "teams": int(is_teams(ev)),
             "uid": str(ev.get("UID", "")),
             "title": title or "(No title)",
             "location": str(ev.get("LOCATION", "")).strip().strip("-–— ") or None,   # "-" means none
@@ -224,6 +225,14 @@ def parse(ics_bytes, today=None):
         else:
             events.append({**info, "all_day": True, "start": start, "end": end})   # dates; end exclusive
     return events
+
+
+def is_teams(ev):
+    """A Microsoft Teams meeting: Outlook adds a Teams join link (and usually X-MICROSOFT-* fields)."""
+    if any(k in ev for k in ("X-MICROSOFT-SKYPETEAMSMEETINGURL", "X-MICROSOFT-ONLINEMEETINGCONFLINK")):
+        return True
+    text = " ".join(str(ev.get(k, "")) for k in ("DESCRIPTION", "LOCATION", "X-ALT-DESC")).lower()
+    return "teams.microsoft.com" in text or "microsoft teams meeting" in text
 
 
 def short_description(text, limit=300):
@@ -243,14 +252,14 @@ def short_description(text, limit=300):
 
 
 def _grid_rows(ev):
-    """Pieces of a timed event that fall on timetable days, snapped to 30-minute slots."""
+    """Pieces of a timed event that fall on timetable days, snapped to 15-minute slots."""
     s, e = ev["start"], ev["end"]
     exact = f"{s:%H:%M}–{e:%H:%M}" if s.date() == e.date() else f"{s:%a %H:%M} – {e:%a %H:%M}"
     rows = []
     day = s.date() - timedelta(days=1)          # an event at 00:30 belongs to the day before
     while day <= e.date():
         g0 = datetime.combine(day, time(store.FIRST_MIN // 60), store.tz())      # the timetable day's hours
-        g1 = g0 + timedelta(minutes=30 * store.SLOTS)
+        g1 = g0 + timedelta(minutes=store.SLOT_MIN * store.SLOTS)
         a, b = max(s, g0), min(e, g1)            # clip to the grid
         if a < b:
             first = math.floor((a - g0) / SLOT)   # start rounds down
@@ -259,7 +268,7 @@ def _grid_rows(ev):
                 "uid": f"{ev['uid']}|{s.isoformat()}|{day}", "date": day.isoformat(),
                 "start": store.slot_time(first), "end": store.slot_time(min(last, store.SLOTS)),
                 "title": ev["title"], "location": ev["location"], "all_day": 0, "exact": exact,
-                "description": ev.get("description"),
+                "description": ev.get("description"), "teams": ev.get("teams", 0),
             })
         day += timedelta(days=1)
     return rows
@@ -276,7 +285,7 @@ def to_rows(events):
         while day < ev["end"]:
             rows.append({"uid": f"{ev['uid']}|{day}", "date": day.isoformat(), "start": None, "end": None,
                          "title": ev["title"], "location": ev["location"], "all_day": 1, "exact": None,
-                         "description": ev.get("description")})
+                         "description": ev.get("description"), "teams": ev.get("teams", 0)})
             day += timedelta(days=1)
     return rows
 

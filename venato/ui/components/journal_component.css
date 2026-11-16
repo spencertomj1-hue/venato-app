@@ -1,0 +1,116 @@
+.jn-root {
+  --paper: #fbf7ee;
+  --ink: #2b2b2b;
+  --line: rgba(80, 110, 160, 0.18);
+  --leather: #5b3a29;
+  font-family: inherit;
+  perspective: 1800px;
+}
+
+/* ---------- Closed: the cover ---------- */
+.jn-closed { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 18px 0 8px; }
+.jn-cover {
+  width: 260px; height: 340px; border-radius: 4px 14px 14px 4px; cursor: pointer;
+  background: linear-gradient(135deg, #6b4430, var(--leather) 55%, #3f2719);
+  box-shadow: inset 10px 0 0 rgba(0, 0, 0, 0.25), inset 12px 0 0 rgba(255, 255, 255, 0.06),
+              0 18px 40px rgba(0, 0, 0, 0.3);
+  transform-origin: left center; transition: transform 0.65s cubic-bezier(.4, .1, .3, 1), box-shadow 0.65s;
+  display: flex; align-items: center; justify-content: center;
+}
+.jn-cover:hover { transform: rotateY(-8deg); }
+.jn-cover.opening { transform: rotateY(-165deg); box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15); }
+.jn-cover-in {
+  border: 2px solid rgba(232, 200, 140, 0.7); border-radius: 6px; padding: 26px 30px; text-align: center;
+  color: #e8c88c;
+}
+.jn-cover-title { font-family: Georgia, "Times New Roman", serif; font-size: 2rem; letter-spacing: 0.08em; }
+.jn-cover-sub { margin-top: 6px; font-size: 0.8rem; opacity: 0.8; }
+.jn-open-btn, .jn-foot button, .jn-left-nav button {
+  padding: 7px 16px; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.4);
+  background: transparent; color: inherit; cursor: pointer; font: inherit;
+}
+.jn-open-btn { font-weight: 600; }
+
+/* ---------- Open: two pages ---------- */
+.jn-book {
+  position: relative; display: grid; grid-template-columns: 1fr 1.6fr; min-height: 520px;
+  background: var(--paper); color: var(--ink); border-radius: 6px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), 0 0 0 6px var(--leather);
+  transform-style: preserve-3d;
+}
+.jn-book.just-opened { animation: jn-open 0.55s ease-out; }
+@keyframes jn-open { from { transform: rotateX(8deg) scale(0.96); opacity: 0.2; } to { transform: none; opacity: 1; } }
+.jn-book::after {          /* the spine's shadow between the pages */
+  content: ""; position: absolute; top: 0; bottom: 0; left: calc(100% / 2.6); width: 26px; margin-left: -13px;
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.13), transparent); pointer-events: none;
+}
+.jn-left { padding: 26px 24px; border-right: 1px solid rgba(0, 0, 0, 0.06); }
+.jn-left-in { display: flex; flex-direction: column; gap: 14px; height: 100%; }
+.jn-day { font-family: Georgia, serif; font-size: 1.25rem; }
+.jn-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 6px; }
+.jn-stat { background: rgba(0, 0, 0, 0.04); border-radius: 6px; padding: 5px 8px; }
+.jn-stat span { display: block; font-size: 0.68rem; opacity: 0.6; }
+.jn-stat b { font-size: 0.92rem; font-weight: 600; }
+.jn-notice { background: #e8f5e9; color: #1b5e20; border-radius: 6px; padding: 6px 9px; font-size: 0.82rem; }
+.jn-tip { font-size: 0.8rem; opacity: 0.7; line-height: 1.4; }
+.jn-tip p { margin: 0 0 6px; }
+.jn-left-nav { margin-top: auto; }
+.jn-left-nav button { color: var(--ink); border-color: rgba(0, 0, 0, 0.2); }
+
+.jn-right { display: flex; flex-direction: column; padding: 22px 30px 16px 34px; }
+.jn-head { font-family: Georgia, serif; font-size: 1.05rem; text-align: center; margin-bottom: 8px;
+           padding-bottom: 6px; border-bottom: 1px solid rgba(0, 0, 0, 0.12); }
+.jn-text {
+  flex: 1; min-height: 400px; resize: none; border: 0; outline: none; background: transparent; color: var(--ink);
+  font-family: "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive; font-size: 1.02rem; line-height: 30px;
+  background-image: linear-gradient(transparent 29px, var(--line) 29px); background-size: 100% 30px;
+  background-attachment: local; padding: 4px 0 0;
+}
+.jn-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+.jn-foot button { color: var(--ink); border-color: rgba(0, 0, 0, 0.2); }
+.jn-foot .jn-close { margin-right: auto; }
+.jn-foot button:disabled { opacity: 0.35; cursor: default; }
+.jn-foot button:focus-visible, .jn-left-nav button:focus-visible, .jn-open-btn:focus-visible { outline: 2px solid #3e8ef7; }
+
+/* A page turning */
+.jn-sheet {
+  position: absolute; top: 0; bottom: 0; background: var(--paper); pointer-events: none;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.18); backface-visibility: hidden;
+}
+.jn-sheet.fwd { right: 0; width: calc(100% * 1.6 / 2.6); transform-origin: left center; animation: jn-fwd 0.45s ease-in; }
+.jn-sheet.back { left: 0; width: calc(100% / 2.6); transform-origin: right center; animation: jn-back 0.45s ease-in; }
+@keyframes jn-fwd { from { transform: rotateY(0); } to { transform: rotateY(-178deg); } }
+@keyframes jn-back { from { transform: rotateY(0); } to { transform: rotateY(178deg); } }
+
+/* Narrow: one page (the writing), with the day's details above it */
+@container (max-width: 640px) {
+  .jn-book { grid-template-columns: 1fr; }
+  .jn-book::after { display: none; }
+  .jn-left { border-right: 0; border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
+  .jn-tip { display: none; }
+}
+.jn-root { container-type: inline-size; }
+@media (prefers-reduced-motion: reduce) {
+  .jn-cover, .jn-book.just-opened, .jn-sheet { transition: none; animation: none; }
+}
+
+/* Left page: the day's log */
+.jn-block { display: flex; flex-direction: column; gap: 6px; }
+.jn-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.55; }
+.jn-rate { display: flex; align-items: center; gap: 5px; }
+.jn-rate > span { width: 4.2em; font-size: 0.85rem; }
+.jn-dot, .jn-step, .jn-track {
+  width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.22); background: transparent;
+  color: var(--ink); cursor: pointer; font: inherit; font-size: 0.8rem; padding: 0;
+}
+.jn-dot.on { background: var(--leather); border-color: var(--leather); color: #fbf7ee; font-weight: 600; }
+.jn-rate .jn-dot { width: 23px; height: 23px; font-size: 0.72rem; }   /* ten of them (1-10) on one line */
+.jn-rate:has(.jn-dot) { gap: 3px; }
+.jn-dot:hover:not(.on), .jn-step:hover, .jn-track:hover { background: rgba(0, 0, 0, 0.06); }
+.jn-sleep { min-width: 3.4em; text-align: center; font-size: 0.9rem; }
+.jn-tick { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; cursor: pointer; }
+.jn-tick input { width: 16px; height: 16px; accent-color: var(--leather); cursor: pointer; }
+.jn-tick input:checked + span { text-decoration: line-through; opacity: 0.6; }
+.jn-none { font-size: 0.8rem; opacity: 0.55; }
+.jn-tip { font-size: 0.75rem; }
+.jn-dot:focus-visible, .jn-step:focus-visible, .jn-track:focus-visible, .jn-tick input:focus-visible { outline: 2px solid #3e8ef7; }

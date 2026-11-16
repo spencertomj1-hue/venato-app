@@ -104,8 +104,8 @@ def test_add_block_picks_category_from_label_map(tools, store):
 
 
 def test_add_block_explicit_category_name(tools, store):
-    tools.add_block(DAY, "actual", "18:00", "20:00", "Five-a-side", category="exercise")
-    assert blocks(store, "actual") == [("18:00", "20:00", "Five-a-side", "exercise")]
+    tools.add_block(DAY, "actual", "18:00", "20:00", "Five-a-side", category="social")
+    assert blocks(store, "actual") == [("18:00", "20:00", "Five-a-side", "social")]
 
 
 def test_add_block_unknown_category_asks(tools):
@@ -133,7 +133,7 @@ def test_add_block_extending_same_block_needs_no_confirm(tools, store):
 def test_add_block_after_midnight_and_time_rules(tools, store):
     tools.add_block(DAY, "actual", "23:30", "01:00", "Sleep")
     assert blocks(store, "actual") == [("23:30", "01:00", "Sleep", "sleep")]
-    for start, end in (("06:00", "07:00"), ("09:15", "10:00"), ("10:00", "09:00"), ("00:30", "01:30")):
+    for start, end in (("06:00", "07:00"), ("09:10", "10:00"), ("10:00", "09:00"), ("00:30", "01:30")):
         with pytest.raises(tools.ToolError):
             tools.add_block(DAY, "plan", start, end, "Sleep")
     with pytest.raises(tools.ToolError):
@@ -184,10 +184,10 @@ def test_queries(tools):
 
 
 def test_edit_category_and_activity_default(tools, store):
-    assert tools.edit_category("exercise", colour="#1b7f3b").changed
+    assert tools.edit_category("chores", colour="#1b7f3b").changed
     cats = {r["name"]: r for r in store.load_categories().to_dict("records")}
-    assert cats["Exercise"]["colour"] == "#1B7F3B"
-    assert tools.edit_category("Exercise", new_name="Workout").changed
+    assert cats["Chores"]["colour"] == "#1B7F3B"
+    assert tools.edit_category("Chores", new_name="Workout").changed
     assert "Workout" in set(store.load_categories()["name"])
     with pytest.raises(tools.ToolError, match="hex"):
         tools.edit_category("Workout", colour="green")
@@ -212,13 +212,13 @@ def friday(store, monkeypatch):
 
 def test_add_todo_to_this_week(tools, store, friday):
     r = tools.add_todo("Go gym", "weekly")
-    assert r.changed and r.text == "Added 'Go gym' to this week's to-dos (26 Oct to 1 Nov)."
+    assert r.changed and r.text == "Added 'Go gym' to this week's to-dos (26 Oct to 1 Nov), repeating every week."
+    assert store.todos_for("weekly", "2026-10-26")[0]["repeat"]           # weekly to-dos repeat by default
     assert [g["title"] for g in store.todos_for("weekly", "2026-10-26")] == ["Go gym"]
     again = tools.add_todo("go gym", "week")
     assert not again.changed and "already" in again.text
-    r = tools.add_todo("Budget", "monthly", date="2026-11-12", repeat=True, notes="bills")
-    assert "the November 2026 to-dos" in r.text and "repeating every month" in r.text
-    assert store.todos_for("monthly", "2026-11-01")[0]["repeat"] is True
+    with pytest.raises(tools.ToolError):
+        tools.add_todo("Budget", "monthly")                  # monthly to-dos are no longer used
     with pytest.raises(tools.ToolError):
         tools.add_todo("x", "fortnightly")
 
@@ -402,7 +402,7 @@ def test_plan_time_fits_around_blocks_and_spreads(tools, store):
     r.pending.run()
     rev = [(b["date"], b["start"], b["end"]) for b in store.blocks_between("2026-10-26", "2026-10-28", "plan")
            if b["label"] == "Revision"]
-    hours = sum((store.slot_of(e) - store.slot_of(s)) / 2 for _, s, e in rev)
+    hours = sum((store.slot_of(e) - store.slot_of(s)) * store.SLOT_MIN / 60 for _, s, e in rev)
     assert hours == 6
     assert {d for d, _, _ in rev} == {"2026-10-26", "2026-10-27", "2026-10-28"}          # spread over the days
     lectures = [b for b in store.blocks_between("2026-10-26", "2026-10-28", "plan") if b["label"] == "Lectures"]
@@ -463,7 +463,7 @@ def test_log_water(tools, store):
 def test_plan_time_skips_the_past(tools, store):
     tools._now = lambda: datetime(2026, 10, 27, 12, 10)           # Tuesday, 12:10
     r = tools.plan_time("Revision", 4, "2026-10-26", "2026-10-28", earliest="09:00", latest="18:00")
-    assert r.pending.summary.endswith("Tue 27 Oct 12:30–14:30; Wed 28 Oct 09:00–11:00")
+    assert r.pending.summary.endswith("Tue 27 Oct 12:15–14:15; Wed 28 Oct 09:00–11:00")   # the next quarter hour
     with pytest.raises(tools.ToolError, match="already over"):
         tools.plan_time("Revision", 2, "2026-10-20", "2026-10-26")
 

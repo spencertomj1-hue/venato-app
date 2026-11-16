@@ -16,7 +16,9 @@ import pandas as pd
 import streamlit as st
 
 from venato import assistant
+from venato import code_mode
 from venato import outlook
+from venato import phone
 from venato import setup_checks
 from venato import regional
 from venato import store
@@ -453,12 +455,14 @@ def page_settings():
     st.header("Settings", anchor=False)
     ai = store.ai_enabled()
     names = [":material/widgets: Blocks", ":material/palette: Appearance", ":material/public: Region", ":material/calendar_month: Calendar",
-             ":material/chat: Assistant",
+             ":material/chat: Assistant", ":material/directions_run: Strava", ":material/smartphone: Phone",
              ":material/notifications: Reminders", ":material/database: Data", ":material/info: About"]
     if ai:
         names.insert(5, ":material/mic: Voice")       # voice input is for the assistant
-    tabs = dict(zip(["blocks", "look", "region", "cal", "claude", "mic", "remind", "data", "about"] if ai else
-                    ["blocks", "look", "region", "cal", "claude", "remind", "data", "about"], st.tabs(names)))
+    keys = ["blocks", "look", "region", "cal", "claude", "mic", "strava", "phone", "remind", "data", "about"]
+    if not ai:
+        keys.remove("mic")
+    tabs = dict(zip(keys, st.tabs(names)))
     look, region, cal, claude, mic, remind, data, about = (
         tabs.get(k) for k in ("look", "region", "cal", "claude", "mic", "remind", "data", "about"))
     with tabs["blocks"]:
@@ -468,6 +472,11 @@ def page_settings():
         appearance_section()
     with region:
         region_section()
+    with tabs["phone"]:
+        _phone_section()
+    with tabs["strava"]:
+        from venato.ui import strava_ui
+        strava_ui.settings_section()
     with cal:
         st.subheader("Outlook calendar", anchor=False)
         connected = calendar_status("set")
@@ -490,7 +499,12 @@ def page_settings():
                      "straight away without asking Claude (their reply starts with ⚡). Anything else still goes to Claude.")
             if quick_on != store.load_settings().get("quick_commands", True):
                 store.save_settings(quick_commands=quick_on)
+            home_ask = st.toggle("Ask box on Home", value=store.load_settings().get("home_ask", True), key="set_home_ask",
+                                 help="The box to ask Claude at the top of Home. The chat bar on other pages stays.")
+            if home_ask != store.load_settings().get("home_ask", True):
+                store.save_settings(home_ask=home_ask)
             claude_section("set")
+            _code_section()
     if mic:
         with mic:
             st.subheader("Voice input", anchor=False)
@@ -513,6 +527,69 @@ def page_settings():
             st.session_state["wizard_open"] = True
             st.session_state["wizard_step"] = 0
             st.rerun()
+
+
+def _phone_section():
+    st.subheader("Talk to Venato from your phone")
+    st.write("A simple page on your phone: tap the mic on your keyboard, say what to do (\"add a to-do…\", "
+             "\"put email Sam on my start working list\", \"log 3 emails\"), and Venato does it, like the chat.")
+    st.caption(f"Your {system.COMPUTER} has to be on with Venato open. It only works over **Tailscale**, a free "
+               "private network between your own devices, never over Wi-Fi or the internet, and it needs a PIN.")
+    with st.expander("Set up Tailscale (once)", icon=":material/help:", expanded=not phone.tailscale_ip()):
+        st.markdown(
+            f"1. Install Tailscale on this {system.COMPUTER} from **tailscale.com/download** and sign in.\n"
+            "2. Install the Tailscale app on your phone and sign in with the **same account**. Leave it switched on.\n"
+            "3. Set a PIN below and switch on phone access.\n"
+            "4. On your phone, open the link shown below, enter the PIN, then *Add to Home Screen* "
+            "(Safari: Share › Add to Home Screen; Chrome: ⋮ › Add to Home screen).\n\n"
+            "If Windows asks whether Venato may use the network, allow it on private networks.")
+    new_pin = st.text_input("PIN (4 to 12 digits)", value="", type="password", key="phone_pin",
+                            placeholder="Set" if not phone.pin() else "•••• (leave empty to keep it)")
+    on = st.toggle("Phone access", value=phone.enabled(), key="phone_on")
+    if on != phone.enabled() or new_pin:
+        try:
+            phone.set_enabled(on, new_pin or None)
+            phone.ensure_running(force=True)
+            st.session_state.pop("phone_pin", None)
+            st.rerun()
+        except ValueError as e:
+            st.error(str(e))
+    address, why_not = phone.status()
+    if address:
+        name = phone.tailscale_name()
+        st.success(f"On. Open this on your phone: **{address}**", icon=":material/smartphone:")
+        if name:
+            st.caption(f"Or, if your phone has Tailscale's MagicDNS: http://{name}:{phone.PORT}")
+    elif phone.enabled():
+        st.warning(f"Not running: {why_not or 'starting…'} Install and sign in to Tailscale (above), "
+                   "then reopen Venato.", icon=":material/warning:")
+
+
+def _code_section():
+    st.subheader("Let Claude edit the app")
+    why_not = code_mode.available()
+    if why_not:
+        st.caption(why_not)
+        return
+    st.write("Normally Claude in the chat can only change your data. Switch this on and it can change **anything "
+             "about Venato itself**: add pages and features, change the layout, fix things. Just ask in the chat.")
+    st.caption(f"It can then read and edit any file in {code_mode.APP_DIR} and run commands on your "
+               f"{system.COMPUTER}, without asking first. Each message's changes are saved as a git commit, "
+               "so you can undo them below. Coding requests take longer (often a few minutes) and use more "
+               "of your Claude allowance.")
+    on = st.toggle("Let Claude edit the app", value=code_mode.enabled(), key="code_mode_toggle")
+    if on != code_mode.enabled():
+        code_mode.set_enabled(on)
+        st.rerun()
+    changes = code_mode.history()
+    if changes:
+        st.markdown("**Recent changes Claude made**")
+        for sha, subject, when in changes:
+            text, button = st.columns([5, 1], vertical_alignment="center")
+            text.markdown(f"`{sha}` {subject[len(code_mode.COMMIT_PREFIX):]}  \n:gray[{when}]")
+            if button.button("Undo", key=f"undo_{sha}", icon=":material/undo:"):
+                ok, message = code_mode.undo(sha)
+                (st.success if ok else st.error)(message)
 
 
 def _data_section():

@@ -62,7 +62,7 @@ def _slots_gone(day, now):
     """How many of a timetable day's slots have started by `now` (all of them for a past day)."""
     from datetime import datetime, time
     start = datetime.combine(store._as_date(day), time(store.FIRST_MIN // 60, store.FIRST_MIN % 60))
-    return max(0, min(store.SLOTS, int((now - start).total_seconds() // 1800)))
+    return max(0, min(store.SLOTS, int((now - start).total_seconds() // (60 * store.SLOT_MIN))))
 
 
 def summary(first):
@@ -85,7 +85,7 @@ def summary(first):
         actual = {k: v for k, v in actual.items() if k < cutoff}
         for track, slots in (("plan", plan), ("actual", actual)):
             for cat in slots.values():
-                hours.setdefault(cat, {"plan": 0.0, "actual": 0.0})[track] += 0.5
+                hours.setdefault(cat, {"plan": 0.0, "actual": 0.0})[track] += store.SLOT_MIN / 60
         planned += len(plan)
         matched += sum(1 for s, cat in plan.items() if actual.get(s) == cat)
     time = [{"category": names.get(c, "Uncategorised"), "colour": colours.get(c, "#8B8D98"), **h}
@@ -118,7 +118,7 @@ def summary(first):
     has_data = bool(hours or any(this) or any(h["ticks"] for h in habits) or weekly or daily or journal or people)
     return {
         "first": first, "last": last, "complete": last < today, "has_data": has_data,
-        "time": time, "planned_hours": planned / 2, "actual_hours": sum(h["actual"] for h in time),
+        "time": time, "planned_hours": planned * store.SLOT_MIN / 60, "actual_hours": sum(h["actual"] for h in time),
         "followed_pct": round(100 * matched / planned) if planned else None,
         "log": log, "days_logged": len(this),
         "habits": habits,

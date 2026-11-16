@@ -75,10 +75,9 @@ def test_daily_log_journal(store):
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert "Journal" not in at.sidebar.radio[0].options                    # it lives in the Daily Log now
     at.sidebar.radio[0].set_value("Daily Log").run()
-    box = next(t for t in at.text_area if t.label == "Journal")
-    assert box.value == "Wrote some code."
-    box.set_value("Wrote some code. Then slept.")
-    next(b for b in at.button if b.label.startswith("Save ")).click().run()
-    assert not at.exception and store.get_journal(today) == "Wrote some code. Then slept."
+    assert not at.exception                                                # the journal book (a component) is drawn
+    from venato import journal
+    journal.save(today, "Wrote some code. Then slept.", make_todos=False)    # what the book saves
+    assert store.get_journal(today) == "Wrote some code. Then slept."
     at.text_input(key="journal_search").set_value("new year").run()
     assert any("New year, new me" in m.value for m in at.markdown)

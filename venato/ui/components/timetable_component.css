@@ -76,7 +76,7 @@ button, input, select { font: inherit; }
   border: 1px solid rgba(128, 128, 128, 0.35); background: var(--head-bg);
 }
 
-/* ---------- Legend / brush picker (one line) ---------- */
+/* ---------- Legend (one line) ---------- */
 
 /* Always one line; if the window is too narrow it scrolls sideways instead of wrapping. */
 .tt-legend {
@@ -102,15 +102,14 @@ button, input, select { font: inherit; }
   color: var(--text);
   font-size: 0.76rem;
   white-space: nowrap;
-  cursor: pointer;
-  transition: background 0.12s;
 }
 .sw i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .sw:hover { background: rgba(128, 128, 128, 0.1); }
 .sw.on { background: rgba(128, 128, 128, 0.16); border-color: rgba(128, 128, 128, 0.35); font-weight: 600; }
 .sep { flex: none; width: 1px; height: 16px; margin: 0 5px; background: var(--line-day); }
 
-
+.tt-hint { margin-top: 6px; font-size: 0.72rem; color: var(--muted); }
+.tt-hint.warn { color: #d33; }
 
 /* Keyboard / screen-reader list of the blocks: hidden until something in it has focus. */
 .tt-a11y { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -183,10 +182,12 @@ th.sub {
 /* Body: each empty half hour is a small rounded tile of very light grey (like the blocks),
    with a thin gap around it; a slightly wider gap between days. */
 table.tt td {
-  height: var(--row-h, 18px);   /* Home shrinks this to fit the window */
+  height: var(--row-h, 9px);    /* 15-minute rows; Home shrinks this to fit the window */
   padding: 0;
   border-bottom: 1px solid transparent;    /* room for the time lines, drawn over the blocks by .tt-lines */
 }
+tr.half td { border-bottom: 1px solid var(--line); }      /* the line on each hour */
+tr.quarter td { border-bottom-color: transparent; }        /* no line on a quarter hour */
 tr:last-child td { border-bottom: none; }
 
 /* Time labels sit centred on their hour line. */
@@ -283,6 +284,7 @@ td.s.sel.box { --tile: color-mix(in srgb, var(--accent) 16%, transparent); }
 .tt-root.single .tt-nav, .tt-root.single .tt-goto { display: none; }
 
 /* View-only mode (Home page): same look, no editing. The legend is just a key. */
+.tt-root.readonly .tt-hint { display: none; }
 .tt-root.readonly .tt-tools { display: none; }
 .tt-root.readonly .sw { pointer-events: none; }
 .tt-root.readonly .sw.on { background: transparent; border-color: transparent; font-weight: inherit; }
@@ -321,6 +323,7 @@ td.s.sel.box { --tile: color-mix(in srgb, var(--accent) 16%, transparent); }
 
 /* Outlook blocks: solid like the user's own (Uni blue), with a small calendar icon; drawn on top. */
 .blk.outlook { z-index: 1; }
+.blk.missed { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45); }   /* black still shows on the dark theme */
 .blk.outlook b { display: inline-flex; align-items: center; gap: 4px; }
 
 /* All-day Outlook events: chips in the day header. */
@@ -361,9 +364,37 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 .tt-peek .pk-text { font-size: 0.82rem; line-height: 1.4; max-height: 8.5em; overflow: auto;
                     padding-top: 6px; border-top: 1px solid var(--line); }
 .tt-peek .row { justify-content: flex-end; margin-top: 4px; }
+.tt-peek .pk-status { display: flex; gap: 6px; margin-top: 6px; }
+.tt-peek .pk-status button {
+  flex: 1; padding: 6px 8px; border: 1px solid rgba(128, 128, 128, 0.4); border-radius: 8px;
+  background: transparent; color: var(--text); font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+}
+.tt-peek .pk-done:hover, .tt-peek .pk-done.on { background: #22C55E; border-color: #22C55E; color: #000; }
+.tt-peek .pk-not:hover, .tt-peek .pk-not.on { background: #000; border-color: rgba(255, 255, 255, 0.5); color: #fff; }
+.tt-peek .pk-cats { display: flex; flex-wrap: wrap; gap: 3px; max-height: 13em; overflow: auto; margin-top: 4px; }
+.tt-peek .pk-cat {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 999px; background: transparent; color: var(--text); font: inherit; font-size: 0.72rem; cursor: pointer;
+}
+.tt-peek .pk-cat i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.tt-peek .pk-cat:hover { background: rgba(128, 128, 128, 0.14); }
+.tt-peek .pk-cat.on { background: rgba(128, 128, 128, 0.2); border-color: rgba(128, 128, 128, 0.6); font-weight: 600; }
 .tt-pop .p-details { resize: vertical; font-size: 0.85rem; }
 
+.tt-pop .p-times { align-items: center; }
+.tt-pop .p-times select { flex: 1; }
+td.s.sel-bad { background: color-mix(in srgb, #e5484d 25%, transparent); }
+td.s.filled { cursor: grab; }
+
+/* No colour key above the grid or under Home's day: the new-event form picks the category. */
+.tt-legend, .tt-root.readonly .tt-legend { display: none; }
+/* Home's day (compact, but you can add, move and edit events there) */
+.tt-root.readonly.editable td.s { cursor: cell; }
+.tt-root.readonly.editable td.s.filled { cursor: grab; }
+.tt-root.readonly.editable td.s:hover:not(.filled) { background: rgba(128, 128, 128, 0.08); }
 /* Home: where "now" is on today's timetable */
 .tt-now { position: absolute; height: 2px; margin-top: -1px; background: #E53935; pointer-events: none; z-index: 6;
   transition: top 1s linear; }
 .tt-now::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #E53935; }
+.tt-pop select.bad, .tt-pop input.bad { outline: 2px solid #e5484d; }
+.tt-pop .p-newcat[hidden] { display: none; }

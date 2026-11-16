@@ -54,10 +54,10 @@ def nice_day(iso):
 
 
 def _slot(value, is_end):
-    """'HH:mm' on the half hour, within the timetable's hours -> slot index."""
+    """'HH:mm' on a quarter hour, within the timetable's hours -> slot index."""
     m = re.fullmatch(r"(\d{1,2}):(\d{2})", str(value).strip())
-    if not m or int(m.group(1)) > 23 or m.group(2) not in ("00", "30"):
-        raise ToolError(f"'{value}' isn't a valid time. Use HH:mm on the hour or half hour, e.g. 09:30.")
+    if not m or int(m.group(1)) > 23 or m.group(2) not in ("00", "15", "30", "45"):
+        raise ToolError(f"'{value}' isn't a valid time. Use HH:mm on a quarter hour, e.g. 09:15.")
     t = f"{int(m.group(1)):02d}:{m.group(2)}"
     s = store.slot_of(t)
     lo, hi = (1, store.SLOTS) if is_end else (0, store.SLOTS - 1)
@@ -342,9 +342,8 @@ def edit_category(name, colour=None, new_name=None, group=None, create=False):
                             "Set create=true to make a new one (ask the user first).")
         if colour is None:
             raise ToolError("A new category needs a colour (hex, e.g. #00B0F0).")
-        cid = re.sub(r"[^a-z0-9]+", "_", str(name).strip().lower()).strip("_") or "category"
-        group = group or store.groups()[0]
-        store.save_category(cid, str(name).strip(), colour.strip(), group)
+        group = group or (store.groups() or ["Categories"])[0]
+        store.add_category(str(name), colour.strip(), group)
         return Result(f"Created category {str(name).strip()} ({colour.upper()}) in {group}.",
                       changed=True)
 
@@ -359,6 +358,30 @@ def edit_category(name, colour=None, new_name=None, group=None, create=False):
                                             ("colour", final_colour.upper(), cat["colour"].upper()),
                                             ("group", final_group, cat["grp"])) if v != old]
     return Result(f"Updated {cat['name']}: " + ", ".join(changes) + ".", changed=True)
+
+
+def _find_category(name):
+    cats = store.load_categories().to_dict("records")
+    want = str(name).strip().lower()
+    match = [c for c in cats if c["name"].lower() == want or c["id"] == str(name).strip()]
+    if not match:
+        raise ToolError(f"There's no category called '{name}'. Existing: {', '.join(c['name'] for c in cats)}.")
+    return match[0]
+
+
+def merge_categories(category, into, confirmed=False):
+    """Fold `category` into `into`: its blocks and activity defaults move over and it leaves the key."""
+    src, dst = _find_category(category), _find_category(into)
+    if src["id"] == dst["id"]:
+        raise ToolError("Those are the same category.")
+    blocks, labels = store.category_usage(src["id"])
+    moved = [f"{blocks} block{'s' * (blocks != 1)}"] + ([f"{labels} activity default{'s' * (labels != 1)}"] if labels else [])
+    summary = (f"Merge {src['name']} into {dst['name']}: " + " and ".join(moved) +
+               f" move to {dst['name']}, and {src['name']} is removed from the key")
+    if not confirmed:
+        return Result("", pending=Pending(summary, lambda: merge_categories(src["id"], dst["id"], True)))
+    store.merge_categories(src["id"], dst["id"])
+    return Result(f"Done: {summary}.", changed=True)
 
 
 def set_outlook_category(category):
@@ -478,6 +501,7 @@ def delete_block(block_id, confirmed=False):
     if not confirmed:
         return Result("", pending=Pending(summary, lambda: delete_block(block_id, True)))
     store.delete_block(b["id"])
+    store.taken_off_timetable(b["id"])        # a to-do's / session's block: don't put it back
     return Result(f"Done: {summary}.", changed=True)
 
 
@@ -507,7 +531,7 @@ def _first_future_slot(day):
     """The first slot on a timetable day that hasn't started yet (SLOTS if the day is over)."""
     start = datetime.combine(date.fromisoformat(day), time(store.FIRST_MIN // 60, store.FIRST_MIN % 60))
     gone = (_now() - start).total_seconds() / 60
-    return min(store.SLOTS, max(0, -(-int(gone) // 30)))
+    return min(store.SLOTS, max(0, -(-int(gone) // store.SLOT_MIN)))
 
 
 def plan_time(label, hours, start_date, end_date, category=None, earliest="09:00", latest="21:00",
@@ -521,7 +545,7 @@ def plan_time(label, hours, start_date, end_date, category=None, earliest="09:00
     if not label:
         raise ToolError("Say what to plan (a label, e.g. 'Revision').")
     try:
-        need = round(float(hours) * 2)                       # in 30-minute slots
+        need = round(float(hours) * 60 / store.SLOT_MIN)     # in timetable slots
     except (TypeError, ValueError):
         raise ToolError("hours must be a number, e.g. 6.")
     if need < 1:
@@ -532,7 +556,7 @@ def plan_time(label, hours, start_date, end_date, category=None, earliest="09:00
     hi = _slot(latest, True) if latest != "21:00" or _in_day("21:00", True) else store.SLOTS
     if hi <= lo:
         raise ToolError("latest must be after earliest.")
-    chunk = max(1, round(float(max_block_hours) * 2))
+    chunk = max(1, round(float(max_block_hours) * 60 / store.SLOT_MIN))
     cid = _category(label, category)
     days = _days_between(first_day, last_day, bool(weekdays_only))
     if not days:
@@ -562,7 +586,8 @@ def plan_time(label, hours, start_date, end_date, category=None, earliest="09:00
             placed.append((d, s, e))
             left -= e - s
             # Use up that gap, keeping a half-hour break after the block before the next one that day.
-            rest = [(e + 1, b)] if e + 1 < b else []
+            brk = 30 // store.SLOT_MIN
+            rest = [(e + brk, b)] if e + brk < b else []
             free[d] = sorted([r for r in free[d] if r != (a, b)] + rest)
             progress = True
         if not progress:
@@ -572,9 +597,10 @@ def plan_time(label, hours, start_date, end_date, category=None, earliest="09:00
         return Result(f"There's no free time in the Plan between {earliest} and {latest} on those days.")
     placed.sort()
     names = _cat_names()
-    got = sum(e - s for _, s, e in placed) / 2
+    got = sum(e - s for _, s, e in placed) * store.SLOT_MIN / 60
     lines = "; ".join(f"{nice_day(d)} {store.slot_time(s)}–{store.slot_time(e)}" for d, s, e in placed)
-    short = f" (only {got:g} of {need / 2:g} hours fit)" if got < need / 2 else ""
+    want_h = need * store.SLOT_MIN / 60
+    short = f" (only {got:g} of {want_h:g} hours fit)" if got < want_h else ""
     summary = f"Plan {got:g} h of {label} ({names[cid]}){short}: {lines}"
     if not confirmed:
         return Result("", pending=Pending(summary, lambda: plan_time(
@@ -640,9 +666,11 @@ def describe_todo(t):
     return f"'{t['title']}' in {todo_list_name(t['period'], t['period_start'])}"
 
 
-def add_todo(title, period, date=None, repeat=False, notes=None):
-    """Add a to-do to the period containing `date` (default today)."""
-    title, per = str(title).strip(), _period(period)
+def add_todo(title, period, date=None, repeat=None, notes=None):
+    """Add a to-do to the period containing `date` (default today). Weekly ones repeat unless repeat=False."""
+    title, per = str(title).strip(), _period(period, store.HOME_TODO_PERIODS)   # no monthly to-dos any more
+    if repeat is None:
+        repeat = per in store.REPEAT_BY_DEFAULT
     if not title:
         raise ToolError("The to-do needs a title.")
     day = _period_day(date)
@@ -653,6 +681,86 @@ def add_todo(title, period, date=None, repeat=False, notes=None):
     t = store.add_todo(title, per, day, notes=notes, repeat=bool(repeat))
     extra = f", repeating every {PERIOD_NAMES[per]}" if repeat else ""
     return Result(f"Added '{t['title']}' to {todo_list_name(per, start)}{extra}.", changed=True)
+
+
+# ---------------------------------------------------------------------------
+# Start Working: the session list and the bars
+# ---------------------------------------------------------------------------
+
+def _bar_name(key):
+    bar = store.work_bar(key)
+    return bar["name"] if bar else key
+
+
+def _session_line(i):
+    links = []
+    if i["todo_id"]:
+        todo = store.get_todo(i["todo_id"])
+        links.append(f"to-do '{todo['title']}'" if todo else "a deleted to-do")
+    if i["track"]:
+        links.append(f"+{i['amount']} {_bar_name(i['track'])}")
+    return (f"[{'x' if i['done'] else ' '}] {i['title']} (id {i['id']})"
+            + (f" -> {', '.join(links)}" if links else ""))
+
+
+def add_to_session(items):
+    if isinstance(items, str):
+        items = store.split_session_text(items)
+    items = [str(x).strip() for x in items if str(x).strip()]
+    if not items:
+        raise ToolError("Nothing to add.")
+    added = store.add_session_items(items)
+    return Result("Added to today's session list:\n" + "\n".join(_session_line(i) for i in added), changed=True)
+
+
+def list_session():
+    items = store.session_items()
+    if not items:
+        return Result("Today's session list is empty.")
+    done = sum(i["done"] for i in items)
+    return Result(f"Today's session list ({done} of {len(items)} done):\n" + "\n".join(map(_session_line, items)))
+
+
+def tick_session_item(item, done=True):
+    items = store.session_items()
+    ref = str(item).strip().lower()
+    match = (next((i for i in items if i["id"] == ref), None)
+             or next((i for i in items if i["title"].lower() == ref), None)
+             or next((i for i in items if ref and ref in i["title"].lower()), None))
+    if not match:
+        raise ToolError(f"No item like '{item}' on today's session list.")
+    store.tick_session_item(match["id"], bool(done))
+    return Result(f"{'Ticked' if done else 'Unticked'} '{match['title']}'.", changed=True)
+
+
+def list_work_bars():
+    bars = store.work_bars()
+    if not bars:
+        return Result("No Start Working bars yet: the user sets them up on the Start Working page.")
+    state = store.work_state()
+    lines = []
+    for b in bars:
+        if b["weekly"]:
+            lines.append(f"- {b['name']} (weekly): {state['weekly'].get(b['key'], 0)} of {b['base']} this week")
+        else:
+            lines.append(f"- {b['name']}: {state['counts'].get(b['key'], 0)} of {state['targets'][b['key']]} "
+                         f"at level {state['level']}")
+    return Result("Start Working bars:\n" + "\n".join(lines))
+
+
+def log_work(bar, amount=1):
+    found = store.work_bar(bar)
+    if not found:
+        names = ", ".join(b["name"] for b in store.work_bars()) or "none set up yet"
+        raise ToolError(f"There's no bar called '{bar}' (the user's bars: {names}).")
+    amount = int(amount or 1)
+    levelled = None
+    for _ in range(min(abs(amount), 100)):
+        levelled = store.work_tap(found["key"], 1 if amount > 0 else -1) or levelled
+    text = f"{'Added' if amount > 0 else 'Took'} {abs(amount)} {'to' if amount > 0 else 'off'} {found['name']}."
+    if levelled:
+        text += f" That completed level {levelled}: {store.work_reward():g} went into the pot."
+    return Result(text, changed=True)
 
 
 def _current_todos(day, period=None):
@@ -823,7 +931,9 @@ def list_todos(period=None, date=None):
 # ---------------------------------------------------------------------------
 
 def _amount(goal, n=None):
-    """"7/12 sessions" for a goal (or n of its unit)."""
+    """"7/12 sessions" for a goal (or n of its unit); "done" / "not done yet" for a simple goal."""
+    if goal.get("kind") == "simple":
+        return "done" if goal["done"] else "not done yet"
     n = goal["value"] if n is None else n
     return f"{store._num(n)}/{goal['target']}" + (f" {goal['unit']}" if goal["unit"] else "")
 
@@ -861,9 +971,21 @@ def _find_goal(goal, period=None, date=None):
     raise ToolError(f"There's no goal matching '{goal}' this month or year. Use list_goals to find it.")
 
 
-def add_goal(title, target, period="monthly", unit=None, habit=None, date=None):
-    """A measurable goal for the month or year containing `date` (default today)."""
+def add_goal(title, target=None, period="monthly", unit=None, habit=None, date=None):
+    """
+    A goal for the month or year containing `date` (default today). Without a target it's a simple
+    goal, something to achieve and tick off ("Sub 19:30 5 km"); with one it counts up to a number.
+    """
     per = _period(period, store.GOAL_PERIODS)
+    if target is None and not habit:
+        title = str(title).strip()
+        if not title:
+            raise ToolError("The goal needs a title.")
+        day = _period_day(date)
+        if any(g["title"].lower() == title.lower() for g in store.goals_in(per, day)):
+            return Result(f"There's already a goal called '{title}' for {store.period_title(per, day)}.")
+        g = store.add_goal(title, per, day, kind="simple")
+        return Result(f"Added the goal {describe_goal(g)}.", changed=True)
     try:
         target = float(target)
     except (TypeError, ValueError):
@@ -880,9 +1002,24 @@ def add_goal(title, target, period="monthly", unit=None, habit=None, date=None):
     return Result(f"Added the goal {describe_goal(g)}.", changed=True)
 
 
+def _not_simple(g):
+    if g["kind"] == "simple":
+        raise ToolError(f"{describe_goal(g)} is a simple goal: tick it off with complete_goal.")
+
+
+def complete_goal(goal, done=True, period=None, date=None):
+    """Tick off (done=False: untick) a simple goal."""
+    g = _find_goal(goal, period, date)
+    if g["kind"] != "simple":
+        raise ToolError(f"{describe_goal(g)} counts up to a number: use log_goal_progress or set_goal_progress.")
+    store.set_goal_done(g["id"], bool(done))
+    return Result(("Achieved: " if done else "Unticked ") + f"{describe_goal(store.get_goal(g['id']))}.", changed=True)
+
+
 def log_goal_progress(goal, amount=1, period=None, date=None):
     """Add to a goal's progress (a negative amount takes some off)."""
     g = _find_goal(goal, period, date)
+    _not_simple(g)
     if g["habit"]:
         raise ToolError(f"{describe_goal(g)} counts the habit {g['habit']} automatically. "
                         "Tick the habit instead (set_habit).")
@@ -894,6 +1031,7 @@ def log_goal_progress(goal, amount=1, period=None, date=None):
 def set_goal_progress(goal, value, period=None, date=None):
     """Set a goal's progress to an exact number."""
     g = _find_goal(goal, period, date)
+    _not_simple(g)
     if g["habit"]:
         raise ToolError(f"{describe_goal(g)} counts the habit {g['habit']} automatically; it can't be set by hand.")
     old = g["value"]
@@ -941,8 +1079,11 @@ def list_goals(period=None, date=None):
         goals = store.goals_in(per, day)
         lines.append(f"{per.capitalize()} goals ({store.period_title(per, day)}):" + ("" if goals else " none"))
         for g in goals:
-            pct = round(100 * min(g["value"] / g["target"], 1))
             how = f"; counts habit {g['habit']}" if g["habit"] else ""
+            if g["kind"] == "simple":
+                lines.append(f"- {g['title']}: simple goal, {_amount(g)} (id {g['id']})")
+                continue
+            pct = round(100 * min(g["value"] / g["target"], 1))
             lines.append(f"- {g['title']}: {_amount(g)} ({pct}%) (id {g['id']}{how})")
     return Result("\n".join(lines))
 
@@ -1118,6 +1259,269 @@ def find_people(query=None):
     return Result("\n".join(lines))
 
 
+# ---------------------------------------------------------------------------
+# Training plan
+# ---------------------------------------------------------------------------
+
+def _km(x):
+    return f"{x:g} km" if x is not None else ""
+
+
+def describe_session(s):
+    what = s["title"] + (f", {_km(s['distance_km'])}" if s["distance_km"] else "")
+    done = ""
+    if s["done"]:
+        done = " ✓ done" + (f" ({_km(s['actual_km'])})" if s["actual_km"] is not None else "")
+    return f"{nice_day(s['date'])}: {what}{done}"
+
+
+def _plan():
+    plan = store.active_plan()
+    if not plan:
+        raise ToolError("There's no training plan yet. Offer to create one (create_training_plan).")
+    return plan
+
+
+def _find_session(session=None, date=None):
+    """A session by id, or the session on a date (the first not done yet, if there are two)."""
+    plan = _plan()
+    sessions = store.plan_sessions(plan["id"])
+    if session:
+        match = [s for s in sessions if s["id"] == str(session).strip()]
+        if match:
+            return match[0]
+    if date:
+        day = _day(date)
+        on_day = [s for s in sessions if s["date"] == day]
+        if not on_day:
+            raise ToolError(f"There's no training session on {nice_day(day)}. Use list_training to see the plan.")
+        return next((s for s in on_day if not s["done"]), on_day[0])
+    raise ToolError("Say which session: its date, or its id from list_training.")
+
+
+def training_category():
+    """The category training blocks use: the one 'Run' defaults to, else Exercise / Sports, else the first."""
+    cid = store.resolve_category(label="Run") or store.resolve_category(category="exercise") \
+        or store.resolve_category(category="Sports")
+    return cid or list(store.load_categories()["id"])[0]
+
+
+def place_session(s, times=None, at=None):
+    """Put (or move) one session's block on the timetable; `at` = a start time like '07:00'."""
+    from venato import training
+    return store.place_session(s["id"], at or training.start_time(s, times), training.minutes(s),
+                               training_category(), ("✓ " if s["done"] else "") + s["title"], training.block_details(s))
+
+
+def put_plan_on_timetable(times=None):
+    """Every session not done yet gets a block on the timetable (at the nearest free time)."""
+    plan = _plan()
+    n = 0
+    for s in store.plan_sessions(plan["id"]):
+        if not s["done"] or s["block_id"]:
+            place_session(s, times)
+            n += 1
+    store.save_settings(training_times={**store.load_settings().get("training_times", {}), **(times or {})})
+    return n
+
+
+def take_plan_off_timetable():
+    plan = _plan()
+    for s in store.plan_sessions(plan["id"]):
+        if s["block_id"]:
+            store.unplace_session(s["id"])
+
+
+def create_training_plan(start_date=None, confirmed=False, on_timetable=True):
+    """The 8-week half-marathon plan, starting on start_date (default tomorrow), put on the timetable."""
+    from venato import training
+    start = date.fromisoformat(_day(start_date)) if start_date else store.local_today() + timedelta(days=1)
+    first, race_day, sessions = training.generate(start)
+    old = store.active_plan()
+    summary = (f"Create an {training.WEEKS}-week half-marathon plan from {nice_day(first.isoformat())} "
+               f"to race day {nice_day(race_day.isoformat())} ({len(sessions)} sessions)")
+    if old and not confirmed:
+        return Result("", pending=Pending(summary + f", replacing the current plan and what's been logged in it",
+                                          lambda: create_training_plan(first.isoformat(), True, on_timetable)))
+    if old:
+        store.delete_plan(old["id"])
+    store.create_plan(training.PLAN_NAME, first.isoformat(), race_day.isoformat(), sessions)
+    if on_timetable:
+        put_plan_on_timetable(store.load_settings().get("training_times"))
+        summary += ", and put the sessions on the timetable"
+    return Result(f"Done: {summary}.", changed=True)
+
+
+def list_training(week=None, date=None):
+    """The plan: one week (number, or the week containing a date), or a summary of every week."""
+    from venato import training
+    plan = _plan()
+    sessions = store.plan_sessions(plan["id"])
+    lines = [f"{plan['name']} plan: {nice_day(plan['start_date'])} to race day {nice_day(plan['race_date'])}."]
+    if date and not week:
+        day = _day(date)
+        before = [s["week"] for s in sessions if s["date"] <= day]
+        week = before[-1] if before else sessions[0]["week"]
+    for w in sorted({s["week"] for s in sessions}):
+        ws = [s for s in sessions if s["week"] == w]
+        planned = sum(s["distance_km"] or 0 for s in ws)
+        done = sum(1 for s in ws if s["done"])
+        head = f"Week {w} ({training.phase(w)}): {len(ws)} sessions, {planned:g} km planned, {done} done"
+        if week and int(week) != w:
+            continue
+        lines.append(head)
+        if week:
+            lines += [f"- id {s['id']}: {describe_session(s)}. {s['details'] or ''}" for s in ws]
+    return Result("\n".join(lines))
+
+
+def log_session(session=None, date=None, done=True, actual_km=None, notes=None):
+    """Tick a session off (or untick it), with the distance really run and notes."""
+    s = _find_session(session, date)
+    changes = {"done": bool(done)}
+    if actual_km is not None:
+        if float(actual_km) < 0:
+            raise ToolError("actual_km can't be negative.")
+        changes["actual_km"] = float(actual_km)
+    if notes:
+        changes["notes"] = str(notes).strip()
+    store.update_session(s["id"], **changes)
+    s = store.get_session(s["id"])
+    return Result(("Logged " if done else "Unticked ") + describe_session(s) + ".", changed=True)
+
+
+def edit_session(session=None, date=None, new_date=None, title=None, distance_km=None, details=None, time=None):
+    """Move a session to another day or time, or change its title, distance or description."""
+    s = _find_session(session, date)
+    changes = {}
+    if time:
+        _slot(time, False)
+    if new_date:
+        changes["date"] = _day(new_date)
+    if title:
+        changes["title"] = str(title).strip()
+    if distance_km is not None:
+        changes["distance_km"] = float(distance_km)
+    if details is not None:
+        changes["details"] = str(details).strip() or None
+    if not changes and not time:
+        raise ToolError("Say what to change: new_date, time, title, distance_km or details.")
+    store.update_session(s["id"], **changes)
+    new = store.get_session(s["id"])
+    block = store.session_block(s)
+    if block or time:
+        # Keep its timetable block in step: same time of day (or the new one), on the new day.
+        new = store.get_session(s["id"])
+        placed = place_session(new, at=time or (block["start"] if block else None))
+        return Result("Updated: " + describe_session(new) + f", on the timetable {placed['start']}–{placed['end']}.",
+                      changed=True)
+    return Result("Updated: " + describe_session(new) + ".", changed=True)
+
+
+def delete_training_plan(confirmed=False):
+    plan = _plan()
+    done = sum(1 for s in store.plan_sessions(plan["id"]) if s["done"])
+    summary = f"Delete the {plan['name']} plan" + (f" and the {done} session{'s' * (done != 1)} logged in it" if done else "")
+    if not confirmed:
+        return Result("", pending=Pending(summary, lambda: delete_training_plan(True)))
+    store.delete_plan(plan["id"])          # its timetable blocks go too
+    return Result(f"Done: {summary}.", changed=True)
+
+
+# ---------------------------------------------------------------------------
+# Gym log
+# ---------------------------------------------------------------------------
+
+def describe_gym(s):
+    lifts = "; ".join(f"{x['exercise']} {x['weight_kg']:g} kg {x['sets'] or '?'}×{x['reps'] or '?'}"
+                      if x["weight_kg"] is not None else f"{x['exercise']} {x['sets'] or '?'}×{x['reps'] or '?'}"
+                      for x in s["exercises"])
+    return f"{nice_day(s['date'])} {s['title']}: {lifts or 'no exercises'}"
+
+
+def log_gym_session(date, title, exercises, notes=None):
+    """Log a gym session: exercises = [{exercise, weight_kg, sets, reps}]."""
+    day = _day(date)
+    rows = [x for x in (exercises or []) if str(x.get("exercise") or "").strip()]
+    if not rows:
+        raise ToolError("Give at least one exercise, e.g. {exercise: 'Bench press', weight_kg: 60, sets: 3, reps: 8}.")
+    sid = store.save_gym_session(day, title, rows, notes)
+    s = next(x for x in store.gym_sessions(day, day) if x["id"] == sid)
+    ticked = ""
+    plan = store.active_plan()
+    if plan:
+        for t in store.plan_sessions(plan["id"]):
+            if t["date"] == day and t["kind"] == "strength" and not t["done"]:
+                store.update_session(t["id"], done=True)
+                ticked = f" Ticked off {t['title']} in the training plan."
+                break
+    return Result(f"Logged {describe_gym(s)}.{ticked}", changed=True)
+
+
+def list_gym_sessions(start_date, end_date):
+    first, last = _date_range(start_date, end_date, max_days=366)
+    sessions = store.gym_sessions(first, last)
+    if not sessions:
+        return Result("No gym sessions logged in that time.")
+    return Result("\n".join(f"- id {s['id']}: {describe_gym(s)}" for s in sessions))
+
+
+def last_lift(exercise):
+    row = store.last_lift(exercise)
+    if not row:
+        return Result(f"No {exercise} logged yet.")
+    sets, reps, kg, day = row
+    return Result(f"Last {exercise}: {kg:g} kg, {sets or '?'}×{reps or '?'} on {nice_day(day)}." if kg is not None
+                  else f"Last {exercise}: {sets or '?'}×{reps or '?'} on {nice_day(day)}.")
+
+
+def list_runs(start_date, end_date):
+    """Runs (Strava and ticked-off training runs) between two dates."""
+    first, last = _date_range(start_date, end_date, max_days=366)
+    runs = store.runs(first, last)
+    if not runs:
+        return Result("No runs in that time.")
+    total = sum(r["distance_km"] for r in runs)
+    return Result(f"{len(runs)} runs, {total:.1f} km:\n" + "\n".join(
+        f"- {nice_day(r['date'])}: {r['label']}, {r['distance_km']:g} km ({r['source']})" for r in runs))
+
+
+def _tracker(ref):
+    t = store.find_day_tracker(ref)
+    if not t:
+        names = ", ".join(x["name"] for x in store.day_trackers()) or "none yet"
+        raise ToolError(f"There's no tracker called '{ref}' (the user's trackers: {names}). "
+                        "Ask before adding one with add_tracker.")
+    return t
+
+
+def list_trackers():
+    trackers = store.day_trackers()
+    if not trackers:
+        return Result("No day trackers yet. The user can add them under the journal (Daily Log) or ask you to.")
+    return Result("Day trackers: " + "; ".join(f"{t['name']} ({t['unit'] or 'times'}, step {t['step']:g})" for t in trackers))
+
+
+def add_tracker(name, unit="", step=1):
+    try:
+        t = store.add_day_tracker(name, unit, step)
+    except ValueError as e:
+        raise ToolError(str(e))
+    return Result(f"Added the tracker {t['name']}" + (f" ({t['unit']})" if t["unit"] else "") + ".", changed=True)
+
+
+def log_tracker(tracker, value, date=None, add=False):
+    """Set (or with add=True, add to) one of the user's day trackers for a day."""
+    t = _tracker(tracker)
+    day = _day(date) if date else store.local_today().isoformat()
+    old = store.day_values(day).get(t["id"])
+    new = (old or 0) + float(value) if add else float(value)
+    if new < 0:
+        raise ToolError("A tracker can't go below 0.")
+    store.set_day_value(day, t["id"], new)
+    unit = f" {t['unit']}" if t["unit"] else ""
+    was = f" (was {old:g}{unit})" if old is not None and not add else ""
+    return Result(f"{t['name']} on {nice_day(day)}: {new:g}{unit}{was}.", changed=True)
 def log_interaction(person, note, date=None):
     """Note a time the user saw or spoke to someone, e.g. "Coffee; talked about her thesis"."""
     p = _find_person(person)

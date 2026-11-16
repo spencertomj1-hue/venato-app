@@ -25,6 +25,7 @@ from pathlib import Path
 FROZEN = getattr(sys, "frozen", False)          # running as the packaged Venato.exe
 APP_DIR = Path(sys._MEIPASS) if FROZEN else Path(__file__).parent
 ICON = APP_DIR / "assets" / "icon.png"   # built by scripts/make_icon.py
+WINDOW_ICON = APP_DIR / "assets" / "icon.ico"     # the window and taskbar icon on Windows
 SPLASH_LOGO = APP_DIR / "assets" / "splash.png"   # also built by scripts/make_icon.py
 SPLASH_SECONDS = 2.0                     # minimum time the loading screen shows
 READY_TIMEOUT = 45                       # give up waiting for the page after this (it shows anyway)
@@ -64,6 +65,13 @@ def set_dock_icon():
             NSApplication.sharedApplication().setApplicationIconImage_(image)
     except Exception:
         pass  # cosmetic only
+
+
+def set_taskbar_identity():
+    """Windows would group the window under python(w).exe and show Python's icon; this makes it its own app."""
+    if sys.platform == "win32":
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Venato.App")
 
 
 def quiet_output():
@@ -220,8 +228,9 @@ def main():
         )
         splash.events.closed += splash_closed
         set_dock_icon()
+        set_taskbar_identity()
         # Not private: the window keeps its browser storage (e.g. the light/dark choice) between launches.
-        webview.start(show_app, splash, private_mode=False,
+        webview.start(show_app, splash, private_mode=False, icon=str(WINDOW_ICON),
                       storage_path=str(_data_dir() / "webview"))  # blocks until every window is closed
     finally:
         stop_server()

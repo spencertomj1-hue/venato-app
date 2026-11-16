@@ -17,6 +17,7 @@ def store(tmp_path, monkeypatch):
     data = tmp_path / "data"
     monkeypatch.setenv("VENATO_DATA_DIR", str(data))
     monkeypatch.setenv("VENATO_DB", str(data / "test.db"))
+    monkeypatch.setenv("VENATO_PRESETS", "1")      # the tests use the example categories, groups and lists
     from venato import store as store_module
     store_module = importlib.reload(store_module)
     store_module.init_db()

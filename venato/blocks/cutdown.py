@@ -77,6 +77,8 @@ T_COLS = ("id", "name", "unit", "mode", "daily_limit", "weekly_limit", "goal", "
 def _seed(conn):
     if conn.execute("SELECT COUNT(*) FROM cd_trackers").fetchone()[0]:
         return
+    if not store.use_presets():                 # nothing preset: the user makes their own
+        return
     for i, (name, unit, mode, daily, weekly, goal, presets) in enumerate(STARTER):
         tid = _id()
         conn.execute(f"INSERT INTO cd_trackers ({', '.join(T_COLS)}, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)",

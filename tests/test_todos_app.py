@@ -74,7 +74,8 @@ def test_todo_component_ops(store):
     todos.apply_op({"kind": "edit", "id": "t1", "title": "Run 5k"})
     todos.apply_op({"kind": "edit", "id": "t1", "notes": "Park"})
     todos.apply_op({"kind": "edit", "id": "t1", "title": "  "})          # blank titles are ignored
-    todos.apply_op({"kind": "repeat", "id": "t1", "repeat": True})
+    assert store.get_todo("t1")["repeat"]                    # weekly to-dos repeat by default
+    todos.apply_op({"kind": "repeat", "id": "t2", "repeat": False})
     todos.apply_op({"kind": "toggle", "id": "t2", "done": True})
     assert [(t["id"], t["title"], t["notes"], t["done"], t["repeat"]) for t in store.todos_for("weekly", week)] == [
         ("t2", "Swim", None, True, False), ("t1", "Run 5k", "Park", False, True)]

@@ -65,7 +65,8 @@ def page_stats():
         st.plotly_chart(fig, width="stretch")
 
         # Whole hours from 0, so a few nights of similar sleep don't zoom into 7.1, 7.2...
-        top = max(10, int(entries["sleep"].max() or 0) + 2)
+        most = entries["sleep"].max()          # NaN if no sleep is logged in this period
+        top = max(10, int(most if pd.notna(most) else 0) + 2)
         fig = px.line(entries, x="date", y="sleep", markers=True, title="Sleep",
                       labels={"sleep": "Hours"})
         fig.update_yaxes(range=[0, top], dtick=1 if top <= 12 else 2, tickformat="d")
@@ -92,6 +93,6 @@ def page_stats():
         st.plotly_chart(fig, width="stretch")
 
     for extra in EXTRAS:
-        extra()
+        extra(stats) if getattr(extra, "wants_stats", False) else extra()
     st.divider()
     review_ui.history()                        # weekly reviews, newest first (at the bottom of Stats)

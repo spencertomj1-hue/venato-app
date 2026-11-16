@@ -13,12 +13,19 @@ def _blocks():
     return importlib.reload(blocks)
 
 
+def _core(keys):
+    """Leave out this copy's own blocks (blocks/personal.py), which sort in among the shared ones."""
+    from venato.blocks import personal
+    mine = {b.key for b in personal.BLOCKS}
+    return [k for k in keys if k not in mine]
+
+
 def test_registry_and_defaults(store):
     b = _blocks()
     keys = [x.key for x in b.all_blocks()]
     assert {"timetable", "goals", "log", "applications", "network", "stats"} <= set(keys)
     assert len(keys) == len(set(keys))
-    assert b.chosen_keys()[:2] == ["timetable", "goals"]          # never chose: the original pages, on
+    assert _core(b.chosen_keys())[:2] == ["timetable", "goals"]   # never chose: the original pages, on
     assert all(b.get(k).default for k in b.chosen_keys())
 
 
@@ -45,5 +52,7 @@ def test_settings_tab_switches_blocks(store):
     at.toggle(key="set_block_network").set_value(False).run()
     assert not at.exception and not b.is_on("network")
     assert "Network" not in at.sidebar.radio[0].options
-    at.button(key="set_down_timetable").click().run()                # priority order
-    assert b.chosen_keys()[:2] == ["goals", "timetable"]
+    before = b.chosen_keys()
+    at.button(key="set_down_timetable").click().run()                # priority order: one place later
+    after = b.chosen_keys()
+    assert after.index("timetable") == before.index("timetable") + 1 and sorted(after) == sorted(before)

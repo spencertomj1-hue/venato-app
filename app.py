@@ -11,13 +11,20 @@ import streamlit as st
 
 from venato.ui import settings_ui
 from venato.ui import home
+from venato import autoplan
 from venato import blocks
+from venato import phone
 from venato import store
 from venato import notify
+from venato import system
 from venato.ui import chat
 from venato.ui import review as review_ui
+from venato.ui import strava_ui
 from venato.ui import timetable
+from venato.ui import work
 from venato.store import init_db
+
+system.migrate_from_old_name()    # saved keys and the data folder from an earlier name (Veneto, Arete)
 
 # ---------------------------------------------------------------------------
 # App entry point
@@ -78,14 +85,22 @@ if settings_ui.needs_wizard():
     ready_marker()
     st.stop()
 
+# Training sessions onto the timetable; to-dos stay off it.
+autoplan.run()
+# Talk to Venato from the phone (only if switched on in Settings › Phone, over Tailscale).
+phone.ensure_running()
+
 # Home, then the switched-on blocks (Settings → Blocks), then Settings.
 PAGES = {"Home": home.page_home, **blocks.pages(), "Settings": settings_ui.page_settings}
-if st.session_state.get("page") not in PAGES:
+if st.session_state.get("page") not in PAGES and not st.session_state.get("work_open"):
     st.session_state["page"] = "Home"            # its block was switched off
 
 st.sidebar.title("Venato")
 # Keyed so Home's goals "See all" can switch to the Goals page.
-choice = st.sidebar.radio("Go to", list(PAGES), label_visibility="collapsed", key="page")
+# Picking any page closes Start Working (which shows nothing selected in the list).
+choice = st.sidebar.radio("Go to", list(PAGES), label_visibility="collapsed", key="page",
+                          on_change=lambda: st.session_state.pop("work_open", None))
+work.sidebar_button()
 with st.sidebar:
     from venato.ui import page_fade               # fades between pages instead of swapping bits in front of you
     page_fade.render()
@@ -107,10 +122,11 @@ def update_banner():
 
 update_banner()
 review_ui.maybe_show()                         # Sunday from 7pm: the week's review pops up once
-PAGES[choice]()
+# Nothing selected in the list = Start Working (opened by the green button).
+(PAGES.get(choice) or work.render_page)()
 
-# The Claude chat bar, pinned to the bottom of every page (Home has it inline).
-if choice != "Home" and store.ai_enabled():
+# The Claude chat bar, pinned to the bottom of every page except Home (inline there) and Start Working.
+if choice in PAGES and choice != "Home" and store.ai_enabled():
     chat.render()
 
 from venato.ui import undo_bar                # "Deleted X · Undo", after a delete or overwrite
@@ -126,7 +142,15 @@ def _outlook_autosync():
         st.rerun()
 
 
+@st.fragment(run_every=30 * 60)
+def _strava_autosync():
+    """Strava: sync on open and every 30 minutes; redraw only if new activities came in."""
+    if strava_ui.autosync():
+        st.rerun()
+
+
 # The page is drawn (with the cached Outlook events), so the launcher can show it;
 # the sync then runs, and only redraws if it brought something new.
 ready_marker()
 _outlook_autosync()
+_strava_autosync()

@@ -1,5 +1,5 @@
 """
-Timetable page: a week at a time, Plan vs Actual per day in 30-minute slots,
+Timetable page: a week at a time, Plan vs Actual per day in 15-minute slots,
 coloured by the same category key as the old Excel timetable.
 
 The week grid is a small custom Streamlit component (timetable_component.js/.css).
@@ -16,6 +16,7 @@ import streamlit as st
 from venato import outlook
 from venato import regional
 from venato import store
+from venato.ui import categories_ui
 
 HERE = Path(__file__).parent
 SYNC_EVERY = timedelta(minutes=15)
@@ -78,6 +79,7 @@ def apply_grid_op(op):
       {kind: "move", id, date, track, start, end}   (a block dragged to a new place, or its edge dragged)
       {kind: "hide_outlook", uid}     remove an Outlook occurrence from the timetable
       {kind: "detach_outlook", uid}   turn it into the user's own block (id "ol:<uid>")
+      {kind: "status", id, done}      mark a past event done (true), not done (false) or neither (null)
       {kind: "batch", label, ops: [...]}   several of the above (a group moved, pasted or deleted):
                                      one Undo point for all of them, labelled e.g. "Moved 3 blocks"
     Painting over an Outlook event detaches it first (store.paint), so it's trimmed like any block.
@@ -101,7 +103,10 @@ def _apply(op):
         s, e = store.slot_of(op["start"]), store.slot_of(op["end"])
         block = op.get("block")
         if block:
-            block = {"label": block["label"], "category_id": block["categoryId"], "details": block.get("details")}
+            cid = block["categoryId"]
+            if block.get("newCategory"):                 # made in the new-event form
+                cid = store.category_by_name(block["newCategory"], create=True)
+            block = {"label": block["label"], "category_id": cid, "details": block.get("details") or None}
         store.paint(op["date"], op["track"], s, e, block, new_id=op.get("newId"))
     elif op["kind"] == "upsert":
         e = op["entry"]
@@ -115,6 +120,8 @@ def _apply(op):
         store.hide_outlook(op["uid"])
     elif op["kind"] == "detach_outlook":
         store.detach_outlook(op["uid"])
+    elif op["kind"] == "status":
+        store.mark_event(op["id"], op.get("done"))
 
 
 def _on_ops(key):
@@ -124,6 +131,17 @@ def _on_ops(key):
     new_ops = [op for op in ops if op["opId"] not in acked]
     for op in new_ops:
         apply_grid_op(op)
+    # A block moved in time starts afresh. A training session's block moved to another day takes the session with it.
+    for op in new_ops:
+        if op["kind"] == "paint" and op.get("newId"):
+            store.clear_event_status(op["newId"])
+            if op["newId"].startswith(store.TRAINING_BLOCK):
+                store.session_moved(op["newId"], op["date"])
+    # A to-do's or training session's block deleted by the user (not just moved) stays off the timetable.
+    for op in new_ops:
+        if op["kind"] == "delete" and str(op["id"]).startswith((store.TODO_BLOCK, store.TRAINING_BLOCK)) \
+                and store.get_block(op["id"]) is None:
+            store.taken_off_timetable(op["id"])
     # Keep the list short; the grid only ever has a few ops in flight.
     st.session_state["tt_acked"] = (acked + [op["opId"] for op in new_ops])[-500:]
 
@@ -196,20 +214,22 @@ def render_page():
     from venato.ui import timetable_tools
     timetable_tools.toolbar(day)
     render_grid([monday + timedelta(days=i) for i in range(7)])
+    categories_ui.render()
 
 
 def render_today():
-    """Just today's Plan / Actual (the Home page): same grid, view only, no week navigation."""
-    render_grid([store.local_today()], key="timetable_today", single=True, readonly=True)
+    """Just today (the Home page): same grid, compact, no week navigation; events can be added, moved and edited."""
+    render_grid([store.local_today()], key="timetable_today", single=True, readonly=True, editable=True)
 
 
-def render_grid(days, key="timetable", single=False, readonly=False):
+def render_grid(days, key="timetable", single=False, readonly=False, editable=False):
     """Draw the grid for the given days; returns the categories and label map it used."""
     categories = store.load_categories()
-    entries = store.blocks_between(days[0].isoformat(), days[-1].isoformat())
+    entries = store.blocks_between(days[0].isoformat(), days[-1].isoformat(), "plan")   # one calendar: Plan only
     label_map = store.load_label_map()
     show_outlook = st.session_state.setdefault("tt_show_outlook", True)
     events = store.outlook_between(days[0].isoformat(), days[-1].isoformat()) if show_outlook else []
+    statuses = store.event_statuses()
 
     data = {
         "days": [d.isoformat() for d in days],
@@ -223,19 +243,24 @@ def render_grid(days, key="timetable", single=False, readonly=False):
         ],
         "entries": [
             {"id": e["id"], "date": e["date"], "track": e["track"], "start": e["start"], "end": e["end"],
-             "label": e["label"], "categoryId": e["category_id"], "details": e["details"]}
+             "label": e["label"], "categoryId": e["category_id"], "details": e["details"],
+             "status": statuses.get(e["id"])}
             for e in entries
         ],
         "labelMap": dict(zip(label_map["label"], label_map["category_id"])),
+        "rules": [{"word": r["word"], "categoryId": r["category_id"]} for r in store.load_rules()],
         "acked": st.session_state.get("tt_acked", []),
+        "tracks": ["plan"],
         "single": single,
         "readonly": readonly,
+        "editable": editable,
         # Outlook events (Plan; all-day ones as header chips). The user can remove or change them.
         "showOutlook": show_outlook,
         "outlook": [
             {"id": e["uid"], "date": e["date"], "start": e["start"], "end": e["end"], "title": e["title"],
              "location": e["location"], "exact": regional.times_in(e["exact"]), "description": e["description"],
-             "details": store.outlook_details(e), "categoryId": store.outlook_category(e["title"])}
+             "details": store.outlook_details(e), "categoryId": store.outlook_category(e["title"], e["teams"]),
+             "status": statuses.get(f"ol:{e['uid']}")}
             for e in events if not e["all_day"]
         ],
         "outlookAllDay": [{"date": e["date"], "title": e["title"]} for e in events if e["all_day"]]

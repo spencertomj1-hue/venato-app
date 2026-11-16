@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Venato">
+<meta name="theme-color" content="#0e1117">
+<link rel="manifest" href="/manifest.json">
+<title>Venato</title>
+<style>
+  :root { --bg: #0e1117; --soft: #1b1e27; --line: #2c303b; --ink: #f2f3f5; --muted: #9aa0ab;
+          --green: #22C55E; --orange: #F97316; --pink: #EC4899; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+               font: 17px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: calc(16px + env(safe-area-inset-top)) 16px 32px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  textarea, input { width: 100%; font: inherit; color: var(--ink); background: var(--soft);
+                    border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+  textarea { min-height: 150px; resize: vertical; margin-top: 14px; }
+  input { text-align: center; font-size: 1.6rem; letter-spacing: .3em; margin: 18px 0 12px; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 14px; padding: 15px; width: 100%;
+           cursor: pointer; }
+  .send { background: var(--green); color: #04140a; margin-top: 10px; font-size: 1.1rem; }
+  .send:disabled { opacity: .5; }
+  .reply { margin-top: 16px; padding: 14px; border-radius: 16px; background: var(--soft);
+           border-left: 4px solid var(--green); white-space: pre-wrap; }
+  .reply.err { border-left-color: #ef4444; }
+  .confirm { margin-top: 10px; padding: 12px; border-radius: 14px; border: 1px solid var(--orange); }
+  .confirm div { display: flex; gap: 8px; margin-top: 10px; }
+  .confirm .yes { background: var(--orange); color: #111; }
+  .confirm .no { background: var(--soft); color: var(--ink); border: 1px solid var(--line); }
+  .examples { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .examples span { font-size: .8rem; padding: 5px 10px; border-radius: 999px; background: var(--soft);
+                   border: 1px solid var(--line); color: var(--muted); }
+  h2 { font-size: 1rem; margin: 26px 0 8px; }
+  .bar { height: 12px; border-radius: 6px; background: var(--soft); overflow: hidden; margin-bottom: 8px; }
+  .bar i { display: block; height: 100%; background: var(--green); }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  li.done { color: var(--muted); text-decoration: line-through; }
+  .hidden { display: none; }
+  .link { background: none; color: var(--muted); font-weight: 400; font-size: .85rem; padding: 6px; margin-top: 18px; }
+</style>
+</head>
+<body>
+<main>
+  <section id="login" class="hidden">
+    <h1>Venato</h1>
+    <p class="muted">Enter the PIN you set in Venato › Settings › Phone.</p>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="12">
+    <button class="send" id="unlock">Unlock</button>
+    <div id="loginMsg" class="reply err hidden"></div>
+  </section>
+
+  <section id="app" class="hidden">
+    <h1>Venato</h1>
+    <div class="muted">Tap the 🎤 on your keyboard and say what to do.</div>
+    <textarea id="text" placeholder="e.g. Add a to-do to call the dentist by Friday. And put email Sam and write the newsletter on my start working list."></textarea>
+    <button class="send" id="send">Send</button>
+    <div class="examples"><span>add a to-do…</span><span>start working list: …</span><span>tick off …</span>
+      <span>log 3 emails sent</span><span>add Sam to my network…</span></div>
+    <div id="reply" class="reply hidden"></div>
+    <div id="pending"></div>
+    <section id="sessionBox" class="hidden">
+      <h2>Today's Start Working list <span id="count" class="muted"></span></h2>
+      <div class="bar"><i id="fill" style="width:0%"></i></div>
+      <ul id="session"></ul>
+    </section>
+    <button class="link" id="logout">Forget the PIN on this phone</button>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let PIN = localStorage.getItem("venato_pin") || "";
+
+async function api(path, body) {
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Venato-Pin": PIN },
+                                  body: JSON.stringify(body || {}) });
+  const data = await res.json().catch(() => ({ error: "Venato didn't answer properly." }));
+  if (res.status === 401) { showLogin(data.error); throw new Error("pin"); }
+  return data;
+}
+
+function showLogin(msg) {
+  $("app").classList.add("hidden"); $("login").classList.remove("hidden");
+  $("loginMsg").classList.toggle("hidden", !msg); $("loginMsg").textContent = msg || "";
+}
+function showApp(data) {
+  $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+  paintSession(data.session);
+}
+
+function paintSession(items) {
+  items = items || [];
+  $("sessionBox").classList.toggle("hidden", !items.length);
+  const done = items.filter((i) => i.done).length;
+  $("count").textContent = items.length ? `· ${done} of ${items.length}` : "";
+  $("fill").style.width = items.length ? `${100 * done / items.length}%` : "0%";
+  $("session").innerHTML = items.map((i) => `<li class="${i.done ? "done" : ""}">${i.done ? "✓ " : ""}${esc(i.title)}</li>`).join("");
+}
+
+function showReply(data) {
+  const box = $("reply");
+  box.classList.remove("hidden");
+  box.classList.toggle("err", !!data.error);
+  box.textContent = data.error || data.reply || "Done.";
+  $("pending").innerHTML = (data.pending || []).map((p) => `
+    <div class="confirm" data-id="${esc(p.id)}"><b>${esc(p.summary)}</b>
+      <div><button class="yes">Confirm</button><button class="no">Cancel</button></div></div>`).join("");
+  $("pending").querySelectorAll(".confirm").forEach((c) => {
+    c.querySelector(".yes").onclick = () => decide(c.dataset.id, true);
+    c.querySelector(".no").onclick = () => decide(c.dataset.id, false);
+  });
+  if (data.session) paintSession(data.session);
+}
+
+async function decide(id, ok) {
+  try { const data = await api("/api/confirm", { id, ok }); showReply({ ...data, pending: [] }); } catch (e) {}
+}
+
+$("unlock").onclick = async () => {
+  PIN = $("pin").value.trim();
+  try {
+    const data = await api("/api/check");
+    localStorage.setItem("venato_pin", PIN);
+    showApp(data);
+  } catch (e) {}
+};
+$("pin").addEventListener("keydown", (e) => { if (e.key === "Enter") $("unlock").click(); });
+
+$("send").onclick = async () => {
+  const text = $("text").value.trim();
+  if (!text) return;
+  $("send").disabled = true; $("send").textContent = "Venato is on it…";
+  try {
+    const data = await api("/api/say", { text });
+    showReply(data);
+    if (!data.error) $("text").value = "";
+  } catch (e) {
+    if (e.message !== "pin") showReply({ error: "Couldn't reach Venato. Is the laptop on, with Venato open?" });
+  } finally {
+    $("send").disabled = false; $("send").textContent = "Send";
+  }
+};
+
+$("logout").onclick = () => { localStorage.removeItem("venato_pin"); PIN = ""; $("pin").value = ""; showLogin(); };
+
+(async () => {
+  if (!PIN) return showLogin();
+  try { showApp(await api("/api/check")); }
+  catch (e) { if (e.message !== "pin") showLogin("Couldn't reach Venato. Is the laptop on, with Venato open?"); }
+})();
+</script>
+</body>
+</html>

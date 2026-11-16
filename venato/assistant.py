@@ -6,7 +6,9 @@ Code if it's installed, otherwise the copy bundled inside the SDK. It signs in
 with either an Anthropic API key (pasted in Settings and kept in the system's
 secret store, or $ANTHROPIC_API_KEY; the CLI prefers a key automatically) or
 the user's Claude Code login. Claude only gets the in-process "venato" MCP
-tools below: no Bash, files or web.
+tools below: no Bash, files or web, unless the user has switched on "Let
+Claude edit the app" (code_mode.py), which adds Claude Code's file and Bash
+tools in the app's own folder.
 
 Venato.app starts from Finder with a bare PATH, so the CLI is located
 explicitly (see find_claude) and USER/HOME are passed through, because the CLI
@@ -36,6 +38,7 @@ from claude_agent_sdk import (
     ClaudeAgentOptions, ClaudeSDKClient, CLINotFoundError, ResultMessage, StreamEvent, create_sdk_mcp_server, tool,
 )
 
+from venato import code_mode
 from venato import regional
 from venato import store
 from venato import system
@@ -214,17 +217,18 @@ What the app tracks
   and the day's notes,
   which are its journal entry (log_day for the numbers; write_journal for the notes). "drank 2 litres today" -> water=2; a 500 ml bottle is 0.5; glasses are about 0.25 L.
   water is the day's total: for "another 500 ml", check the day first (query_entries) and add to it.
+- Day trackers: numbers the user has chosen to log each day, each with a unit (list_trackers shows them).
+  "did 2 hours of X" -> log_tracker(tracker="X", value=2, add=true) when X is one of their trackers.
+  Only add_tracker when the user asks to start tracking something new.
 - Habits: named habits ticked per day, with streaks (set_habit, add_habit, list_habits). A habit is
   either every day or has a weekly target ("gym 3 times a week" -> add_habit("Gym", times_per_week=3),
   or set_habit_target for an existing one); weekly ones count ticks per week.
   Only add a new habit if the user clearly asks for one. rename_habit renames one; delete_habit
   (needs confirmation) removes it and all its ticks.
-- Timetable: every day has two tracks, "plan" (what they intend to do) and "actual"
-  (what they really did). If they describe something that already happened ("I went to the gym
-  from 6 to 7"), use actual; if it's an intention ("I'll study 2-4 tomorrow"), use plan.
-  If it's unclear, ask.
-  - Slots are 30 minutes, from {store.slot_time(0)} to {store.slot_time(store.SLOTS)}{" the next morning" if store.slot_time(store.SLOTS) <= store.slot_time(0) else ""}. Start and end must be on the
-    hour or half hour. Times after midnight belong to the PREVIOUS day's timetable,
+- Timetable: the user's calendar, one column per day. Always pass track="plan" (the app only shows
+  the plan track), whether the event is in the future or already happened.
+  - Slots are 15 minutes, from {store.slot_time(0)} to {store.slot_time(store.SLOTS)}{" the next morning" if store.slot_time(store.SLOTS) <= store.slot_time(0) else ""}. Start and end must be on the
+    hour, quarter past, half past or quarter to. Times after midnight belong to the PREVIOUS day's timetable,
     e.g. "Friday night until 1am" is date=Friday, end="01:00".
   - Use 24-hour times: "2pm" = "14:00". If am/pm is ambiguous, choose the sensible reading
     for that activity, or ask.
@@ -242,6 +246,8 @@ What the app tracks
   - Categories and their colours, and which category an activity uses by default, are changed
     with edit_category and set_activity_default (the user can also use "Adjust categories" on the Timetable page).
     Use hex colours (e.g. "make Gym dark green" -> #1B7F3B). Ask before creating a new category.
+  - To remove a category, merge it into another (merge_categories; it needs the user's confirmation):
+    its blocks move to the other category, so nothing on the timetable is lost.
   - Events from the user's Outlook calendar are imported into the plan track. query_blocks lists them
     with ids starting "outlook:". The user can adjust them like their own blocks: update_block turns one
     into their own block and changes it, delete_block removes it from Venato's timetable (both need the
@@ -255,23 +261,30 @@ What the app tracks
   add_deadline(title, due). They show on Home with a countdown. complete_deadline ticks one off;
   edit_deadline changes it; delete_deadline needs confirmation. To make time for one, use plan_time
   with end_date the day before it's due.
-- To-dos: tick-off lists for a day, a week or a month (period "daily", "weekly" or
-  "monthly"), shown on the Home page. A to-do belongs to the period containing its date (default today).
+- To-dos: tick-off lists for a day or a week (Monday to Sunday) (period "daily" or "weekly"; there are
+  no monthly to-dos), shown on the Home page and the To-dos page. To-dos never go on the timetable;
+  unticked ones carry over to the next day / week. Don't add timetable blocks for to-dos. A to-do belongs to the period containing its date (default today).
   Users often call these "goals" ("add go gym to this week's goals", "today's goals"): anything for a
   day or a week, or anything you tick off, is a to-do.
   - "add go gym to this week's goals" -> add_todo(title="Go gym", period="weekly"). Sentence-case titles.
   - "tick off finish problem sheet" -> complete_todo(todo="finish problem sheet"). To-dos are found by
     title in the current day/week/month (pass period or date to narrow it down, or the id from
     list_todos). If several match, ask which one. uncomplete_todo unticks.
-  - repeat=true gives the to-do a fresh unticked copy every new period ("every week").
+  - repeat=true gives the to-do a fresh unticked copy every new period ("every week"). Weekly to-dos
+    repeat by default (they reset, unticked, every Monday); pass repeat=false for a one-off weekly to-do.
   - edit_todo renames it, changes its notes or repeat, or moves it to another list (move_to="weekly" etc.).
   - delete_todo needs the user's confirmation.
 
-- Goals: measurable targets for a month or a year (period "monthly" or "yearly"), with a progress bar,
-  e.g. "Gym: 12 sessions this month", "Read 20 books this year". Each has a target and an optional unit.
+- Goals: things the user wants to achieve this month or this year (period "monthly" or "yearly").
+  Most are SIMPLE goals: an accomplishment that's done or not yet, e.g. "Sub 19:30 5 km",
+  "Get 100 users on Venato". add_goal without a target makes one; complete_goal ticks it off
+  ("I ran 19:12!" -> complete_goal("Sub 19:30 5 km")). Default to simple goals.
+  Only when the user wants to count something ("12 gym sessions", "read 20 books") give a target
+  and optional unit; those have a progress bar.
   - Progress is either updated by hand (log_goal_progress adds, e.g. "did 2 more gym sessions";
     set_goal_progress sets it), or counted automatically from a habit (habit="Gym": the number of days
     that habit was ticked in the period). For a habit-linked goal, tick the habit with set_habit instead.
+  - "goal: sub 19:30 5k this year" -> add_goal(title="Sub 19:30 5 km", period="yearly").
   - "set a goal of 12 gym sessions this month" -> add_goal(title="Gym", target=12, unit="sessions").
     If a habit with a matching name exists, ask whether to count that habit or update it by hand.
   - edit_goal changes the title, target, unit or linked habit; delete_goal needs the user's confirmation.
@@ -317,6 +330,24 @@ What the app tracks
   "when did I last mention Priya?" (query="Priya"). Journal entries are private: quote them only
   when asked.
 
+- Training: an 8-week half-marathon plan on the Training page (3 sessions a week rising to 5, distance
+  and intensity building with a cutback week and a taper, then the race). Session kinds: easy, long, tempo,
+  intervals, race_pace, strength, shakeout, race.
+  - "I ran 6k today" -> log_session(date=today, actual_km=6). "Did my long run" -> log_session(date=...).
+    If no session is on that day, say so and ask whether to log it against a nearby one.
+  - "Move Thursday's run to Friday" -> edit_session(date=Thursday, new_date=Friday). "Do Tuesday's run at 7am"
+    -> edit_session(date=Tuesday, time="07:00"). Sessions are also blocks on the timetable (category of "Run");
+    edit_session keeps the block in step. put_plan_on_timetable puts them all on (at the nearest free time).
+  - Coaching questions: answer briefly from the plan (list_training). If they're injured or ill, suggest
+    rest and moving sessions rather than squeezing them in.
+
+- Gym log (Training page, under the running plan): sessions with exercises, weight (kg), sets and reps.
+  "Did legs: squat 80kg 5x5, lunges 20kg 3x10" -> log_gym_session(date=today, title="Legs", exercises=[...]).
+  For progressive overload questions ("what did I bench last time?") use last_lift / list_gym_sessions.
+- Runs: list_runs (Strava if connected, plus training runs ticked off by hand). Strava runs tick off that
+  day's training run automatically.
+- Journal: the Daily Log page is a journal (the day's notes). Text in "quotes" there becomes that day's
+  to-do and ^carets^ that week's, when the user leaves the page.
 {tools.list_categories().text}
 {_block_prompts()}
 Confirmations
@@ -327,6 +358,14 @@ in one short line what will change if they confirm. Don't call the tool again fo
 Style
 - Keep replies very short. After a change, confirm what changed in one line,
   e.g. "Added Gym 18:00–19:00 to Thursday's actual."
+- Start Working: the user's work session page. Its first stage is today's session list ("my start
+  working list", "my session", "the first stage of my plan", "what I need to get done this session").
+  Add to it with add_to_session (each thing is one item; it's matched to their to-dos and bars by
+  itself), see it with list_session, tick items with tick_session_item. Its bars are the user's own
+  (list_work_bars shows them); add to one with log_work. Ticking a session item already adds to its
+  bar, so don't also log_work for it.
+- Messages may come from the user's phone (they start "(From my phone)"): they were dictated, so
+  read through speech-to-text slips. Reply in one or two short sentences saying what you did.
 - Ask one short question when something is ambiguous instead of guessing.
 - No markdown headings or tables; plain sentences.
 """
@@ -386,7 +425,7 @@ def with_context(text, now=None):
 # ---------------------------------------------------------------------------
 
 DATE = {"type": "string", "description": "YYYY-MM-DD"}
-TIME = {"type": "string", "description": "HH:mm on the hour or half hour, within the timetable's hours"}
+TIME = {"type": "string", "description": "HH:mm on a quarter hour (:00, :15, :30, :45), within the timetable's hours"}
 TRACK = {"type": "string", "enum": ["plan", "actual"]}
 
 
@@ -394,7 +433,7 @@ def _schema(required, **props):
     return {"type": "object", "properties": props, "required": list(required)}
 
 
-TODO_PERIOD = {"type": "string", "enum": ["daily", "weekly", "monthly"]}
+TODO_PERIOD = {"type": "string", "enum": ["daily", "weekly"]}
 GOAL_PERIOD = {"type": "string", "enum": ["monthly", "yearly"]}
 TODO_REF = _schema(["todo"], todo={"type": "string", "description": "the to-do's title (or part of it), or its id"},
                    period=TODO_PERIOD, date={**DATE, "description": "a day in the to-do's period, if not the current one"})
@@ -419,6 +458,14 @@ TOOL_SPECS = [
              notes={"type": "string"},
              append_notes={"type": "boolean", "description": "add to existing notes instead of replacing"}),
      tools.log_day),
+    ("list_trackers", "List the user's day trackers (their own numbers to log each day).", _schema([]), tools.list_trackers),
+    ("log_tracker", "Set one of the user's day trackers for a date (default today); add=true adds to what's logged.",
+     _schema(["tracker", "value"], tracker={"type": "string", "description": "the tracker's name"},
+             value={"type": "number"}, date=DATE, add={"type": "boolean"}), tools.log_tracker),
+    ("add_tracker", "Start a new day tracker (only when the user asks to track something new).",
+     _schema(["name"], name={"type": "string"}, unit={"type": "string", "description": "e.g. hours, times, cups"},
+             step={"type": "number", "description": "how much one + adds on the journal page (default 1)"}),
+     tools.add_tracker),
     ("set_habit", "Tick (done=true) or untick (done=false) a habit on a date.",
      _schema(["date", "habit_name", "done"], date=DATE, habit_name={"type": "string"}, done={"type": "boolean"}),
      tools.set_habit),
@@ -459,6 +506,20 @@ TOOL_SPECS = [
     ("get_stats", "Averages, habit completion % and timetable hours per category for a period.",
      _schema(["period"], period={"type": "string", "description": "'7d', '30d', '90d', 'all' or e.g. '14d'"}),
      tools.get_stats),
+    ("log_gym_session", "Log a gym session with its exercises (weight in kg, sets, reps). Also ticks off that day's "
+                        "strength session in the training plan.",
+     _schema(["date", "title", "exercises"], date=DATE, title={"type": "string", "description": "e.g. 'Push day'"},
+             exercises={"type": "array", "items": {"type": "object", "properties": {
+                 "exercise": {"type": "string"}, "weight_kg": {"type": "number"},
+                 "sets": {"type": "integer"}, "reps": {"type": "integer"}}, "required": ["exercise"]}},
+             notes={"type": "string"}),
+     tools.log_gym_session),
+    ("list_gym_sessions", "List logged gym sessions (with exercises) between two dates.",
+     _schema(["start_date", "end_date"], start_date=DATE, end_date=DATE), tools.list_gym_sessions),
+    ("list_runs", "Runs between two dates (from Strava, plus training runs ticked off by hand), with distances.",
+     _schema(["start_date", "end_date"], start_date=DATE, end_date=DATE), tools.list_runs),
+    ("last_lift", "The last weight, sets and reps logged for an exercise.",
+     _schema(["exercise"], exercise={"type": "string"}), tools.last_lift),
     ("list_categories", "List timetable categories (with colours) and the default category for common activities.",
      _schema([]), tools.list_categories),
     ("edit_category", "Change a timetable category's colour, name or group, or create a new category (create=true).",
@@ -467,6 +528,11 @@ TOOL_SPECS = [
              new_name={"type": "string"}, group={"type": "string", "description": "a group in the key, e.g. 'Life'"},
              create={"type": "boolean", "description": "make a new category with this name"}),
      tools.edit_category),
+    ("merge_categories", "Merge one timetable category into another: its blocks and activity defaults move over and it "
+                         "disappears from the key. Also the way to remove a category the user doesn't want.",
+     _schema(["category", "into"], category={"type": "string", "description": "the category to remove"},
+             into={"type": "string", "description": "the category that takes its blocks"}),
+     tools.merge_categories),
     ("set_outlook_category", "Set which category (and so colour) Outlook calendar events use.",
      _schema(["category"], category={"type": "string"}), tools.set_outlook_category),
     ("weekly_review", "The week's main numbers: time planned vs done per category, how much of the Plan was "
@@ -487,7 +553,7 @@ TOOL_SPECS = [
     ("add_todo", "Add a to-do to a day, week or month: the period containing `date` (default today).",
      _schema(["title", "period"], title={"type": "string"}, period=TODO_PERIOD,
              date={**DATE, "description": "YYYY-MM-DD, any day in the period (default today)"},
-             repeat={"type": "boolean", "description": "a fresh copy every new period"},
+             repeat={"type": "boolean", "description": "a fresh copy every new period (default: true for weekly, false otherwise)"},
              notes={"type": "string", "description": "optional short note shown under the title"}),
      tools.add_todo),
     ("complete_todo", "Tick off a to-do, found by title (or id) in the current periods.", TODO_REF, tools.complete_todo),
@@ -496,12 +562,16 @@ TOOL_SPECS = [
     ("list_todos", "List to-dos (with ids) for the periods containing a date (default today).",
      _schema([], period=TODO_PERIOD, date=DATE), tools.list_todos),
     ("delete_todo", "Delete a to-do, found by title (or id) in the current periods.", TODO_REF, tools.delete_todo),
-    ("add_goal", "Add a measurable goal for a month or year, e.g. 12 gym sessions. Link a habit to count it automatically.",
-     _schema(["title", "target"], title={"type": "string"}, target={"type": "number"}, period=GOAL_PERIOD,
+    ("add_goal", "Add a goal for a month or year. Without a target it's a simple goal to tick off when achieved "
+                 "(e.g. 'Sub 19:30 5 km'); with a target it counts up (e.g. 12 gym sessions, optionally from a habit).",
+     _schema(["title"], title={"type": "string"}, target={"type": "number", "description": "only for goals that count something"},
+             period=GOAL_PERIOD,
              unit={"type": "string", "description": "e.g. 'sessions', 'km', 'books' (optional)"},
              habit={"type": "string", "description": "a habit whose ticks count as progress (optional)"},
              date={**DATE, "description": "any day in the month/year (default today)"}),
      tools.add_goal),
+    ("complete_goal", "Tick off a simple goal as achieved (done=false unticks it).",
+     _schema(["goal"], **GOAL_REF, done={"type": "boolean"}), tools.complete_goal),
     ("log_goal_progress", "Add to a goal's progress (amount defaults to 1; negative takes some off).",
      _schema(["goal"], **GOAL_REF, amount={"type": "number"}), tools.log_goal_progress),
     ("set_goal_progress", "Set a goal's progress to an exact number.",
@@ -513,6 +583,19 @@ TOOL_SPECS = [
     ("list_goals", "List goals with progress and ids for the month and year containing a date (default today).",
      _schema([], period=GOAL_PERIOD, date=DATE), tools.list_goals),
     ("delete_goal", "Delete a goal, found by title (or id).", _schema(["goal"], **GOAL_REF), tools.delete_goal),
+    ("add_to_session", "Add things to today's Start Working session list (one item each, in order).",
+     _schema(["items"], items={"type": "array", "items": {"type": "string"},
+                               "description": "short items, e.g. ['Email Sam', 'Write the newsletter']"}),
+     tools.add_to_session),
+    ("list_session", "Today's Start Working session list, with ids, what's ticked and what each is linked to.",
+     _schema([]), tools.list_session),
+    ("tick_session_item", "Tick off (done=false unticks) an item on today's session list, by title or id. "
+     "Also ticks its linked to-do and adds to its bar.",
+     _schema(["item"], item={"type": "string"}, done={"type": "boolean"}), tools.tick_session_item),
+    ("list_work_bars", "The user's Start Working bars and how full each one is.", _schema([]), tools.list_work_bars),
+    ("log_work", "Add to (or take off, with a negative amount) one of the user's Start Working bars.",
+     _schema(["bar"], bar={"type": "string", "description": "the bar's name (see list_work_bars)"},
+             amount={"type": "integer"}), tools.log_work),
     ("add_person", "Add someone to the user's network.",
      _schema(["name"], name={"type": "string"}, description={"type": "string", "description": "who they are / how the user knows them"},
              works_for={"type": "string", "description": "company, university or team"},
@@ -581,6 +664,25 @@ TOOL_SPECS = [
      _schema(["application"], application={"type": "string"}), tools.delete_application),
     ("find_people", "List people in the network (with ids, groups and connections), optionally filtered by a search.",
      _schema([], query={"type": "string"}), tools.find_people),
+    ("create_training_plan", "Create the 8-week half-marathon training plan (replaces any current plan, with confirmation).",
+     _schema([], start_date={**DATE, "description": "first day of the plan (default tomorrow)"}),
+     tools.create_training_plan),
+    ("list_training", "Show the training plan: one week's sessions (with ids), or a summary of every week.",
+     _schema([], week={"type": "integer", "description": "1-8"}, date={**DATE, "description": "show the week containing this day"}),
+     tools.list_training),
+    ("log_session", "Tick off a training session (done=false unticks), with the distance really run and notes.",
+     _schema([], session={"type": "string", "description": "the session's id"}, date={**DATE, "description": "or the session's day"},
+             done={"type": "boolean"}, actual_km={"type": "number"}, notes={"type": "string"}),
+     tools.log_session),
+    ("edit_session", "Move a training session to another day (new_date), or change its title, distance or description.",
+     _schema([], session={"type": "string"}, date={**DATE, "description": "the session's current day"},
+             new_date=DATE, time={**TIME, "description": "new start time on the timetable, HH:mm"},
+             title={"type": "string"}, distance_km={"type": "number"}, details={"type": "string"}),
+     tools.edit_session),
+    ("put_plan_on_timetable", "Put every training session not done yet on the timetable (at the nearest free time).",
+     _schema([], times={"type": "object", "description": "optional {weekday: 'HH:mm', weekend: 'HH:mm'} start times"}),
+     lambda times=None: tools.Result(f"Put {tools.put_plan_on_timetable(times)} sessions on the timetable.", changed=True)),
+    ("delete_training_plan", "Delete the training plan and everything logged in it.", _schema([]), tools.delete_training_plan),
     ("set_activity_default", "Set which category an activity label (e.g. 'Lecture') uses by default.",
      _schema(["label", "category"], label={"type": "string"}, category={"type": "string"}),
      tools.set_activity_default),
@@ -640,6 +742,8 @@ class Turn:
     pending: list = field(default_factory=list)
     changed: bool = False
     error: str | None = None
+    code_changed: list = field(default_factory=list)   # app files this message changed (code mode)
+    commit: str | None = None                          # the git commit saving them
 
 
 HISTORY_TURNS = 12   # recent messages sent along as context
@@ -704,6 +808,7 @@ class Job:
         self.status = ""         # e.g. "Updating your timetable" while a tool runs
         self.turn = turn         # the finished Turn
         self.started = time.monotonic()
+        self.timeout = None        # seconds; None = TURN_TIMEOUT (code mode allows longer)
         self.future = None
         self.key = None
 
@@ -713,7 +818,7 @@ class Job:
 
     @property
     def done(self):
-        if self.turn is None and time.monotonic() - self.started > TURN_TIMEOUT:
+        if self.turn is None and time.monotonic() - self.started > (self.timeout or TURN_TIMEOUT):
             if self.future:
                 self.future.cancel()
             _drop(self.key)
@@ -752,16 +857,20 @@ def _event_loop():
 
 
 def _options(state, claude_path):
+    # Normally only the venato tools. With "Let Claude edit the app" on, Claude Code's own
+    # file and Bash tools too, working in the app's folder.
+    edit_code = code_mode.enabled()
+    builtin = code_mode.CODE_TOOLS if edit_code else []
     return ClaudeAgentOptions(
-        system_prompt=system_prompt(),
+        system_prompt=system_prompt() + (code_mode.system_prompt() if edit_code else ""),
         mcp_servers={"venato": _make_server(state)},
-        allowed_tools=allowed_tools(),
-        tools=[],                      # no built-in tools (Bash, files, web...)
+        allowed_tools=allowed_tools() + builtin,
+        tools=builtin,                 # no built-in tools (Bash, files, web...) unless editing the app
         permission_mode="dontAsk",     # anything not allowed above is refused
         setting_sources=[], strict_mcp_config=True, skills=[],   # ignore the user's own Claude config
-        cli_path=claude_path, cwd=str(AGENT_DIR), env=_env(claude_path),
+        cli_path=claude_path, cwd=str(code_mode.APP_DIR if edit_code else AGENT_DIR), env=_env(claude_path),
         extra_args={"no-session-persistence": None},             # don't write the chat to disk
-        max_turns=15, model=load_config().get("model") or DEFAULT_MODEL,
+        max_turns=80 if edit_code else 15, model=load_config().get("model") or DEFAULT_MODEL,
         include_partial_messages=True,                           # stream the reply as it's written
         effort=load_config().get("effort") or DEFAULT_EFFORT,
     )
@@ -770,7 +879,7 @@ def _options(state, claude_path):
 def _signature(claude_path):
     """Anything that needs a fresh session when it changes: the prompt, the model, the key."""
     key = api_key() or ""
-    parts = (claude_path, system_prompt(), tuple(allowed_tools()), load_config().get("model") or DEFAULT_MODEL, load_config().get("effort"),
+    parts = (claude_path, system_prompt(), tuple(allowed_tools()), code_mode.enabled(), load_config().get("model") or DEFAULT_MODEL, load_config().get("effort"),
              hashlib.sha256(key.encode()).hexdigest())
     return hashlib.sha256(repr(parts).encode()).hexdigest()
 
@@ -874,6 +983,10 @@ def start_turn(text, history=(), key="default"):
     job = Job()
     job.key = key
     timing = {"at": store.stamp(), "model": load_config().get("model") or DEFAULT_MODEL, "quick": False}
+    edit_code = code_mode.enabled()
+    before = code_mode.snapshot() if edit_code else None
+    if edit_code:
+        job.timeout = 1800                       # coding requests take longer
 
     def finish(future):
         try:
@@ -884,6 +997,11 @@ def start_turn(text, history=(), key="default"):
         except Exception as e:                   # includes a cancelled (timed-out) turn
             turn = Turn(error=_friendly(e) if str(e) else "Claude stopped answering. Try again.")
             _drop(key)
+        if edit_code:
+            # Save whatever this message changed in the code as one undoable commit, even if it stopped part-way.
+            request = text.split(")\n\n", 1)[-1] if text.startswith("(Since your last reply") else text
+            turn.code_changed = code_mode.changed_since(before)
+            turn.commit = code_mode.commit(turn.code_changed, request)
         timing["total_s"] = round(time.monotonic() - job.started, 2)
         _log_timing(timing)
         if job.turn is None:

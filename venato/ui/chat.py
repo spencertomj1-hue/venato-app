@@ -13,6 +13,7 @@ Flow for one message:
      sends a "confirm" trigger that runs or drops them.
 """
 
+import sys
 import uuid
 from pathlib import Path
 
@@ -145,6 +146,13 @@ def _record(turn):
             _say("assistant", turn.reply)
         for p in turn.pending:
             sess["chat_pending"][uuid.uuid4().hex] = p
+    if getattr(turn, "code_changed", None):     # quick commands' replies have none
+        n = len(turn.code_changed)
+        files = ", ".join(turn.code_changed[:4]) + (f" and {n - 4} more" if n > 4 else "")
+        saved = (f" Saved as change {turn.commit}; undo it in Settings → Claude." if turn.commit else
+                 " (Couldn't save it as a git commit, so it can't be undone from Settings.)")
+        _say("notice", f"Changed the app: {files}.{saved}")
+        sess["chat_reload"] = True
     sess["chat_queue"] = None
     sess["chat_busy"] = None
     sess["chat_job"] = None
@@ -214,6 +222,17 @@ def _bar(inline, polling):
         job = sess["chat_job"]
         if job and job.done:
             _record(job.turn)
+            if sess.pop("chat_reload", False):
+                reload_app_code()
             st.rerun()                  # show the reply and any changes on the page
         if not polling:
             st.rerun()                  # start redrawing the bar as the reply comes in
+
+
+def reload_app_code():
+    """
+    After Claude edited the app: forget Venato's modules, so the rerun imports
+    the new code (Streamlit itself only reloads app.py).
+    """
+    for name in [m for m in sys.modules if m == "venato" or m.startswith("venato.")]:
+        del sys.modules[name]

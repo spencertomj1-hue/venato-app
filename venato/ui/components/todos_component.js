@@ -153,7 +153,7 @@ class GoalLists {
 
   applyLocal(op) {
     const g = this.goals.get(op.id);
-    if (op.kind === "add") this.goals.set(op.goal.id, { notes: null, done: false, repeat: false, ...op.goal });
+    if (op.kind === "add") this.goals.set(op.goal.id, { notes: null, done: false, repeat: op.goal.period === "weekly", ...op.goal });
     else if (op.kind === "reorder") op.ids.forEach((id, i) => { const x = this.goals.get(id); if (x) x.ord = i; });
     else if (op.kind === "delete") this.goals.delete(op.id);
     else if (!g) return;
@@ -416,7 +416,7 @@ class GoalLists {
     if (!g) return;
     if (this.editing) this.finishEdit(true);
     this.closeMenu();
-    const others = PERIODS.filter((p) => p !== g.period);
+    const others = PERIODS.filter((p) => p !== g.period && this.data.sections.some((s) => s.period === p));
     const menu = document.createElement("div");
     menu.className = "gl-menu";
     menu.innerHTML = `

@@ -1,5 +1,5 @@
 // Weekly Timetable: 7 days side by side, each with Plan/Actual columns in
-// 30-minute slots, like a calendar week view.
+// 15-minute slots, like a calendar week view.
 //
 // Python passes { days, today, groups, categories, entries, labelMap, acked },
 // with only that week's entries. Edits are applied locally straight away, then
@@ -9,7 +9,9 @@
 // never makes the grid flicker back to old data.
 // Swiping sideways on the grid sends a "nav" trigger (-1 / +1 week).
 
-let SLOTS = 36;                   // 30-minute slots in a day (07:00 -> 01:00 by default; from Python)
+const SLOT_MIN = 15;              // minutes per slot (row)
+const PER_HOUR = 60 / SLOT_MIN;
+let SLOTS = 18 * PER_HOUR;        // slots in a day (07:00 -> 01:00 by default; from Python)
 let FIRST_MIN = 7 * 60;           // the day's first minute
 const TRACKS = ["plan", "actual"];
 const SWIPE_THRESHOLD = 120;      // px of sideways scroll that flips a week
@@ -20,7 +22,7 @@ const pad = (n) => String(n).padStart(2, "0");
 
 // Slot index (0..SLOTS) -> "HH:mm". Slot SLOTS is the end of the last slot.
 function slotTime(i) {
-  const m = (FIRST_MIN + 30 * i) % 1440;
+  const m = (FIRST_MIN + SLOT_MIN * i) % 1440;
   return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
 }
 
@@ -96,7 +98,13 @@ function slotOf(t) {
   const [h, m] = t.split(":").map(Number);
   let mins = h * 60 + m;
   if (mins < FIRST_MIN) mins += 1440;
-  return Math.round((mins - FIRST_MIN) / 30);
+  return Math.round((mins - FIRST_MIN) / SLOT_MIN);
+}
+
+// <option>s for a start (offset 0: slots 0..SLOTS-1) or end (offset 1: 1..SLOTS) time picker.
+function timeOptions(selected, offset) {
+  return Array.from({ length: SLOTS }, (_, i) =>
+    `<option value="${i + offset}" ${i + offset === selected ? "selected" : ""}>${fmtTime(slotTime(i + offset))}</option>`).join("");
 }
 
 const esc = (s) =>
@@ -120,6 +128,9 @@ function weekTitle(first, last) {
 
 // Block text is black, except on genuinely dark fills (deep purple, pure red...),
 // where it's white. Deliberately lenient: mid colours like Uni blue stay black.
+// Past events marked on their card.
+const DONE_COLOUR = "#22C55E", NOT_DONE_COLOUR = "#000000";
+
 function contrastText(hex) {
   const n = parseInt(hex.slice(1), 16);
   const [r, g, b] = [n >> 16, (n >> 8) & 255, n & 255];
@@ -170,15 +181,15 @@ class Timetable {
     window.__ttRoots.add(root);
     this.entries = new Map();   // id -> entry (server data + pending ops)
     this.pending = [];          // ops not yet acknowledged by Python
-    this.brush = recall("tt-brush");   // category id, or null
-    if (this.brush === "eraser" || this.brush === "select") this.brush = null;   // tools that no longer exist
+    this.lastCat = recall("tt-cat");   // the category the last new event used
+    this.brush = null;                 // a category picked in the key (the key is hidden: the new-event form picks)
     this.drag = null;           // {di, track, a, b} while painting
     this.picked = new Set();    // selected blocks: entry ids, or "outlook:<uid>"
     this.selected = [];         // cells currently highlighted
     this.builtFor = null;       // week + categories the view was built for
     this.swipe = 0;             // accumulated sideways scroll
     this.swipeLocked = false;
-    this.onMouseUp = () => this.endDrag();
+    this.onMouseUp = (e) => this.endDrag(e);
     this.onWindowResize = () => this.fitToWindow();
     this.onKey = (e) => {
       const mod = IS_MAC ? e.metaKey : e.ctrlKey;
@@ -222,11 +233,16 @@ class Timetable {
   update(data) {
     this.data = data;
     CLOCK = data.clock || "24-hour";
-    SLOTS = data.slots || 36;
+    SLOTS = data.slots || 18 * PER_HOUR;
     FIRST_MIN = data.firstMin ?? 7 * 60;
     DATEFMT = data.dateFormat || "DD/MM/YYYY";
     this.nowAt = { min: data.nowMin, ms: Date.now() };   // the time in the user's zone when Python drew this
     this.cats = new Map(data.categories.map((c) => [c.id, c]));
+    // Whole words, any case (like store._has_word). Python sends the longest words first.
+    this.rules = (data.rules || []).map((r) => ({
+      id: r.categoryId,
+      re: new RegExp(`(?<![\\p{L}\\p{N}_])${r.word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}_])`, "iu"),
+    }));
     this.dayIndex = new Map(data.days.map((d, i) => [d, i]));
 
     // Server entries, then re-apply anything Python hasn't saved yet.
@@ -275,6 +291,10 @@ class Timetable {
                         block: { label: en.label, categoryId: en.categoryId, details: en.details } });
     } else if (op.kind === "upsert") this.entries.set(op.entry.id, { ...op.entry });
     else if (op.kind === "hide_outlook") this.hidden.add(op.uid);
+    else if (op.kind === "status") {
+      const target = this.entries.get(op.id) || this.outlook.find((ev) => `ol:${ev.id}` === op.id);
+      if (target) target.status = op.done;
+    }
     else if (op.kind === "detach_outlook") {
       const ev = this.outlook.find((x) => x.id === op.uid);
       if (ev && !this.hidden.has(ev.id)) {
@@ -358,11 +378,12 @@ class Timetable {
 
   build() {
     const { categories, groups, days, today } = this.data;
+    this.tracks = this.data.tracks || TRACKS;       // ["plan"]: one column per day (no Actual)
+    const many = this.tracks.length > 1;
 
     // Key: one line of colour dots (groups separated by a thin divider).
-    // Clicking an item picks the brush.
     const item = (c) =>
-      `<button class="sw" data-cat="${esc(c.id)}" title="${esc(c.group)}"><i style="background:${esc(c.colour)}"></i>${esc(c.name)}</button>`;
+      `<span class="sw" title="${esc(c.group)}"><i style="background:${esc(c.colour)}"></i>${esc(c.name)}</span>`;
     const key = groups
       .map((g) => categories.filter((c) => c.group === g).sort((x, y) => x.order - y.order).map(item).join(""))
       .join('<span class="sep"></span>');
@@ -372,26 +393,30 @@ class Timetable {
       .map((d) => {
         const dt = new Date(d + "T00:00");
         const name = dt.toLocaleDateString(LOC(), { weekday: "long" });
-        return `<th colspan="2" class="day ${d === today ? "today" : ""}"><div class="dn">${name}</div><div class="dd">${dayNum(d)}</div><div class="chips" data-d="${days.indexOf(d)}"></div></th>`;
+        return `<th colspan="${this.tracks.length}" class="day ${d === today ? "today" : ""}"><div class="dn">${name}</div><div class="dd">${dayNum(d)}</div><div class="chips" data-d="${days.indexOf(d)}"></div></th>`;
       })
       .join("");
-    const subHead = days.map(() => `<th class="sub first">Plan</th><th class="sub">Actual</th>`).join("");
+    const subHead = many ? days.map(() => `<th class="sub first">Plan</th><th class="sub">Actual</th>`).join("") : "";
 
     const rows = [];
     for (let s = 0; s < SLOTS; s++) {
       const cells = days
-        .map((d, di) => TRACKS.map((t) =>
+        .map((d, di) => this.tracks.map((t) =>
           `<td class="s ${t === "plan" ? "first" : ""} ${d === today ? "today" : ""}" data-d="${di}" data-t="${t}" data-s="${s}"></td>`).join(""))
         .join("");
       // Label each hour on its grid line, like a calendar.
-      const time = s % 2 === 0 ? `<span>${fmtTime(slotTime(s))}</span>` : "";
-      rows.push(`<tr class="${s % 2 ? "half" : "hour"}"><td class="t">${time}</td>${cells}</tr>`);
+      const time = s % PER_HOUR === 0 ? `<span>${fmtTime(slotTime(s))}</span>` : "";
+      // A solid line on each hour, a dashed one on the half hour, none on the quarters.
+      const q = s % PER_HOUR;
+      const cls = q === PER_HOUR - 1 ? "half" : q === PER_HOUR / 2 - 1 ? "mid" : "quarter";
+      rows.push(`<tr class="${cls}"><td class="t">${time}</td>${cells}</tr>`);
     }
 
-    const cols = days.map(() => "<col><col>").join("");
+    const cols = days.map(() => "<col>".repeat(this.tracks.length)).join("");
 
     this.root.classList.toggle("single", !!this.data.single);   // one day: no week navigation
-    this.root.classList.toggle("readonly", !!this.data.readonly); // view only: no editing tools
+    this.root.classList.toggle("readonly", !!this.data.readonly); // compact, no editing tools
+    this.root.classList.toggle("editable", !!this.data.editable); // ...but events can still be added and moved
     this.root.innerHTML = `
       <div class="tt-head">
         <div class="tt-title">${this.data.single
@@ -409,19 +434,19 @@ class Timetable {
           <button class="tt-ol-toggle" title="Show or hide Outlook events">${CAL_ICON}Outlook</button>
         </div>
         <div class="tt-tools">
-          <datalist id="tt-labels"></datalist>
           <button class="tt-help-btn" aria-expanded="false" aria-controls="tt-help" title="How the timetable works">?</button>
           <div class="tt-help" id="tt-help" role="dialog" aria-label="How the timetable works" hidden>${helpHtml(this.data.single)}</div>
         </div>
       </div>
+      <datalist id="tt-labels"></datalist>
       <div class="tt-legend">${key}</div>
       <div class="tt-card">
         <div class="tt-wrap">
           <table class="tt" aria-hidden="true">
             <colgroup><col class="c-time">${cols}</colgroup>
             <thead>
-              <tr><th rowspan="2" class="h-time"></th>${dayHead}</tr>
-              <tr>${subHead}</tr>
+              <tr><th rowspan="${many ? 2 : 1}" class="h-time"></th>${dayHead}</tr>
+              ${many ? `<tr>${subHead}</tr>` : ""}
             </thead>
             <tbody>${rows.join("")}</tbody>
           </table>
@@ -445,7 +470,6 @@ class Timetable {
     });
 
     this.bindEvents();
-    this.showBrush();
   }
 
   showOutlookStatus() {
@@ -482,7 +506,7 @@ class Timetable {
       const di = this.dayIndex.get(en.date);
       if (di === undefined) continue;
       const s = slotOf(en.start), e = Math.min(slotOf(en.end), SLOTS);
-      if (e <= s) continue;
+      if (e <= s || !this.cells[di][en.track]) continue;
       for (let i = s; i < e; i++) {
         const td = this.cells[di][en.track][i];
         td.title = `${en.label} · ${fmtRange(en.start, en.end)}`;
@@ -544,7 +568,7 @@ class Timetable {
   // Home down to 9px rows, the Timetable page down to 10px (still big enough to drag in).
   fitToWindow() {
     if (!this.wrapEl || !this.cells || !this.cells[0]) return;
-    const min = this.data.readonly ? 9 : 10, max = 18;
+    const min = this.data.readonly ? 4 : 5, max = 9;      // px per 15-minute row
     const main = document.querySelector(".stMainBlockContainer");
     const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24;
     const bottom = () => Math.max(...[".tt-card", ".tt-legend"].map((sel) => {
@@ -566,7 +590,7 @@ class Timetable {
     const di = this.data && this.data.readonly && this.data.nowMin != null ? this.dayIndex.get(this.data.today) : undefined;
     let m = di === undefined ? -1 : this.nowAt.min + (Date.now() - this.nowAt.ms) / 60000 - FIRST_MIN;
     if (m < 0 && di !== undefined) m += 24 * 60;          // after midnight, when the day runs past it
-    const slot = m / 30;
+    const slot = m / SLOT_MIN;
     if (di === undefined || slot < 0 || slot >= SLOTS || !this.cells[di]) { if (line) line.remove(); return; }
     const origin = this.wrapEl.getBoundingClientRect();
     const cell = this.cells[di].plan[Math.floor(slot)].getBoundingClientRect();
@@ -627,15 +651,17 @@ class Timetable {
         const firstTd = this.cells[di][en.track][s], lastTd = this.cells[di][en.track][e - 1];
         const first = firstTd.getBoundingClientRect(), last = lastTd.getBoundingClientRect();
         const cat = this.cats.get(en.categoryId);
-        const bg = cat ? cat.colour : "#9e9e9e";
-        const fg = (cat && cat.textColour) || contrastText(bg);
+        const marked = en.status === true || en.status === false;
+        const bg = en.status === true ? DONE_COLOUR : en.status === false ? NOT_DONE_COLOUR : cat ? cat.colour : "#9e9e9e";
+        const fg = (!marked && cat && cat.textColour) || contrastText(bg);
+        const missed = en.status === false ? "missed" : "";
         const tall = last.bottom - first.top >= 30;   // room for the time line under the title
         if (outlook) {
-          return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+          return `<div class="blk outlook ${missed} ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
             `background:${esc(bg)};color:${fg}">` +
             `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+        return `<div class="blk ${missed} ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
           `background:${esc(bg)};color:${fg}">` +
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
@@ -664,10 +690,12 @@ class Timetable {
     });
   }
 
-  // Default category for a typed label (case-insensitive), if any.
+  // The category a typed name should have, if any: rules, then label defaults, then a
+  // category's own name (like store.resolve_category).
   mapLabel(label) {
     const want = label.trim().toLowerCase();
     if (!want) return null;
+    for (const r of this.rules) if (r.re.test(label)) return r.id;
     for (const [l, id] of Object.entries(this.data.labelMap)) if (l.toLowerCase() === want) return id;
     for (const c of this.data.categories) if (c.name.toLowerCase() === want) return c.id;
     return null;
@@ -703,7 +731,7 @@ class Timetable {
       // preventDefault keeps focus where it was: leave the label box, so Delete / Backspace act on blocks.
       const typing = this.root.getRootNode().activeElement || document.activeElement;
       if (isTextField(typing)) typing.blur();
-      if (this.data.readonly) {                     // Home: no editing, just the details card
+      if (this.data.readonly && !this.data.editable) {   // view only: no editing, just the details card
         const hit = this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
         if (hit) this.openCard(hit); else this.closePopover();
         return;
@@ -713,8 +741,8 @@ class Timetable {
       const hit = this.blockAt(di, track, slot);
       const hitId = hit && this.idOf(hit);
       const adding = e.shiftKey || (IS_MAC ? e.metaKey : e.ctrlKey);   // Shift or Cmd/Ctrl: add to the selection
-      // Dragging empty time draws a selection box with Shift / Cmd / Ctrl held, or when no category is picked.
-      const selecting = adding || (!hit && !this.cats.has(this.brush));
+      // Dragging empty time highlights it for a new event; with Shift / Cmd / Ctrl held it draws a selection box.
+      const selecting = adding;
       if (adding && hit) {                          // Shift / Cmd / Ctrl-click a block: add it to / take it out of the selection
         const next = new Set(this.picked);
         next.has(hitId) ? next.delete(hitId) : next.add(hitId);
@@ -817,7 +845,7 @@ class Timetable {
       const hit = this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
       if (!hit) return;
       e.preventDefault();
-      if (this.data.readonly || hit.outlook) this.openCard(hit);       // details first for Outlook events
+      if ((this.data.readonly && !this.data.editable) || hit.outlook) this.openCard(hit);   // details first for Outlook events
       else this.openPopover(hit.entry, e.clientX, e.clientY);           // straight to the editor
     });
 
@@ -1097,7 +1125,7 @@ class Timetable {
     this.commit(ops);
   }
 
-  endDrag() {
+  endDrag(e) {
     if (this.blockDrag) { this.endBlockDrag(); return; }
     if (this.marquee) { this.endMarquee(); return; }
     if (this.groupDrag) { this.endGroupDrag(); return; }
@@ -1113,12 +1141,87 @@ class Timetable {
       }
     }
     const cat = this.cats.get(this.brush);
-    if (!cat) {
-      this.flashHint("Pick a category first");
+    if (cat) {                                  // a category picked in the key: paint it straight away
+      this.paintRange(drag.di, drag.track, drag.a, drag.b, { label: cat.name, categoryId: cat.id });
       return;
     }
-    const label = cat.name;                     // renamed in its details (click it twice)
-    this.paintRange(drag.di, drag.track, drag.a, drag.b, { label, categoryId: cat.id });
+    // Otherwise a small form to name the new event, with its exact start and end times.
+    this.openNew(drag, e ? e.clientX : 200, e ? e.clientY : 200);
+  }
+
+  // ---------- New event form (after highlighting empty space) ----------
+
+  openNew(drag, x, y) {
+    this.closePopover();
+    const { di, track } = drag;
+    const s = Math.min(drag.a, drag.b), e = Math.max(drag.a, drag.b) + 1;
+    // Keep the highlighted range showing while the form is open.
+    for (let i = s; i < e; i++) {
+      const td = this.cells[di][track][i];
+      td.classList.add("sel");
+      this.selected.push(td);
+    }
+    const catId = this.cats.has(this.lastCat) ? this.lastCat : (this.data.categories[0] && this.data.categories[0].id);
+    const options = this.data.categories
+      .map((c) => `<option value="${esc(c.id)}" ${c.id === catId ? "selected" : ""}>${esc(c.name)}</option>`)
+      .join("");
+    const day = new Date(this.data.days[di] + "T00:00").toLocaleDateString(LOC(), { weekday: "short", day: "numeric", month: "short" });
+    const pop = document.createElement("div");
+    pop.className = "tt-pop tt-new";
+    pop.setAttribute("role", "dialog");
+    pop.setAttribute("aria-label", "New event");
+    pop.innerHTML = `
+      <div><b>New event · ${day}</b>${this.tracks.length > 1 ? (track === "plan" ? " · Plan" : " · Actual") : ""}</div>
+      <input class="p-label" list="tt-labels" placeholder="What is it? e.g. Lecture" aria-label="Event name">
+      <div class="row p-times"><select class="p-start" aria-label="Start">${timeOptions(s, 0)}</select>
+        <span>to</span><select class="p-end" aria-label="End">${timeOptions(e, 1)}</select></div>
+      <select class="p-cat" aria-label="Category">${options}<option value="__new" ${options ? "" : "selected"}>+ New category…</option></select>
+      <input class="p-newcat" placeholder="New category, e.g. Work" aria-label="New category name" ${options ? "hidden" : ""}>
+      <div class="row">
+        <button class="cancel" style="margin-left:auto">Cancel</button>
+        <button class="save"><b>Add</b></button>
+      </div>`;
+    pop.style.left = Math.min(x, window.innerWidth - 270) + "px";
+    pop.style.top = Math.min(y, window.innerHeight - 150) + "px";
+    this.root.appendChild(pop);
+    this.popover = pop;
+
+    const labelEl = pop.querySelector(".p-label");
+    const catEl = pop.querySelector(".p-cat");
+    labelEl.focus();
+    labelEl.select();
+    const newCatEl = pop.querySelector(".p-newcat");
+    labelEl.addEventListener("input", () => {
+      const id = this.mapLabel(labelEl.value);
+      if (id && this.cats.has(id)) { catEl.value = id; newCatEl.hidden = true; }
+    });
+    catEl.addEventListener("change", () => {
+      newCatEl.hidden = catEl.value !== "__new";
+      if (!newCatEl.hidden) newCatEl.focus();
+    });
+    const save = () => {
+      const s1 = +pop.querySelector(".p-start").value, e1 = +pop.querySelector(".p-end").value;
+      if (e1 <= s1) { pop.querySelector(".p-end").classList.add("bad"); return; }   // the end must be after the start
+      if (catEl.value === "__new") {                // a category of the user's own, made here (Python creates it)
+        const name = newCatEl.value.trim();
+        if (!name) { newCatEl.classList.add("bad"); newCatEl.focus(); return; }
+        this.closePopover();
+        this.paintRange(di, track, s1, e1 - 1, { label: labelEl.value.trim() || name, categoryId: "", newCategory: name });
+        return;
+      }
+      const cat = this.cats.get(catEl.value);
+      if (!cat) return;
+      const label = labelEl.value.trim() || cat.name;
+      this.lastCat = cat.id;
+      remember("tt-cat", cat.id);
+      this.closePopover();
+      this.paintRange(di, track, s1, e1 - 1, { label, categoryId: cat.id });
+    };
+    newCatEl.addEventListener("keydown", (ev) => { if (ev.key === "Enter") save(); });
+    labelEl.addEventListener("keydown", (ev) => { if (ev.key === "Enter") save(); });
+    pop.querySelector(".save").addEventListener("click", save);
+    pop.querySelector(".cancel").addEventListener("click", () => this.closePopover());
+    pop.addEventListener("mousedown", (ev) => ev.stopPropagation());
   }
 
   toggleHelp(open) {
@@ -1140,12 +1243,16 @@ class Timetable {
       .map((c) => `<option value="${esc(c.id)}" ${c.id === entry.categoryId ? "selected" : ""}>${esc(c.name)}</option>`)
       .join("");
     const day = new Date(entry.date + "T00:00").toLocaleDateString(LOC(), { weekday: "short", day: "numeric", month: "short" });
+    const s0 = slotOf(entry.start), e0 = slotOf(entry.end);
+    const startOpts = timeOptions(s0, 0), endOpts = timeOptions(e0, 1);
     const pop = document.createElement("div");
     pop.className = "tt-pop";
     pop.innerHTML = `
-      <div><b>${day} · ${esc(fmtRange(entry.start, entry.end))}</b> · ${entry.track === "plan" ? "Plan" : "Actual"}</div>
-      <input class="p-label" list="tt-labels" value="${esc(entry.label)}">
-      <select class="p-cat">${options}</select>
+      <div><b>${day}</b>${this.tracks.length > 1 ? (entry.track === "plan" ? " · Plan" : " · Actual") : ""}</div>
+      <input class="p-label" list="tt-labels" value="${esc(entry.label)}" aria-label="Name">
+      <div class="row p-times"><select class="p-start" aria-label="Start">${startOpts}</select>
+        <span>to</span><select class="p-end" aria-label="End">${endOpts}</select></div>
+      <select class="p-cat" aria-label="Category">${options}</select>
       <textarea class="p-details" rows="2" placeholder="Description (optional)">${esc(entry.details || "")}</textarea>
       <div class="row">
         <button class="del">Delete</button>
@@ -1169,7 +1276,18 @@ class Timetable {
     const save = () => {
       const label = labelEl.value.trim() || this.cats.get(catEl.value).name;
       const details = pop.querySelector(".p-details").value.trim() || null;
-      this.commit([{ opId: uid(), kind: "upsert", entry: { ...entry, label, categoryId: catEl.value, details } }]);
+      const s = +pop.querySelector(".p-start").value, e = +pop.querySelector(".p-end").value;
+      if (e <= s) { this.flashHint("The end time must be after the start"); return; }
+      if (s === s0 && e === e0) {
+        this.commit([{ opId: uid(), kind: "upsert", entry: { ...entry, label, categoryId: catEl.value, details } }]);
+      } else {
+        // New times: take it out, then paint it at the new times (trimming anything it now covers).
+        this.commit([
+          { opId: uid(), kind: "delete", id: entry.id },
+          { opId: uid(), kind: "paint", date: entry.date, track: entry.track, start: slotTime(s), end: slotTime(e),
+            block: { label, categoryId: catEl.value, details }, newId: entry.id },
+        ]);
+      }
       this.closePopover();
     };
     labelEl.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
@@ -1188,6 +1306,13 @@ class Timetable {
     if (ev) return { outlook: true, ev };
     const id = this.occupant[di][track][slot];
     return id ? { outlook: false, entry: this.entries.get(id) } : null;
+  }
+
+  // Has this event finished? (The grid runs past midnight, so count slots from the day's 07:00.)
+  hasPassed(item) {
+    const end = new Date(`${item.date}T00:00`);
+    end.setMinutes(FIRST_MIN + SLOT_MIN * slotOf(item.end));
+    return end <= new Date();
   }
 
   // Click on a block: it grows slightly and a card shows what it is and when,
@@ -1211,14 +1336,21 @@ class Timetable {
       <div class="pk-title">${hit.outlook ? CAL_ICON : ""}<b>${esc(title)}</b></div>
       <div class="pk-when">${esc(day)} · ${esc(when)}</div>
       <div class="pk-meta"><i style="background:${esc(cat ? cat.colour : "#9e9e9e")}"></i>${esc(cat ? cat.name : "No category")}
-        · ${hit.outlook || item.track === "plan" ? "Plan" : "Actual"}${hit.outlook ? " · from Outlook" : ""}</div>
+${this.tracks.length > 1 ? (hit.outlook || item.track === "plan" ? " · Plan" : " · Actual") : ""}${hit.outlook ? " · from Outlook" : ""}</div>
       ${hit.outlook && item.location ? `<div class="pk-loc">${PIN_ICON}${esc(item.location)}</div>` : ""}
       ${text ? `<div class="pk-text">${esc(text).replace(/\n/g, "<br>")}</div>` : ""}
-      ${this.data.readonly ? "" : `
+      ${(this.data.readonly && !this.data.editable) || !this.hasPassed(item) ? "" : `<div class="pk-status" role="group" aria-label="Did this happen?">
+        <button class="pk-done${item.status === true ? " on" : ""}" aria-pressed="${item.status === true}">✓ Done</button>
+        <button class="pk-not${item.status === false ? " on" : ""}" aria-pressed="${item.status === false}">✕ Not done</button>
+      </div>`}
+      ${this.data.readonly && !this.data.editable ? "" : `<div class="pk-cats" role="group" aria-label="Change category">
+        ${this.data.categories.map((c) => `<button class="pk-cat${c.id === item.categoryId ? " on" : ""}" data-cat="${esc(c.id)}"
+          aria-pressed="${c.id === item.categoryId}"><i style="background:${esc(c.colour)}"></i>${esc(c.name)}</button>`).join("")}
+      </div>`}
       <div class="row">
-        <button class="del">${hit.outlook ? "Remove" : "Delete"}</button>
-        <button class="edit">Edit</button>
-      </div>`}`;
+        <button class="del" title="${hit.outlook ? "Remove it from Venato (Outlook itself isn't changed)" : "Delete"}">${hit.outlook ? "Remove" : "Delete"}</button>
+        ${this.data.readonly && !this.data.editable ? "" : `<button class="edit">Edit</button>`}
+      </div>`;
     this.root.appendChild(card);
     this.popover = card;
 
@@ -1233,12 +1365,39 @@ class Timetable {
     card.style.top = `${Math.max(8, Math.min(r.top, window.innerHeight - card.offsetHeight - 8))}px`;
     card.addEventListener("mousedown", (e) => e.stopPropagation());
 
-    if (this.data.readonly) return;
-    card.querySelector(".del").addEventListener("click", () => {
+    const remove = () => {
       this.commit([hit.outlook ? { opId: uid(), kind: "hide_outlook", uid: item.id }
                                : { opId: uid(), kind: "delete", id: item.id }]);
       this.closePopover();
-    });
+    };
+    card.querySelector(".del").addEventListener("click", remove);
+    // Delete / Backspace removes the block whose card is open.
+    card.tabIndex = -1;
+    card.addEventListener("keydown", (e) => { if (e.key === "Delete" || e.key === "Backspace") remove(); });
+    card.focus();
+    if (this.data.readonly && !this.data.editable) return;
+    // Done / Not done; pressing the one that's already on clears it.
+    const mark = (done) => {
+      const id = hit.outlook ? `ol:${item.id}` : item.id;
+      this.commit([{ opId: uid(), kind: "status", id, done: item.status === done ? null : done }]);
+      this.closePopover();
+    };
+    const doneBtn = card.querySelector(".pk-done"), notBtn = card.querySelector(".pk-not");
+    if (doneBtn) doneBtn.addEventListener("click", () => mark(true));
+    if (notBtn) notBtn.addEventListener("click", () => mark(false));
+    // One click on a category changes it. Like Edit, that makes an Outlook event the user's own block.
+    card.querySelectorAll(".pk-cat").forEach((b) => b.addEventListener("click", () => {
+      const categoryId = b.dataset.cat;
+      if (categoryId !== item.categoryId) {
+        let entry = item;
+        if (hit.outlook) {
+          this.commit([{ opId: uid(), kind: "detach_outlook", uid: item.id }]);
+          entry = this.entries.get(`ol:${item.id}`);
+        }
+        this.commit([{ opId: uid(), kind: "upsert", entry: { ...entry, categoryId } }]);
+      }
+      this.closePopover();
+    }));
     card.querySelector(".edit").addEventListener("click", () => {
       let entry = item;
       if (hit.outlook) {   // editing an Outlook event makes it the user's own block
@@ -1253,6 +1412,10 @@ class Timetable {
   closePopover() {
     if (this.popover) this.popover.remove();
     this.popover = null;
+    if (!this.drag && this.selected.length) {      // the new-event form's highlighted range
+      this.selected.forEach((td) => td.classList.remove("sel"));
+      this.selected = [];
+    }
     this.cardHit = null;
     if (this.focusId) {
       this.focusId = null;
