@@ -91,6 +91,19 @@ def page_stats():
         fig.update_yaxes(range=[0, 100], dtick=20, ticksuffix="%")
         st.plotly_chart(fig, width="stretch")
 
+    # --- Timetable: planned vs done, on confirmed days only ---
+    hours = stats["timetable_hours"]
+    rows = [{"Category": cat, "Hours": h, "Track": label}
+            for track, label in (("plan", "Planned"), ("actual", "Done")) for cat, h in hours[track].items()]
+    if rows:
+        fig = px.bar(pd.DataFrame(rows), x="Category", y="Hours", color="Track", barmode="group", text_auto=".1f",
+                     title="Time: planned vs done", color_discrete_map={"Planned": "#9AA0AE", "Done": review_ui.regional_accent()})
+        fig.update_xaxes(title=None)
+        fig.update_layout(legend_title_text="")
+        st.plotly_chart(fig, width="stretch")
+    st.caption(f"Timetable time is counted from the {stats['days_confirmed']} of {stats['days']} days you've "
+               "confirmed. Confirm a day on the Timetable, or from Home's end-of-day prompt.")
+
     for extra in EXTRAS:
         extra()
     st.divider()

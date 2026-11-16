@@ -19,6 +19,8 @@ def pace(store, monkeypatch):
 
 def block(store, day, start, end, label, cat, track="plan"):
     store.paint(str(day), track, store.slot_of(start), store.slot_of(end), {"label": label, "category_id": cat})
+    if track == "actual":
+        store.mark_confirmed(str(day))     # Actual counts on confirmed days only
 
 
 def event(uid, day, start=None, end=None, title="Lecture"):
@@ -117,10 +119,14 @@ def test_pace_states(store, pace):
         block(store, day, "09:00", "12:00", "Revision", "study")
     p = pace.goal_pace(store.get_goal(g["id"]), pace.Ctx(NOW))
     assert p["state"] == "on_track" and p["week"]["covered"] == 12
-    # planned earlier this week, but the Actual is missing: slipping
+    # planned earlier this week: assumed done until the day is confirmed...
     block(store, "2026-11-10", "09:00", "11:00", "Revision", "study")
     p = pace.goal_pace(store.get_goal(g["id"]), pace.Ctx(NOW))
-    assert p["state"] == "slipping"
+    assert p["state"] == "on_track" and p["week"]["assumed"] == 2 and p["week"]["done"] == 0
+    # ...confirmed with the Actual missing: slipping
+    store.mark_confirmed("2026-11-10")
+    p = pace.goal_pace(store.get_goal(g["id"]), pace.Ctx(NOW))
+    assert p["state"] == "slipping" and p["week"]["confirmed_days"] == 1
     # far more than the time left
     big = store.add_goal("Big", "monthly", "2026-11-01", 900, "h", category_id="work")
     assert pace.goal_pace(big, pace.Ctx(NOW))["state"] == "unreachable"
@@ -130,6 +136,10 @@ def test_projection_from_the_last_four_weeks(store, pace):
     g = store.add_goal("Study", "monthly", "2026-11-01", 30, "h", category_id="study")
     for i in range(4):          # 1 h a week of Actual
         block(store, date(2026, 10, 14) + timedelta(weeks=i), "09:00", "10:00", "Revision", "study", "actual")
+    p = pace.goal_pace(store.get_goal(g["id"]), pace.Ctx(NOW))
+    assert p["rate"] == pytest.approx(7)      # only those 4 days are confirmed: 1 h a confirmed day
+    for i in range(1, 29):                    # every day of the last 4 weeks confirmed
+        store.mark_confirmed(NOW.date() - timedelta(days=i))
     p = pace.goal_pace(store.get_goal(g["id"]), pace.Ctx(NOW))
     assert p["rate"] == pytest.approx(1)
     assert p["late"] > 0 and "days late at this rate" in p["line"]
@@ -176,6 +186,9 @@ def test_follow_through_is_clamped(store, pace):
     g = store.add_goal("Study", "monthly", "2026-11-01", 30, "h", category_id="study")
     for i in range(1, 4):       # planned 4 h, did nothing
         block(store, date(2026, 11, 9) - timedelta(weeks=i), "09:00", "13:00", "Revision", "study")
+    assert pace.follow_through(g, pace.Ctx(NOW)) is None             # unconfirmed days: nothing to go on
+    for i in range(1, 4):
+        store.mark_confirmed(date(2026, 11, 9) - timedelta(weeks=i))
     assert pace.follow_through(g, pace.Ctx(NOW)) == 0.3
 
 

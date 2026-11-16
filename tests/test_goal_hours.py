@@ -8,6 +8,8 @@ import pytest
 
 def block(store, day, start, end, label, cat, track="actual"):
     store.paint(day, track, store.slot_of(start), store.slot_of(end), {"label": label, "category_id": cat})
+    if track == "actual":
+        store.mark_confirmed(day)          # Actual counts on confirmed days only
 
 
 def test_hours_goal_counts_actual_hours_in_the_period(store):

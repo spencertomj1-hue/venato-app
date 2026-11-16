@@ -10,6 +10,12 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Added
+- Timetable: one timeline. Plan once; time that has passed shows what happened. A day is assumed to have gone as planned (drawn faded and dashed, with "?") until you confirm it: Confirm under the day, "Confirm week as planned" (with a preview), or Home's end-of-day prompt "Anything not go to plan today?" (All as planned / Review; also for yesterday). Click a passed block for Didn't happen, Change times (or drag its edges) or Did something else; drag across empty passed time to add something unplanned. Skipped blocks are hatched and struck through, unplanned ones outlined, with a text equivalent in the keyboard block list. The side-by-side Plan and Actual view is still there (Settings → Region → Timetable view); new installs start with one timeline, existing ones keep two columns until they switch.
+- Assistant: `confirm_day` and `skip_block` tools; adding or changing an Actual block corrects the day in the same way.
+- Stats: time planned vs done per category.
+
+### Changed
+- Anything built on the Actual (weekly review, Stats, goal values, pace, follow-through, the recent rate, suggested goals) counts confirmed days only and says how many ("from 5 of 7 days confirmed"). Days already holding Actual blocks are marked confirmed when you update; nothing is deleted or rewritten.
 - Goals: a third way to track progress, "Count timetable hours": the Actual hours of a category, or of one activity in it. Deleting the category turns the goal back into one you update yourself.
 - Goals meet the timetable: a week's free time is its timetable hours minus calendar events and Plan blocks that serve no goal (nothing fixed is ever moved). Calendar events in a goal's category count towards that goal. All-day events don't block time unless you mark "I'm away" (Timetable → Away days; kept across syncs). Weeks beyond the 8 weeks calendar sync reaches are estimated from the average load.
 - Pace for every goal (hours, habit and hand-kept, in their own unit): on track / behind / slipping / can't be reached, this week's need with hours carried from earlier weeks ("9 h this week (6 h + 3 h carried)"), and a projected finish from the last 4 weeks ("11 days late at this rate").

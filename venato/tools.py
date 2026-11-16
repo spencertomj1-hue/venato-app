@@ -287,7 +287,8 @@ def get_stats(period="30d", today=None):
         f"sleep {s['avg_sleep']}h, "
         f"water {s['avg_water']} L/day\n"
         f"Habit completion: {habits}\n"
-        f"Timetable plan hours: {hours['plan']}\n"
+        f"Timetable (only the {s['days_confirmed']} confirmed days of {s['days']}; unconfirmed days are only assumed) "
+        f"plan hours: {hours['plan']}\n"
         f"Timetable actual hours: {hours['actual']}"
     )
 
@@ -396,6 +397,8 @@ def add_block(date, track, start, end, label, category=None, details=None, confi
         summary = f"Add {what}. This overwrites: " + "; ".join(describe_block(b, names) for b in affected)
         return Result("", pending=Pending(
             summary, lambda: add_block(date, track, start, end, label, category, details, True)))
+    if track == "actual":
+        store.materialise(day, now=_now())          # a correction: the rest of the day's passed Plan becomes Actual
     store.paint(day, track, s, e, block)
     return Result(f"Added {what}.", changed=True)
 
@@ -452,6 +455,9 @@ def update_block(block_id, label=None, category=None, date=None, track=None, sta
         return Result("", pending=Pending(
             summary, lambda: update_block(block_id, label, category, date, track, start, end, details, True)))
 
+    for d, t in ((old["date"], old["track"]), (day, trk)):
+        if t == "actual":
+            store.materialise(d, now=_now())        # a correction (see add_block)
     if ev:
         old_id = store.detach_outlook(ev["uid"])
     else:
@@ -477,7 +483,61 @@ def delete_block(block_id, confirmed=False):
     summary = f"Delete {describe_block(b)}"
     if not confirmed:
         return Result("", pending=Pending(summary, lambda: delete_block(block_id, True)))
+    if b["track"] == "actual":
+        store.materialise(b["date"], now=_now())    # so the gap means "nothing happened", not "as planned"
     store.delete_block(b["id"])
+    return Result(f"Done: {summary}.", changed=True)
+
+
+def _passed(day, s, e):
+    """Slots s..e of a day cut to the part that has passed; None if none of it has."""
+    gone = store.slots_gone(day, _now())
+    return (s, min(e, gone)) if s < gone else None
+
+
+def skip_block(block_id, confirmed=False):
+    """
+    "It didn't happen": a planned block (or calendar event, "outlook:<uid>") or an Actual block that has
+    passed. The day's Actual becomes the truth (materialised) with nothing in those slots. Previewed first.
+    The Timetable's "Didn't happen" button does the same.
+    """
+    ev = _outlook_event(block_id)
+    b = store._as_block(ev) if ev else _get_block(block_id)
+    span = _passed(b["date"], store.slot_of(b["start"]), store.slot_of(b["end"]))
+    if not span:
+        raise ToolError(f"{b['label']} on {nice_day(b['date'])} hasn't happened yet: change the Plan instead.")
+    s, e = span
+    summary = (f"Mark {b['label']} {store.slot_time(s)}–{store.slot_time(e)} on {nice_day(b['date'])} as not "
+               "having happened (the Plan stays as it was)")
+    if not confirmed:
+        return Result("", pending=Pending(summary, lambda: skip_block(block_id, True)))
+    store.correct(b["date"], s, e, None, now=_now())
+    return Result(f"Done: {summary}.", changed=True)
+
+
+def confirm_day(date=None, end_date=None, confirmed=False, preview=False):
+    """
+    Confirm that a day (or every unconfirmed day from date to end_date) went as planned: the passed Plan
+    becomes the Actual wherever the Actual is empty (nothing already there changes). Several days are
+    previewed first. The same as "All as planned" on Home and "Confirm week as planned" on the Timetable.
+    """
+    first = _day(date) if date else _now().date().isoformat()
+    last = _day(end_date) if end_date else first
+    if last < first:
+        first, last = last, first
+    today = _now().date().isoformat()
+    if first > today:
+        raise ToolError("That day hasn't happened yet.")
+    days = store.unconfirmed_days(first, min(last, today), now=_now())
+    if first == last == today and today not in days:
+        days = [today]                                    # today, as planned so far
+    if not days:
+        return Result(f"Nothing to confirm: every day from {nice_day(first)} to {nice_day(last)} is confirmed already.")
+    summary = "Confirm " + ", ".join(nice_day(d) for d in days) + " as planned"
+    if (len(days) > 1 or preview) and not confirmed:
+        return Result("", pending=Pending(summary, lambda: confirm_day(date, end_date, True)))
+    for d in days:
+        store.confirm_day(d, now=_now())
     return Result(f"Done: {summary}.", changed=True)
 
 

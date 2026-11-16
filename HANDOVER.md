@@ -110,6 +110,7 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
 | `goal_week` | The user's split of a week between hours goals: `goal_id` (cascade), `week_start`, `hours`. None = automatic |
 | `tt_outlook_away` | All-day calendar events marked "I'm away" (that day has no free time for goals); kept across syncs |
 | `away_days` | Days marked "I'm away" by hand (`date`), no calendar event needed |
+| `tt_day_status` | One timeline (§5f): `date` (PK), `confirmed_at` (NULL = not confirmed), `upto` ("HH:mm": the day's Actual is the truth before this). Made by `_day_status_table` on first run, marking every day that already had Actual blocks confirmed |
 
 Notes on the schema:
 - **New installs** are seeded with generic categories (groups "Life" and "Work") and activity defaults, in `DEFAULT_CATEGORIES` / `DEFAULT_LABEL_MAP`. Groups are read from the data (`store.groups()`), so a user's own groups work too.
@@ -127,7 +128,7 @@ Notes on the schema:
   - The component sends ops with an `opId`: `paint`, `upsert`, `delete`, `hide_outlook` and `detach_outlook`.
   - Python applies them in `timetable.apply_grid_op` and acknowledges them in `data.acked`. The JS replays unacknowledged ops on top of incoming data, so a slow rerun never makes the grid flicker.
   - A paint carries the new block's id (`newId`), so both sides agree on it.
-- **Views:** `render_page` is the week (editable). `render_today` is Home's single day: view only, with rows sized to fit the window (`fitToWindow`) and the key wrapped underneath.
+- **Views:** `render_page` is the week (editable). `render_today` is Home's single day: view only, always one timeline, with rows sized to fit the window (`fitToWindow`) and the key wrapped underneath. `render_grid(view=)` picks one timeline (`"one"`) or Plan and Actual (`"split"`); the default is `store.timetable_view()` (settings.json `timetable_view`; missing = `"one"`, set to `"split"` for installs that already had blocks).
 - **Clicking a block** grows it and opens a details card (title, time, category, location, description), with Edit and Delete/Remove buttons except on Home. A drag paints, and a click with the eraser erases.
 - **Block text** is black unless the fill is dark (`contrastText`, luminance threshold 90).
 
@@ -179,6 +180,16 @@ Two different things:
 - **Suggestions:** categories / activities with 2 h+ of Actual time in 3 of the last 4 weeks and no goal counting them; dismissals in `goal_suggestions_dismissed`. Categories in `pace.NEVER_SUGGEST` (Sleep, by id or name) are never suggested.
 - **Nudge:** `notify.goal_nudges` → `pace.nudges`: from midday on the week's third day, once per goal per week (`goal_nudged` in settings.json, so restarts don't repeat it).
 - **Claude:** `goal_pace`, `week_budget`, `plan_goals` (shares free gaps between goals via `tools._place`, the same placement `plan_time` uses), and a line in the [Now] snapshot. Buttons: the chips / Plan my goals / Share hours / pace lines.
+
+## 5f. One timeline (Plan, corrected into the Actual)
+
+- **Data stays two tracks.** `tt_entries` keeps `plan` and `actual`; only the grid merges them. Review, stats, Focus and the assistant read Actual as before, filtered to **confirmed days** (`store.confirmed_days`).
+- **Materialise** (`store.materialise(day, conn, now, confirm)`): copies the day's passed Plan (own blocks + visible timed calendar events, `_plan_items`) into every **empty** Actual slot between the old `upto` and the slots gone by now (`store.slots_gone`), never over an Actual block (Focus, hand-entered). Ids are `m:<day>:<HH:mm>` so the JS mirror agrees. Idempotent. A past day becomes confirmed; today only with `confirm=True`. Calendar events are copied as ordinary blocks; the event itself is never hidden or detached.
+- **Corrections** (all materialise first): `store.correct(day, s, e, block|None)` (didn't happen / did something else / unplanned), `store.retime(day, s0, e0, s, e, block)`, `store.confirm_day`. Side-by-side grid edits to the Actual call `store.mark_confirmed` instead (the user's own Actual is the truth; nothing copied).
+- **Grid:** `data.view`, `data.dayState[date] = {gone, upto, confirmed}`. In one-timeline mode `cells[d].plan` and `.actual` are the same column; slots ≥ `gone` behave exactly like the Plan column; passed slots are "pieces" (`paintOne`: actual / assumed / unplanned / skipped, never colour alone: ✓ ? + ✕, dashed, outline, hatching). New ops `skip`, `replace`, `retime`, `confirm_day` (opId + ack as usual; `materialiseLocal` mirrors the store). Confirm buttons in the header are `tabindex=-1` (the table is `aria-hidden`); the block list has the keyboard equivalent.
+- **Prompts:** Home's `timetable.end_of_day_prompt()`: today once `store.day_ended` (its last Plan item has passed), and yesterday, if unconfirmed; "Not now" stores the date in settings `eod_dismissed`. Timetable toolbar: "Confirm week as planned (N days)" → `tools.confirm_day(..., preview=True)` (a Pending).
+- **Assistant:** `confirm_day`, `skip_block`; `add_block` / `update_block` / `delete_block` on the Actual materialise first.
+- **Goals (`pace.py`):** `goal_hours(track="actual")` counts confirmed days only (`data["confirmed"]`). `Ctx.hours(days="confirmed"|"unconfirmed")` keeps Plan-vs-Actual on the same days (follow-through, `plan_so_far`/slipping). `week_goals` adds `assumed` (passed Plan on unconfirmed days, included in `covered` so it isn't planned twice), `confirmed_days`, `days_so_far`. The trailing rate is per confirmed day.
 
 ## 6. Outlook import (`outlook.py`)
 

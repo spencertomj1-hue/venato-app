@@ -277,7 +277,7 @@ td.s.sel.box { --tile: color-mix(in srgb, var(--accent) 16%, transparent); }
 .tt-pop button { cursor: pointer; }
 .tt-pop .row { display: flex; gap: 6px; }
 .tt-pop .del { color: #d33; margin-right: auto; }
-.tt-pop .save { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tt-pop .save { background: var(--accent); border-color: var(--accent); color: var(--bg); }   /* white on red; dark on the dark mode coral */
 
 /* One-day mode (Home page): no week navigation. */
 .tt-root.single .tt-nav, .tt-root.single .tt-goto { display: none; }
@@ -367,3 +367,42 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 .tt-now { position: absolute; height: 2px; margin-top: -1px; background: #E53935; pointer-events: none; z-index: 6;
   transition: top 1s linear; }
 .tt-now::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #E53935; }
+
+/* ---------- One timeline (Plan once; what has passed shows what happened) ---------- */
+
+/* Passed time the user hasn't confirmed: the Plan, faded, with a dashed edge and "?" (not colour alone). */
+.blk.past.assumed {
+  background: color-mix(in srgb, var(--fill) 38%, var(--bg));
+  border: 1.5px dashed color-mix(in srgb, var(--fill) 70%, var(--text));
+  color: var(--text);
+}
+/* Planned, but it didn't happen: hatched, struck through, "✕". */
+.blk.past.skipped {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--fill) 45%, transparent) 0 3px, transparent 3px 7px);
+  border: 1px solid color-mix(in srgb, var(--fill) 60%, var(--text));
+  color: var(--text);
+}
+.blk.past.skipped b { text-decoration: line-through; align-self: flex-start; max-width: 100%; padding: 0 3px;
+                      border-radius: 3px; background: var(--bg); }
+.blk.past.skipped span { align-self: flex-start; padding: 0 3px; border-radius: 3px; background: var(--bg); opacity: 1; color: var(--muted); }
+/* Done without being planned (or instead of the Plan): outlined, "+". */
+.blk.past.unplanned { box-shadow: inset 0 0 0 2px var(--text); }
+.blk.past.unplanned.picked { box-shadow: inset 0 0 0 2px var(--text), 0 0 0 1px var(--bg), 0 0 0 2.5px var(--accent); }
+.blk .mk { font-style: normal; font-weight: 700; margin-right: 3px; }
+.blk.past.assumed span { opacity: 1; }
+
+/* Each day's state under its name: "✓ Confirmed", "Not confirmed", or a Confirm button. */
+th.day .dstate { min-height: 1.2em; margin-top: 2px; font-size: 0.72rem; font-weight: 500; }
+th.day .dstate .ok, th.day .dstate .unconf { color: var(--muted); }
+th.day .dstate .confirm {
+  padding: 1px 9px; border: 1px solid var(--accent); border-radius: 999px; background: var(--bg);
+  color: var(--text); font-size: 0.72rem; cursor: pointer;
+}
+th.day .dstate .confirm:hover { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
+.tt-root.one .tt-now { z-index: 6; }
+
+/* The corrections card. */
+.tt-peek .row.fix { flex-wrap: wrap; }
+.tt-peek .pk-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 0.8rem; }
+.tt-peek .pk-form[hidden] { display: none; }
+.tt-peek .pk-form input { flex: 1 1 140px; min-width: 0; }

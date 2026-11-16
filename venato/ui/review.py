@@ -55,7 +55,8 @@ def render(first, key):
         else:
             value, delta = _delta(now, before, unit, fmt)
         col.metric(f"Avg {name.lower()}", value, delta=delta, help="Change from the week before.")
-    st.caption(f"Daily log filled in on {s['days_logged']} of 7 days.")
+    st.caption(f"Daily log filled in on {s['days_logged']} of 7 days. Time is counted from "
+               f"{s['days_confirmed']} of {s['days_so_far']} days confirmed on the timetable.")
 
     # --- Time: planned vs done per category ---
     if s["time"]:

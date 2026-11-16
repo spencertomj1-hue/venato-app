@@ -31,7 +31,7 @@
 
 ## Why this?
 
-- **Plan vs Actual, side by side.** Every day on the timetable has two columns: what you meant to do and what you really did. The weekly review then tells you how much of your plan you followed, per category. Notion and Daylio don't do that out of the box.
+- **Plan once, then see what really happened.** The timetable is one timeline: your Plan from now on, and for time that has passed, what happened. You don't log your day twice: confirm it went to plan in one tap, or correct the bits that didn't ("didn't happen", "change times", "did something else"). The weekly review then tells you how much of your plan you followed, per category, counting only the days you've confirmed. Notion and Daylio don't do that out of the box.
 - **Your data never leaves your computer.** No account, no server, no cloud sync. Everything is one SQLite file in your data folder, the app only listens on `127.0.0.1`, and voice is transcribed locally.
 - **Everything in one place.** Timetable, daily log (mood, sleep, energy, water), journal, habits with streaks, to-dos, goals, deadlines and a map of the people you know, all linked: tick a habit and the goal it counts towards moves; a deadline shows on the timetable and gets a reminder.
 - **Optional Claude assistant.** Type or say "Fit 6 hours of revision into next week around my lectures" or "Mood 4, slept 7.5 hours, tick reading". It works through a fixed set of Venato actions, previews anything destructive for you to confirm, and is off unless you switch it on. Everything also works by hand.
@@ -53,7 +53,7 @@
 | **Health data** | Import Apple Health, Google Fit, Strava and Whoop exports: steps, sleep, heart rate, HRV, recovery, strain, weight, and workouts. |
 
 **Planning**
-- **Weekly timetable** with Plan and Actual columns in 30-minute slots. Drag to add blocks; click a block to select it (click again for details), then drag it to move it or drag its edges to resize; Backspace deletes it; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
+- **Weekly timetable as one timeline** in 30-minute slots: the Plan from now on; passed time shows what happened. A day is *assumed* to have gone as planned (faded, dashed, "?") until you confirm it (Confirm under the day, "Confirm week as planned", or Home's "Anything not go to plan today?"). Click a passed block for **Didn't happen** (hatched and struck through), **Change times** (or drag its edges) or **Did something else**; drag across empty passed time to add something unplanned (outlined). Stats and goals count confirmed days only and say how many. Prefer two columns? Settings → Region → Timetable view → Plan and Actual. Drag to add blocks; click a block to select it (click again for details), then drag it to move it or drag its edges to resize; Backspace deletes it; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
 - **Colour-coded categories** in groups ("Life", "Work"), with activities that pick their category automatically ("Lunch" goes to Meals).
 - **Fit time:** say what, how many hours and which days; Venato finds free gaps around your blocks and calendar events and previews the sittings before adding them.
 - **To-dos** for today, this week and this month, in the style of Apple Reminders: drag to reorder, notes, repeating to-dos.
@@ -77,7 +77,7 @@
 
 **Everything else**
 - **Search** across to-dos, goals, deadlines, applications, habits, journal, timetable, calendar events, people and past reviews.
-- **Calendars (optional, read only):** Outlook, Google, Apple (iCloud) or any .ics calendar shows in the Plan column, synced every 15 minutes.
+- **Calendars (optional, read only):** Outlook, Google, Apple (iCloud) or any .ics calendar shows in your Plan, synced every 15 minutes.
 - **Reminders:** desktop notifications a few minutes before each planned block or event.
 - **Undo** for deletes and overwrites, for two minutes.
 - **Backups:** automatic daily backups (keeps 30) to any folder, e.g. iCloud Drive or OneDrive, plus CSV export/import and journal download.

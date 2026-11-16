@@ -48,6 +48,7 @@ def test_suggestion_card_makes_a_goal(store):
     for i in range(1, 4):
         day = (monday - timedelta(weeks=i)).isoformat()
         store.paint(day, "actual", store.slot_of("18:00"), store.slot_of("21:00"), {"label": "Guitar", "category_id": "rest"})
+        store.mark_confirmed(day)
     at = app()
     open_page(at, "Goals")
     yes = [x for x in at.button if x.key and x.key.startswith("suggest_yes_")]

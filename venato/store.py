@@ -298,6 +298,7 @@ def init_db():
             """
         )
         _scores_out_of_ten(conn)
+        _day_status_table(conn)
         if conn.execute("SELECT COUNT(*) FROM tt_categories").fetchone()[0] == 0:
             conn.executemany(
                 "INSERT INTO tt_categories VALUES (?, ?, ?, ?, ?, ?)",
@@ -455,6 +456,28 @@ def _goals_became_todos(conn):
         conn.execute("ALTER TABLE goal_rollover RENAME TO todo_rollover")
         conn.execute("DELETE FROM todo_rollover WHERE period = 'yearly'")
     conn.execute("DELETE FROM todos WHERE period = 'yearly'")
+
+
+def _day_status_table(conn):
+    """
+    tt_day_status: which timetable days the user has confirmed (see "One timeline" below).
+    Made the first time this version runs. Existing days with any Actual block are marked
+    confirmed (their Actual is already the truth), nothing else changes, and an install that
+    already has timetable blocks keeps the side-by-side Plan / Actual view.
+    """
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tt_day_status'").fetchone():
+        return
+    conn.execute(
+        """CREATE TABLE tt_day_status (
+               date         TEXT PRIMARY KEY,   -- a timetable day
+               confirmed_at TEXT,               -- when the user confirmed it (NULL = not yet)
+               upto         TEXT                -- Actual is the truth for this day's slots before this time
+           )""")
+    full = slot_time(SLOTS)
+    conn.execute("INSERT INTO tt_day_status SELECT DISTINCT date, ?, ? FROM tt_entries WHERE track = 'actual'",
+                 (stamp(), full))
+    if conn.execute("SELECT 1 FROM tt_entries LIMIT 1").fetchone() and "timetable_view" not in load_settings():
+        save_settings(timetable_view="split")
 
 
 def _add_column(conn, table, column, kind):
@@ -1350,6 +1373,174 @@ def outlook_overlaps(day, s, e):
 
 
 # ---------------------------------------------------------------------------
+# Timetable: one timeline (the Plan, corrected into the Actual)
+#
+# The user plans once. A slot that has passed shows what happened: the Actual
+# where there is one, otherwise the Plan, *assumed*. A day stays unconfirmed
+# until the user confirms it or corrects something on it. Either one first
+# *materialises* the day: the Plan (and visible timed calendar events) is copied
+# into every empty Actual slot that has passed, never over an Actual block
+# already there (Focus sessions, hand-entered blocks). From then on the Actual
+# track is the truth for those slots, and an empty Actual slot means nothing happened.
+#
+# tt_day_status.upto is how far the Actual is the truth ("HH:mm"); confirmed_at
+# is set once the whole day is (a past day corrected or confirmed, or today
+# confirmed from the end-of-day prompt). Stats and goals built on Actual count
+# confirmed days only.
+#
+# The grid's JS (timetable_component.js) mirrors these rules only to show a
+# change instantly; what gets saved is always computed here.
+# ---------------------------------------------------------------------------
+
+TIMETABLE_VIEWS = ("one", "split")      # one timeline; Plan and Actual side by side
+
+
+def timetable_view():
+    """'one' (one timeline, the default) or 'split' (Plan and Actual columns side by side)."""
+    view = load_settings().get("timetable_view")
+    return view if view in TIMETABLE_VIEWS else "one"
+
+
+def slots_gone(day, now=None):
+    """How many of a timetable day's slots have ended by `now` (all of them for a past day, 0 for a future one)."""
+    now = now or local_now()
+    start = datetime.combine(_as_date(day), datetime.min.time()) + timedelta(minutes=FIRST_MIN)
+    return max(0, min(SLOTS, int((now - start).total_seconds() // 1800)))
+
+
+def day_status(first, last):
+    """{date: {"confirmed": bool, "upto": slots of Actual that are the truth}} for days with a status row."""
+    with db() as conn:
+        rows = conn.execute("SELECT date, confirmed_at, upto FROM tt_day_status WHERE date BETWEEN ? AND ?",
+                            (_as_date(first).isoformat(), _as_date(last).isoformat())).fetchall()
+    return {d: {"confirmed": bool(c), "upto": min(SLOTS, slot_of(u)) if u else 0} for d, c, u in rows}
+
+
+def confirmed_days(first, last):
+    """The confirmed timetable days between two dates (inclusive), as a sorted list of ISO dates."""
+    return sorted(d for d, st in day_status(first, last).items() if st["confirmed"])
+
+
+def _upto(conn, day):
+    row = conn.execute("SELECT upto FROM tt_day_status WHERE date = ?", (day,)).fetchone()
+    return min(SLOTS, slot_of(row[0])) if row and row[0] else 0
+
+
+def _plan_items(conn, day):
+    """The day's Plan as blocks: the user's own, and visible timed calendar events (as they'd be copied)."""
+    items = blocks_for(conn, day, "plan") + [_as_block(r) for r in _visible_outlook(conn, day)]
+    return sorted(items, key=lambda b: slot_of(b["start"]))
+
+
+def materialise_ops(day, plan, actual, done, upto):
+    """
+    The blocks that materialising slots done..upto-1 of a day adds to its Actual: each Plan item (block or
+    calendar event) copied into the runs of those slots where the Actual is empty. Ids are "m:<day>:<slot>"
+    so the grid's JS (which mirrors this) and Python agree on them. Returns [("upsert", block)].
+    """
+    taken = [False] * SLOTS
+    ids = {b["id"] for b in actual}
+    for b in actual:
+        for i in range(max(0, slot_of(b["start"])), min(slot_of(b["end"]), SLOTS)):
+            taken[i] = True
+    ops = []
+    for p in plan:
+        s, e = max(slot_of(p["start"]), done), min(slot_of(p["end"]), upto, SLOTS)
+        i = s
+        while i < e:
+            if taken[i]:
+                i += 1
+                continue
+            j = i
+            while j < e and not taken[j]:
+                taken[j] = True
+                j += 1
+            bid = f"m:{day}:{slot_time(i)}"
+            if bid in ids:                                   # (a copy made earlier, since moved)
+                bid = uuid.uuid4().hex
+            ids.add(bid)
+            ops.append(("upsert", {"id": bid, "date": day, "track": "actual", "start": slot_time(i),
+                                   "end": slot_time(j), "label": p["label"], "category_id": p["category_id"],
+                                   "details": p.get("details")}))
+            i = j
+    return ops
+
+
+def materialise(day, conn=None, now=None, confirm=False):
+    """
+    Make the Actual the truth for every slot of `day` that has passed (see above): copy the Plan into the
+    empty Actual slots not done before, and remember how far that goes. A past day becomes confirmed;
+    so does today with confirm=True. Idempotent. Returns the blocks it added.
+    """
+    if conn is None:
+        with db() as conn:
+            return materialise(day, conn, now, confirm)
+    day = _as_date(day).isoformat()
+    upto, done = slots_gone(day, now), _upto(conn, day)
+    ops = materialise_ops(day, _plan_items(conn, day), blocks_for(conn, day, "actual"), done, upto) if upto > done else []
+    apply_block_ops(conn, ops)
+    whole = upto >= SLOTS or confirm
+    conn.execute(
+        "INSERT INTO tt_day_status (date, confirmed_at, upto) VALUES (?, ?, ?) ON CONFLICT(date) DO UPDATE SET "
+        "upto = CASE WHEN excluded.upto IS NOT NULL THEN excluded.upto ELSE upto END, "
+        "confirmed_at = COALESCE(confirmed_at, excluded.confirmed_at)",
+        (day, stamp() if whole else None, slot_time(max(upto, done)) if max(upto, done) else None))
+    return [b for _, b in ops]
+
+
+def confirm_day(day, now=None):
+    """The user says the day went as planned (so far, for today): materialise it and mark it confirmed."""
+    return materialise(day, now=now, confirm=True)
+
+
+def mark_confirmed(day):
+    """The side-by-side view: the user filled in this day's Actual by hand, so it's the truth as it is."""
+    with db() as conn:
+        conn.execute("INSERT INTO tt_day_status (date, confirmed_at, upto) VALUES (?, ?, ?) ON CONFLICT(date) DO UPDATE "
+                     "SET confirmed_at = COALESCE(confirmed_at, excluded.confirmed_at), upto = excluded.upto",
+                     (_as_date(day).isoformat(), stamp(), slot_time(SLOTS)))
+
+
+def unconfirmed_days(first, last, now=None):
+    """Past (or today's finished) timetable days between two dates that aren't confirmed yet."""
+    status = day_status(first, last)
+    out, d = [], _as_date(first)
+    while d <= _as_date(last):
+        iso = d.isoformat()
+        if slots_gone(iso, now) >= SLOTS and not status.get(iso, {}).get("confirmed"):
+            out.append(iso)
+        d += timedelta(days=1)
+    return out
+
+
+def correct(day, s, e, block, new_id=None, now=None):
+    """
+    A correction on the one timeline: materialise the day, then put `block` in Actual slots s..e-1
+    (None = "didn't happen": nothing there). Returns the Actual blocks it overwrote.
+    """
+    with db() as conn:
+        materialise(day, conn, now)
+        return paint(_as_date(day).isoformat(), "actual", s, e, block, new_id=new_id, conn=conn)
+
+
+def retime(day, s0, e0, s, e, block, new_id=None, now=None):
+    """'Change times' on the one timeline: what was in Actual slots s0..e0-1 happened at s..e-1 instead."""
+    with db() as conn:
+        materialise(day, conn, now)
+        day = _as_date(day).isoformat()
+        paint(day, "actual", s0, e0, None, conn=conn)
+        return paint(day, "actual", s, e, block, new_id=new_id, conn=conn)
+
+
+def day_ended(day, now=None):
+    """Has the day's last Plan block (or calendar event) ended? (Days with no Plan: once the day is over.)"""
+    with db() as conn:
+        items = _plan_items(conn, _as_date(day).isoformat())
+    last = max((min(slot_of(b["end"]), SLOTS) for b in items), default=SLOTS)
+    return slots_gone(day, now) >= last
+
+
+# ---------------------------------------------------------------------------
 # Periods, and to-dos for a day, a week (Monday to Sunday) or a month.
 #
 # Each to-do (and each goal, below) belongs to one period, identified by its
@@ -1678,8 +1869,9 @@ def goal_hours(goal, first, last, track, data=None, window=None):
     the goal; detached calendar events (blocks with ids "ol:...") are fixed time and never count.
     Every goal calculation (value, pace, budget, forecast) goes through here.
 
-    data:   {"blocks": [...], "events": [...]} already read for a range covering first..last
-            (blocks_between / outlook_between rows), to save queries in loops.
+    data:   {"blocks": [...], "events": [...], "confirmed": {dates}} already read for a range covering
+            first..last (blocks_between / outlook_between rows, confirmed_days), to save queries in loops.
+    The Actual counts confirmed days only: an unconfirmed day's Plan is only assumed, so it isn't done.
     window: window(day) -> (lo, hi): count only slots lo..hi-1 of that day (default: the whole day).
     """
     if not goal.get("category_id"):
@@ -1691,6 +1883,12 @@ def goal_hours(goal, first, last, track, data=None, window=None):
         data = {"blocks": blocks_between(first, last, track),
                 "events": outlook_between(first, last) if track == "plan" else []}
 
+    if track == "actual":       # Actual counts only on days the user confirmed (see "One timeline")
+        confirmed = data.get("confirmed")
+        confirmed = set(confirmed_days(first, last)) if confirmed is None else confirmed
+    else:
+        confirmed = None
+
     def slots(day, s, e):
         lo, hi = window(day) if window else (0, SLOTS)
         return max(0, min(e, hi, SLOTS) - max(s, lo, 0))
@@ -1698,6 +1896,7 @@ def goal_hours(goal, first, last, track, data=None, window=None):
     total = 0
     for b in data["blocks"]:
         if (b["track"] == track and first <= b["date"] <= last and not str(b["id"]).startswith("ol:")
+                and (confirmed is None or b["date"] in confirmed)
                 and _goal_matches(goal, b["category_id"], b["label"])):
             total += slots(b["date"], slot_of(b["start"]), slot_of(b["end"]))
     events = [ev for ev in data.get("events") or []
@@ -2281,7 +2480,10 @@ def get_stats(days=None, today=None):
     cats = load_categories()
     names = dict(zip(cats["id"], cats["name"]))
     hours = {"plan": {}, "actual": {}}
+    confirmed = set(confirmed_days(first, last))     # Plan vs Actual only on days the user confirmed
     for b in blocks_between(first, last):
+        if b["date"] not in confirmed:
+            continue
         name = names.get(b["category_id"], "Uncategorised")
         h = (slot_of(b["end"]) - slot_of(b["start"])) / 2
         hours[b["track"]][name] = hours[b["track"]].get(name, 0) + h
@@ -2294,6 +2496,7 @@ def get_stats(days=None, today=None):
         "avg_water": avg("water"),
         "habit_completion_pct": habits,
         "timetable_hours": hours,
+        "days_confirmed": len(confirmed),
     }
 
 

@@ -19,6 +19,11 @@ Words used throughout:
   covered   what it has: done so far plus what's planned for the rest of the week
 
 A Ctx reads the blocks and events once for everything a page needs (and pins "now").
+
+Actual time counts on confirmed timetable days only (store, "One timeline"): an unconfirmed
+day's Plan is only assumed to have happened. So `done`, values, rates and follow-through use
+confirmed days, Plan-vs-Actual comparisons use the same days, and the assumed time on
+unconfirmed days is kept apart (`assumed`) so Plan my goals doesn't plan it a second time.
 """
 
 import math
@@ -124,14 +129,28 @@ class Ctx:
                 by_day.setdefault(b["date"], {"blocks": [], "events": []})["blocks"].append(b)
             for ev in events:
                 by_day.setdefault(ev["date"], {"blocks": [], "events": []})["events"].append(ev)
-            self._data = {"blocks": blocks, "events": events, "outlook_category": self.ocat, "by_day": by_day}
+            self._data = {"blocks": blocks, "events": events, "outlook_category": self.ocat, "by_day": by_day,
+                          "confirmed": set(store.confirmed_days(lo.isoformat(), hi.isoformat()))}
             self._day_cap = {}
             self._avg_fixed = None
         return self._data
 
-    def hours(self, goal, first, last, track, window=None):
-        """store.goal_hours over the data already read."""
-        return store.goal_hours(goal, first, last, track, data=self.data(first, last), window=window)
+    def hours(self, goal, first, last, track, window=None, days=None):
+        """store.goal_hours over the data already read (the Actual: confirmed days only).
+        days: "confirmed" / "unconfirmed" counts only those days (for the Plan)."""
+        data = self.data(first, last)
+        if days:
+            keep = (lambda d: d in data["confirmed"]) if days == "confirmed" else (lambda d: d not in data["confirmed"])
+            inner = window
+            window = lambda d: (inner(d) if inner else (0, store.SLOTS)) if keep(d) else (0, 0)
+        return store.goal_hours(goal, first, last, track, data=data, window=window)
+
+    def confirmed(self, first, last):
+        """(confirmed days, days so far) between two days: "based on 5 of 7 confirmed days"."""
+        first, last = _d(first), min(_d(last), self.today)
+        conf = self.data(first, max(first, last))["confirmed"]
+        days = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+        return sum(_iso(d) in conf for d in days), len(days)
 
     def first_future_slot(self, day):
         """The first slot of a timetable day that hasn't started yet (SLOTS once it's over, 0 for later days)."""
@@ -270,8 +289,9 @@ def daily_rate(goal, ctx):
     """Recent progress per day: the last 4 weeks' Actual hours or habit ticks (hand-kept: the period so far).
     None when there's nothing to go on."""
     first, last = ctx.today - timedelta(days=TRAILING_DAYS), ctx.today - timedelta(days=1)
-    if goal["kind"] == "hours":
-        return ctx.hours(goal, first, last, "actual") / TRAILING_DAYS
+    if goal["kind"] == "hours":                     # per confirmed day: unconfirmed days tell us nothing
+        n, _ = ctx.confirmed(first, last)
+        return ctx.hours(goal, first, last, "actual") / n if n else None
     if goal["kind"] == "habit":
         return sum(1 for d in store.get_habit_dates(goal["habit_id"]) if _iso(first) <= d <= _iso(last)) / TRAILING_DAYS
     start, _ = bounds(goal)
@@ -307,7 +327,7 @@ def follow_through(goal, ctx):
     for n in range(1, FOLLOW_WEEKS + 1):
         first = this_week - timedelta(weeks=n)
         last = first + timedelta(days=6)
-        p = ctx.hours(goal, first, last, "plan")
+        p = ctx.hours(goal, first, last, "plan", days="confirmed")     # the same days the Actual counts
         if p > 0:
             weeks += 1
             planned += p
@@ -342,16 +362,20 @@ def week_goals(week, ctx=None):
         done = ctx.hours(g, a, upto, "actual", window=ctx.past) if upto >= a else 0.0
         planned = ctx.hours(g, a, b, "plan")
         planned_future = ctx.hours(g, max(a, ctx.today), b, "plan", window=ctx.future) if b >= ctx.today else 0.0
-        plan_so_far = ctx.hours(g, a, upto, "plan", window=ctx.past) if upto >= a else 0.0
+        plan_so_far = ctx.hours(g, a, upto, "plan", window=ctx.past, days="confirmed") if upto >= a else 0.0
+        # Planned time that has passed on days not confirmed yet: maybe done, so not planned again.
+        assumed = ctx.hours(g, a, upto, "plan", window=ctx.past, days="unconfirmed") if upto >= a else 0.0
+        confirmed, so_far = ctx.confirmed(a, upto) if upto >= a else (0, 0)
         follow = follow_through(g, ctx)
         factor = 1 / follow if follow and ctx.inflate else 1.0
         over = b < ctx.today                                    # the week (for this goal) is over
         want = done if over else done + max(0.0, need - done) * factor
         if g["id"] in chosen:
             want = chosen[g["id"]]
-        covered = done + planned_future
+        covered = done + assumed + planned_future
         out.append({"goal": g, "need": need, "baseline": baseline, "carried": need - baseline,
                     "done": done, "planned": planned, "planned_future": planned_future, "plan_so_far": plan_so_far,
+                    "assumed": assumed, "confirmed_days": confirmed, "days_so_far": so_far,
                     "follow": follow, "factor": factor, "want": want, "covered": covered,
                     "short": 0.0 if over else max(0.0, want - covered),
                     "chosen": chosen.get(g["id"]), "first": a, "last": b, "over": over})
@@ -627,7 +651,8 @@ def suggestions(ctx=None, limit=3):
     totals = {}                                   # key -> [hours per week]
     for i, (first, last) in enumerate(weeks):
         for b in data["blocks"]:
-            if b["track"] != "actual" or not b["category_id"] or not (_iso(first) <= b["date"] <= _iso(last)):
+            if b["track"] != "actual" or not b["category_id"] or not (_iso(first) <= b["date"] <= _iso(last)) \
+                    or b["date"] not in data["confirmed"]:
                 continue
             h = max(0, min(store.slot_of(b["end"]), store.SLOTS) - store.slot_of(b["start"])) / 2
             for key in (b["category_id"], f"{b['category_id']}|{b['label'].strip().lower()}"):

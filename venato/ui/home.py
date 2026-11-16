@@ -71,6 +71,7 @@ def page_home():
     if blocks.is_on("timetable"):
         left, right = st.columns([2, 3], gap="large")
         with left:
+            timetable.end_of_day_prompt()            # "Anything not go to plan today?"
             _agenda()
             timetable.render_today()
         columns = [right]

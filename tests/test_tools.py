@@ -167,13 +167,15 @@ def test_delete_block(tools, store):
         tools.delete_block(bid)
 
 
-def test_queries(tools):
+def test_queries(tools, store):
     tools.add_block(DAY, "plan", "09:00", "11:00", "Lecture")
     tools.log_day(DAY, mood=4, notes="good")
     tools.add_habit("Read")
     tools.set_habit(DAY, "Read", True)
     assert "Lecture (Classes)" in tools.query_blocks("2026-10-26", "2026-11-01").text
     assert "No timetable blocks" in tools.query_blocks("2026-10-26", "2026-11-01", track="actual").text
+    assert "Classes" not in tools.get_stats("7d", today=date(2026, 10, 29)).text     # not confirmed yet
+    store.mark_confirmed(DAY)
     q = tools.query_entries("2026-10-26", "2026-11-01").text
     assert "mood 4" in q and "habits: Read" in q
     s = tools.get_stats("7d", today=date(2026, 10, 29)).text
