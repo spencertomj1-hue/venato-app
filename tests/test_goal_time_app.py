@@ -19,14 +19,22 @@ def open_page(at, name):
     assert not at.exception, at.exception
 
 
-def test_timetable_shows_a_chip_per_hours_goal(store):
+def test_timetable_planner_panel_and_suggestions(store):
     g = store.add_goal("Revision", "monthly", store.local_today(), 200, "h", category_id="study")
     at = app()
     open_page(at, "Timetable")
-    chip = at.button(key=f"tt_goal_{g['id']}")
-    assert chip.label.startswith(":orange[Revision 0/")          # short: amber, with a warning icon
-    assert any("Goals need" in m.value for m in at.markdown)
-    assert at.button(key="tt_plan_goals")
+    assert at.button(key=f"tt_fit_goal_{g['id']}").label.startswith("Fit ")        # the goal's bar, short
+    assert at.button(key="tt_plan_goals").label == "Plan all goals"
+    assert at.checkbox(key=f"tt_away_day_{store.week_start_of(store.local_today()).isoformat()}")
+    assert not any(b.key and b.key.startswith("tt_goal_") for b in at.button)      # the old chip strip is gone
+    from venato.ui import goal_time
+    sugg = goal_time.suggestions_for(store.week_start_of(store.local_today()))
+    if sugg:                                     # (none late on the week's last day: nothing left to suggest in)
+        assert any("suggested sitting" in m.value for m in at.markdown)
+        at.button(key="tt_sugg_dismiss").click().run()
+        assert goal_time.suggestions_for(store.week_start_of(store.local_today())) == []
+    at.toggle(key="tt_show_sugg").set_value(False).run()
+    assert not goal_time.show_suggestions()
 
 
 def test_goals_page_pace_budget_and_ranking(store):
@@ -93,3 +101,28 @@ def test_notification_nudges_once(store, monkeypatch):
     notify.check(set(), now)                                     # a restart: still once a week
     nudges = [t for t in sent_out if "short this week" in t]
     assert len(nudges) == 1 and nudges[0].startswith("Revision: ")
+
+
+def test_suggested_sittings_are_free_time_from_now_on(store, monkeypatch):
+    from venato import pace, tools
+    from venato.ui import goal_time, timetable
+    now = datetime(2026, 11, 11, 10, 0)                         # Wednesday
+    monkeypatch.setattr(store, "local_now", lambda: now)
+    monkeypatch.setattr(tools, "_now", lambda: now)
+    store.add_goal("Revision", "monthly", "2026-11-01", 60, "h", category_id="study")
+    store.paint("2026-11-12", "plan", store.slot_of("09:00"), store.slot_of("17:00"), {"label": "Work", "category_id": "work"})
+    sugg = goal_time.suggestions_for(store.week_start_of(now.date()), pace.Ctx(now))
+    assert sugg and all(x["date"] >= "2026-11-11" for x in sugg)
+    assert not [x for x in sugg if x["date"] == "2026-11-11" and x["start"] < "10:00"]           # never in the past
+    assert not [x for x in sugg if x["date"] == "2026-11-12" and "09:00" <= x["start"] < "17:00"]  # never over fixed time
+    # Clicking one adds just that sitting; the same op twice (a resend) adds nothing more.
+    x = sugg[0]
+    op = {"kind": "add_suggestion", "date": x["date"], "start": x["start"], "end": x["end"],
+          "block": {"label": x["label"], "categoryId": x["categoryId"]}, "newId": "s1"}
+    timetable.apply_grid_op(op)
+    timetable.apply_grid_op({**op, "newId": "s2", "block": {"label": "Other", "categoryId": "work"}})
+    got = [b for b in store.blocks_between(x["date"], x["date"], "plan") if b["start"] == x["start"]]
+    assert [(b["id"], b["label"]) for b in got] == [("s1", "Revision")]
+    # "Add all to Plan" (plan_goals) adds the same sittings that are left.
+    left = goal_time.suggestions_for(store.week_start_of(now.date()), pace.Ctx(now))
+    assert x["id"] not in {y["id"] for y in left}

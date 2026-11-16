@@ -406,3 +406,12 @@ th.day .dstate .confirm:hover { background: color-mix(in srgb, var(--accent) 12%
 .tt-peek .pk-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 0.8rem; }
 .tt-peek .pk-form[hidden] { display: none; }
 .tt-peek .pk-form input { flex: 1 1 140px; min-width: 0; }
+
+/* Suggested sittings (Plan my goals, shown before it's added): dashed, see-through, "+ Study 2 h". */
+.blk.ghost {
+  background: color-mix(in srgb, var(--fill) 16%, var(--bg));
+  border: 2px dashed color-mix(in srgb, var(--fill) 75%, var(--text));
+  color: var(--text);
+  z-index: 0;
+}
+.blk.ghost span { opacity: 1; color: var(--muted); }

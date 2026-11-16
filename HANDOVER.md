@@ -60,7 +60,7 @@ venato/                         The app's code, as a package (imported as `from 
     daily_log.py               Daily Log page (month calendar, day card, the day's habits, entry form with the journal box, past entries) and Home's habits
     todos.py                   Home's to-do cards
     goals.py                   Goals page and Home's goal bars (native Streamlit widgets + an HTML bar, with the "by today" tick)
-    goal_time.py               Goal chips above the timetable, Away days, Share hours; the Goals page's budget, pace lines, offers and suggestions
+    goal_time.py               Timetable: the "Plan this week" panel (free hours per day, goal bars with Fit N h, Plan all goals, I'm away) and suggested sittings; Share hours; the Goals page's pace lines, offers and suggestions
     deadlines.py               Deadlines section (Goals page) and Home's list, with "Make time"
     review.py                  Weekly review pop-up and Stats' history
     home.py, stats.py          Home (agenda, widgets) and Stats pages
@@ -179,7 +179,9 @@ Two different things:
 - **Negotiation:** `negotiation(goal)` when remaining > what the goal can get after higher-priority goals (`available_for`), or unreachable: offers lower / carry / take, applied by `tools.resolve_goal` (a Pending; the UI calls `undo.checkpoint`). `goal_offers_dismissed` in settings.json.
 - **Suggestions:** categories / activities with 2 h+ of Actual time in 3 of the last 4 weeks and no goal counting them; dismissals in `goal_suggestions_dismissed`. Categories in `pace.NEVER_SUGGEST` (Sleep, by id or name) are never suggested.
 - **Nudge:** `notify.goal_nudges` → `pace.nudges`: from midday on the week's third day, once per goal per week (`goal_nudged` in settings.json, so restarts don't repeat it).
-- **Claude:** `goal_pace`, `week_budget`, `plan_goals` (shares free gaps between goals via `tools._place`, the same placement `plan_time` uses), and a line in the [Now] snapshot. Buttons: the chips / Plan my goals / Share hours / pace lines.
+- **Claude:** `goal_pace`, `week_budget`, `plan_goals` (shares free gaps between goals via `tools._place`, the same placement `plan_time` uses), and a line in the [Now] snapshot. Buttons: the planner panel / Plan my goals / Share hours / pace lines.
+- **Timetable planner (`goal_time.planner`)**: beside the grid (`st.columns`, so it stacks on narrow screens): free hours per day (`week_capacity`), each goal's bar (`_bar`, CSS once from `bar_style()`) with "Fit N h" (`_fit_goal` → `timetable_tools.open_fit`), Plan all goals, Share hours when over budget, I'm away checkboxes. It replaced the chip strip.
+- **Suggested sittings:** `tools.goal_spots(date)` is the placement `plan_goals` uses (so "Add all to Plan" adds exactly what's drawn). `goal_time.suggestions_for(first)` turns it into grid data (`data.suggestions`, ids `sg:<day>:<HH:mm>`); the JS draws them dashed only where the Plan is still free and the slot hasn't passed (`addGhosts`). A click sends `add_suggestion`; Python paints it only if those slots are still free (`goal_time.add_suggestion`). Settings: `show_suggestions` (default on), `suggestions_dismissed` (week starts).
 
 ## 5f. One timeline (Plan, corrected into the Actual)
 

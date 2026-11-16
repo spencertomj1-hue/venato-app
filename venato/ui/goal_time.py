@@ -1,9 +1,10 @@
 """
 Goals meet the timetable, on screen (the numbers come from venato/pace.py):
 
-  strip(day)        Timetable: a chip per hours goal above the week ("Revision 6/9 h", amber when
-                    short; click to fit the rest), the week's budget, Plan my goals, Share hours,
-                    and "I'm away" for the week's all-day events
+  planner(first)    Timetable: the "Plan this week" panel beside the grid: free hours per day, each
+                    hours goal's week as a bar with "Fit N h", Plan all goals, Share hours, I'm away
+  suggestion_bar()  Timetable: "4 suggested sittings fill 7.5 h" with Add all to Plan / Dismiss, and the
+                    Show suggestions toggle; suggestions_for() gives the grid its dashed sittings
   budget_panel()    Goals page: this week's budget, with the same buttons
   pace_line(p)      Goals page: one goal's pace in a line
   offers()          Goals page: what to do about goals that can't be finished in the time left
@@ -56,63 +57,163 @@ def _fit_goal(w):
                              hours=max(0.5, pace.half_up(w["short"])), first=first)
 
 
-def strip(day):
-    """The goal chips, the week's budget and its buttons (nothing when there are no hours goals or away days)."""
-    ctx = _ctx()
-    budget = pace.week_budget(day, ctx)
+# ---------------------------------------------------------------------------
+# Timetable: suggested sittings (drawn dashed in the grid's free gaps)
+# ---------------------------------------------------------------------------
+
+def show_suggestions():
+    """Settings: "show_suggestions" (default on): the grid draws where Plan my goals would put time."""
+    return bool(store.load_settings().get("show_suggestions", True))
+
+
+def _dismissed_weeks():
+    return set(store.load_settings().get("suggestions_dismissed") or [])
+
+
+def suggestions_for(first, ctx=None):
+    """
+    The sittings Plan my goals would add in the week starting `first`, for the grid:
+    [{"id", "date", "start", "end", "label", "categoryId", "goal"}] (empty when switched off, dismissed
+    for that week, or nothing is short). Computed by tools.goal_spots: free gaps from now on only.
+    """
+    if not show_suggestions() or first.isoformat() in _dismissed_weeks():
+        return []
+    try:
+        placed = tools.goal_spots(first.isoformat(), ctx=ctx)
+    except tools.ToolError:
+        return []
+    return [{"id": f"sg:{d}:{store.slot_time(a)}", "date": d, "start": store.slot_time(a), "end": store.slot_time(b),
+             "label": g["label"] or g["title"], "categoryId": g["category_id"], "goal": g["title"]}
+            for g, spots in placed for d, a, b in spots]
+
+
+def add_suggestion(date, start, end, block, new_id=None):
+    """One suggested sitting clicked in the grid: painted into the Plan only if those slots are still free."""
+    s, e = store.slot_of(start), store.slot_of(end)
+    if not any(a <= s and e <= b for a, b in store.free_runs(date, s, e)):
+        return False                                  # something's there now: never overwrite it
+    store.paint(date, "plan", s, e, block, new_id=new_id)
+    return True
+
+
+def _toggle_suggestions():
+    store.save_settings(show_suggestions=bool(st.session_state.get("tt_show_sugg")))
+
+
+def _dismiss_week(first):
+    store.save_settings(suggestions_dismissed=sorted(_dismissed_weeks() | {first.isoformat()})[-20:])
+
+
+def _undismiss_week(first):
+    store.save_settings(suggestions_dismissed=sorted(_dismissed_weeks() - {first.isoformat()}))
+
+
+def suggestion_bar(first, sugg, ctx=None):
+    """Above the grid: what the suggested sittings add up to, Add all to Plan, Dismiss, and the toggle."""
+    ctx = ctx or _ctx()
+    if not pace.week_goals(first, ctx):
+        return                                                    # no hours goals that week: nothing to suggest
+    row = st.container(horizontal=True, gap="small", vertical_alignment="center", key="tt_sugg_bar")
+    if sugg:
+        hours = sum(store.slot_of(x["end"]) - store.slot_of(x["start"]) for x in sugg) / 2
+        n = len(sugg)
+        row.markdown(f":material/lightbulb: {n} suggested sitting{'s' if n > 1 else ''} fill **{pace.fmt(hours)} h** "
+                     "of free time. Nothing already there moves. Click one to add just that sitting.")
+        if row.button("Add all to Plan", icon=":material/playlist_add:", key="tt_sugg_all", type="primary",
+                      help="Plan my goals: adds every suggested sitting, with a preview first"):
+            from venato.ui import timetable_tools
+            timetable_tools.open_plan_goals(first)
+        row.button("Dismiss", key="tt_sugg_dismiss", type="tertiary", on_click=_dismiss_week, args=(first,),
+                   help="Hide the suggestions for this week")
+    elif show_suggestions() and first.isoformat() in _dismissed_weeks():
+        row.button("Show this week's suggestions again", key="tt_sugg_back", type="tertiary",
+                   on_click=_undismiss_week, args=(first,))
+    row.toggle("Show suggestions", value=show_suggestions(), key="tt_show_sugg", on_change=_toggle_suggestions,
+               help="Draw where your goals' missing hours would fit, as dashed sittings in free time")
+
+
+# ---------------------------------------------------------------------------
+# Timetable: the "Plan this week" panel beside the grid
+# ---------------------------------------------------------------------------
+
+def _free_bars(days):
+    """Free hours for goals per day as small bars (away days at zero, labelled), with a text equivalent."""
+    top = max(1.0, store.SLOTS / 2)
+    cols, said = [], []
+    for d in days:
+        day = store._as_date(d["date"])
+        name = regional.day_month(day)
+        what = "away" if d["away"] else "over" if d["past"] else f"{pace.fmt(d['hours'])} h" + ("≈" if d["estimate"] else "")
+        said.append(f"{name}: {what}")
+        h = 0 if d["away"] or d["past"] else d["hours"]
+        cols.append(f'<div class="fb-col"><div class="fb-bar"><i style="height:{100 * h / top:.1f}%"></i></div>'
+                    f'<b>{escape(pace.fmt(h) if not d["away"] else "away")}</b><span>{escape(f"{day:%a}"[0])}</span></div>')
+    from venato.ui import appearance
+    return f"""<style>
+      .fb {{ display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; }}
+      .fb-col {{ display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 0.72rem; }}
+      .fb-col b {{ font-weight: 600; font-variant-numeric: tabular-nums; }}
+      .fb-col span {{ opacity: 0.78; }}
+      .fb-bar {{ position: relative; width: 100%; height: 56px; border-radius: 4px; background: rgba(128,128,128,0.16);
+                 display: flex; align-items: flex-end; overflow: hidden; }}
+      .fb-bar i {{ display: block; width: 100%; background: {appearance.accent()}; opacity: 0.75; }}
+    </style><div class="fb" role="img" aria-label="{escape('Free hours for goals: ' + '; '.join(said))}">{''.join(cols)}</div>"""
+
+
+def planner(first, ctx=None):
+    """The "Plan this week" panel (Timetable B): free hours per day, each hours goal's bar with Fit N h,
+    Plan all goals, Share hours when the week is over budget, and I'm away for each day."""
+    ctx = ctx or _ctx()
+    budget = pace.week_budget(first, ctx)
     first = budget["week_start"]
-    all_day = [e for e in store.outlook_between(first.isoformat(), (first + timedelta(days=6)).isoformat())
-               if e["all_day"]]
-    if not budget["goals"] and not all_day and not any(d["away"] for d in budget["days"]):
-        return
-    row = st.container(horizontal=True, gap="small", vertical_alignment="center", key="tt_goal_strip")
-    for w in budget["goals"]:
-        g = w["goal"]
-        short = w["short"] >= pace.TOLERANCE
-        text = f"{g['title']} {pace.fmt(w['covered'])}/{pace.fmt(w['want'])} h"
-        help_ = (f"{pace.fmt(w['covered'])} h done or planned of the {pace.fmt(w['want'])} h "
-                 f"{g['title']} needs this week ({pace.debt_text(g, w['need'], w['baseline'])}).")
-        if short and not w["over"]:
-            help_ += f" Click to fit the {pace.fmt(pace.half_up(w['short']))} h short into free time."
-        if row.button(f":orange[{text}]" if short else text, key=f"tt_goal_{g['id']}",
-                      icon=":material/warning:" if short else ":material/check:", help=help_, type="tertiary"):
-            if short and not w["over"]:
-                _fit_goal(w)
-            else:
-                st.toast(f"{g['title']} has enough time planned this week.", icon=":material/check_circle:")
-    if budget["goals"]:
-        row.markdown(f":{'orange' if budget['over'] else 'gray'}[{md(budget['text'])}]")
-        if any(w["short"] >= pace.TOLERANCE and not w["over"] for w in budget["goals"]):
-            if row.button("Plan my goals", icon=":material/auto_awesome_motion:", key="tt_plan_goals",
-                          help="Fill what each goal is short into free time, top goal first. You'll see it first."):
-                from venato.ui import timetable_tools
-                timetable_tools.open_plan_goals(first)
-        if budget["over"] and row.button("Share hours", icon=":material/balance:", key="tt_split_goals",
-                                         help="Goals want more than the week's free time: choose who gets what"):
-            split_dialog(first)
-    _away_popover(row, first, all_day)
+    with st.container(border=True, key="tt_planner"):
+        st.markdown("**Plan this week**")
+        st.caption(f"Free hours for goals per day · {pace.fmt(budget['capacity'])} h in all")
+        st.html(_free_bars(budget["days"]))
+        rows = [w for w in budget["goals"]]
+        if rows:
+            st.html(bar_style())
+            for w in rows:
+                g = w["goal"]
+                st.html(_bar(w))
+                if w["short"] >= pace.TOLERANCE and not w["over"]:
+                    if st.button(f"Fit {pace.fmt(pace.half_up(w['short']))} h", key=f"tt_fit_goal_{g['id']}",
+                                 icon=":material/event_available:",
+                                 help=f"Fit time for {g['title']}, filled in with what it's short this week"):
+                        _fit_goal(w)
+            if any(w["short"] >= pace.TOLERANCE and not w["over"] for w in rows):
+                if st.button("Plan all goals", icon=":material/auto_awesome_motion:", key="tt_plan_goals",
+                             type="primary", width="stretch",
+                             help="Fill what each goal is short into free time, top goal first. You'll see it first."):
+                    from venato.ui import timetable_tools
+                    timetable_tools.open_plan_goals(first)
+            if budget["over"] and st.button("Share hours", icon=":material/balance:", key="tt_split_goals",
+                                            width="stretch",
+                                            help="Goals want more than the week's free time: choose who gets what"):
+                split_dialog(first)
+            confirmed, so_far = ctx.confirmed(first, first + timedelta(days=6))
+            if so_far:
+                st.caption(f"Done is counted from the {confirmed} of {so_far} day{'s' if so_far != 1 else ''} "
+                           "you've confirmed so far.")
+        all_day = [e for e in store.outlook_between(first.isoformat(), (first + timedelta(days=6)).isoformat())
+                   if e["all_day"]]
+        _away_boxes(first, all_day)
 
 
-def _away_popover(where, first, events):
-    """"I'm away" for any day of the week, or for one of its all-day events: that day then has no free time for goals."""
+def _away_boxes(first, events):
+    """"I'm away" for each day of the week, or for one of its all-day events: that day then has no free time for goals."""
     away, days_away = store.away_uids(), store.away_days()
-    days = [first + timedelta(days=i) for i in range(7)]
-    n = len({d.isoformat() for d in days if d.isoformat() in days_away}
-            | {e["date"] for e in events if e["uid"] in away})
-    with where.popover(f"Away days{f' ({n})' if n else ''}", icon=":material/flight_takeoff:",
-                       help="Mark days you're away: they then have no free time for goals."):
-        st.caption("Ticked days have no free time for goals.")
-        for d in days:
-            key = f"tt_away_day_{d.isoformat()}"
-            st.checkbox(f"I'm away {regional.day_month(d)}", value=d.isoformat() in days_away, key=key,
-                        on_change=lambda day=d, k=key: store.set_away_day(day, st.session_state[k]))
-        if events:
-            st.caption("Or away for a calendar event (this stays when your calendar syncs):")
-        for e in events:
-            key = f"tt_away_{e['uid']}"
-            st.checkbox(f"I'm away: {e['title']} ({regional.day_month(store._as_date(e['date']))})",
-                        value=e["uid"] in away, key=key,
-                        on_change=lambda uid=e["uid"], k=key: store.set_away(uid, st.session_state[k]))
+    st.caption("Ticked days have no free time for goals.")
+    for i in range(7):
+        d = first + timedelta(days=i)
+        key = f"tt_away_day_{d.isoformat()}"
+        st.checkbox(f"I'm away {regional.day_month(d)}", value=d.isoformat() in days_away, key=key,
+                    on_change=lambda day=d, k=key: store.set_away_day(day, st.session_state[k]))
+    for e in events:
+        key = f"tt_away_{e['uid']}"
+        st.checkbox(f"I'm away: {e['title']} ({regional.day_month(store._as_date(e['date']))})",
+                    value=e["uid"] in away, key=key,
+                    on_change=lambda uid=e["uid"], k=key: store.set_away(uid, st.session_state[k]))
 
 
 @st.dialog("Share this week's time between goals", width="large")
@@ -195,7 +296,7 @@ def _offer(goal_id, kind):
         st.toast(r.text)
 
 
-def _bar(w, accent, warn):
+def _bar(w):
     """One goal's week as a bar: done (solid), planned (light), the rest of what it wants (track),
     and the part of the need carried over from earlier weeks (hatched). Text is never colour alone."""
     g = w["goal"]
@@ -229,14 +330,13 @@ def _bar(w, accent, warn):
     </div>"""
 
 
-def week_bars(rows):
-    """Every hours goal's week as a bar, with one legend (Done / Planned / Carried over)."""
+def bar_style():
+    """The CSS for _bar (once per page) and the one legend: Done / Planned / Not planned yet / Carried over."""
     from venato.ui import appearance
     dark = appearance.is_dark()
     accent = appearance.accent()
     warn = "#FBBF24" if dark else "#B45309"
     ok = "#4ADE80" if dark else "#146C2E"
-    bars = "".join(_bar(w, accent, warn) for w in rows)
     return f"""<style>
       .wb {{ display: grid; gap: 14px; margin: 2px 0 4px; }}
       .wb-legend {{ display: flex; gap: 16px; font-size: 0.78rem; opacity: 0.8; flex-wrap: wrap; }}
@@ -258,16 +358,19 @@ def week_bars(rows):
       .wb-note {{ font-size: 0.8rem; opacity: 0.78; margin-top: 4px; }}
       .wb-legend .wb-carry-key {{ background: repeating-linear-gradient(45deg, transparent 0 3px, rgba(128,128,128,0.7) 3px 4.5px);
                                  border: 1px solid rgba(128,128,128,0.4); }}
+      .wb-row {{ margin: 2px 0 2px; }}
     </style>
-    <div class="wb">
       <div class="wb-legend" aria-hidden="true">
         <span><i class="wb-key" style="background:{accent}"></i>Done</span>
         <span><i class="wb-key" style="background:{accent};opacity:0.4"></i>Planned</span>
         <span><i class="wb-key" style="background:rgba(128,128,128,0.18)"></i>Not planned yet</span>
-        <span><i class="wb-key wb-carry-key"></i>Carried over from earlier weeks</span>
-      </div>
-      {bars}
-    </div>"""
+        <span><i class="wb-key wb-carry-key"></i>Carried over</span>
+      </div>"""
+
+
+def week_bars(rows):
+    """Every hours goal's week as a bar, with one legend (Done / Planned / Carried over)."""
+    return bar_style() + '<div class="wb">' + "".join(_bar(w) for w in rows) + "</div>"
 
 
 def budget_panel(ctx=None):

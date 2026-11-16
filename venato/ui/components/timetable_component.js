@@ -17,6 +17,8 @@
 //   {kind: "replace", date, start, end, block, newId}     did something else / an unplanned block
 //   {kind: "retime", date, fromStart, fromEnd, start, end, block, newId}   change times
 //   {kind: "confirm_day", date}                           all as planned
+// Suggested sittings (data.suggestions, worked out in Python by tools.goal_spots) are drawn dashed in
+// free time; clicking one sends {kind: "add_suggestion", date, start, end, block, newId, ghost}.
 // Each first materialises the day (store.materialise; mirrored here by materialiseLocal).
 
 let SLOTS = 36;                   // 30-minute slots in a day (07:00 -> 01:00 by default; from Python)
@@ -260,6 +262,8 @@ class Timetable {
     this.entries = new Map(data.entries.map((e) => [e.id, { ...e }]));
     this.outlook = (data.outlook || []).slice();   // Python already leaves out removed ones
     this.hidden = new Set();                       // removed / detached here, not yet saved
+    this.suggestions = (data.suggestions || []).slice();
+    this.ghostsTaken = new Set();                  // suggestions added here, not yet saved
     this.pending.forEach((op) => this.applyLocal(op));
 
     const key = JSON.stringify([data.categories, data.days, data.today, data.view]);
@@ -281,6 +285,12 @@ class Timetable {
   applyLocal(op) {
     if (op.kind === "batch") { op.ops.forEach((o) => this.applyLocal(o)); return; }
     if (op.kind === "confirm_day") { this.materialiseLocal(op.date, true); return; }
+    if (op.kind === "add_suggestion") {
+      this.ghostsTaken.add(op.ghost);
+      this.planPaint({ date: op.date, track: "plan", start: op.start, end: op.end, block: op.block, newId: op.newId })
+        .forEach((o) => this.applyLocal(o));
+      return;
+    }
     if (op.kind === "skip" || op.kind === "replace" || op.kind === "retime") {
       this.materialiseLocal(op.date);
       if (op.kind === "retime") {
@@ -594,8 +604,33 @@ class Timetable {
       box.innerHTML = (this.data.outlookAllDay || []).filter((c) => c.date === date)
         .map((c) => `<span class="chip${c.deadline ? " due" : ""}" title="${esc(c.title)} (${c.deadline ? "deadline" : "Outlook, all day"})">${esc(c.title)}</span>`).join("");
     });
+    this.addGhosts();
     this.layoutBlocks();
     this.renderBlockList();
+  }
+
+  // Suggested sittings: only where the Plan is still free (and, on the one timeline, not passed).
+  addGhosts() {
+    this.ghostAt = this.data.days.map(() => []);
+    if (this.data.readonly) return;
+    for (const g of this.suggestions) {
+      const di = this.dayIndex.get(g.date);
+      if (di === undefined || this.ghostsTaken.has(g.id)) continue;
+      const s = slotOf(g.start), e = Math.min(slotOf(g.end), SLOTS);
+      let free = e > s;
+      for (let i = s; i < e && free; i++) {
+        if (this.occupant[di].plan[i] || this.outlookAt[di][i] || this.isPast(di, i)) free = false;
+      }
+      if (!free) continue;
+      for (let i = s; i < e; i++) this.ghostAt[di][i] = g;
+      this.blocks.push({ en: { ...g, track: "plan" }, di, s, e, ghost: true });
+    }
+  }
+
+  // Add one suggested sitting to the Plan (Python checks the slots are still free).
+  takeGhost(g) {
+    this.commit([{ opId: uid(), kind: "add_suggestion", ghost: g.id, date: g.date, start: g.start, end: g.end,
+                   block: { label: g.label, categoryId: g.categoryId, details: null }, newId: uid() }]);
   }
 
   // One timeline: per day, the slots that haven't passed show the Plan (blocks and calendar events, editable
@@ -670,6 +705,7 @@ class Timetable {
       }
       for (let k = 0; k < st.gone; k++) this.cells[di].plan[k].classList.add("past");
     });
+    this.addGhosts();
     this.root.querySelectorAll("th.day .chips").forEach((box) => {
       const date = this.data.days[+box.dataset.d];
       box.innerHTML = (this.data.outlookAllDay || []).filter((c) => c.date === date)
@@ -697,6 +733,7 @@ class Timetable {
       const day = new Date(d + "T00:00").toLocaleDateString(LOC(), { weekday: "long", day: "numeric", month: "long" });
       const items = this.listed.map((b, i) => [b, i]).filter(([b]) => b.di === di).map(([b, i]) => {
         const cat = this.cats.get(b.en.categoryId);
+        if (b.ghost) return `<button data-i="${i}">${esc(`Suggested: ${b.en.label} ${fmtRange(b.en.start, b.en.end)}, for ${b.en.goal} (add to Plan)`)}</button>`;
         const head = b.past ? PIECE_WORDS[b.kind] : b.outlook ? "Plan (Outlook)" : b.en.track === "plan" ? "Plan" : "Actual";
         const when = b.past ? `${fmtTime(slotTime(b.s))} to ${fmtTime(slotTime(b.e))}`
           : b.outlook ? b.en.exact : `${fmtTime(b.en.start)} to ${fmtTime(b.en.end)}`;
@@ -795,13 +832,18 @@ class Timetable {
     if (!this.blocks) return;
     const origin = this.wrapEl.getBoundingClientRect();
     this.blocksEl.innerHTML = this.blocks
-      .map(({ en, di, s, e, outlook, past, kind, id }) => {
+      .map(({ en, di, s, e, outlook, past, kind, id, ghost }) => {
         const firstTd = this.cells[di][en.track][s], lastTd = this.cells[di][en.track][e - 1];
         const first = firstTd.getBoundingClientRect(), last = lastTd.getBoundingClientRect();
         const cat = this.cats.get(en.categoryId);
         const bg = cat ? cat.colour : "#9e9e9e";
         const fg = (cat && cat.textColour) || contrastText(bg);
         const tall = last.bottom - first.top >= 30;   // room for the time line under the title
+        if (ghost) {          // a suggested sitting: dashed, "+ Study 2 h"
+          const h = (e - s) / 2;
+          return `<div class="blk ghost ${tall ? "tall" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}--fill:${esc(bg)}">` +
+            `<b>+ ${esc(en.label)} ${h} h</b>${tall ? `<span>Suggested · click to add</span>` : ""}</div>`;
+        }
         if (past) {           // one timeline, time that has passed: what happened (see paintOne)
           const mark = kind === "assumed" ? "?" : kind === "skipped" ? "✕" : kind === "unplanned" ? "+" : "✓";
           return `<div class="blk past ${kind} ${tall ? "tall" : ""} ${this.focusId === id ? "focus" : ""}${this.hovered === id ? " hover" : ""}${this.picked.has(id) ? " picked" : ""}" data-id="${esc(id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
@@ -904,6 +946,8 @@ class Timetable {
         return;
       }
       const adding = e.shiftKey || (IS_MAC ? e.metaKey : e.ctrlKey);   // Shift or Cmd/Ctrl: add to the selection
+      const ghost = !hit && !adding && track === "plan" && this.ghostAt[di] && this.ghostAt[di][slot];
+      if (ghost) { this.takeGhost(ghost); return; }      // a suggested sitting: add just that one
       // Dragging empty time draws a selection box with Shift / Cmd / Ctrl held, or when no category is picked.
       const selecting = adding || (!hit && !this.cats.has(this.brush));
       if (adding && hit) {                          // Shift / Cmd / Ctrl-click a block: add it to / take it out of the selection
@@ -962,6 +1006,7 @@ class Timetable {
       const hit = td && this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
       this.hoverBlock(hit ? (hit.outlook ? `outlook:${hit.ev.id}` : hit.entry.id) : null);
       const adding = e.shiftKey || (IS_MAC ? e.metaKey : e.ctrlKey);
+      if (!hit && td && td.dataset.t === "plan" && this.ghostAt[+td.dataset.d][+td.dataset.s]) { table.style.cursor = "pointer"; return; }
       if (!hit) { table.style.cursor = td && (adding || !this.cats.has(this.brush)) ? "crosshair" : ""; return; }
       const { s0, e0 } = this.spanOf(hit);
       const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
@@ -987,6 +1032,7 @@ class Timetable {
       const b = e.target.closest("[data-i]");
       if (!b) return;
       const block = this.listed[+b.dataset.i];
+      if (block.ghost) { this.takeGhost(block.en); return; }
       const hit = block.past ? { past: true, piece: block, outlook: false, entry: block.en }
         : block.outlook ? { outlook: true, ev: { ...block.en, title: block.en.label } } : { outlook: false, entry: block.en };
       this.openCard(hit);
@@ -1122,7 +1168,7 @@ class Timetable {
 
   // A selected block as {id, outlook, en, di, track, s, e} (or null if it's gone).
   itemOf(id) {
-    const b = (this.blocks || []).find((x) => !x.past && (x.outlook ? `outlook:${x.en.id}` : x.en.id) === id);
+    const b = (this.blocks || []).find((x) => !x.past && !x.ghost && (x.outlook ? `outlook:${x.en.id}` : x.en.id) === id);
     return b ? { id, outlook: !!b.outlook, en: b.en, di: b.di, track: b.en.track, s: b.s, e: b.e } : null;
   }
 
@@ -1140,7 +1186,7 @@ class Timetable {
     const s0 = Math.min(m.s0, m.s1), s1 = Math.max(m.s0, m.s1);
     if (m.from && c0 === c1 && s0 === s1) { this.setPicked([m.from]); return; }   // a click on a block: select it
     const inside = this.blocks.filter((b) => {
-      if (b.past) return false;                       // passed time is corrected one piece at a time
+      if (b.past || b.ghost) return false;            // passed time is corrected one piece at a time
       const c = col(b.di, b.en.track);
       return c >= c0 && c <= c1 && b.s <= s1 && b.e > s0;
     }).map((b) => (b.outlook ? `outlook:${b.en.id}` : b.en.id));

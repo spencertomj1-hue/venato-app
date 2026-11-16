@@ -61,6 +61,8 @@ def _checkpoint(op):
         undo.checkpoint(f"Edited {op['entry'].get('label') or 'a block'}", quiet=True)
     elif kind == "hide_outlook":
         undo.checkpoint("Removed an Outlook event from the timetable", quiet=True)
+    elif kind == "add_suggestion":                       # nothing is overwritten, but Cmd/Ctrl+Z takes it back
+        undo.checkpoint(f"Added a suggested sitting of {op['block']['label']}", quiet=True)
     elif kind in ("skip", "replace", "retime"):          # corrections on the one timeline
         what = {"skip": "Marked as not done", "replace": "Changed what happened", "retime": "Changed the times"}[kind]
         undo.checkpoint(f"{what} on {op['date']}", quiet=True)
@@ -88,6 +90,7 @@ def apply_grid_op(op):
       {kind: "replace", date, start, end, block, newId}   did something else, or something unplanned
       {kind: "retime", date, fromStart, fromEnd, start, end, block, newId}   change times
       {kind: "confirm_day", date}                         all as planned
+      {kind: "add_suggestion", date, start, end, block}   one suggested sitting, added to the Plan if still free
     Painting over an Outlook event detaches it first (store.paint), so it's trimmed like any block.
     In the side-by-side view, filling in a day's Actual by hand confirms it (it's the truth as it is).
     """
@@ -138,7 +141,10 @@ def _apply(op):
                      store.slot_of(op["start"]), store.slot_of(op["end"]), _block(op["block"]), new_id=op.get("newId"))
     elif kind == "confirm_day":
         store.confirm_day(op["date"])
-    if kind in ("skip", "replace", "retime", "confirm_day"):
+    elif kind == "add_suggestion":
+        from venato.ui import goal_time
+        goal_time.add_suggestion(op["date"], op["start"], op["end"], _block(op["block"]), new_id=op.get("newId"))
+    if kind in ("skip", "replace", "retime", "confirm_day", "add_suggestion"):
         return
     if op["kind"] == "paint":
         s, e = store.slot_of(op["start"]), store.slot_of(op["end"])
@@ -236,11 +242,17 @@ def render_page():
     day = st.session_state.setdefault("tt_day", store.local_today())
     monday = store.week_start_of(day)            # the week's first day: Monday, or Sunday if chosen
     # Fit time / Categories: the same things Claude can do, by hand.
-    from venato.ui import timetable_tools
+    from venato import pace
+    from venato.ui import goal_time, timetable_tools
     timetable_tools.toolbar(day)
-    from venato.ui import goal_time              # goal chips: hours each goal has this week, and its budget
-    goal_time.strip(monday)
-    render_grid([monday + timedelta(days=i) for i in range(7)])
+    ctx = pace.Ctx()                             # one look at the timetable for the bar, the grid and the panel
+    sugg = goal_time.suggestions_for(monday, ctx)
+    goal_time.suggestion_bar(monday, sugg, ctx)
+    grid, panel = st.columns([4, 1.3], gap="medium")     # the panel stacks under the grid on narrow screens
+    with grid:
+        render_grid([monday + timedelta(days=i) for i in range(7)], suggestions=sugg)
+    with panel:
+        goal_time.planner(monday, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +316,7 @@ def render_today():
     render_grid([store.local_today()], key="timetable_today", single=True, readonly=True, view="one")   # whatever the setting
 
 
-def render_grid(days, key="timetable", single=False, readonly=False, view=None):
+def render_grid(days, key="timetable", single=False, readonly=False, view=None, suggestions=()):
     """Draw the grid for the given days; returns the categories and label map it used.
     view: "one" (one timeline) or "split" (Plan and Actual side by side); default: the setting."""
     view = view or store.timetable_view()
@@ -336,6 +348,8 @@ def render_grid(days, key="timetable", single=False, readonly=False, view=None):
         "single": single,
         "readonly": readonly,
         "view": view,
+        # Suggested sittings for hours goals that are short (dashed, in free time; click one to add it).
+        "suggestions": list(suggestions),
         # One timeline: per day, the slots that have passed, how far the Actual is the truth, and confirmed.
         "dayState": {d.isoformat(): {"gone": store.slots_gone(d, now), **status.get(d.isoformat(), {"upto": 0, "confirmed": False})}
                      for d in days},

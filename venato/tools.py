@@ -1338,14 +1338,15 @@ def week_budget(date=None):
     return Result("\n".join(lines))
 
 
-def plan_goals(date=None, earliest="09:00", latest="21:00", max_block_hours=2, confirmed=False):
+def goal_spots(date=None, earliest="09:00", latest="21:00", max_block_hours=2, ctx=None):
     """
-    Fill what each hours goal is short this week (default this one) into the Plan's free gaps,
-    goal by goal in priority order, within what the week's budget gives it. Only free time is used:
-    nothing fixed is moved or overwritten. Always previewed first.
+    Where Plan my goals would put what each hours goal is short in the week containing `date`:
+    [(goal, [(day, start slot, end slot)])], goal by goal in priority order, within what the week's
+    budget gives it, only in free gaps from now on. Nothing fixed is ever moved or overwritten.
+    The Timetable draws these as suggested sittings; plan_goals adds them.
     """
     from venato import pace
-    ctx = _pace_ctx()
+    ctx = ctx or _pace_ctx()
     day = _day(date) if date else ctx.today.isoformat()
     lo, hi = _window(earliest, latest)
     chunk = max(1, round(float(max_block_hours) * 2))
@@ -1363,6 +1364,16 @@ def plan_goals(date=None, earliest="09:00", latest="21:00", max_block_hours=2, c
         spots = _place(_spaced(days, need, chunk), free, need, chunk)
         if spots:
             placed.append((g, sorted(spots)))
+    return placed
+
+
+def plan_goals(date=None, earliest="09:00", latest="21:00", max_block_hours=2, confirmed=False):
+    """
+    Fill what each hours goal is short this week (default this one) into the Plan's free gaps,
+    goal by goal in priority order, within what the week's budget gives it (goal_spots). Only free
+    time is used: nothing fixed is moved or overwritten. Always previewed first.
+    """
+    placed = goal_spots(date, earliest, latest, max_block_hours)
     if not placed:
         return Result("Nothing to plan: every hours goal has enough time planned this week, or there's no free time left.")
     parts = []
