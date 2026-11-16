@@ -28,12 +28,11 @@ def _tone(due, today):
 
 def render_home():
     today = store.local_today()
-    head, link = st.columns([4, 1], vertical_alignment="center")
-    head.markdown("**Deadlines**")
-    link.button("See all", key="home_deadlines_all", type="tertiary", on_click=_go_to_goals)
     rows = store.deadlines()
+    head = st.container(horizontal=True, vertical_alignment="center")
+    head.markdown("**Deadlines**" + ("" if rows else " :gray[· none yet; add them on the Goals page]"), width="stretch")
+    head.button("See all", key="home_deadlines_all", type="tertiary", on_click=_go_to_goals)
     if not rows:
-        st.caption("No deadlines. Add them on the Goals page.")
         return
     from venato.ui import appearance
     soon, over = appearance.warn_colours()

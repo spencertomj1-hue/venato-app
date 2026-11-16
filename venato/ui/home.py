@@ -1,5 +1,5 @@
 """
-Home: today's agenda and timetable on the left; on the right the assistant box, then each
+Home: today's agenda and timetable on the left; on the right the end-of-day prompt, the assistant box, then each
 switched-on block's widget in the order of your priorities (Settings → Blocks), then search.
 """
 
@@ -64,18 +64,29 @@ def _agenda():
     </style><div class="ag"><h3>Agenda</h3>{body}</div>""")
 
 
+# Home on one screen: the right-hand column tighter than the rest of the app (smaller gaps and card padding).
+_COMPACT_CSS = """<style>
+.st-key-home_rhs [data-testid="stVerticalBlock"] { gap: 0.45rem; }
+.st-key-home_rhs [data-testid="stVerticalBlock"][class*="st-key-"]:not(.st-key-home_rhs):not(.st-key-home_habits) { padding: 0.55rem 0.8rem; }
+.st-key-home_rhs [data-testid="stHorizontalBlock"] { gap: 0.5rem; }
+.st-key-home_rhs .stButton button { min-height: 2rem; padding-top: 0.15rem; padding-bottom: 0.15rem; }
+</style>"""
+
+
 def page_home():
     """Agenda + today's Plan / Actual on the left (if the timetable is on); on the right the
-    Ask box, then every switched-on block's widget in priority order, then search."""
+    end-of-day prompt, the Ask box, then every switched-on block's widget in priority order, then search."""
     from venato import blocks
     widgets = [b.home for b in blocks.enabled() if b.home]
     if blocks.is_on("timetable"):
-        left, right = st.columns([2, 3], gap="large")
+        left, right = st.columns([1, 2], gap="large")
         with left:
-            timetable.end_of_day_prompt()            # "Anything not go to plan today?"
             _agenda()
             timetable.render_today()
-        columns = [right]
+        st.html(_COMPACT_CSS)
+        columns = [right.container(key="home_rhs")]
+        with columns[0]:
+            timetable.end_of_day_prompt()        # "Anything not go to plan today?"
     else:
         right = None
         columns = list(st.columns(2, gap="large"))

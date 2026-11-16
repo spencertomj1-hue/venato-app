@@ -545,7 +545,9 @@ class Timetable {
     note.classList.toggle("warn", !!(sync && sync.error));
     note.title = (sync && sync.detail) || "";
     this.root.querySelector(".tt-ol-toggle").classList.toggle("on", !!showOutlook);
-    this.root.querySelector(".tt-sync").classList.remove("spin");
+    const btn = this.root.querySelector(".tt-sync");
+    btn.classList.remove("spin");
+    btn.title = `Sync Outlook now${sync && sync.text ? ` (${sync.text.toLowerCase()})` : ""}`;   // Home hides the note
   }
 
   refreshDatalist() {

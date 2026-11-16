@@ -167,8 +167,8 @@ th.sub::before { bottom: 5px; }                            /* a small gap above 
 th.day::before { border-radius: 10px 10px 0 0; left: var(--day-gap); }       /* the same gap between days as the grid */
 th.sub.first::before { border-radius: 0 0 0 10px; left: var(--day-gap); }
 th.sub:not(.first)::before { border-radius: 0 0 10px 0; }
-th.day .dn { font-size: 1.1rem; }               /* +0.30rem */
-th.day .dd { font-size: 0.85rem; font-weight: 400; color: var(--muted); }   /* +0.15rem */
+th.day .dn { display: inline; font-size: 1rem; }                  /* name and date on one line (wraps if narrow), */
+th.day .dd { display: inline; margin-left: 5px; font-size: 0.85rem; font-weight: 400; color: var(--muted); }   /* to give the rows height */
 th.day.today::before { box-shadow: inset 0 2px 0 var(--accent); }
 th.day.today .dn, th.day.today .dd { color: var(--accent); }
 th.sub {
@@ -344,7 +344,9 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 .tt-root.readonly th.day { padding-top: 3px; }
 .tt-root.readonly th.day .dn, .tt-root.readonly th.day .dd { display: none; }
 .tt-root.readonly .tt-head { margin-bottom: 4px; }
-.tt-root.readonly .tt-title { font-size: 1.2rem; }
+.tt-root.readonly .tt-title { font-size: 1.1rem; margin-right: 0; }
+.tt-root.readonly .tt-head { gap: 6px; flex-wrap: nowrap; }
+.tt-root.readonly .tt-synced:not(.warn) { display: none; }   /* Home: on one line; it's in the sync button's tooltip */
 .blk:not(.tall) b { line-height: 1; }
 
 /* Clicked block: grows slightly while its details card is open. */

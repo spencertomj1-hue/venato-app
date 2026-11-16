@@ -108,17 +108,19 @@ def _undismiss_week(first):
     store.save_settings(suggestions_dismissed=sorted(_dismissed_weeks() - {first.isoformat()}))
 
 
-def suggestion_bar(first, sugg, ctx=None):
-    """Above the grid: what the suggested sittings add up to, Add all to Plan, Dismiss, and the toggle."""
+def suggestion_bar(first, sugg, ctx=None, row=None):
+    """Above the grid: what the suggested sittings add up to, Add all to Plan, Dismiss, and the toggle
+    (into `row` if given, so it shares the toolbar's line)."""
     ctx = ctx or _ctx()
     if not pace.week_goals(first, ctx):
         return                                                    # no hours goals that week: nothing to suggest
-    row = st.container(horizontal=True, gap="small", vertical_alignment="center", key="tt_sugg_bar")
+    row = row or st.container(horizontal=True, gap="small", vertical_alignment="center", key="tt_sugg_bar")
     if sugg:
         hours = sum(store.slot_of(x["end"]) - store.slot_of(x["start"]) for x in sugg) / 2
         n = len(sugg)
-        row.markdown(f":material/lightbulb: {n} suggested sitting{'s' if n > 1 else ''} fill **{pace.fmt(hours)} h** "
-                     "of free time. Nothing already there moves. Click one to add just that sitting.")
+        row.markdown(f":material/lightbulb: {n} suggested sitting{'s' if n > 1 else ''} fill **{pace.fmt(hours)} h**",
+                     width="content",
+                     help="They go in free time; nothing already there moves. Click one to add just that sitting.")
         if row.button("Add all to Plan", icon=":material/playlist_add:", key="tt_sugg_all", type="primary",
                       help="Plan my goals: adds every suggested sitting, with a preview first"):
             from venato.ui import timetable_tools
@@ -487,10 +489,9 @@ def needs_you(ctx=None):
         return
     with st.container(border=True, key="home_needs_you"):
         st.markdown("**Needs you this week**")
-        for g, state, what in rows:
-            a, b = st.columns([3, 2], vertical_alignment="center")
-            a.markdown(f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}] **{md(g['title'])}**")
-            b.markdown(f"<div style='text-align:right'>{escape(what)}</div>", unsafe_allow_html=True)
+        st.markdown("  \n".join(f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}] **{md(g['title'])}**"
+                                 f"<span style='float:right'>{escape(what)}</span>" for g, state, what in rows),
+                    unsafe_allow_html=True)       # one block, one line per goal: as short as it can be
         if any(p.get("week") and p["week"]["short"] >= pace.TOLERANCE and not p["week"]["over"] for p in pace.pace_all(ctx)):
             if st.button("Plan my goals", icon=":material/auto_awesome_motion:", key="home_plan_goals", width="stretch",
                          help="Fill what each goal is short into free time this week, top goal first. You'll see it first."):

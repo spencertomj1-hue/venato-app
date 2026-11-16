@@ -307,18 +307,18 @@ def render_home(ctx=None):
                 f'<div class="hg-status" style="color:{tone.get(p["state"], "inherit")}">{escape(status_line(p))}</div></div>'
             )
     with st.container(border=True, key="home_goals_card"):
-        head, link = st.columns([4, 1], vertical_alignment="center")
-        head.markdown("**Goals**")
-        link.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
+        head = st.container(horizontal=True, vertical_alignment="center")
+        head.markdown("**Goals**", width="stretch")
+        head.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
         body = "".join(rows) or '<div class="hg-empty">No goals for this month or year yet.</div>'
         st.html(f"""<style>
-          .hg {{ display: grid; gap: 12px; }}
+          .hg {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 28px; }}  /* two-up when wide */
           .hg-top {{ display: flex; align-items: baseline; gap: 8px; font-size: 0.88rem; margin-bottom: 4px; }}
           .hg-title {{ font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
           .hg-when {{ font-size: 0.72rem; opacity: 0.78; white-space: nowrap; }}
           .hg-amount {{ margin-left: auto; opacity: 0.8; font-variant-numeric: tabular-nums; white-space: nowrap; }}
           .hg-row.done .hg-amount {{ color: {accent}; opacity: 1; font-weight: 600; }}
-          .hg-status {{ font-size: 0.8rem; margin-top: 5px; }}
+          .hg-status {{ font-size: 0.8rem; margin-top: 3px; }}
           .hg-empty {{ opacity: 0.78; font-size: 0.86rem; }}
           .hg-track {{ position: relative; }}
           .hg-mark {{ position: absolute; top: -4px; width: 2px; height: 15px; margin-left: -1px; border-radius: 1px;

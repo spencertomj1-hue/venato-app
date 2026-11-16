@@ -259,8 +259,9 @@ def _confirm_week_dialog(first, last):
         st.info(r.text, icon=":material/info:")
 
 
-def toolbar(day):
-    row = st.container(horizontal=True, gap="small")     # sized to the text, so bigger text never truncates
+def toolbar(day, row=None):
+    """Confirm week / Fit time / Adjust categories, into `row` if given (the Timetable's one toolbar line)."""
+    row = row or st.container(horizontal=True, gap="small")     # sized to the text, so bigger text never truncates
     b = c = row
     first = store.week_start_of(day)
     waiting = store.unconfirmed_days(first, min(first + timedelta(days=6), store.local_today()))

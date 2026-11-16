@@ -244,14 +244,17 @@ def render_page():
     # Fit time / Categories: the same things Claude can do, by hand.
     from venato import pace
     from venato.ui import goal_time, timetable_tools
-    timetable_tools.toolbar(day)
+    # One line above the grid (buttons, then the suggestions), so the grid gets as much height as it can.
+    row = st.container(horizontal=True, gap="small", vertical_alignment="center", key="tt_toolbar")
+    timetable_tools.toolbar(day, row)
     ctx = pace.Ctx()                             # one look at the timetable for the bar, the grid and the panel
     sugg = goal_time.suggestions_for(monday, ctx)
-    goal_time.suggestion_bar(monday, sugg, ctx)
+    goal_time.suggestion_bar(monday, sugg, ctx, row)
     grid, panel = st.columns([4, 1.3], gap="medium")     # the panel stacks under the grid on narrow screens
     with grid:
         render_grid([monday + timedelta(days=i) for i in range(7)], suggestions=sugg)
-    with panel:
+    st.html("<style>.st-key-tt_panel { max-height: calc(100vh - 260px); overflow-y: auto; }</style>")   # scrolls itself, not the page
+    with panel.container(key="tt_panel"):
         goal_time.planner(monday, ctx)
 
 
@@ -300,9 +303,9 @@ def end_of_day_prompt():
     for day in prompt_days():
         when = "today" if day == store.local_today() else "yesterday"
         with st.container(border=True, key=f"eod_{day.isoformat()}"):
-            st.markdown(f"**Anything not go to plan {when}?**")
-            st.caption(f"{regional.long_date(day)} is assumed to have gone as planned until you confirm it.")
-            row = st.container(horizontal=True, gap="small")
+            row = st.container(horizontal=True, gap="small", vertical_alignment="center")   # one line: question + buttons
+            row.markdown(f"**Anything not go to plan {when}?**", width="stretch",
+                         help=f"{regional.long_date(day)} is assumed to have gone as planned until you confirm it.")
             row.button("All as planned", key=f"eod_ok_{day}", type="primary", icon=":material/task_alt:",
                        on_click=_confirm_all, args=(day,), help=f"Confirm {when} went as planned")
             row.button("Review", key=f"eod_review_{day}", icon=":material/edit_calendar:",

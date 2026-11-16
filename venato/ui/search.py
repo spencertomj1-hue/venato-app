@@ -77,7 +77,6 @@ def _when(r):
 
 
 def render_home():
-    st.markdown("**Search**")
     query = st.text_input("Search everything", placeholder="Search to-dos, journal, people, timetable…",
                           label_visibility="collapsed", key="global_search", icon=":material/search:")
     if not query.strip():

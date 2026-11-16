@@ -195,9 +195,9 @@ def render_home_habits():
     today = store.local_today()
     days = [today - timedelta(days=i) for i in range(6, -1, -1)]
     accent = st.get_option("theme.primaryColor") or "#ff4b4b"
-    head, link = st.columns([4, 1], vertical_alignment="center")
-    head.markdown("**Habits**")
-    link.button("Manage", key="home_habits_manage", type="tertiary", on_click=_open_habits)
+    head = st.container(horizontal=True, vertical_alignment="center")
+    head.markdown("**Habits**", width="stretch")
+    head.button("Manage", key="home_habits_manage", type="tertiary", on_click=_open_habits)
 
     habits = store.get_habits()
     if not habits:
@@ -208,13 +208,15 @@ def render_home_habits():
       .hb-week i {{ width: 11px; height: 11px; border-radius: 3px; background: rgba(128, 128, 128, 0.18); }}
       .hb-week i.on {{ background: {accent}; }}
       .hb-week i.today {{ outline: 1.5px solid rgba(128, 128, 128, 0.6); outline-offset: 1px; }}
+      .st-key-home_habits {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); column-gap: 28px; }}
     </style>""")
     d = today.isoformat()
+    box = st.container(key="home_habits")     # two habits a row when wide, to keep Home short
     for habit_id, name in habits:
         done = store.get_habit_dates(habit_id)
         _, current, per_week = store.habit_progress(habit_id, done, today)
         key = f"home_habit_{habit_id}_{d}"
-        tick, week, streak = st.columns([5, 3, 2], vertical_alignment="center")
+        tick, week, streak = box.columns([5, 3, 2], vertical_alignment="center")
         tick.checkbox(name, value=d in done, key=key, on_change=_toggle_habit, args=(habit_id, d, key))
         cells = "".join(
             f'<i class="{"on" if x.isoformat() in done else ""}{" today" if x == today else ""}" '
