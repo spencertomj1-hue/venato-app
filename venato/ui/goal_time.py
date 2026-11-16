@@ -5,7 +5,7 @@ Goals meet the timetable, on screen (the numbers come from venato/pace.py):
                     hours goal's week as a bar with "Fit N h", Plan all goals, Share hours, I'm away
   suggestion_bar()  Timetable: "4 suggested sittings fill 7.5 h" with Add all to Plan / Dismiss, and the
                     Show suggestions toggle; suggestions_for() gives the grid its dashed sittings
-  budget_panel()    Goals page: this week's budget, with the same buttons
+  free_split()      Goals page: "Where this week's N h free go", a stacked bar by goal, with Plan my goals
   pace_line(p)      Goals page: one goal's pace in a line
   offers()          Goals page: what to do about goals that can't be finished in the time left
   suggestions()     Goals page: "5 h/week of Guitar. Make it a goal?"
@@ -368,23 +368,58 @@ def bar_style():
       </div>"""
 
 
-def week_bars(rows):
-    """Every hours goal's week as a bar, with one legend (Done / Planned / Carried over)."""
-    return bar_style() + '<div class="wb">' + "".join(_bar(w) for w in rows) + "</div>"
+# Categorical colours for goals in the free-time bar (validated with the dataviz skill's checker: lightness band,
+# colour-blind separation of neighbours, 3:1 in dark; light mode relies on the legend's names and hours).
+GOAL_COLOURS = {"light": ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6"],
+                "dark": ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"]}
 
 
-def budget_panel(ctx=None):
-    """This week's budget for hours goals, with Plan my goals / Share hours."""
+def goal_colour(i):
+    """A goal's colour by its place in the week's list (a 7th and later goal share the last one's)."""
+    from venato.ui import appearance
+    ramp = GOAL_COLOURS["dark" if appearance.is_dark() else "light"]
+    return ramp[min(i, len(ramp) - 1)]
+
+
+def free_split(ctx=None):
+    """
+    Goals page: "Where this week's N h free go": one stacked bar of the rest of the week's free time,
+    split by what each hours goal gets (its alloc, top goal first) and Unclaimed, with a legend that
+    names each part and its hours, Plan my goals, and Share hours when goals want more than there is.
+    """
     ctx = ctx or _ctx()
     budget = pace.week_budget(ctx.today, ctx)
     if not budget["goals"]:
         return
-    with st.container(border=True):
-        st.subheader("This week's time", anchor=False)
-        st.markdown((":orange[" if budget["over"] else "") + md(budget["text"]) + ("]" if budget["over"] else ""))
-        st.html(week_bars(budget["goals"]))
+    cap = budget["capacity"]
+    parts = [(w["goal"]["title"], w["alloc"], goal_colour(i)) for i, w in enumerate(budget["goals"])]
+    unclaimed = max(0.0, cap - sum(h for _, h, _ in parts))
+    f = pace.fmt
+    total = max(cap, 0.01)
+    segs = "".join(f'<i style="flex:{h / total:.4f} 1 0;background:{c}" title="{escape(t)}: {f(h)} h"></i>'
+                   for t, h, c in parts if h >= 0.05)
+    if unclaimed >= 0.05 or not segs:
+        segs += f'<i class="fs-free" style="flex:{max(unclaimed, 0.01) / total:.4f} 1 0" title="Unclaimed: {f(unclaimed)} h"></i>'
+    keys = "".join(f'<li><i style="background:{c}"></i><span>{escape(t)}</span><b>{f(h)} h</b></li>' for t, h, c in parts)
+    keys += f'<li class="fs-u"><i class="fs-free"></i><span>Unclaimed</span><b>{f(unclaimed)} h</b></li>'
+    label = (f"{f(cap)} hours free for goals this week: " + ", ".join(f"{t} {f(h)} h" for t, h, _ in parts)
+             + f", {f(unclaimed)} h unclaimed")
+    with st.container(border=True, key="goals_free_split"):
+        st.subheader(f"Where this week's {f(cap)} h free go", anchor=False)
+        st.html(f"""<style>
+          .fs-bar {{ display: flex; gap: 2px; height: 14px; margin: 2px 0 10px; }}
+          .fs-bar i {{ display: block; border-radius: 4px; min-width: 4px; }}
+          .fs-free {{ background: rgba(128,128,128,0.2); border: 1px solid rgba(128,128,128,0.45); box-sizing: border-box; }}
+          .fs-keys {{ list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.9rem; }}
+          .fs-keys li {{ display: flex; align-items: center; gap: 8px; }}
+          .fs-keys li i {{ width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }}
+          .fs-keys b {{ margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }}
+          .fs-keys .fs-u span {{ opacity: 0.85; }}
+        </style><div class="fs-bar" role="img" aria-label="{escape(label)}">{segs}</div><ul class="fs-keys">{keys}</ul>""")
+        if budget["over"]:
+            st.caption(":material/warning: " + md(budget["text"]))
         row = st.container(horizontal=True, gap="small")
-        if any(w["short"] >= pace.TOLERANCE for w in budget["goals"]):
+        if any(w["short"] >= pace.TOLERANCE and not w["over"] for w in budget["goals"]):
             if row.button("Plan my goals", icon=":material/auto_awesome_motion:", key="goals_plan",
                           help="Fill what each goal is short into free time this week, top goal first."):
                 from venato.ui import timetable_tools
@@ -407,16 +442,16 @@ def offers(ctx=None):
             n = pace.negotiation(g, ctx)
             if not n:
                 continue
-            with st.container(border=True):
+            with st.container(border=True, key=f"offer_card_{g['id']}"):
                 p = n["pace"]
-                st.markdown(f":material/error: **{md(g['title'])}** can't be finished in time: "
-                            f"{md(pace.amount(g, p['remaining']))} to go, about "
-                            f"{md(pace.amount(g, n['reachable'] - p['value']))} within reach.")
-                row = st.container(horizontal=True, gap="small")
+                st.markdown(f"**:material/error: {md(g['title'])} can't be finished in time**")
+                st.caption(f"{md(pace.amount(g, p['remaining']))} to go, about "
+                           f"{md(pace.amount(g, n['reachable'] - p['value']))} within reach.")
                 for o in n["offers"]:
-                    row.button(o["text"], key=f"offer_{o['kind']}_{g['id']}", on_click=_offer, args=(g["id"], o["kind"]))
-                row.button("Not now", key=f"offer_no_{g['id']}", type="tertiary", on_click=pace.dismiss_offer,
-                           args=(g["id"],), help="Hide this for this goal")
+                    st.button(o["text"], key=f"offer_{o['kind']}_{g['id']}", on_click=_offer, args=(g["id"], o["kind"]),
+                              width="stretch")
+                st.button("Not now", key=f"offer_no_{g['id']}", type="tertiary", on_click=pace.dismiss_offer,
+                          args=(g["id"],), help="Hide this for this goal")
 
 
 def _accept(s, target):

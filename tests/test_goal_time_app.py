@@ -43,9 +43,13 @@ def test_goals_page_pace_budget_and_ranking(store):
     b = store.add_goal("Gym", "monthly", today, 12, "sessions")
     at = app()
     open_page(at, "Goals")
-    text = " ".join(m.value for m in at.markdown)
-    assert "This week" in " ".join(s.value for s in at.subheader) or "this week" in text
-    assert "Goals need" in text
+    heads = " ".join(s.value for s in at.subheader)
+    assert "Where this week's" in heads and "This week's time" not in heads      # the PR #5 panel is gone
+    html = " ".join(h.proto.body for h in at.get("html"))
+    assert html.count('class="gc-legend"') == 1                                   # one legend for every chart
+    assert 'alt="Revision: 0 h of 20 h by' in html                                 # each chart says its numbers
+    assert "Unclaimed" in html and "Plan my goals" in [b.label for b in at.button]
+    assert any("This week" in c.value for c in at.caption)                        # the goal's own week numbers
     at.button(key=f"edit_{b['id']}_up").click().run()            # Gym first now
     assert [g["title"] for g in store.goals_in("monthly", today)] == ["Gym", "Revision"]
     assert a["id"]

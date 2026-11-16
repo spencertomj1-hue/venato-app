@@ -144,41 +144,53 @@ def _edit_goal(g, ids=None):
 # ---------------------------------------------------------------------------
 
 def _goal_row(g, ctx=None, neighbours=None):
-    with st.container(border=True):
+    """One goal as a card: title, state badge, − / + (kept by hand) and ⋯; its number; the pace chart
+    (from now on) or a bar (past periods); short detail lines, and this week's numbers for hours goals."""
+    from venato import pace
+    from venato.ui import goal_chart, goal_time
+    p = pace.goal_pace(g, ctx) if ctx is not None else None
+    with st.container(border=True, key=f"goal_card_{g['id']}"):
         text, minus, plus, more = st.columns([5, 1, 1, 1.4], vertical_alignment="center")
-        pct = round(100 * fraction(g))
-        text.markdown(f"**{escape(g['title'])}**  \n:gray[{escape(amount(g))} · {pct}%]")
+        badge = f"  \n{goal_time.badge(p['state'])}" if p and p["state"] != "upcoming" else ""
+        text.markdown(f"**{goal_time.md(g['title'])}**{badge}")
         if g["kind"] != "count":
             minus.empty()
             plus.empty()
         else:
-            minus.button("", icon=":material/remove:", key=f"minus_{g['id']}", help="Take 1 off",
+            minus.button("", icon=":material/remove:", key=f"minus_{g['id']}", help=f"Take 1 off {g['title']}",
                          on_click=store.add_goal_progress, args=(g["id"], -1), disabled=g["value"] <= 0)
-            plus.button("", icon=":material/add:", key=f"plus_{g['id']}", help="Add 1",
+            plus.button("", icon=":material/add:", key=f"plus_{g['id']}", help=f"Add 1 to {g['title']}",
                         on_click=store.add_goal_progress, args=(g["id"], 1))
         with more:
             _edit_goal(g, neighbours)
-        st.html(f'<div class="hg-bar">{_fill(g)}</div>' + BAR_CSS.replace("ACCENT", _accent()))
+        unit = f" {g['unit']}" if g["unit"] else ""
+        st.markdown(f"### {_num(g['value'])} :gray[of {_num(g['target'])}{goal_time.md(unit)} · {round(100 * fraction(g))}%]")
+        svg = goal_chart.chart(p, ctx) if p else ""
+        if svg:
+            st.html(svg)
+        else:
+            st.html(f'<div class="hg-bar">{_fill(g)}</div>' + BAR_CSS.replace("ACCENT", _accent()))
+        lines = list(p.get("details") or []) if p else []
+        week = goal_chart.week_line(p) if p else ""
+        if week:
+            lines.insert(0, week)
+        if lines:
+            st.caption("  \n".join(goal_time.md(x) for x in lines))
         if g["habit"]:
             st.caption(f":material/sync: Counted from the habit **{escape(g['habit'])}**")
         elif g["category"]:
             what = f"{g['label']} ({g['category']})" if g.get("label") else g["category"]
-            st.caption(f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**")
-        if ctx is not None:
-            from venato import pace
-            from venato.ui import goal_time
-            p = pace.goal_pace(g, ctx)
-            if p["state"] not in ("upcoming",):
-                goal_time.pace_line(p)
+            st.caption(f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**, "
+                       "on days you've confirmed")
 
 
-def _section(period, today):
+def _section(period, today, now_ctx=None):
     start = st.session_state.setdefault(_start_key(period), store.start_of_period(period, today))
     current = start == store.start_of_period(period, today)
     goals = store.goals_in(period, start)
     done = sum(fraction(g) >= 1 for g in goals)
     from venato import pace
-    ctx = pace.Ctx() if store.start_of_period(period, today) <= start else None    # pace for now and later
+    ctx = (now_ctx or pace.Ctx()) if store.start_of_period(period, today) <= start else None    # pace for now and later
     with st.container(border=True):
         st.subheader(f"{NAMES[period]} :gray[{done}/{len(goals)}]", anchor=False)
         prev, label, nxt, back = st.columns([1, 4, 1, 3], vertical_alignment="center")
@@ -190,8 +202,10 @@ def _section(period, today):
         if not current:
             back.button(CURRENT[period], key=f"now_{period}", on_click=_shift, args=(period, 0))
         ids = [g["id"] for g in goals]
-        for g in goals:
-            _goal_row(g, ctx, ids)
+        cols = st.columns(2, gap="small")
+        for i, g in enumerate(goals):
+            with cols[i % 2]:
+                _goal_row(g, ctx, ids)
         if not goals:
             st.caption("No goals yet.")
         _new_goal(period, start)
@@ -203,13 +217,17 @@ def render_page():
     today = store.local_today()
     from venato import pace
     from venato.ui import goal_time
+    from venato.ui import goal_chart
     ctx = pace.Ctx()
-    goal_time.offers(ctx)
-    goal_time.suggestions(ctx)
-    goal_time.budget_panel(ctx)
-    for col, period in zip(st.columns(2, gap="medium"), store.GOAL_PERIODS):
-        with col:
-            _section(period, today)
+    main, side = st.columns([2.3, 1], gap="medium")      # the side panel stacks under on narrow screens
+    with main:
+        st.html(goal_chart.legend())                    # once, for every goal's pace chart
+        for period in store.GOAL_PERIODS:
+            _section(period, today, ctx)
+    with side:
+        goal_time.free_split(ctx)                       # where this week's free time goes, by goal
+        goal_time.offers(ctx)                           # "X can't be finished in time"
+        goal_time.suggestions(ctx)
     from venato.ui import deadlines
     deadlines.render_section()
 

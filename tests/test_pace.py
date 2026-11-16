@@ -335,3 +335,21 @@ def test_sleep_is_never_suggested(store, pace):
         block(store, date(2026, 11, 9) - timedelta(weeks=i), "23:00", "01:00", "Sleep", "sleep", "actual")
         block(store, date(2026, 11, 10) - timedelta(weeks=i), "23:00", "01:00", "Sleep", "sleep", "actual")
     assert pace.suggestions(pace.Ctx(NOW)) == []
+
+
+def test_history_and_chart_count_confirmed_days(store, pace):
+    from venato.ui import goal_chart
+    g = store.add_goal("Study", "monthly", "2026-11-01", 30, "h", category_id="study")
+    block(store, "2026-11-02", "09:00", "11:00", "Revision", "study", "actual")      # confirmed (the helper)
+    store.paint("2026-11-03", "actual", store.slot_of("09:00"), store.slot_of("12:00"),
+                {"label": "Revision", "category_id": "study"})                         # not confirmed: not counted
+    ctx = pace.Ctx(NOW)
+    hist = pace.history(store.get_goal(g["id"]), ctx)
+    assert hist[0] == (date(2026, 10, 31), 0) and hist[-1] == (NOW.date(), 2)
+    assert dict(hist)[date(2026, 11, 3)] == 2
+    p = pace.goal_pace(store.get_goal(g["id"]), ctx)
+    from urllib.parse import unquote
+    svg = unquote(goal_chart.chart(p, ctx))
+    assert svg.count("<polyline") == 1 and 'stroke-dasharray="5 4"' in svg and 'role="img"' in svg
+    assert "2 h of 30 h by" in goal_chart.describe(p, ctx) and "confirmed days this week" in goal_chart.describe(p, ctx)
+    assert pace.history(store.add_goal("Books", "yearly", "2026-01-01", 10, "books"), ctx) is None

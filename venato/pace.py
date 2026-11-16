@@ -556,6 +556,35 @@ def pace_all(ctx=None):
     return [goal_pace(g, ctx) for period in store.GOAL_PERIODS for g in store.goals_in(period, ctx.today)]
 
 
+def history(goal, ctx):
+    """
+    A goal's progress over its period so far, for the pace chart: [(day, value by the end of that day)]
+    from the day before its start (0) to yesterday, plus today. Hours goals count confirmed days only;
+    habit goals their ticks. Hand-kept goals have no history: None.
+    """
+    if goal["kind"] == "count":
+        return None
+    start, end = bounds(goal)
+    last = min(ctx.today, end)
+    out, total = [(start - timedelta(days=1), 0.0)], 0.0
+    if goal["kind"] == "habit":
+        ticks = {d for d in store.get_habit_dates(goal["habit_id"]) if _iso(start) <= d <= _iso(last)}
+    else:
+        data = ctx.data(start, last)
+    day = start
+    while day <= last:
+        if goal["kind"] == "habit":
+            total += _iso(day) in ticks
+        else:
+            rows = data["by_day"].get(_iso(day))
+            if rows:
+                total += store.goal_hours(goal, day, day, "actual",
+                                          data={"blocks": rows["blocks"], "events": [], "confirmed": data["confirmed"]})
+        out.append((day, total))
+        day += timedelta(days=1)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Phase 6: negotiation, when the time left can't cover a goal
 # ---------------------------------------------------------------------------
