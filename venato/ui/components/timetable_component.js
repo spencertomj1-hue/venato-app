@@ -849,7 +849,7 @@ class Timetable {
           const mark = kind === "assumed" ? "?" : kind === "skipped" ? "✕" : kind === "unplanned" ? "+" : "✓";
           return `<div class="blk past ${kind} ${tall ? "tall" : ""} ${this.focusId === id ? "focus" : ""}${this.hovered === id ? " hover" : ""}${this.picked.has(id) ? " picked" : ""}" data-id="${esc(id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
             `--fill:${esc(bg)};${kind === "skipped" || kind === "assumed" ? "" : `background:${esc(bg)};color:${fg}`}">` +
-            `<b><i class="mk" aria-hidden="true">${mark}</i>${esc(en.label)}</b>${tall ? `<span>${kind === "assumed" ? "as planned?" : esc(fmtRange(slotTime(s), slotTime(e)))}</span>` : ""}</div>`;
+            `<b><i class="mk" aria-hidden="true">${mark}</i>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(slotTime(s), slotTime(e)))}</span>` : ""}</div>`;
         }
         if (outlook) {
           return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
