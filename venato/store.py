@@ -293,6 +293,8 @@ def init_db():
             -- All-day calendar events the user marked "I'm away" (that day has no free time).
             -- Kept across syncs, like tt_outlook_hidden.
             CREATE TABLE IF NOT EXISTS tt_outlook_away (uid TEXT PRIMARY KEY);
+            -- Days the user marked "I'm away" by hand (no calendar event needed): no free time for goals.
+            CREATE TABLE IF NOT EXISTS away_days (date TEXT PRIMARY KEY);
             """
         )
         _scores_out_of_ten(conn)
@@ -1888,6 +1890,21 @@ def set_away(uid, away):
             conn.execute("INSERT OR IGNORE INTO tt_outlook_away VALUES (?)", (uid,))
         else:
             conn.execute("DELETE FROM tt_outlook_away WHERE uid = ?", (uid,))
+
+
+def away_days():
+    """Days (ISO dates) the user marked "I'm away" by hand."""
+    with db() as conn:
+        return {r[0] for r in conn.execute("SELECT date FROM away_days")}
+
+
+def set_away_day(day, away):
+    """Mark a day as "I'm away" (no free time for goals that day), or not."""
+    with db() as conn:
+        if away:
+            conn.execute("INSERT OR IGNORE INTO away_days VALUES (?)", (_as_date(day).isoformat(),))
+        else:
+            conn.execute("DELETE FROM away_days WHERE date = ?", (_as_date(day).isoformat(),))
 
 
 def calendar_horizon():

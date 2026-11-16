@@ -63,7 +63,7 @@ def strip(day):
     first = budget["week_start"]
     all_day = [e for e in store.outlook_between(first.isoformat(), (first + timedelta(days=6)).isoformat())
                if e["all_day"]]
-    if not budget["goals"] and not all_day:
+    if not budget["goals"] and not all_day and not any(d["away"] for d in budget["days"]):
         return
     row = st.container(horizontal=True, gap="small", vertical_alignment="center", key="tt_goal_strip")
     for w in budget["goals"]:
@@ -90,17 +90,24 @@ def strip(day):
         if budget["over"] and row.button("Share hours", icon=":material/balance:", key="tt_split_goals",
                                          help="Goals want more than the week's free time: choose who gets what"):
             split_dialog(first)
-    if all_day:
-        _away_popover(row, all_day)
+    _away_popover(row, first, all_day)
 
 
-def _away_popover(where, events):
-    """"I'm away" for the week's all-day events: that day then has no free time for goals."""
-    away = store.away_uids()
-    n = sum(e["uid"] in away for e in events)
+def _away_popover(where, first, events):
+    """"I'm away" for any day of the week, or for one of its all-day events: that day then has no free time for goals."""
+    away, days_away = store.away_uids(), store.away_days()
+    days = [first + timedelta(days=i) for i in range(7)]
+    n = len({d.isoformat() for d in days if d.isoformat() in days_away}
+            | {e["date"] for e in events if e["uid"] in away})
     with where.popover(f"Away days{f' ({n})' if n else ''}", icon=":material/flight_takeoff:",
-                       help="All-day events don't block time. Mark the ones you're away for."):
-        st.caption("Ticked days have no free time for goals. This stays when your calendar syncs.")
+                       help="Mark days you're away: they then have no free time for goals."):
+        st.caption("Ticked days have no free time for goals.")
+        for d in days:
+            key = f"tt_away_day_{d.isoformat()}"
+            st.checkbox(f"I'm away {regional.day_month(d)}", value=d.isoformat() in days_away, key=key,
+                        on_change=lambda day=d, k=key: store.set_away_day(day, st.session_state[k]))
+        if events:
+            st.caption("Or away for a calendar event (this stays when your calendar syncs):")
         for e in events:
             key = f"tt_away_{e['uid']}"
             st.checkbox(f"I'm away: {e['title']} ({regional.day_month(store._as_date(e['date']))})",

@@ -94,6 +94,8 @@
 | ![Weekly timetable](assets/timetable.png) | ![Chat](assets/chat.png) |
 | **Daily log** | **Settings** |
 | ![Daily log](assets/daily-log.png) | ![Settings](assets/settings.png) |
+| **Goal chips on the timetable** | **Goals: pace and this week's time** |
+| ![Goal chips above the timetable](assets/goal-chips.png) | ![Goals page](assets/goals.png) |
 
 ## Quick start
 

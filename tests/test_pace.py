@@ -307,3 +307,18 @@ def test_assistant_has_the_goal_tools_and_a_snapshot_line(store, pace):
     assert {"goal_pace", "week_budget", "plan_goals"} <= set(names)
     store.add_goal("Study", "monthly", "2026-11-01", 30, "h", category_id="study")
     assert "Goals this week:\nGoals need" in assistant.context(NOW)
+
+
+def test_a_day_can_be_marked_away_without_a_calendar_event(store, pace):
+    store.set_away_day("2026-11-14", True)
+    days = {d["date"]: d for d in pace.week_capacity(NOW.date(), pace.Ctx(NOW))["days"]}
+    assert days["2026-11-14"]["hours"] == 0 and days["2026-11-14"]["away"]
+    store.set_away_day("2026-11-14", False)
+    assert pace.week_capacity(NOW.date(), pace.Ctx(NOW))["days"][5]["hours"] == 18
+
+
+def test_sleep_is_never_suggested(store, pace):
+    for i in range(1, 4):
+        block(store, date(2026, 11, 9) - timedelta(weeks=i), "23:00", "01:00", "Sleep", "sleep", "actual")
+        block(store, date(2026, 11, 10) - timedelta(weeks=i), "23:00", "01:00", "Sleep", "sleep", "actual")
+    assert pace.suggestions(pace.Ctx(NOW)) == []

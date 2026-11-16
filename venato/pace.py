@@ -32,6 +32,7 @@ FOLLOW_MIN_WEEKS = 3          # ...and needs a Plan in at least 3 of them
 FOLLOW_RANGE = (0.3, 1.0)
 SUGGEST_HOURS = 2             # suggested goals: 2 h+ a week of Actual time...
 SUGGEST_WEEKS = 3             # ...in 3 of the last 4 weeks
+NEVER_SUGGEST = {"sleep"}     # categories (id or name, any case) never suggested as goals
 TOLERANCE = 0.25              # hours: anything closer than a quarter of an hour counts as there
 
 STATES = {"done": "Done", "on_track": "On track", "behind": "Behind", "slipping": "Slipping",
@@ -96,6 +97,7 @@ class Ctx:
         self.today = self.now.date()
         self.horizon = store.calendar_horizon()
         self.away = store.away_uids()
+        self.away_days = store.away_days()
         self.inflate = inflation_on()
         self.ocat = store.outlook_category("")
         self._window = None
@@ -156,7 +158,8 @@ class Ctx:
         return self.data(day, day)["by_day"].get(_iso(day), {"blocks": [], "events": []})
 
     def is_away(self, day):
-        return any(ev["all_day"] and ev["uid"] in self.away for ev in self._day(day)["events"])
+        return _iso(day) in self.away_days or \
+            any(ev["all_day"] and ev["uid"] in self.away for ev in self._day(day)["events"])
 
     def month_goals(self, day):
         """Hours goals active in the month containing `day` (cached per month)."""
@@ -609,7 +612,7 @@ def suggestions(ctx=None, limit=3):
     found = []
     for key, per_week in totals.items():
         cid, _, low = key.partition("|")
-        if cid not in names or sum(h >= SUGGEST_HOURS for h in per_week) < SUGGEST_WEEKS or key in gone:
+        if cid not in names or cid in NEVER_SUGGEST or names[cid].lower() in NEVER_SUGGEST or sum(h >= SUGGEST_HOURS for h in per_week) < SUGGEST_WEEKS or key in gone:
             continue
         label = labels.get(key) if low else None
         if label and label.lower() == names[cid].lower():

@@ -18,6 +18,7 @@ Venato was called **Arete** up to 1.1.1.
 - Competing goals: list order is priority (Move up / Move down in a goal's ⋯ menu). When goals want more than the week's free time, "Share hours" shows which are short and lets you split the week your way.
 - Goals page: this week's time budget, cards for goals that can't be finished (lower the target, carry the rest into next month or year, or take hours from a lower goal; all undoable, "Not now" hides them), and suggested goals ("3 h/week of Guitar. Make it a goal?").
 - Home: a "should be here by today" tick on each goal bar.
+- Away days: tick any day of the week as "I'm away" (Timetable → Away days), with or without a calendar event. Sleep is never suggested as a goal.
 - Weekly review: a goal pace section. One mid-week notification per goal when what's planned can't cover it.
 - Assistant: `goal_pace`, `week_budget` and `plan_goals` tools, goals can count timetable hours (`category`, `label`), and a goals line in its snapshot of today.
 

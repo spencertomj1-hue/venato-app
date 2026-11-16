@@ -109,6 +109,7 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
 | `goals` | `id`, `title`, `period` (monthly/yearly), `period_start`, `target`, `unit`, `progress` (kept by hand), `habit_id` (NULL = by hand; `ON DELETE SET NULL`), `ord` (also its priority), `created_at`, `category_id` (counts timetable hours; `ON DELETE SET NULL`; never together with `habit_id`), `label` (optional: only that activity) |
 | `goal_week` | The user's split of a week between hours goals: `goal_id` (cascade), `week_start`, `hours`. None = automatic |
 | `tt_outlook_away` | All-day calendar events marked "I'm away" (that day has no free time for goals); kept across syncs |
+| `away_days` | Days marked "I'm away" by hand (`date`), no calendar event needed |
 
 Notes on the schema:
 - **New installs** are seeded with generic categories (groups "Life" and "Work") and activity defaults, in `DEFAULT_CATEGORIES` / `DEFAULT_LABEL_MAP`. Groups are read from the data (`store.groups()`), so a user's own groups work too.
@@ -175,7 +176,7 @@ Two different things:
 - **Budget / competition:** `week_goals` hands the rest of the week's capacity out top-down by priority (`ord`, monthly first on a tie) as `alloc`; `budget_short` is what doesn't fit. Count goals (books, money) get pace and debt but no budget. Yearly goals are budgeted week by week like monthly ones.
 - **Pace states:** done; unreachable (hours: remaining > free time left; habit: remaining > days left); behind (covered < want this week; habit/count: below the even-pace line and late at the trailing rate); slipping (planned enough, but Actual trails Plan this week by 1 h+); on track. Projection: the last 28 days' rate (hand-kept: the period so far).
 - **Negotiation:** `negotiation(goal)` when remaining > what the goal can get after higher-priority goals (`available_for`), or unreachable: offers lower / carry / take, applied by `tools.resolve_goal` (a Pending; the UI calls `undo.checkpoint`). `goal_offers_dismissed` in settings.json.
-- **Suggestions:** categories / activities with 2 h+ of Actual time in 3 of the last 4 weeks and no goal counting them; dismissals in `goal_suggestions_dismissed`.
+- **Suggestions:** categories / activities with 2 h+ of Actual time in 3 of the last 4 weeks and no goal counting them; dismissals in `goal_suggestions_dismissed`. Categories in `pace.NEVER_SUGGEST` (Sleep, by id or name) are never suggested.
 - **Nudge:** `notify.goal_nudges` → `pace.nudges`: from midday on the week's third day, once per goal per week (`goal_nudged` in settings.json, so restarts don't repeat it).
 - **Claude:** `goal_pace`, `week_budget`, `plan_goals` (shares free gaps between goals via `tools._place`, the same placement `plan_time` uses), and a line in the [Now] snapshot. Buttons: the chips / Plan my goals / Share hours / pace lines.
 
