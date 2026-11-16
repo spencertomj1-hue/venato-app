@@ -153,7 +153,7 @@ Two different things:
 - **Value:** `goals_in` / `get_goal` add `value` (current progress), `kind` (`hours` / `habit` / `count`), `habit` and `category` (names). Linked to a habit, `value` is the number of days that habit was ticked within the period; counting timetable hours, it's the Actual hours of that category (and label) in the period, from `store.goal_hours`; otherwise it's the hand-kept `progress`. Deleting the habit or category unlinks the goal (back to `progress`).
 - **Goals page:** two bordered sections (Monthly, Yearly), each with ‹ › and a "This month / This year" jump (`goals_start_<period>`). Each goal shows `value / target unit`, a percentage and a bar. Hand-kept goals have − / + (via `add_goal_progress`); every goal has a ⋯ popover to edit it (including the "Update it myself" / "Count a habit's ticks" choice) or delete it. "New goal" is a popover with the same form.
 - **Bars:** HTML in the theme's primary colour (`st.progress` uses a different one), the same on both pages.
-- **Home:** this month's and this year's goals as bars, with "See all" (a button whose callback sets the sidebar radio, `page`).
+- **Home:** this month's and this year's goals as bars in a card, with "See all" (a button whose callback sets the sidebar radio, `page`), the "by today" tick and one status line each (`goals.status_line`). Above the to-dos, `goal_time.needs_you` lists only goals behind or short this week ("N h to plan") with Plan my goals; both share one `pace.Ctx` (`blocks/core._goals_home`).
 
 ## 5c. Network
 

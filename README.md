@@ -61,6 +61,10 @@
 - **Goals that know your week:** beside the timetable, a "Plan this week" panel shows your free hours per day, each hours goal's week as a bar (done, planned, not planned yet, carried over) with "Fit N h", "Plan all goals" and "I'm away" for each day. When goals are short, the grid draws where their time would fit as dashed suggested sittings in free gaps: click one to add just that sitting, "Add all to Plan", or dismiss them for the week (Show suggestions turns them off). Venato works out your free time (timetable hours minus calendar events and other blocks), what each goal needs this week including hours carried from slow weeks, whether you're on track, behind, slipping or can't make it, and when you'll finish at your recent pace. It plans extra for time that usually slips, shares a crowded week between goals by priority, offers to lower a target, carry it into next month or borrow hours from a lower goal, suggests goals from what you already do, and nudges you mid-week if what's planned won't cover a goal.
 - **Deadlines** with countdowns, reminders the day before and on the day, and "Make time" to plan hours for them.
 
+**Home**
+- Today as one timeline (what happened so far, the Plan from now), the agenda, and an end-of-day prompt: "Anything not go to plan today?" with **All as planned** or **Review**.
+- **Needs you this week:** only the goals that are behind or short of time, each with its state and "N h to plan", and Plan my goals. Every goal's bar (with a "should be here by today" tick and one status line) is in the Goals card; to-dos, deadlines, habits and search as before.
+
 **Tracking**
 - **Daily log:** a month calendar of mood, sleep, energy and water. Click a day to tick habits and write notes.
 - **Habits:** daily or with a weekly target ("Gym 3 times a week"), with current and best streaks.

@@ -429,6 +429,45 @@ def free_split(ctx=None):
             split_dialog(budget["week_start"])
 
 
+# ---------------------------------------------------------------------------
+# Home: "Needs you this week" (Home B)
+# ---------------------------------------------------------------------------
+
+PILL = {"behind": "orange", "slipping": "orange", "unreachable": "red"}
+
+
+def needs_you(ctx=None):
+    """
+    Home: only the goals that are behind (or slipping, or can't be reached) or short of time this week,
+    each with its state pill and "N h to plan" (habit and hand-kept goals: what this week needs), and
+    Plan my goals. On-track goals stay in the Goals card only. Nothing to show: nothing drawn.
+    """
+    ctx = ctx or _ctx()
+    rows = []
+    for p in pace.pace_all(ctx):
+        g, w = p["goal"], p.get("week")
+        short = w["short"] if w and not w["over"] else 0.0
+        if p["state"] not in PILL and short < pace.TOLERANCE:
+            continue
+        state = p["state"] if p["state"] in PILL else "behind"
+        what = (f"{pace.fmt(pace.half_up(short))} h to plan" if short >= pace.TOLERANCE
+                else f"{pace.amount(g, p['need'])} this week" if p["need"] else "")
+        rows.append((g, state, what))
+    if not rows:
+        return
+    with st.container(border=True, key="home_needs_you"):
+        st.markdown("**Needs you this week**")
+        for g, state, what in rows:
+            a, b = st.columns([3, 2], vertical_alignment="center")
+            a.markdown(f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}] **{md(g['title'])}**")
+            b.markdown(f"<div style='text-align:right'>{escape(what)}</div>", unsafe_allow_html=True)
+        if any(p.get("week") and p["week"]["short"] >= pace.TOLERANCE and not p["week"]["over"] for p in pace.pace_all(ctx)):
+            if st.button("Plan my goals", icon=":material/auto_awesome_motion:", key="home_plan_goals", width="stretch",
+                         help="Fill what each goal is short into free time this week, top goal first. You'll see it first."):
+                from venato.ui import timetable_tools
+                timetable_tools.open_plan_goals(ctx.today)
+
+
 def offers(ctx=None):
     """Cards for goals that can't be finished with the time (or days) left: lower, carry or take hours."""
     ctx = ctx or _ctx()

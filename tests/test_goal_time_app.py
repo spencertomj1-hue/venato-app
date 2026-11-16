@@ -130,3 +130,20 @@ def test_suggested_sittings_are_free_time_from_now_on(store, monkeypatch):
     # "Add all to Plan" (plan_goals) adds the same sittings that are left.
     left = goal_time.suggestions_for(store.week_start_of(now.date()), pace.Ctx(now))
     assert x["id"] not in {y["id"] for y in left}
+
+
+def test_home_needs_you_lists_only_goals_that_need_something(store):
+    today = store.local_today()
+    behind = store.add_goal("Revision", "monthly", today, 200, "h", category_id="study")
+    store.add_goal("Books", "yearly", today, 1, "books")
+    store.set_goal_progress(store.goals_in("yearly", today)[0]["id"], 1)          # done: on track
+    at = app()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "Needs you this week" in text and "Revision" in text
+    needs = text[text.index("Needs you this week"):]
+    assert "Books" not in needs.split("To-dos")[0]                                 # on track: only in the Goals card
+    html = " ".join(h.proto.body for h in at.get("html"))
+    assert "Behind" in html and "Done" in html                                     # one status line per goal
+    assert at.button(key="home_plan_goals")
+    assert behind["id"]
