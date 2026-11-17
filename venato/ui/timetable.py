@@ -1,6 +1,8 @@
 """
-Timetable page: a week at a time, Plan vs Actual per day in 30-minute slots,
-coloured by the same category key as the old Excel timetable.
+Timetable page: a week at a time in 30-minute slots, coloured by category. One column a day,
+showing either the Plan or the Actual (a Plan / Actual switch on the grid). A day's Plan is locked
+when the day starts (store.lock_day); after that every change is to its Actual, which the user
+confirms at the end of the day.
 
 The week grid is a small custom Streamlit component (timetable_component.js/.css).
 It paints locally for instant feedback and sends edit operations back here.
@@ -85,19 +87,22 @@ def apply_grid_op(op):
       {kind: "detach_outlook", uid}   turn it into the user's own block (id "ol:<uid>")
       {kind: "batch", label, ops: [...]}   several of the above (a group moved, pasted or deleted):
                                      one Undo point for all of them, labelled e.g. "Moved 3 blocks"
-    One timeline (store, "One timeline"), each materialising the day first:
+    The day's Actual (store, "Plan locked"), each locking the day first:
       {kind: "skip", date, start, end}                    didn't happen
       {kind: "replace", date, start, end, block, newId}   did something else, or something unplanned
       {kind: "retime", date, fromStart, fromEnd, start, end, block, newId}   change times
-      {kind: "confirm_day", date}                         all as planned
-      {kind: "unconfirm_day", date}                       undo that: back to assumed
+      {kind: "confirm_day", date}                         this is what I did
+      {kind: "unconfirm_day", date}                       undo that
       {kind: "add_suggestion", date, start, end, block}   one suggested sitting, added to the Plan if still free
     Painting over an Outlook event detaches it first (store.paint), so it's trimmed like any block.
-    In the side-by-side view, filling in a day's Actual by hand confirms it (it's the truth as it is).
+    Every day an op touches is locked first if it has started, and a started day's Plan is never changed:
+    such an op (from a grid drawn before the day started) is dropped; the redraw shows the Actual.
     """
-    if store.timetable_view() == "split":
-        for d in _actual_days(op):
-            store.mark_confirmed(d)
+    days = _op_days(op)
+    if days:
+        store.lock_started(min(days), max(days))
+    if _touches_locked_plan(op):
+        return
     if op["kind"] == "batch":
         from venato import undo
         undo.checkpoint(op.get("label") or "Changed several blocks", quiet=True)    # no bar; Cmd/Ctrl+Z undoes
@@ -112,18 +117,41 @@ def apply_grid_op(op):
     _apply(op)
 
 
-def _actual_days(op):
-    """The days whose Actual track an op changes (for the side-by-side view)."""
+def _op_days(op):
+    """The days an op changes."""
     if op["kind"] == "batch":
-        return {d for sub in op.get("ops") or [] for d in _actual_days(sub)}
-    if op["kind"] in ("paint", "move") and op.get("track") == "actual":
-        return {op["date"]}
-    if op["kind"] == "upsert" and op["entry"].get("track") == "actual":
-        return {op["entry"]["date"]}
-    if op["kind"] == "delete":
+        return {d for sub in op.get("ops") or [] for d in _op_days(sub)}
+    out = {op[k] for k in ("date",) if op.get(k)}
+    if op["kind"] == "upsert":
+        out.add(op["entry"]["date"])
+    if op["kind"] in ("delete", "move") and op.get("id"):
         b = store.get_block(op["id"])
-        return {b["date"]} if b and b["track"] == "actual" else set()
-    return set()
+        if b:
+            out.add(b["date"])
+    if op["kind"] in ("hide_outlook", "detach_outlook"):
+        ev = store.get_outlook(op["uid"])
+        if ev:
+            out.add(ev["date"])
+    return out
+
+
+def _touches_locked_plan(op):
+    """Would this op change the Plan of a day that has started (locked)?"""
+    if op["kind"] == "batch":
+        return any(_touches_locked_plan(sub) for sub in op.get("ops") or [])
+    started = store.day_started
+    if op["kind"] in ("paint", "move") and op.get("track") == "plan" and started(op["date"]):
+        return True
+    if op["kind"] == "upsert" and op["entry"].get("track") == "plan" and started(op["entry"]["date"]):
+        return True
+    if op["kind"] in ("delete", "move"):
+        b = store.get_block(op["id"])
+        if b and b["track"] == "plan" and started(b["date"]):
+            return True
+    if op["kind"] in ("hide_outlook", "detach_outlook"):
+        ev = store.get_outlook(op["uid"])
+        return bool(ev and started(ev["date"]))
+    return False
 
 
 def _block(b):
@@ -219,6 +247,13 @@ def _on_sync(key):
     sync_outlook(force=True)
 
 
+def _on_mode(key):
+    """Component callback: the Plan / Actual switch."""
+    value = st.session_state[key]["mode"] or {}
+    if value.get("mode") in ("plan", "actual"):
+        st.session_state["tt_mode"] = value["mode"]
+
+
 def _on_outlook_toggle(key):
     value = st.session_state[key]["outlook"] or {}
     st.session_state["tt_show_outlook"] = bool(value.get("show"))
@@ -262,7 +297,7 @@ def render_page():
 
 
 # ---------------------------------------------------------------------------
-# Home's end-of-day prompt (one timeline): "Anything not go to plan today?"
+# Home's end-of-day prompt: "Is the timetable right for today?"
 # ---------------------------------------------------------------------------
 
 def prompt_days(now=None):
@@ -288,11 +323,12 @@ def prompt_days(now=None):
 
 def _confirm_all(day):
     store.confirm_day(day)
-    st.toast("Confirmed: the day went as planned", icon=":material/task_alt:")
+    st.toast("Confirmed: that was your day", icon=":material/task_alt:")
 
 
 def _review(day):
     st.session_state["tt_day"] = day
+    st.session_state["tt_mode"] = "actual"
     st.session_state["page"] = "Timetable"         # the sidebar radio's key; callbacks run before it's drawn
 
 
@@ -302,15 +338,16 @@ def _dismiss(day):
 
 
 def end_of_day_prompt():
-    """Home: for today (once its Plan is over) and yesterday, if unconfirmed: All as planned / Review / Not now."""
+    """Home: for today (once its Plan is over) and yesterday, if unconfirmed: Confirm / Review / Not now."""
     for day in prompt_days():
         when = "today" if day == store.local_today() else "yesterday"
         with st.container(border=True, key=f"eod_{day.isoformat()}"):
             row = st.container(horizontal=True, gap="small", vertical_alignment="center")   # one line: question + buttons
-            row.markdown(f"**Anything not go to plan {when}?**", width="stretch",
-                         help=f"{regional.long_date(day)} is assumed to have gone as planned until you confirm it.")
-            row.button("All as planned", key=f"eod_ok_{day}", type="primary", icon=":material/task_alt:",
-                       on_click=_confirm_all, args=(day,), help=f"Confirm {when} went as planned")
+            row.markdown(f"**Is the timetable right for {when}?**", width="stretch",
+                         help=f"Confirm {regional.long_date(day)}'s Actual is what you really did: only confirmed "
+                              "days count in your stats and goals.")
+            row.button("Confirm", key=f"eod_ok_{day}", type="primary", icon=":material/task_alt:",
+                       on_click=_confirm_all, args=(day,), help=f"Confirm {when}'s Actual is what you did")
             row.button("Review", key=f"eod_review_{day}", icon=":material/edit_calendar:",
                        on_click=_review, args=(day,), help=f"Open {when} on the Timetable to correct it")
             row.button("Not now", key=f"eod_no_{day}", type="tertiary", on_click=_dismiss, args=(day,),
@@ -318,16 +355,16 @@ def end_of_day_prompt():
 
 
 def render_today():
-    """Just today (the Home page) as one timeline: what happened before now, the Plan after. View only."""
-    render_grid([store.local_today()], key="timetable_today", single=True, readonly=True, view="one")   # whatever the setting
+    """Just today (the Home page): its Actual (the Plan as locked this morning, plus your changes). View only."""
+    render_grid([store.local_today()], key="timetable_today", single=True, readonly=True)
 
 
-def render_grid(days, key="timetable", single=False, readonly=False, view=None, suggestions=()):
+def render_grid(days, key="timetable", single=False, readonly=False, suggestions=()):
     """Draw the grid for the given days; returns the categories and label map it used.
-    view: "one" (one timeline) or "split" (Plan and Actual side by side); default: the setting."""
-    view = view or store.timetable_view()
-    status = store.day_status(days[0], days[-1])
+    Days that have started are locked first (their Plan copied into the Actual), so what's drawn is final."""
     now = store.local_now()
+    store.lock_started(days[0], days[-1], now)
+    status = store.day_status(days[0], days[-1])
     categories = store.load_categories()
     entries = store.blocks_between(days[0].isoformat(), days[-1].isoformat())
     label_map = store.load_label_map()
@@ -352,12 +389,13 @@ def render_grid(days, key="timetable", single=False, readonly=False, view=None, 
         "labelMap": dict(zip(label_map["label"], label_map["category_id"])),
         "acked": st.session_state.get("tt_acked", []),
         "single": single,
+        "mode": "actual" if readonly else st.session_state.setdefault("tt_mode", "actual"),
         "readonly": readonly,
-        "view": view,
         # Suggested sittings for hours goals that are short (dashed, in free time; click one to add it).
         "suggestions": list(suggestions),
-        # One timeline: per day, the slots that have passed, how far the Actual is the truth, and confirmed.
-        "dayState": {d.isoformat(): {"gone": store.slots_gone(d, now), **status.get(d.isoformat(), {"upto": 0, "confirmed": False})}
+        # Per day: the slots that have passed, locked (the day has started: its Plan is frozen), confirmed.
+        "dayState": {d.isoformat(): {"gone": store.slots_gone(d, now), "locked": store.day_started(d, now),
+                                     "confirmed": status.get(d.isoformat(), {}).get("confirmed", False)}
                      for d in days},
         # Outlook events (Plan; all-day ones as header chips). The user can remove or change them.
         "showOutlook": show_outlook,
@@ -378,6 +416,7 @@ def render_grid(days, key="timetable", single=False, readonly=False, view=None, 
     }
     _timetable_component(data=data, key=key,
                          on_ops_change=lambda: _on_ops(key), on_nav_change=lambda: _on_nav(key),
-                         on_sync_change=lambda: _on_sync(key), on_outlook_change=lambda: _on_outlook_toggle(key))
+                         on_sync_change=lambda: _on_sync(key), on_outlook_change=lambda: _on_outlook_toggle(key),
+                         on_mode_change=lambda: _on_mode(key))
     return categories, label_map
 

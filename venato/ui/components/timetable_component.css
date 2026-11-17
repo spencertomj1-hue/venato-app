@@ -14,6 +14,7 @@
   --head-bg: var(--st-secondary-background-color, #f6f7f9);
   --muted: color-mix(in srgb, var(--text) 72%, var(--bg));   /* 4.5:1+ on the background in light and dark */
   --accent: var(--st-primary-color, #ff4b4b);
+  --sel: #e5484d;                           /* the hover / selection ring */
   --radius: var(--st-base-radius, 0.5rem);
   font: inherit;
   color: var(--text);
@@ -247,7 +248,9 @@ td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
 .blk.hover::before { top: 0; }
 .blk.hover::after { bottom: 0; }
 /* Selected blocks (click, Shift-click or drag a box with Shift). */
-.blk.picked { box-shadow: 0 0 0 1px var(--bg), 0 0 0 2.5px var(--accent); z-index: 2; }   /* hovered = selected */
+.blk.hover, .blk.picked { box-shadow: 0 0 0 1px var(--bg), 0 0 0 2px var(--sel); z-index: 2; }   /* hovered = selected: a thin red ring */
+.blk.frozen.hover::before, .blk.frozen.hover::after { display: none; }    /* a locked Plan: no resizing */
+.tt-root:not(.readonly) td.s.frozen:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.075); }
 .dragging .blk.picked { opacity: 0.55; }
 td.s.sel.box { --tile: color-mix(in srgb, var(--accent) 16%, transparent); }
 
@@ -354,7 +357,22 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 .blk.focus { transform: scale(1.05); z-index: 5; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28); }
 
 /* Details card (Outlook-style peek). */
-.tt-pop.tt-peek { width: 280px; min-width: 0; gap: 5px; }
+.tt-pop.tt-peek { width: 280px; min-width: 0; gap: 5px; animation: tt-pop-in 0.14s ease-out; }
+.tt-peek .pk-note { font-size: 0.78rem; color: var(--muted); padding-top: 6px; border-top: 1px solid var(--line); }
+@keyframes tt-pop-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
+/* Switching Plan / Actual: the blocks fade in. */
+.tt-blocks.swap .blk { animation: tt-fade 0.18s ease-out; }
+@keyframes tt-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tt-pop.tt-peek, .tt-blocks.swap .blk { animation: none; } }
+
+/* The Plan / Actual switch. */
+.tt-mode { display: inline-flex; border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 999px; overflow: hidden; }
+.tt-mode button { padding: 3px 12px; border: 0; background: var(--bg); color: var(--text); font-size: 0.78rem; cursor: pointer;
+                  transition: background 0.12s, color 0.12s; }
+.tt-mode button + button { border-left: 1px solid rgba(128, 128, 128, 0.35); }
+.tt-mode button:hover { background: rgba(128, 128, 128, 0.1); }
+.tt-mode button.on { background: var(--text); color: var(--bg); font-weight: 600; }
+.tt-root.readonly .tt-mode { display: none; }
 .tt-peek .pk-title { display: flex; align-items: flex-start; gap: 6px; font-size: 0.95rem; }
 .tt-peek .pk-title .cal-ic { margin-top: 4px; }
 .tt-peek .pk-when { font-size: 0.85rem; }
@@ -370,32 +388,11 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
   transition: top 1s linear; }
 .tt-now::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #E53935; }
 
-/* ---------- One timeline (Plan once; what has passed shows what happened) ---------- */
-
-/* Passed time the user hasn't confirmed: the Plan, faded, with a dashed edge and "?" (not colour alone). */
-.blk.past.assumed {
-  background: color-mix(in srgb, var(--fill) 38%, var(--bg));
-  border: 1.5px dashed color-mix(in srgb, var(--fill) 70%, var(--text));
-  color: var(--text);
-}
-/* Planned, but it didn't happen: hatched, struck through, "✕". */
-.blk.past.skipped {
-  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--fill) 45%, transparent) 0 3px, transparent 3px 7px);
-  border: 1px solid color-mix(in srgb, var(--fill) 60%, var(--text));
-  color: var(--text);
-}
-.blk.past.skipped b { text-decoration: line-through; align-self: flex-start; max-width: 100%; padding: 0 3px;
-                      border-radius: 3px; background: var(--bg); }
-.blk.past.skipped span { align-self: flex-start; padding: 0 3px; border-radius: 3px; background: var(--bg); opacity: 1; color: var(--muted); }
-/* Done without being planned (or instead of the Plan): outlined, "+". */
-.blk.past.unplanned { box-shadow: inset 0 0 0 2px var(--text); }
-.blk.past.unplanned.picked { box-shadow: inset 0 0 0 2px var(--text), 0 0 0 1px var(--bg), 0 0 0 2.5px var(--accent); }
-.blk .mk { font-style: normal; font-weight: 700; margin-right: 3px; }
-.blk.past.assumed span { opacity: 1; }
-
-/* Each day's state under its name: "✓ Confirmed", "Not confirmed", or a Confirm button. */
+/* Each day's state under its name: "✓ Confirmed", a Confirm button (Actual), or "Locked" (Plan). */
 th.day .dstate { min-height: 1.2em; margin-top: 2px; font-size: 0.72rem; font-weight: 500; }
-th.day .dstate .ok, th.day .dstate .unconf { color: var(--muted); }
+th.day .dstate .ok, th.day .dstate .lock { color: var(--muted); }
+th.day .dstate .lock { display: inline-flex; align-items: center; gap: 3px; }
+th.day .dstate .lock .cal-ic { width: 11px; height: 11px; }
 th.day .dstate .confirm {
   padding: 1px 9px; border: 1px solid var(--accent); border-radius: 999px; background: var(--bg);
   color: var(--text); font-size: 0.72rem; cursor: pointer;
@@ -405,13 +402,6 @@ th.day .dstate .unconfirm {
 }
 th.day .dstate .unconfirm:hover { color: var(--text); }
 th.day .dstate .confirm:hover { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
-.tt-root.one .tt-now { z-index: 6; }
-
-/* The corrections card. */
-.tt-peek .row.fix { flex-wrap: wrap; }
-.tt-peek .pk-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 0.8rem; }
-.tt-peek .pk-form[hidden] { display: none; }
-.tt-peek .pk-form input { flex: 1 1 140px; min-width: 0; }
 
 /* Suggested sittings (Plan my goals, shown before it's added): dashed, see-through, "+ Study 2 h". */
 .blk.ghost {

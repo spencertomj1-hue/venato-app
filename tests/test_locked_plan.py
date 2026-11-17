@@ -1,4 +1,4 @@
-"""One timeline: plan once, Actual as a correction of the Plan, day confirmation (store, tools, grid ops, Home)."""
+"""Plan locked at the start of the day, the Actual adjusted, then confirmed (store, tools, grid ops, Home)."""
 
 import importlib
 import sqlite3
@@ -26,47 +26,58 @@ def ev(uid, day, start, end, title="Lecture"):
             "all_day": 0, "exact": f"{start}–{end}"}
 
 
-# --- Materialising ---
+# ---# --- Locking ---
 
-def test_materialise_copies_plan_and_events_keeps_actual_and_is_idempotent(store):
+def test_lock_copies_the_whole_plan_and_events_keeps_actual_and_is_idempotent(store):
     put(store, DAY, "09:00", "11:00", "Revision", "study")
     put(store, DAY, "18:00", "19:00", "Gym", "exercise")
     store.replace_outlook([ev("a", DAY, "13:00", "14:00")])
     put(store, DAY, "09:30", "10:00", "Focus", "study", track="actual")       # a Focus session: it wins
-    added = store.materialise(DAY, now=NOW)
+    added = store.lock_day(DAY, now=NOW)
     assert actual(store) == [("09:00", "09:30", "Revision"), ("09:30", "10:00", "Focus"),
                              ("10:00", "11:00", "Revision"), ("13:00", "14:00", "Lecture"), ("18:00", "19:00", "Gym")]
     assert {b["id"] for b in added} >= {f"m:{DAY}:09:00", f"m:{DAY}:13:00"}     # ids the grid's JS agrees on
     assert store.get_outlook("a")                                               # the calendar event stays put
-    assert store.confirmed_days(DAY, DAY) == [DAY]                              # a past day: confirmed
-    assert store.materialise(DAY, now=NOW) == [] and len(actual(store)) == 5    # twice: nothing more
+    assert store.confirmed_days(DAY, DAY) == []                                 # only the user confirms
+    assert store.lock_day(DAY, now=NOW) == [] and len(actual(store)) == 5       # twice: nothing more
 
 
-def test_today_materialises_only_what_has_passed(store):
+def test_today_locks_whole_day_at_its_start(store):
     today = "2026-11-11"
     put(store, today, "08:00", "12:00", "Work", "work")
-    store.materialise(today, now=NOW)                             # 10:00
-    assert actual(store, today) == [("08:00", "10:00", "Work")]
-    assert store.day_status(today, today)[today] == {"confirmed": False, "upto": store.slot_of("10:00")}
-    store.materialise(today, now=NOW.replace(hour=11))            # later: carries on from 10:00
-    assert actual(store, today) == [("08:00", "10:00", "Work"), ("10:00", "11:00", "Work")]
-    store.confirm_day(today, now=NOW.replace(hour=13))
+    put(store, today, "20:00", "21:00", "Gym", "exercise")
+    assert store.lock_day(today, now=datetime(2026, 11, 11, 6, 59)) == []     # before 07:00: still the Plan
+    assert not store.day_started(today, datetime(2026, 11, 11, 6, 59))
+    store.lock_day(today, now=datetime(2026, 11, 11, 7, 0))                     # the day starts: all of it, evening too
+    assert actual(store, today) == [("08:00", "12:00", "Work"), ("20:00", "21:00", "Gym")]
+    put(store, today, "15:00", "16:00", "Late plan", "work")                     # (a Plan change after the lock)
+    store.lock_day(today, now=datetime(2026, 11, 11, 16, 0))
+    assert ("15:00", "16:00", "Late plan") not in actual(store, today)          # isn't copied: the Plan was locked
+    store.confirm_day(today, now=NOW.replace(hour=22))
     assert store.confirmed_days(today, today) == [today]
 
 
-def test_unconfirm_takes_a_day_back_to_assumed_and_keeps_your_own_blocks(store):
+def test_a_part_locked_day_from_an_older_version_gets_the_rest(store):
+    put(store, DAY, "08:00", "12:00", "Work", "work")
+    with store.db() as conn:
+        conn.execute("INSERT INTO tt_day_status VALUES (?, NULL, '10:00')", (DAY,))
+        conn.execute("INSERT INTO tt_entries (id, date, track, start, \"end\", label, category_id) "
+                     "VALUES ('x', ?, 'actual', '08:00', '10:00', 'Work', 'work')", (DAY,))
+    store.lock_day(DAY, now=NOW)
+    assert actual(store) == [("08:00", "10:00", "Work"), ("10:00", "12:00", "Work")]
+
+
+def test_unconfirm_keeps_the_actual(store):
     put(store, DAY, "09:00", "11:00", "Revision", "study")
-    put(store, DAY, "12:00", "13:00", "Focus", "study", track="actual")       # entered by hand: it stays
+    store.confirm_day(DAY, now=NOW)
+    assert store.confirmed_days(DAY, DAY) == [DAY] and actual(store) == [("09:00", "11:00", "Revision")]
+    store.unconfirm_day(DAY)
+    assert store.confirmed_days(DAY, DAY) == [] and actual(store) == [("09:00", "11:00", "Revision")]
     store.confirm_day(DAY, now=NOW)
     assert store.confirmed_days(DAY, DAY) == [DAY]
-    store.unconfirm_day(DAY)
-    assert store.confirmed_days(DAY, DAY) == [] and DAY not in store.day_status(DAY, DAY)
-    assert actual(store) == [("12:00", "13:00", "Focus")]
-    store.confirm_day(DAY, now=NOW)                                           # and it can be confirmed again
-    assert store.confirmed_days(DAY, DAY) == [DAY] and len(actual(store)) == 2
 
 
-def test_corrections_leave_the_rest_of_the_day_as_planned(store):
+def test_changes_go_to_the_actual_and_the_plan_stays(store):
     put(store, DAY, "09:00", "11:00", "Revision", "study")
     put(store, DAY, "14:00", "16:00", "Project", "work")
     put(store, DAY, "18:00", "19:00", "Gym", "exercise")
@@ -79,17 +90,12 @@ def test_corrections_leave_the_rest_of_the_day_as_planned(store):
     assert [b["label"] for b in store.blocks_between(DAY, DAY, "plan")] == ["Revision", "Project", "Gym"]   # Plan untouched
 
 
-def test_blocks_after_midnight_and_other_day_hours(store):
-    put(store, DAY, "23:00", "01:00", "Out", "rest")
-    store.materialise(DAY, now=datetime(2026, 11, 11, 0, 30))     # 00:30: the day isn't over yet
-    assert actual(store) == [("23:00", "00:30", "Out")] and not store.confirmed_days(DAY, DAY)
-    store.materialise(DAY, now=datetime(2026, 11, 11, 1, 0))
-    assert actual(store) == [("23:00", "00:30", "Out"), ("00:30", "01:00", "Out")] and store.confirmed_days(DAY, DAY)
+def test_other_day_hours(store):
     store.save_settings(day_start=6, day_end=22)
     assert store.SLOTS == 32
     other = "2026-11-09"
     put(store, other, "06:00", "07:00", "Run", "exercise")
-    store.materialise(other, now=NOW)
+    store.lock_day(other, now=NOW)
     assert actual(store, other) == [("06:00", "07:00", "Run")] and store.slots_gone(other, NOW) == 32
 
 
@@ -116,12 +122,7 @@ def test_migration_confirms_only_days_with_actual_blocks(store, tmp_path, monkey
     store.settings_path().write_text('{"wizard_done": true, "timezone": "Europe/London"}')
     store.init_db()
     assert store.confirmed_days("2026-09-01", "2026-10-31") == ["2026-10-01"]
-    assert store.timetable_view() == "split"                                       # an existing install keeps its view
     assert len(store.blocks_between("2026-10-01", "2026-10-02")) == 2              # nothing changed
-
-
-def test_new_installs_default_to_one_timeline(store):
-    assert store.timetable_view() == "one"
 
 
 # --- What counts ---
@@ -161,15 +162,16 @@ def test_skip_and_confirm_tools(tools, store):
     r = tools.skip_block(gym["id"])
     assert r.pending and "not having happened" in r.pending.summary
     r.pending.run()
-    assert actual(store) == [("12:00", "13:00", "Lunch")] and store.confirmed_days(DAY, DAY) == [DAY]
+    assert actual(store) == [("12:00", "13:00", "Lunch")] and store.confirmed_days(DAY, DAY) == []   # you confirm
     put(store, "2026-11-12", "09:00", "10:00", "Gym", "exercise")
     with pytest.raises(tools.ToolError, match="hasn't happened"):
         tools.skip_block(store.blocks_between("2026-11-12", "2026-11-12", "plan")[0]["id"])
+    assert tools.confirm_day(DAY).changed and store.confirmed_days(DAY, DAY) == [DAY]
     assert "Nothing to confirm" in tools.confirm_day(DAY).text
     assert tools.confirm_day("2026-11-09").changed                           # one day: no preview needed
 
 
-def test_add_block_on_actual_materialises_the_day(tools, store):
+def test_add_block_on_actual_locks_the_day_first(tools, store):
     put(store, DAY, "09:00", "10:00", "Gym", "exercise")
     tools.add_block(DAY, "actual", "20:00", "21:00", "Cinema", category="rest")
     assert actual(store) == [("09:00", "10:00", "Gym"), ("20:00", "21:00", "Cinema")]
@@ -180,7 +182,6 @@ def test_add_block_on_actual_materialises_the_day(tools, store):
 def test_grid_ops(store):
     from venato.ui import timetable
     put(store, DAY, "09:00", "11:00", "Revision", "study")
-    store.save_settings(timetable_view="one")
     blk = {"label": "Revision", "categoryId": "study"}
     timetable.apply_grid_op({"kind": "retime", "date": DAY, "fromStart": "09:00", "fromEnd": "11:00",
                              "start": "10:00", "end": "11:30", "block": blk, "newId": "r1"})
@@ -191,14 +192,33 @@ def test_grid_ops(store):
     assert "2026-11-09" in store.confirmed_days("2026-11-09", "2026-11-09")
 
 
-def test_side_by_side_view_behaves_as_before(store):
+def test_tools_never_change_a_locked_plan(tools, store):
+    put(store, DAY, "09:00", "10:00", "Gym", "exercise")
+    gym = store.blocks_between(DAY, DAY, "plan")[0]
+    with pytest.raises(tools.ToolError, match="locked"):
+        tools.delete_block(gym["id"])
+    with pytest.raises(tools.ToolError, match="locked"):
+        tools.update_block(gym["id"], start="11:00", end="12:00")
+    assert "actual" in tools.add_block(DAY, "plan", "15:00", "16:00", "Walk", category="Exercise").text   # goes to the Actual
+    assert [b["label"] for b in store.blocks_between(DAY, DAY, "plan")] == ["Gym"]
+    put(store, "2026-11-13", "09:00", "10:00", "Gym", "exercise")                 # a day ahead: the Plan, as ever
+    ahead = store.blocks_between("2026-11-13", "2026-11-13", "plan")[0]
+    tools.update_block(ahead["id"], start="11:00", end="12:00").pending.run()
+    assert [b["start"] for b in store.blocks_between("2026-11-13", "2026-11-13", "plan")] == ["11:00"]
+
+
+def test_grid_ops_on_a_locked_plan_are_dropped_and_actual_ones_apply(store, monkeypatch):
     from venato.ui import timetable
-    store.save_settings(timetable_view="split")
+    monkeypatch.setattr(store, "local_now", lambda: NOW)
     put(store, DAY, "09:00", "11:00", "Revision", "study")
-    timetable.apply_grid_op({"kind": "paint", "date": DAY, "track": "actual", "start": "09:00", "end": "10:00",
-                             "block": {"label": "Revision", "categoryId": "study"}, "newId": "x"})
-    assert actual(store) == [("09:00", "10:00", "Revision")]                # no Plan copied in
-    assert store.confirmed_days(DAY, DAY) == [DAY]                            # filled in by hand: the truth
+    timetable.apply_grid_op({"kind": "paint", "date": DAY, "track": "plan", "start": "12:00", "end": "13:00",
+                             "block": {"label": "Lunch", "categoryId": "rest"}, "newId": "p"})
+    assert [b["label"] for b in store.blocks_between(DAY, DAY, "plan")] == ["Revision"]     # locked: dropped
+    assert actual(store) == [("09:00", "11:00", "Revision")]                                 # (locked by the op)
+    copy = store.blocks_between(DAY, DAY, "actual")[0]["id"]
+    timetable.apply_grid_op({"kind": "move", "id": copy, "date": DAY, "track": "actual", "start": "10:00", "end": "13:00"})
+    assert actual(store) == [("10:00", "13:00", "Revision")]                                 # stretched in the Actual
+    assert store.confirmed_days(DAY, DAY) == []                                              # still yours to confirm
 
 
 # --- Home's end-of-day prompt ---
@@ -215,20 +235,18 @@ def test_end_of_day_prompt_days(store, monkeypatch):
     assert timetable.prompt_days(datetime(2026, 11, 11, 18, 0)) == []
 
 
-def test_home_all_as_planned_and_timetable_views(store):
+def test_home_confirm_and_timetable(store):
     yesterday = date.fromordinal(store.local_today().toordinal() - 1).isoformat()
     put(store, yesterday, "09:00", "10:00", "Gym", "exercise")
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
     ok = [b for b in at.button if b.key == f"eod_ok_{yesterday}"]
-    assert ok and any("Anything not go to plan yesterday?" in m.value for m in at.markdown)
+    assert ok and any("Is the timetable right for yesterday?" in m.value for m in at.markdown)
     ok[0].click().run()
     assert yesterday in store.confirmed_days(yesterday, yesterday)
     assert actual(store, yesterday) == [("09:00", "10:00", "Gym")]
-    for view in ("one", "split"):
-        store.save_settings(timetable_view=view)
-        at.sidebar.radio[0].set_value("Timetable").run()
-        assert not at.exception
+    at.sidebar.radio[0].set_value("Timetable").run()
+    assert not at.exception
 
 
 # --- Future days are never confirmed ---
@@ -253,7 +271,6 @@ def test_a_future_day_cant_be_confirmed(store):
     put(store, ahead, "09:00", "10:00", "Gym", "exercise")
     store.confirm_day(ahead, now=NOW)
     assert store.confirmed_days(ahead, ahead) == [] and actual(store, ahead) == []
-    store.save_settings(timetable_view="split")
     timetable.apply_grid_op({"kind": "paint", "date": "2099-01-01", "track": "actual", "start": "09:00",
                              "end": "10:00", "block": {"label": "Gym", "categoryId": "exercise"}, "newId": "f"})
     assert store.day_status("2099-01-01", "2099-01-01") == {}                     # filling in the future: not a record
@@ -283,4 +300,4 @@ def test_timetable_confirm_all_button(store):
     btn = [b for b in at.button if b.key == "tt_btn_confirm_all"]
     assert btn and btn[0].label == "Confirm all (1 day)"
     btn[0].click().run()                            # the dialog's preview (clicking inside it: checked in a browser)
-    assert not at.exception and any("Confirm 1 day as planned" in w.value for w in at.warning)
+    assert not at.exception and any("Confirm 1 day as what you did" in w.value for w in at.warning)

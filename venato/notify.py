@@ -34,13 +34,18 @@ def starts_at(day, hhmm):
 
 
 def upcoming(now):
-    """[(starts, block)] for the Plan blocks and timed Outlook events around now."""
-    first, last = (now.date() - timedelta(days=1)).isoformat(), now.date().isoformat()   # after midnight: yesterday's day
-    items = [(starts_at(b["date"], b["start"]), b)
-             for b in store.blocks_between(first, last, "plan")]
-    items += [(starts_at(e["date"], e["start"]), {"date": e["date"], "start": e["start"], "end": e["end"],
-                                                  "label": e["title"], "details": e.get("location")})
-              for e in store.outlook_between(first, last) if not e["all_day"] and e["start"]]
+    """[(starts, block)] around now: a started day's Actual (its Plan as locked, with the user's changes),
+    else the Plan blocks and timed Outlook events."""
+    items = []
+    for day in ((now.date() - timedelta(days=1)).isoformat(), now.date().isoformat()):   # after midnight: yesterday's day
+        if store.day_started(day, now):
+            store.lock_day(day, now=now)
+            items += [(starts_at(b["date"], b["start"]), b) for b in store.blocks_between(day, day, "actual")]
+            continue
+        items += [(starts_at(b["date"], b["start"]), b) for b in store.blocks_between(day, day, "plan")]
+        items += [(starts_at(e["date"], e["start"]), {"date": e["date"], "start": e["start"], "end": e["end"],
+                                                      "label": e["title"], "details": e.get("location")})
+                  for e in store.outlook_between(day, day) if not e["all_day"] and e["start"]]
     return sorted(items, key=lambda x: x[0])
 
 

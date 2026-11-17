@@ -121,6 +121,7 @@ class Ctx:
             if self._window:
                 lo, hi = min(lo, self._window[0]), max(hi, self._window[1])
             self._window = (lo, hi)
+            store.lock_started(lo, hi, self.now)     # started days' Plans are locked (copied into the Actual): see "live"
             blocks = store.blocks_between(lo.isoformat(), hi.isoformat())
             events = store.outlook_between(lo.isoformat(), hi.isoformat())
             by_day = {}
@@ -128,7 +129,16 @@ class Ctx:
                 by_day.setdefault(b["date"], {"blocks": [], "events": []})["blocks"].append(b)
             for ev in events:
                 by_day.setdefault(ev["date"], {"blocks": [], "events": []})["events"].append(ev)
-            self._data = {"blocks": blocks, "events": events, "outlook_category": self.ocat, "by_day": by_day,
+            # "live": what's ahead as it stands: a started day's Actual (its Plan is locked; changes go to the
+            # Actual), else the Plan and its calendar events. Track "live" for goal_hours.
+            started = lambda d: store.day_started(d, self.now)
+            live = [{**b, "track": "live"} for b in blocks
+                    if b["track"] == ("actual" if started(b["date"]) else "plan")]
+            live_events = [ev for ev in events if not started(ev["date"])]
+            for b in live:
+                by_day[b["date"]].setdefault("live", []).append(b)
+            self._data = {"blocks": blocks + live, "events": events, "live_events": live_events,
+                          "outlook_category": self.ocat, "by_day": by_day,
                           "confirmed": set(store.confirmed_days(lo.isoformat(), hi.isoformat()))}
             self._day_cap = {}
             self._avg_fixed = None
@@ -138,6 +148,8 @@ class Ctx:
         """store.goal_hours over the data already read (the Actual: confirmed days only).
         days: "confirmed" / "unconfirmed" counts only those days (for the Plan)."""
         data = self.data(first, last)
+        if track == "live":
+            data = {**data, "events": data["live_events"]}
         if days:
             keep = (lambda d: d in data["confirmed"]) if days == "confirmed" else (lambda d: d not in data["confirmed"])
             inner = window
@@ -195,12 +207,10 @@ class Ctx:
             for i in range(max(0, s), min(e, store.SLOTS)):
                 fixed[i] = True
 
-        for b in rows["blocks"]:
-            if b["track"] != "plan":
-                continue
+        for b in rows.get("live", []):              # what's ahead as it stands (today: its Actual)
             if str(b["id"]).startswith("ol:") or not any(store._goal_matches(g, b["category_id"], b["label"]) for g in serving):
                 mark(store.slot_of(b["start"]), store.slot_of(b["end"]))
-        for ev in rows["events"]:
+        for ev in rows["events"] if not store.day_started(day, self.now) else ():   # (copied into a started day's Actual)
             if ev["all_day"] or not ev["start"]:
                 continue
             if not any(store._goal_matches(g, self.ocat, ev["title"], event=True) for g in serving):
@@ -360,10 +370,10 @@ def week_goals(week, ctx=None):
         upto = min(b, ctx.today)
         done = ctx.hours(g, a, upto, "actual", window=ctx.past) if upto >= a else 0.0
         planned = ctx.hours(g, a, b, "plan")
-        planned_future = ctx.hours(g, max(a, ctx.today), b, "plan", window=ctx.future) if b >= ctx.today else 0.0
+        planned_future = ctx.hours(g, max(a, ctx.today), b, "live", window=ctx.future) if b >= ctx.today else 0.0
         plan_so_far = ctx.hours(g, a, upto, "plan", window=ctx.past, days="confirmed") if upto >= a else 0.0
-        # Planned time that has passed on days not confirmed yet: maybe done, so not planned again.
-        assumed = ctx.hours(g, a, upto, "plan", window=ctx.past, days="unconfirmed") if upto >= a else 0.0
+        # Time that has passed on days not confirmed yet (their Actual as it stands): maybe done, so not planned again.
+        assumed = ctx.hours(g, a, upto, "live", window=ctx.past, days="unconfirmed") if upto >= a else 0.0
         confirmed, so_far = ctx.confirmed(a, upto) if upto >= a else (0, 0)
         follow = follow_through(g, ctx)
         factor = 1 / follow if follow and ctx.inflate else 1.0

@@ -31,7 +31,7 @@
 
 ## Why this?
 
-- **Plan once, then see what really happened.** The timetable is one timeline: your Plan from now on, and for time that has passed, what happened. You don't log your day twice: confirm it went to plan in one tap, or correct the bits that didn't ("didn't happen", "change times", "did something else"). The weekly review then tells you how much of your plan you followed, per category, counting only the days you've confirmed. Notion and Daylio don't do that out of the box.
+- **Plan, then adjust, then confirm.** Your Plan for a day is locked in when the day starts and copied into its Actual, so you never log your day twice: move, stretch or delete blocks as the day really goes, then confirm it at the end. The weekly review then tells you how much of your plan you followed, per category, counting only the days you've confirmed. Notion and Daylio don't do that out of the box.
 - **Your data never leaves your computer.** No account, no server, no cloud sync. Everything is one SQLite file in your data folder, the app only listens on `127.0.0.1`, and voice is transcribed locally.
 - **Everything in one place.** Timetable, daily log (mood, sleep, energy, water), journal, habits with streaks, to-dos, goals, deadlines and a map of the people you know, all linked: tick a habit and the goal it counts towards moves; a deadline shows on the timetable and gets a reminder.
 - **Optional Claude assistant.** Type or say "Fit 6 hours of revision into next week around my lectures" or "Mood 4, slept 7.5 hours, tick reading". It works through a fixed set of Venato actions, previews anything destructive for you to confirm, and is off unless you switch it on. Everything also works by hand.
@@ -53,7 +53,7 @@
 | **Health data** | Import Apple Health, Google Fit, Strava and Whoop exports: steps, sleep, heart rate, HRV, recovery, strain, weight, and workouts. |
 
 **Planning**
-- **Weekly timetable as one timeline** in 30-minute slots: the Plan from now on; passed time shows what happened. A day is *assumed* to have gone as planned (faded, dashed, "?") until you confirm it (Confirm under the day, "Confirm week as planned", or Home's "Anything not go to plan today?"). Click a passed block for **Didn't happen** (hatched and struck through), **Change times** (or drag its edges) or **Did something else**; drag across empty passed time to add something unplanned (outlined). Stats and goals count confirmed days only and say how many. Prefer two columns? Settings → Region → Timetable view → Plan and Actual. Drag to add blocks; click a block to select it (click again for details), then drag it to move it or drag its edges to resize; Backspace deletes it; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
+- **Weekly timetable** in 30-minute slots with a **Plan / Actual** switch. A day's Plan is locked when the day starts and copied into its Actual; after that you change the Actual as the day goes, and confirm it at the end (Confirm under the day, "Confirm week", or Home's "Is the timetable right for today?"). Stats and goals count confirmed days only and say how many. Drag to add blocks; point at a block to select it (a thin red outline), click for its details, drag it to move it or drag its top or bottom edge to stretch or shrink it; ⌘/Ctrl+C and ⌘/Ctrl+V copy and paste, Backspace deletes; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
 - **Colour-coded categories** in groups ("Life", "Work"), with activities that pick their category automatically ("Lunch" goes to Meals).
 - **Fit time:** say what, how many hours and which days; Venato finds free gaps around your blocks and calendar events and previews the sittings before adding them.
 - **To-dos** for today, this week and this month, in the style of Apple Reminders: drag to reorder, notes, repeating to-dos.
@@ -62,7 +62,7 @@
 - **Deadlines** with countdowns, reminders the day before and on the day, and "Make time" to plan hours for them.
 
 **Home**
-- Today as one timeline (what happened so far, the Plan from now), the agenda, and an end-of-day prompt: "Anything not go to plan today?" with **All as planned** or **Review**.
+- Today's timetable (its Actual: the Plan as locked this morning, with your changes), the agenda, and an end-of-day prompt: "Is the timetable right for today?" with **Confirm** or **Review**.
 - **Needs you this week:** only the goals that are behind or short of time, each with its state and "N h to plan", and Plan my goals. Every goal's bar (with a "should be here by today" tick and one status line) is in the Goals card; to-dos, deadlines, habits and search as before.
 
 **Tracking**

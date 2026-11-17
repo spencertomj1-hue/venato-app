@@ -1,30 +1,25 @@
-// Weekly Timetable: 7 days side by side, each with Plan/Actual columns in
-// 30-minute slots, like a calendar week view.
+// Weekly Timetable: 7 days side by side, one column a day, in 30-minute slots, like a calendar week view.
 //
-// Python passes { days, today, groups, categories, entries, labelMap, acked },
+// Python passes { days, today, groups, categories, entries, labelMap, acked, mode, dayState, ... },
 // with only that week's entries. Edits are applied locally straight away, then
 // sent to Python as "ops": {opId, kind: "paint", date, track, start, end, block, newId}
-// for drags, {opId, kind: "upsert", entry} / {opId, kind: "delete", id} for right-click edits.
+// for drags, {opId, kind: "upsert", entry} / {opId, kind: "delete", id} for edits.
 // Ops stay pending until Python lists their opId in `acked`, so a slow rerun
 // never makes the grid flicker back to old data.
 // Swiping sideways on the grid sends a "nav" trigger (-1 / +1 week).
 //
-// One timeline (data.view === "one", the default): one column per day. Slots from now on show
-// and edit the Plan; slots that have passed show what happened: the Actual where the day's
-// Actual is the truth (dayState.upto) or exists, else the Plan drawn as "assumed". Corrections
-// are ops on ranges, so both sides agree without knowing each other's ids:
-//   {kind: "skip", date, start, end}                      didn't happen
-//   {kind: "replace", date, start, end, block, newId}     did something else / an unplanned block
-//   {kind: "retime", date, fromStart, fromEnd, start, end, block, newId}   change times
-//   {kind: "confirm_day", date}                           all as planned
-//   {kind: "unconfirm_day", date}                         undo that: back to assumed
+// Plan and Actual (data.mode, switched with the Plan / Actual buttons; a "mode" trigger tells Python):
+//   A day's Plan is locked when the day starts (dayState[date].locked; store.lock_day copied it into
+//   the Actual). Actual mode shows a started day's Actual (editable: that's what you did) and a day
+//   that hasn't started's Plan (editable: nothing has happened yet). Plan mode shows every day's Plan:
+//   locked days view only, the rest editable. So each day's column shows one track: trackFor(di).
+//   {kind: "confirm_day", date}     this Actual is what I did (counts in stats and goals)
+//   {kind: "unconfirm_day", date}   undo that
 // Suggested sittings (data.suggestions, worked out in Python by tools.goal_spots) are drawn dashed in
-// free time; clicking one sends {kind: "add_suggestion", date, start, end, block, newId, ghost}.
-// Each first materialises the day (store.materialise; mirrored here by materialiseLocal).
+// free Plan time on days that haven't started; clicking one sends {kind: "add_suggestion", date, start, end, block, newId, ghost}.
 
 let SLOTS = 36;                   // 30-minute slots in a day (07:00 -> 01:00 by default; from Python)
 let FIRST_MIN = 7 * 60;           // the day's first minute
-const TRACKS = ["plan", "actual"];
 const SWIPE_THRESHOLD = 120;      // px of sideways scroll that flips a week
 
 // ---------- Small helpers ----------
@@ -61,22 +56,19 @@ function dropFocus() {
 // The "?" panel at the top right: everything you can do on the timetable.
 function helpHtml(single) {
   const key = (k) => `<kbd>${k}</kbd>`;
-  const items = ONE ? [
-    ["One timeline", "Plan your time once. From now on the timetable shows your Plan; time that has passed shows what happened."],
-    ["Assumed", "Until you confirm a day, its Plan is <b>assumed</b> to have happened (drawn faded with a dashed edge). Stats and goals only count confirmed days."],
-    ["Correct a day", "Click a block that has passed: <b>Didn't happen</b>, <b>Change times</b> or <b>Did something else</b>. Drag across empty past time (with a category picked) to add something you didn't plan."],
-    ["Confirm", "<b>Confirm</b> under a day's name (any time once it has started), or Home's end-of-day prompt, says the day went as planned; <b>Undo</b> next to \"Confirmed\" takes it back. Skipped blocks are hatched and struck through; unplanned ones are outlined."],
-  ] : [
-    ["Plan and Actual", "Each day has two columns: <b>Plan</b> is what you mean to do, <b>Actual</b> is what you really did."],
+  const items = [
+    ["Plan and Actual", "The <b>Plan</b> / <b>Actual</b> switch at the top shows what you planned or what you did. Days that haven't started show their Plan either way."],
+    ["Locked at the start of the day", "When a day starts its Plan is locked in (that's what Plan vs Actual compares against) and copied into its Actual. From then on, change the Actual: move, stretch, delete or add blocks as the day really goes."],
+    ["Confirm", "<b>Confirm</b> under a day's name (or Home's end-of-day prompt) says that day's Actual is what you really did. Only confirmed days count in stats and goals; <b>Undo</b> takes it back."],
     ["Add a block", "Pick a category from the key, then drag down a column. The block takes the category's name; rename it in its details."],
     ["Put a category down", "Click it again, or press " + key("Esc") + ". With no category picked, dragging selects instead of adding."],
-    ["Select", "Point at a block to select it (moving off deselects it). Click it to see its details, edit it or delete it."],
-    ["Move or resize", ONE ? "Drag a block to move it to another time or day. Drag its top or bottom edge to change when it starts or ends." : "Drag a block to move it (to another time, day, or between Plan and Actual). Drag its top or bottom edge to change when it starts or ends."],
+    ["Select", "Point at a block to select it (a thin red outline). Click it to see its details, edit it or delete it."],
+    ["Move or resize", "Drag a block to move it to another time or day. Drag its top or bottom edge to make it start or end earlier or later."],
     ["Select several", "Drag from empty time with no category picked (or holding " + key("Shift") + ") to draw a box: every block it touches is selected. " + key("Shift") + " or " + key(MOD.replace("+", "")) + "-click adds or removes one. Drag any selected block to move them all."],
     ["Copy and paste", key(MOD + "C") + " copies the block you're pointing at (or the selected ones); point at a time and " + key(MOD + "V") + " pastes them there, layout kept, on any day or week."],
     ["Delete and undo", key("Delete") + " or " + key("Backspace") + " removes the block you're pointing at (or the selected ones); " + key(MOD + "Z") + " brings them back."],
     ["Right-click", "Right-click a block to edit it straight away."],
-    ["Outlook", "Outlook events show in Plan. ↻ syncs now; the Outlook button shows or hides them. Moving or deleting one only changes Venato, never Outlook."],
+    ["Calendars", "Calendar events show in the Plan. ↻ syncs now; the Outlook button shows or hides them. Moving or deleting one only changes Venato, never the calendar."],
     ["Fit time", "<b>Fit time</b> (above) finds free gaps for hours of something, e.g. 6 hours of revision, and shows you before adding them."],
     ["Categories", "<b>Adjust categories</b> (above) adds, renames and recolours categories, and sets which category an activity uses."],
   ];
@@ -106,12 +98,8 @@ function dayNum(iso) {
   return DATEFMT === "MM/DD/YYYY" ? `${m}/${d}` : DATEFMT === "YYYY-MM-DD" ? `${m}-${d}` : `${d}/${m}`;
 }
 
-// One timeline (one column a day) or Plan and Actual side by side; set from Python's data.view.
-let ONE = false;
-
-// Grid column of a day's Plan or Actual (for box selection across days).
-const col = (di, track) => (ONE ? di : di * 2 + (track === "actual" ? 1 : 0));
-const colCell = (c) => (ONE ? [c, "plan"] : [Math.floor(c / 2), c % 2 ? "actual" : "plan"]);
+// Grid column of a day (for box selection across days): one column a day.
+const col = (di) => di;
 
 // "HH:mm" -> slot index. Times before the day's start are after midnight.
 function slotOf(t) {
@@ -125,6 +113,8 @@ const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const CAL_ICON = '<svg class="cal-ic" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>';
+
+const LOCK_ICON = '<svg class="cal-ic" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>';
 
 const PIN_ICON = '<svg class="cal-ic" viewBox="0 0 24 24"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2"/></svg>';
 
@@ -159,9 +149,6 @@ function remember(key, value) {
 function recall(key) {
   try { return JSON.parse(sessionStorage.getItem(key)); } catch (e) { return null; }
 }
-
-// How each kind of passed piece is described (titles, the block list, the details card).
-const PIECE_WORDS = { actual: "Done", assumed: "Assumed, not confirmed", unplanned: "Not planned", skipped: "Didn't happen" };
 
 // One instance per mounted root, so brush/selection survive data updates.
 const instances = new WeakMap();
@@ -254,9 +241,9 @@ class Timetable {
     this.nowAt = { min: data.nowMin, ms: Date.now() };   // the time in the user's zone when Python drew this
     this.cats = new Map(data.categories.map((c) => [c.id, c]));
     this.dayIndex = new Map(data.days.map((d, i) => [d, i]));
-    ONE = data.view === "one";
-    // Per day: {gone: slots passed, upto: slots where Actual is the truth, confirmed}. Replayed ops update it.
-    this.dayState = Object.fromEntries(data.days.map((d) => [d, { gone: 0, upto: 0, confirmed: false, ...((data.dayState || {})[d] || {}) }]));
+    this.mode = data.mode === "plan" ? "plan" : "actual";
+    // Per day: {gone: slots passed, locked: started (Plan frozen), confirmed}. Replayed ops update it.
+    this.dayState = Object.fromEntries(data.days.map((d) => [d, { gone: 0, locked: false, confirmed: false, ...((data.dayState || {})[d] || {}) }]));
 
     // Server entries, then re-apply anything Python hasn't saved yet.
     const acked = new Set(data.acked);
@@ -268,7 +255,7 @@ class Timetable {
     this.ghostsTaken = new Set();                  // suggestions added here, not yet saved
     this.pending.forEach((op) => this.applyLocal(op));
 
-    const key = JSON.stringify([data.categories, data.days, data.today, data.view]);
+    const key = JSON.stringify([data.categories, data.days, data.today, !!data.readonly]);
     if (key !== this.builtFor) {
       this.build();
       this.builtFor = key;
@@ -286,25 +273,16 @@ class Timetable {
 
   applyLocal(op) {
     if (op.kind === "batch") { op.ops.forEach((o) => this.applyLocal(o)); return; }
-    if (op.kind === "confirm_day") { this.materialiseLocal(op.date, true); return; }
-    if (op.kind === "unconfirm_day") {                // drop the Plan copies confirming made; back to assumed
-      for (const [id, en] of this.entries) if (en.date === op.date && en.track === "actual" && id.startsWith(`m:${op.date}:`)) this.entries.delete(id);
-      Object.assign(this.dayState[op.date] || {}, { upto: 0, confirmed: false });
+    if (op.kind === "confirm_day" || op.kind === "unconfirm_day") {
+      if (this.dayState[op.date]) this.dayState[op.date].confirmed = op.kind === "confirm_day";
       return;
     }
     if (op.kind === "add_suggestion") {
       this.ghostsTaken.add(op.ghost);
-      this.planPaint({ date: op.date, track: "plan", start: op.start, end: op.end, block: op.block, newId: op.newId })
+      const di = this.dayIndex.get(op.date);
+      const track = di === undefined || !(this.dayState[op.date] || {}).locked ? "plan" : "actual";   // like store.live_track
+      this.planPaint({ date: op.date, track, start: op.start, end: op.end, block: op.block, newId: op.newId })
         .forEach((o) => this.applyLocal(o));
-      return;
-    }
-    if (op.kind === "skip" || op.kind === "replace" || op.kind === "retime") {
-      this.materialiseLocal(op.date);
-      if (op.kind === "retime") {
-        this.planPaint({ date: op.date, track: "actual", start: op.fromStart, end: op.fromEnd, block: null }).forEach((o) => this.applyLocal(o));
-      }
-      this.planPaint({ date: op.date, track: "actual", start: op.start, end: op.end,
-                       block: op.kind === "skip" ? null : op.block, newId: op.newId }).forEach((o) => this.applyLocal(o));
       return;
     }
     if (op.kind === "paint") {
@@ -343,44 +321,29 @@ class Timetable {
     return this.outlook.filter((ev) => !this.hidden.has(ev.id));
   }
 
-  // The day's Plan as blocks: the user's own, and visible timed calendar events (store._plan_items).
-  planItems(date) {
-    const own = this.entriesFor(date, "plan");
-    const evs = this.visibleOutlook().filter((ev) => ev.date === date).map((ev) => ({
-      id: `ol:${ev.id}`, date, track: "plan", start: ev.start, end: ev.end, label: ev.title,
-      categoryId: ev.categoryId, details: ev.details }));
-    return [...own, ...evs].sort((a, b) => slotOf(a.start) - slotOf(b.start));
+  // Which track a day's column shows: the Plan in Plan mode and before the day starts; else its Actual.
+  trackFor(di) {
+    const st = this.dayState[this.data.days[di]];
+    return this.mode === "plan" || !st || !st.locked ? "plan" : "actual";
   }
 
-  // Local copy of store.materialise / materialise_ops, only to show a correction instantly:
-  // copy the passed Plan into the empty Actual slots not done before (ids "m:<day>:<HH:mm>").
-  materialiseLocal(date, confirm = false) {
-    const st = this.dayState[date];
-    if (!st) return;
-    const upto = st.gone, done = st.upto;
-    if (upto > done) {
-      const taken = new Array(SLOTS).fill(false);
-      const actual = this.entriesFor(date, "actual");
-      const ids = new Set(actual.map((b) => b.id));
-      actual.forEach((b) => { for (let i = Math.max(0, slotOf(b.start)); i < Math.min(slotOf(b.end), SLOTS); i++) taken[i] = true; });
-      for (const p of this.planItems(date)) {
-        const e = Math.min(slotOf(p.end), upto, SLOTS);
-        let i = Math.max(slotOf(p.start), done);
-        while (i < e) {
-          if (taken[i]) { i++; continue; }
-          let j = i;
-          while (j < e && !taken[j]) taken[j++] = true;
-          let id = `m:${date}:${slotTime(i)}`;
-          if (ids.has(id)) id = uid();
-          ids.add(id);
-          this.entries.set(id, { id, date, track: "actual", start: slotTime(i), end: slotTime(j), label: p.label,
-                                 categoryId: p.categoryId, details: p.details || null });
-          i = j;
-        }
-      }
-    }
-    st.upto = Math.max(upto, done);
-    if (upto >= SLOTS || (confirm && upto > 0)) st.confirmed = true;     // never a day that hasn't started
+  // View only: Home, or a locked day's Plan (it's what you meant to do; change the Actual instead).
+  frozen(di) {
+    if (this.data.readonly) return true;
+    const st = this.dayState[this.data.days[di]];
+    return this.trackFor(di) === "plan" && !!st && !!st.locked;
+  }
+
+  setMode(mode) {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    this.closePopover();
+    this.setPicked([]);
+    this.trigger("mode", { mode });
+    this.blocksEl.classList.remove("swap");
+    void this.blocksEl.offsetWidth;            // restart the little fade
+    this.blocksEl.classList.add("swap");
+    this.paint();
   }
 
   // Apply ops locally, queue them, and send everything still pending.
@@ -459,35 +422,31 @@ class Timetable {
       .map((g) => categories.filter((c) => c.group === g).sort((x, y) => x.order - y.order).map(item).join(""))
       .join('<span class="sep"></span>');
 
-    // Two header rows: weekday + dd/mm (spanning Plan + Actual), then Plan / Actual.
+    // One header row: weekday, dd/mm, the day's state (locked / Confirm), all-day chips.
     const dayHead = days
-      .map((d) => {
+      .map((d, di) => {
         const dt = new Date(d + "T00:00");
         const name = dt.toLocaleDateString(LOC(), { weekday: "long" });
-        return `<th colspan="${ONE ? 1 : 2}" class="day ${d === today ? "today" : ""}"><div class="dn">${name}</div><div class="dd">${dayNum(d)}</div>` +
-          `${ONE ? `<div class="dstate" data-d="${days.indexOf(d)}"></div>` : ""}<div class="chips" data-d="${days.indexOf(d)}"></div></th>`;
+        return `<th class="day ${d === today ? "today" : ""}"><div class="dn">${name}</div><div class="dd">${dayNum(d)}</div>` +
+          `<div class="dstate" data-d="${di}"></div><div class="chips" data-d="${di}"></div></th>`;
       })
       .join("");
-    const subHead = ONE ? "" : days.map(() => `<th class="sub first">Plan</th><th class="sub">Actual</th>`).join("");
 
-    // One timeline: a single column of cells per day (data-t "plan": the slots that haven't passed edit the Plan).
-    const tracks = ONE ? ["plan"] : TRACKS;
+    // A single column of cells per day; data-t is the track it shows (set in paint, by trackFor).
     const rows = [];
     for (let s = 0; s < SLOTS; s++) {
       const cells = days
-        .map((d, di) => tracks.map((t) =>
-          `<td class="s ${t === "plan" ? "first" : ""} ${d === today ? "today" : ""}" data-d="${di}" data-t="${t}" data-s="${s}"></td>`).join(""))
+        .map((d, di) => `<td class="s first ${d === today ? "today" : ""}" data-d="${di}" data-t="plan" data-s="${s}"></td>`)
         .join("");
       // Label each hour on its grid line, like a calendar.
       const time = s % 2 === 0 ? `<span>${fmtTime(slotTime(s))}</span>` : "";
       rows.push(`<tr class="${s % 2 ? "half" : "hour"}"><td class="t">${time}</td>${cells}</tr>`);
     }
 
-    const cols = days.map(() => (ONE ? "<col>" : "<col><col>")).join("");
+    const cols = days.map(() => "<col>").join("");
 
     this.root.classList.toggle("single", !!this.data.single);   // one day: no week navigation
     this.root.classList.toggle("readonly", !!this.data.readonly); // view only: no editing tools
-    this.root.classList.toggle("one", ONE);                         // one timeline
     this.root.innerHTML = `
       <div class="tt-head">
         <div class="tt-title">${this.data.single
@@ -499,6 +458,10 @@ class Timetable {
           <button data-nav="1" title="Next week">›</button>
         </div>
         <input type="date" class="tt-goto" title="Go to date" aria-label="Go to date" value="${days[0]}">
+        <div class="tt-mode" role="group" aria-label="Show">
+          <button data-mode="plan" title="What you planned: each day's Plan, locked when the day started">Plan</button>
+          <button data-mode="actual" title="What you did: started days' Actual (change it as the day goes), later days' Plan">Actual</button>
+        </div>
         <div class="tt-outlook">
           <button class="tt-sync" title="Sync Outlook now"><span class="msr">sync</span></button>
           <span class="tt-synced"></span>
@@ -516,8 +479,7 @@ class Timetable {
           <table class="tt" aria-hidden="true">
             <colgroup><col class="c-time">${cols}</colgroup>
             <thead>
-              <tr><th rowspan="${ONE ? 1 : 2}" class="h-time"></th>${dayHead}</tr>
-              ${ONE ? "" : `<tr>${subHead}</tr>`}
+              <tr><th class="h-time"></th>${dayHead}</tr>
             </thead>
             <tbody>${rows.join("")}</tbody>
           </table>
@@ -534,10 +496,10 @@ class Timetable {
     this.resizeObserver = new ResizeObserver(() => this.layoutBlocks());
     if (this.attached) this.resizeObserver.observe(this.wrapEl);
 
-    // Index the slot cells: cells[day][track][slot]. One timeline: both tracks are the same column.
-    this.cells = days.map(() => { const plan = []; return { plan, actual: ONE ? plan : [] }; });
+    // Index the slot cells: cells[day][track][slot]. Both tracks are the same column (it shows one at a time).
+    this.cells = days.map(() => { const plan = []; return { plan, actual: plan }; });
     this.root.querySelectorAll("td.s").forEach((td) => {
-      this.cells[+td.dataset.d][td.dataset.t][+td.dataset.s] = td;
+      this.cells[+td.dataset.d].plan[+td.dataset.s] = td;
     });
 
     this.bindEvents();
@@ -566,73 +528,88 @@ class Timetable {
       [...labels].sort().map((l) => `<option value="${esc(l)}">`).join("");
   }
 
-  // Work out which entry fills each slot, then draw the blocks.
+  // Work out which entry fills each slot of the track each day shows, then draw the blocks.
   paint() {
-    if (ONE) { this.paintOne(); return; }
-    this.occupant = this.data.days.map(() => ({ plan: [], actual: [] }));
+    const days = this.data.days;
+    this.occupant = days.map(() => ({ plan: [], actual: [] }));
+    this.outlookAt = days.map(() => []);
     this.blocks = [];
-    for (const day of this.cells) {
-      for (const td of [...day.plan, ...day.actual]) {
+    const evs = this.visibleOutlook();
+    days.forEach((date, di) => {
+      const track = this.trackFor(di), frozen = this.frozen(di);
+      for (const td of this.cells[di].plan) {
+        td.dataset.t = track;
         td.title = "";
         td.classList.remove("filled");
+        td.classList.toggle("frozen", frozen && !this.data.readonly);
       }
-    }
-    for (const en of this.entries.values()) {
-      const di = this.dayIndex.get(en.date);
-      if (di === undefined) continue;
-      const s = slotOf(en.start), e = Math.min(slotOf(en.end), SLOTS);
-      if (e <= s) continue;
-      for (let i = s; i < e; i++) {
-        const td = this.cells[di][en.track][i];
-        td.title = `${en.label} · ${fmtRange(en.start, en.end)}`;
-        td.classList.add("filled");
-        this.occupant[di][en.track][i] = en.id;
+      for (const en of this.entriesFor(date, track)) {
+        const s = Math.max(0, slotOf(en.start)), e = Math.min(slotOf(en.end), SLOTS);
+        if (e <= s) continue;
+        for (let i = s; i < e; i++) {
+          const td = this.cells[di].plan[i];
+          td.title = `${en.label} · ${fmtRange(en.start, en.end)}`;
+          td.classList.add("filled");
+          this.occupant[di][track][i] = en.id;
+        }
+        this.blocks.push({ en, di, s, e, frozen });
       }
-      this.blocks.push({ en, di, s, e });
-    }
+      if (track !== "plan") return;               // calendar events are part of the Plan (copied into the Actual)
+      for (const ev of evs.filter((x) => x.date === date)) {
+        const s = Math.max(0, slotOf(ev.start)), e = Math.min(slotOf(ev.end), SLOTS);
+        if (e <= s) continue;
+        for (let i = s; i < e; i++) {
+          const td = this.cells[di].plan[i];
+          td.title = `${ev.title} · ${ev.exact} (calendar)`;
+          td.classList.add("filled");
+          this.outlookAt[di][i] = ev;
+        }
+        this.blocks.push({ en: { ...ev, label: ev.title, track: "plan" }, di, s, e, outlook: true, frozen });
+      }
+    });
 
-    // Outlook events: drawn on top of the Plan column (click for details, edit or remove).
-    this.outlookAt = this.data.days.map(() => []);
-    for (const ev of this.visibleOutlook()) {
-      const di = this.dayIndex.get(ev.date);
-      if (di === undefined) continue;
-      const s = slotOf(ev.start), e = Math.min(slotOf(ev.end), SLOTS);
-      if (e <= s) continue;
-      for (let i = s; i < e; i++) {
-        const td = this.cells[di].plan[i];
-        td.title = `${ev.title} · ${ev.exact} (Outlook)`;
-        td.classList.add("filled");
-        this.outlookAt[di][i] = ev;
-      }
-      this.blocks.push({ en: { ...ev, label: ev.title, track: "plan" }, di, s, e, outlook: true });
-    }
-
-    // All-day Outlook events: small chips in the day header.
+    // All-day events and deadlines: small chips in the day header.
     this.root.querySelectorAll("th.day .chips").forEach((box) => {
-      const date = this.data.days[+box.dataset.d];
+      const date = days[+box.dataset.d];
       box.innerHTML = (this.data.outlookAllDay || []).filter((c) => c.date === date)
         .map((c) => `<span class="chip${c.deadline ? " due" : ""}" title="${esc(c.title)} (${c.deadline ? "deadline" : "Outlook, all day"})">${esc(c.title)}</span>`).join("");
     });
+    // Each day's state under its name. Actual: Confirm once it has started, then "Confirmed" (Undo).
+    // Plan: "Locked" once it has started.
+    this.root.querySelectorAll("th.day .dstate").forEach((box) => {
+      const date = days[+box.dataset.d], st = this.dayState[date] || {};
+      box.innerHTML = this.data.readonly ? (st.confirmed ? `<span class="ok">✓ Confirmed</span>` : "")
+        : this.mode === "plan" ? (st.locked ? `<span class="lock" title="Locked when the day started: this is what you planned. Change the Actual instead.">${LOCK_ICON}Locked</span>` : "")
+        : st.confirmed ? `<span class="ok">✓ Confirmed</span> <button class="unconfirm" tabindex="-1" data-unconfirm="${esc(date)}" title="Undo: not confirmed">Undo</button>`
+        : st.locked ? `<button class="confirm" tabindex="-1" data-confirm="${esc(date)}" title="This is what I actually did: confirm the day">Confirm</button>`
+        : "";
+    });
+    this.root.querySelectorAll("[data-mode]").forEach((b) => {
+      b.classList.toggle("on", b.dataset.mode === this.mode);
+      b.setAttribute("aria-pressed", String(b.dataset.mode === this.mode));
+    });
+    this.root.classList.toggle("plan-mode", this.mode === "plan");
     this.addGhosts();
     this.layoutBlocks();
     this.renderBlockList();
   }
 
-  // Suggested sittings: only where the Plan is still free (and, on the one timeline, not passed).
+  // Suggested sittings: only on days you can change (not a locked Plan), where the column is still free.
   addGhosts() {
     this.ghostAt = this.data.days.map(() => []);
     if (this.data.readonly) return;
     for (const g of this.suggestions) {
       const di = this.dayIndex.get(g.date);
-      if (di === undefined || this.ghostsTaken.has(g.id)) continue;
+      if (di === undefined || this.ghostsTaken.has(g.id) || this.frozen(di)) continue;
+      const track = this.trackFor(di);
       const s = slotOf(g.start), e = Math.min(slotOf(g.end), SLOTS);
       let free = e > s;
       for (let i = s; i < e && free; i++) {
-        if (this.occupant[di].plan[i] || this.outlookAt[di][i] || this.isPast(di, i)) free = false;
+        if (this.occupant[di][track][i] || this.outlookAt[di][i]) free = false;
       }
       if (!free) continue;
       for (let i = s; i < e; i++) this.ghostAt[di][i] = g;
-      this.blocks.push({ en: { ...g, track: "plan" }, di, s, e, ghost: true });
+      this.blocks.push({ en: { ...g, track }, di, s, e, ghost: true });
     }
   }
 
@@ -640,106 +617,6 @@ class Timetable {
   takeGhost(g) {
     this.commit([{ opId: uid(), kind: "add_suggestion", ghost: g.id, date: g.date, start: g.start, end: g.end,
                    block: { label: g.label, categoryId: g.categoryId, details: null }, newId: uid() }]);
-  }
-
-  // One timeline: per day, the slots that haven't passed show the Plan (blocks and calendar events, editable
-  // as in the Plan column); the passed ones show "pieces": what happened, as the store sees it.
-  //   actual     an Actual block that matches the Plan (or the Plan was confirmed)
-  //   assumed    no Actual yet, day not materialised there: the Plan, unconfirmed
-  //   unplanned  an Actual block where nothing (or something else) was planned: outlined
-  //   skipped    planned, but the day's Actual says nothing happened: hatched and struck through
-  paintOne() {
-    const days = this.data.days;
-    this.occupant = days.map(() => ({ plan: [], actual: [] }));
-    this.outlookAt = days.map(() => []);
-    this.pieceAt = days.map(() => []);
-    this.blocks = [];
-    for (const day of this.cells) for (const td of day.plan) { td.title = ""; td.classList.remove("filled", "past"); }
-    const evs = this.visibleOutlook();
-    days.forEach((date, di) => {
-      const st = this.dayState[date] || { gone: 0, upto: 0 };
-      const planAt = [], actAt = [];
-      for (const en of this.entriesFor(date, "plan"))
-        for (let i = Math.max(0, slotOf(en.start)); i < Math.min(slotOf(en.end), SLOTS); i++) planAt[i] = { en };
-      for (const ev of evs.filter((x) => x.date === date))
-        for (let i = Math.max(0, slotOf(ev.start)); i < Math.min(slotOf(ev.end), SLOTS); i++) planAt[i] = { ev };
-      for (const en of this.entriesFor(date, "actual"))
-        for (let i = Math.max(0, slotOf(en.start)); i < Math.min(slotOf(en.end), SLOTS); i++) actAt[i] = en;
-      const same = (p, a) => p && a && (p.en ? p.en.label === a.label && p.en.categoryId === a.categoryId
-                                           : p.ev.title === a.label && p.ev.categoryId === a.categoryId);
-      const asEntry = (p) => (p.en ? p.en : { id: `outlook:${p.ev.id}`, date, track: "plan", start: p.ev.start, end: p.ev.end,
-                                              label: p.ev.title, categoryId: p.ev.categoryId, details: p.ev.details, ev: p.ev });
-      // Future: the Plan as in the Plan column (whole blocks / events, from the first slot that hasn't passed).
-      for (let i = st.gone; i < SLOTS; i++) {
-        const p = planAt[i];
-        if (!p) continue;
-        const td = this.cells[di].plan[i];
-        td.classList.add("filled");
-        if (p.en) { this.occupant[di].plan[i] = p.en.id; td.title = `${p.en.label} · ${fmtRange(p.en.start, p.en.end)}`; }
-        else { this.outlookAt[di][i] = p.ev; td.title = `${p.ev.title} · ${p.ev.exact} (calendar)`; }
-      }
-      let i = st.gone;
-      while (i < SLOTS) {
-        const p = planAt[i];
-        if (!p) { i++; continue; }
-        let j = i;
-        while (j < SLOTS && planAt[j] && (planAt[j].en || planAt[j].ev) === (p.en || p.ev)) j++;
-        if (p.en) this.blocks.push({ en: p.en, di, s: i, e: j });
-        else this.blocks.push({ en: { ...p.ev, label: p.ev.title, track: "plan" }, di, s: i, e: j, outlook: true });
-        i = j;
-      }
-      // Passed slots: one piece per run of the same activity (label + category), whatever mix of
-      // done / not planned / assumed it is, so a block isn't chopped where those meet. Skipped stays apart.
-      const live = st.gone < SLOTS;          // today, still going: nothing is "unconfirmed" until it ends
-      const kindAt = [];
-      for (let k = 0; k < st.gone; k++) {
-        const a = actAt[k], p = planAt[k];
-        if (a) kindAt[k] = { kind: k < st.upto && !same(p, a) ? "unplanned" : "actual", en: a, key: a.id };
-        else if (p && k < st.upto) kindAt[k] = { kind: "skipped", en: asEntry(p), key: (p.en || p.ev).id };
-        else if (p) kindAt[k] = { kind: "assumed", en: asEntry(p), key: (p.en || p.ev).id };
-      }
-      const runKey = (k) => `${k.kind === "skipped" ? "x" : ""}${k.en.label}\u0000${k.en.categoryId}`;
-      i = 0;
-      while (i < st.gone) {
-        const k = kindAt[i];
-        if (!k) { i++; continue; }
-        let j = i;
-        while (j < st.gone && kindAt[j] && runKey(kindAt[j]) === runKey(k)) j++;
-        const kinds = new Set(kindAt.slice(i, j).map((x) => x.kind));
-        const kind = ["skipped", "actual", "unplanned", "assumed"].find((x) => kinds.has(x));
-        const piece = { en: k.en, di, s: i, e: j, kind, past: true, live: live && kind === "assumed",
-                        id: `past:${date}:${slotTime(i)}` };
-        // Runs on into the Plan block starting now (same activity): draw them as one block.
-        const next = j === st.gone && kind !== "skipped" &&
-          this.blocks.find((b) => b.di === di && !b.past && b.s === j && b.en.label === k.en.label && b.en.categoryId === k.en.categoryId);
-        if (next) next.vs = i; else this.blocks.push(piece);
-        for (let x = i; x < j; x++) {
-          this.pieceAt[di][x] = piece;
-          const td = this.cells[di].plan[x];
-          td.classList.add("filled");
-          td.title = `${PIECE_WORDS[k.kind]}: ${k.en.label} · ${fmtRange(slotTime(i), slotTime(j))}`;
-        }
-        i = j;
-      }
-      for (let k = 0; k < st.gone; k++) this.cells[di].plan[k].classList.add("past");
-    });
-    this.addGhosts();
-    this.root.querySelectorAll("th.day .chips").forEach((box) => {
-      const date = this.data.days[+box.dataset.d];
-      box.innerHTML = (this.data.outlookAllDay || []).filter((c) => c.date === date)
-        .map((c) => `<span class="chip${c.deadline ? " due" : ""}" title="${esc(c.title)} (${c.deadline ? "deadline" : "Outlook, all day"})">${esc(c.title)}</span>`).join("");
-    });
-    // Each day's state under its name: Confirm once it has started (Unconfirm once confirmed); "Not confirmed"
-    // only once it's over (also in the block list).
-    this.root.querySelectorAll("th.day .dstate").forEach((box) => {
-      const date = this.data.days[+box.dataset.d], st = this.dayState[date] || {};
-      box.innerHTML = st.confirmed ? `<span class="ok">✓ Confirmed</span>` + (this.data.readonly ? ""
-          : ` <button class="unconfirm" tabindex="-1" data-unconfirm="${esc(date)}" title="Undo: back to assumed as planned">Undo</button>`)
-        : st.gone > 0 && !this.data.readonly ? `<button class="confirm" tabindex="-1" data-confirm="${esc(date)}" title="It went as planned: confirm this day">Confirm</button>`
-        : st.gone >= SLOTS ? `<span class="unconf">Not confirmed</span>` : "";
-    });
-    this.layoutBlocks();
-    this.renderBlockList();
   }
 
   // For keyboard and screen-reader users: every block as a button, grouped by day,
@@ -754,14 +631,13 @@ class Timetable {
       const items = this.listed.map((b, i) => [b, i]).filter(([b]) => b.di === di).map(([b, i]) => {
         const cat = this.cats.get(b.en.categoryId);
         if (b.ghost) return `<button data-i="${i}">${esc(`Suggested: ${b.en.label} ${fmtRange(b.en.start, b.en.end)}, for ${b.en.goal} (add to Plan)`)}</button>`;
-        const head = b.past ? PIECE_WORDS[b.kind] : b.outlook ? "Plan (Outlook)" : b.en.track === "plan" ? "Plan" : "Actual";
-        const when = b.past ? `${fmtTime(slotTime(b.s))} to ${fmtTime(slotTime(b.e))}`
-          : b.outlook ? b.en.exact : `${fmtTime(b.en.start)} to ${fmtTime(b.en.end)}`;
+        const head = b.outlook ? "Plan (calendar)" : b.en.track === "plan" ? (b.frozen ? "Plan (locked)" : "Plan") : "Actual";
+        const when = b.outlook ? b.en.exact : `${fmtTime(b.en.start)} to ${fmtTime(b.en.end)}`;
         const what = `${head}: ${b.en.label}, ${when}${cat ? `, ${cat.name}` : ""}`;
         return `<button data-i="${i}">${esc(what)}</button>`;
       });
-      const st = ONE && !this.data.readonly && this.dayState[d];
-      if (st && st.gone > 0 && !st.confirmed) items.push(`<button data-confirm="${esc(d)}">Confirm ${esc(day)} as planned</button>`);
+      const st = !this.data.readonly && this.mode === "actual" && this.dayState[d];
+      if (st && st.locked && !st.confirmed) items.push(`<button data-confirm="${esc(d)}">Confirm ${esc(day)}: this is what I did</button>`);
       if (st && st.confirmed) items.push(`<button data-unconfirm="${esc(d)}">Unconfirm ${esc(day)}</button>`);
       return items.length ? `<div role="group" aria-label="${esc(day)}"><span class="a11y-day">${esc(day)}</span>${items.join("")}</div>` : "";
     }).join("");
@@ -793,7 +669,7 @@ class Timetable {
   // Home only: a thin red line across today at the current time, moving down as time passes.
   drawNow() {
     let line = this.wrapEl && this.wrapEl.querySelector(".tt-now");
-    const di = this.data && (this.data.readonly || ONE) && this.data.nowMin != null ? this.dayIndex.get(this.data.today) : undefined;
+    const di = this.data && this.data.nowMin != null ? this.dayIndex.get(this.data.today) : undefined;
     let m = di === undefined ? -1 : this.nowAt.min + (Date.now() - this.nowAt.ms) / 60000 - FIRST_MIN;
     if (m < 0 && di !== undefined) m += 24 * 60;          // after midnight, when the day runs past it
     const slot = m / 30;
@@ -853,8 +729,7 @@ class Timetable {
     if (!this.blocks) return;
     const origin = this.wrapEl.getBoundingClientRect();
     this.blocksEl.innerHTML = this.blocks
-      .map(({ en, di, s, e, vs, outlook, past, kind, live, id, ghost }) => {
-        if (vs !== undefined) s = vs;          // drawn from earlier: the passed part of the same activity
+      .map(({ en, di, s, e, outlook, ghost, frozen }) => {
         const firstTd = this.cells[di][en.track][s], lastTd = this.cells[di][en.track][e - 1];
         const first = firstTd.getBoundingClientRect(), last = lastTd.getBoundingClientRect();
         const cat = this.cats.get(en.categoryId);
@@ -866,22 +741,12 @@ class Timetable {
           return `<div class="blk ghost ${tall ? "tall" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}--fill:${esc(bg)}">` +
             `<b>+ ${esc(en.label)} ${h} h</b>${tall ? `<span>Suggested · click to add</span>` : ""}</div>`;
         }
-        if (live) {           // today, assumed so far: just the Plan, no "?" until the day is over
-          return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === id ? "focus" : ""}${this.hovered === id ? " hover" : ""}${this.picked.has(id) ? " picked" : ""}" data-id="${esc(id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
-            `background:${esc(bg)};color:${fg}"><b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(slotTime(s), slotTime(e)))}</span>` : ""}</div>`;
-        }
-        if (past) {           // one timeline, time that has passed: what happened (see paintOne)
-          const mark = kind === "assumed" ? "?" : kind === "skipped" ? "✕" : kind === "unplanned" ? "+" : "✓";
-          return `<div class="blk past ${kind} ${tall ? "tall" : ""} ${this.focusId === id ? "focus" : ""}${this.hovered === id ? " hover" : ""}${this.picked.has(id) ? " picked" : ""}" data-id="${esc(id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
-            `--fill:${esc(bg)};${kind === "skipped" || kind === "assumed" ? "" : `background:${esc(bg)};color:${fg}`}">` +
-            `<b><i class="mk" aria-hidden="true">${mark}</i>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(slotTime(s), slotTime(e)))}</span>` : ""}</div>`;
-        }
         if (outlook) {
-          return `<div class="blk outlook ${tall ? "tall" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+          return `<div class="blk outlook ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
             `background:${esc(bg)};color:${fg}">` +
             `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+        return `<div class="blk ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${en.track === "actual" ? "act" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
           `background:${esc(bg)};color:${fg}">` +
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
@@ -936,6 +801,8 @@ class Timetable {
       this.trigger("outlook", { show: !this.data.showOutlook }));
 
     this.root.querySelector(".tt-help-btn").addEventListener("click", () => this.toggleHelp());
+    this.root.querySelectorAll("[data-mode]").forEach((el) =>
+      el.addEventListener("click", () => this.setMode(el.dataset.mode)));
     this.root.querySelectorAll("[data-nav]").forEach((el) =>
       el.addEventListener("click", () => this.nav({ dir: +el.dataset.nav })));
     this.root.querySelector(".tt-goto").addEventListener("change", (e) => {
@@ -949,30 +816,17 @@ class Timetable {
       // preventDefault keeps focus where it was: leave the label box, so Delete / Backspace act on blocks.
       const typing = this.root.getRootNode().activeElement || document.activeElement;
       if (isTextField(typing)) typing.blur();
-      if (this.data.readonly) {                     // Home: no editing, just the details card
-        const hit = this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
-        if (hit) this.openCard(hit); else this.closePopover();
+      const di = +td.dataset.d, track = td.dataset.t, slot = +td.dataset.s;
+      if (this.frozen(di)) {                        // Home, or a locked Plan: no editing, just the details card
+        const hit = this.blockAt(di, track, slot);
+        if (hit) { this.setPicked([this.idOf(hit)]); this.openCard(hit); } else { this.closePopover(); this.setPicked([]); }
         return;
       }
       this.closePopover();
-      const di = +td.dataset.d, track = td.dataset.t, slot = +td.dataset.s;
       const hit = this.blockAt(di, track, slot);
       const hitId = hit && this.idOf(hit);
-      if (this.isPast(di, slot)) {                  // one timeline, time that has passed: corrections only
-        if (hit) {
-          this.setPicked([hitId]);
-          const { s0, e0 } = this.spanOf(hit);
-          this.blockDrag = { hit, zone: this.zoneAt(di, track, s0, e0, e.clientY), di, track, downSlot: slot, s0, e0,
-                             target: { di, track, s: s0, e: e0 }, moved: false, past: true };
-        } else {
-          if (this.picked.size) this.setPicked([]);
-          this.drag = { di, track, a: slot, b: slot, past: true };   // with a category picked: something unplanned
-        }
-        this.highlight();
-        return;
-      }
       const adding = e.shiftKey || (IS_MAC ? e.metaKey : e.ctrlKey);   // Shift or Cmd/Ctrl: add to the selection
-      const ghost = !hit && !adding && track === "plan" && this.ghostAt[di] && this.ghostAt[di][slot];
+      const ghost = !hit && !adding && this.ghostAt[di] && this.ghostAt[di][slot];
       if (ghost) { this.takeGhost(ghost); return; }      // a suggested sitting: add just that one
       // Dragging empty time draws a selection box with Shift / Cmd / Ctrl held, or when no category is picked.
       const selecting = adding || (!hit && !this.cats.has(this.brush));
@@ -984,7 +838,7 @@ class Timetable {
       }
       if (hit && this.picked.has(hitId) && this.picked.size > 1) {   // a selected block: move the whole group
         this.groupDrag = { downDi: di, downSlot: slot, hit, ddi: 0, ds: 0, moved: false,
-                           items: [...this.picked].map((id) => this.itemOf(id)).filter(Boolean) };
+                           items: [...this.picked].map((id) => this.itemOf(id)).filter((it) => it && !this.frozen(it.di)) };
         this.highlight();
         return;
       }
@@ -1030,9 +884,10 @@ class Timetable {
       const td = e.target.closest("td.s");
       this.hoverCell = td ? { di: +td.dataset.d, track: td.dataset.t, slot: +td.dataset.s } : null;
       const hit = td && this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
-      this.hoverBlock(hit ? (hit.outlook ? `outlook:${hit.ev.id}` : hit.entry.id) : null);
+      this.hoverBlock(hit ? this.idOf(hit) : null);
+      if (td && this.frozen(+td.dataset.d)) { table.style.cursor = hit ? "pointer" : "default"; return; }
       const adding = e.shiftKey || (IS_MAC ? e.metaKey : e.ctrlKey);
-      if (!hit && td && td.dataset.t === "plan" && this.ghostAt[+td.dataset.d][+td.dataset.s]) { table.style.cursor = "pointer"; return; }
+      if (!hit && td && this.ghostAt[+td.dataset.d][+td.dataset.s]) { table.style.cursor = "pointer"; return; }
       if (!hit) { table.style.cursor = td && (adding || !this.cats.has(this.brush)) ? "crosshair" : ""; return; }
       const { s0, e0 } = this.spanOf(hit);
       const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
@@ -1061,8 +916,8 @@ class Timetable {
       if (!b) return;
       const block = this.listed[+b.dataset.i];
       if (block.ghost) { this.takeGhost(block.en); return; }
-      const hit = block.past ? { past: true, piece: block, outlook: false, entry: block.en }
-        : block.outlook ? { outlook: true, ev: { ...block.en, title: block.en.label } } : { outlook: false, entry: block.en };
+      const hit = block.outlook ? { outlook: true, ev: { ...block.en, title: block.en.label }, di: block.di }
+        : { outlook: false, entry: block.en, di: block.di };
       this.openCard(hit);
       // Move focus into the card so its buttons are next; Esc closes it and returns here.
       this.returnFocus = b;
@@ -1080,8 +935,6 @@ class Timetable {
       if (this.groupDrag && td) { this.dragGroupTo(+td.dataset.d, +td.dataset.s); return; }
       if (!this.drag || !td) return;
       if (+td.dataset.d !== this.drag.di || td.dataset.t !== this.drag.track) return;
-      // One timeline: a drag stays on its side of now (the past is the Actual, the rest the Plan).
-      if (ONE && this.drag.past !== this.isPast(this.drag.di, +td.dataset.s)) return;
       this.drag.b = +td.dataset.s;
       this.highlight();
     });
@@ -1092,7 +945,7 @@ class Timetable {
       const hit = this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
       if (!hit) return;
       e.preventDefault();
-      if (this.data.readonly || hit.outlook || hit.past) this.openCard(hit);   // details first for Outlook events
+      if (this.frozen(+td.dataset.d) || hit.outlook) this.openCard(hit);   // details first for calendar events
       else this.openPopover(hit.entry, e.clientX, e.clientY);           // straight to the editor
     });
 
@@ -1137,11 +990,10 @@ class Timetable {
     // Fade the blocks while dragging so the selection shows through.
     this.wrapEl.classList.toggle("dragging", !!this.drag || !!this.blockDrag || !!this.groupDrag);
     if (this.marquee) {
-      const m = this.marquee, c0 = col(m.di0, m.t0), c1 = col(m.di1, m.t1);
+      const m = this.marquee, c0 = col(m.di0), c1 = col(m.di1);
       for (let c = Math.min(c0, c1); c <= Math.max(c0, c1); c++)
         for (let i = Math.min(m.s0, m.s1); i <= Math.max(m.s0, m.s1); i++) {
-          const [cd, ct] = colCell(c);
-          const td = this.cells[cd][ct][i];
+          const td = this.cells[c].plan[i];
           td.classList.add("sel", "box");
           this.selected.push(td);
         }
@@ -1185,18 +1037,11 @@ class Timetable {
 
   // ---------- Selecting several blocks ----------
 
-  idOf(hit) { return hit.past ? hit.piece.id : hit.outlook ? `outlook:${hit.ev.id}` : hit.entry.id; }
-
-  // One timeline: has this slot of a day passed (so it shows, and corrects, what happened)?
-  isPast(di, slot) {
-    if (!ONE) return false;
-    const st = this.dayState[this.data.days[di]];
-    return !!st && slot < st.gone;
-  }
+  idOf(hit) { return hit.outlook ? `outlook:${hit.ev.id}` : hit.entry.id; }
 
   // A selected block as {id, outlook, en, di, track, s, e} (or null if it's gone).
   itemOf(id) {
-    const b = (this.blocks || []).find((x) => !x.past && !x.ghost && (x.outlook ? `outlook:${x.en.id}` : x.en.id) === id);
+    const b = (this.blocks || []).find((x) => !x.ghost && (x.outlook ? `outlook:${x.en.id}` : x.en.id) === id);
     return b ? { id, outlook: !!b.outlook, en: b.en, di: b.di, track: b.en.track, s: b.s, e: b.e } : null;
   }
 
@@ -1210,12 +1055,12 @@ class Timetable {
     this.marquee = null;
     this.highlight();
     this.root.querySelector("table").style.cursor = "";
-    const c0 = Math.min(col(m.di0, m.t0), col(m.di1, m.t1)), c1 = Math.max(col(m.di0, m.t0), col(m.di1, m.t1));
+    const c0 = Math.min(col(m.di0), col(m.di1)), c1 = Math.max(col(m.di0), col(m.di1));
     const s0 = Math.min(m.s0, m.s1), s1 = Math.max(m.s0, m.s1);
     if (m.from && c0 === c1 && s0 === s1) { this.setPicked([m.from]); return; }   // a click on a block: select it
     const inside = this.blocks.filter((b) => {
-      if (b.past || b.ghost) return false;            // passed time is corrected one piece at a time
-      const c = col(b.di, b.en.track);
+      if (b.ghost) return false;
+      const c = col(b.di);
       return c >= c0 && c <= c1 && b.s <= s1 && b.e > s0;
     }).map((b) => (b.outlook ? `outlook:${b.en.id}` : b.en.id));
     this.setPicked(m.add ? [...this.picked, ...inside] : inside);
@@ -1225,8 +1070,8 @@ class Timetable {
 
   dragGroupTo(di, slot) {
     const g = this.groupDrag, ddi = di - g.downDi, ds = slot - g.downSlot;
-    const fits = g.items.every((it) => it.di + ddi >= 0 && it.di + ddi < this.data.days.length &&
-                                      it.s + ds >= 0 && it.e + ds <= SLOTS);
+    const fits = g.items.length && g.items.every((it) => it.di + ddi >= 0 && it.di + ddi < this.data.days.length &&
+                                      !this.frozen(it.di + ddi) && it.s + ds >= 0 && it.e + ds <= SLOTS);
     if (!fits) return;                                     // keep the last place where they all fit
     g.ddi = ddi; g.ds = ds; g.moved = ddi !== 0 || ds !== 0;
     this.highlight();
@@ -1253,19 +1098,13 @@ class Timetable {
     this.highlight();
     this.root.querySelector("table").style.cursor = "";
     if (!g.moved) { this.setPicked([this.idOf(g.hit)]); return; }   // a click: just that one (click again for details)
-    const ops = this.placeOps(g.items, (it) => ({ di: it.di + g.ddi, track: it.track, s: it.s + g.ds, e: it.e + g.ds }));
+    const ops = this.placeOps(g.items, (it) => ({ di: it.di + g.ddi, track: this.trackFor(it.di + g.ddi), s: it.s + g.ds, e: it.e + g.ds }));
     this.commit([{ opId: uid(), kind: "batch", label: `Moved ${g.items.length} blocks`, ops }]);
     this.setPicked(g.items.map((it) => (it.outlook ? `ol:${it.en.id}` : it.en.id)));
   }
 
   deletePicked() {
-    const past = (this.blocks || []).filter((b) => b.past && this.picked.has(b.id) && b.kind !== "skipped");
-    if (past.length) {                               // Delete on passed time: it didn't happen
-      past.forEach((b) => this.skipPiece(b));
-      this.setPicked([]);
-      return;
-    }
-    const items = [...this.picked].map((id) => this.itemOf(id)).filter(Boolean);
+    const items = [...this.picked].map((id) => this.itemOf(id)).filter((it) => it && !this.frozen(it.di));
     if (!items.length) return;
     const ops = items.map((it) => (it.outlook ? { kind: "hide_outlook", uid: it.en.id } : { kind: "delete", id: it.en.id }));
     const label = items.length === 1 ? `Deleted ${items[0].en.label}` : `Deleted ${items.length} blocks`;
@@ -1309,14 +1148,14 @@ class Timetable {
     for (const it of this.clip.items) {
       const di = h.di + it.ddi;
       const s = one ? Math.max(0, Math.min(SLOTS - it.len, h.slot)) : h.slot + it.ds;
-      if (di >= this.data.days.length || s + it.len > SLOTS) { skipped++; continue; }   // off the end of the week / day
+      if (di >= this.data.days.length || s + it.len > SLOTS || this.frozen(di)) { skipped++; continue; }   // off the end, or a locked Plan
       const id = uid();
       ids.push(id);
-      ops.push({ opId: uid(), kind: "paint", date: this.data.days[di], track: one || !it.track ? h.track : it.track,
+      ops.push({ opId: uid(), kind: "paint", date: this.data.days[di], track: this.trackFor(di),
                  start: slotTime(s), end: slotTime(s + it.len), newId: id,
                  block: { label: it.label, categoryId: it.categoryId, details: it.details } });
     }
-    if (!ops.length) { this.flashHint("Not enough room there: point further up or earlier in the week"); return true; }
+    if (!ops.length) { this.flashHint("Can't paste there"); return true; }
     // Undoable with Cmd/Ctrl+Z, quietly (no Undo bar for a paste).
     this.commit(ops.length === 1 ? [{ ...ops[0], quiet: true, label: `Pasted ${ops[0].block.label}` }]
                                  : [{ opId: uid(), kind: "batch", quiet: true, label: `Pasted ${ops.length} blocks`, ops }]);
@@ -1328,7 +1167,6 @@ class Timetable {
   // ---------- Moving and resizing blocks ----------
 
   spanOf(hit) {
-    if (hit.past) return { s0: hit.piece.s, e0: hit.piece.e };
     const item = hit.outlook ? hit.ev : hit.entry;
     return { s0: Math.max(0, slotOf(item.start)), e0: Math.min(SLOTS, slotOf(item.end)) };
   }
@@ -1337,7 +1175,7 @@ class Timetable {
   zoneAt(di, track, s0, e0, y) {
     const top = this.cells[di][track][s0].getBoundingClientRect().top;
     const bottom = this.cells[di][track][e0 - 1].getBoundingClientRect().bottom;
-    const edge = Math.min(8, (bottom - top) / 4);
+    const edge = Math.min(7, (bottom - top) / 3);
     return y - top <= edge ? "start" : bottom - y <= edge ? "end" : "move";
   }
 
@@ -1355,20 +1193,10 @@ class Timetable {
 
   dragBlockTo(di, track, slot) {
     const bd = this.blockDrag, len = bd.e0 - bd.s0;
-    if (bd.past) {                                   // a passed piece: same day, and only within time that has passed
-      const gone = this.dayState[this.data.days[bd.di]].gone;
-      slot = Math.min(slot, gone - 1);
-      if (bd.zone === "move") { const s = Math.max(0, Math.min(gone - len, bd.s0 + slot - bd.downSlot)); bd.target = { di: bd.di, track, s, e: s + len }; }
-      else if (bd.zone === "start") bd.target = { di: bd.di, track, s: Math.min(slot, bd.e0 - 1), e: bd.e0 };
-      else bd.target = { di: bd.di, track, s: bd.s0, e: Math.max(slot + 1, bd.s0 + 1) };
-      const t = bd.target;
-      bd.moved = t.s !== bd.s0 || t.e !== bd.e0;
-      this.highlight();
-      return;
-    }
     if (bd.zone === "move") {
+      if (this.frozen(di)) return;                   // not onto a locked Plan: stays where it last fitted
       const s = Math.max(0, Math.min(SLOTS - len, bd.s0 + slot - bd.downSlot));
-      bd.target = { di, track, s, e: s + len };
+      bd.target = { di, track: this.trackFor(di), s, e: s + len };
     } else if (bd.zone === "start") {
       bd.target = { di: bd.di, track: bd.track, s: Math.min(slot, bd.e0 - 1), e: bd.e0 };
     } else {
@@ -1389,10 +1217,6 @@ class Timetable {
       if (!bd.fresh) this.openCard(bd.hit);
       return;
     }
-    if (bd.past) {                                   // "change times" by dragging a passed piece
-      this.retimePiece(bd.hit.piece, bd.target.s, bd.target.e);
-      return;
-    }
     const t = bd.target;
     const where = { date: this.data.days[t.di], track: t.track, start: slotTime(t.s), end: slotTime(t.e) };
     const ops = bd.hit.outlook
@@ -1410,14 +1234,6 @@ class Timetable {
     const drag = this.drag;
     this.cancelDrag();
     if (!drag) return;
-    if (drag.past) {                                 // empty passed time: something that wasn't planned
-      const cat = this.cats.get(this.brush);
-      if (!cat) { this.flashHint("Pick a category first"); return; }
-      const s = Math.min(drag.a, drag.b), e = Math.max(drag.a, drag.b) + 1;
-      this.commit([{ opId: uid(), kind: "replace", date: this.data.days[drag.di], start: slotTime(s), end: slotTime(e),
-                     block: { label: cat.name, categoryId: cat.id }, newId: uid() }]);
-      return;
-    }
     // A click (no drag) on a block opens its details card; dragging paints.
     if (drag.a === drag.b) {
       const hit = this.blockAt(drag.di, drag.track, drag.a);
@@ -1498,20 +1314,15 @@ class Timetable {
 
   // Which block (own or Outlook) covers a slot. Outlook events are drawn on top.
   blockAt(di, track, slot) {
-    if (this.isPast(di, slot)) {
-      const piece = this.pieceAt[di][slot];
-      return piece ? { past: true, piece, outlook: false, entry: piece.en } : null;
-    }
     const ev = track === "plan" && this.outlookAt[di][slot];
-    if (ev) return { outlook: true, ev };
+    if (ev) return { outlook: true, ev, di };
     const id = this.occupant[di][track][slot];
-    return id ? { outlook: false, entry: this.entries.get(id) } : null;
+    return id ? { outlook: false, entry: this.entries.get(id), di } : null;
   }
 
   // Click on a block: it grows slightly and a card shows what it is and when,
   // like Outlook's peek. Edit / Delete (Remove for Outlook events) unless view only.
   openCard(hit) {
-    if (hit.past) { this.openPastCard(hit); return; }
     this.closePopover();
     this.cardHit = hit;
     const item = hit.outlook ? hit.ev : hit.entry;
@@ -1521,6 +1332,9 @@ class Timetable {
     const when = hit.outlook ? item.exact : fmtRange(item.start, item.end);
     const text = hit.outlook ? item.description : item.details;
     const title = hit.outlook ? item.title : item.label;
+    const di = hit.di ?? this.dayIndex.get(item.date);
+    const locked = !this.data.readonly && di !== undefined && this.frozen(di);
+    const viewOnly = this.data.readonly || locked;
 
     const card = document.createElement("div");
     card.className = "tt-pop tt-peek";
@@ -1530,10 +1344,11 @@ class Timetable {
       <div class="pk-title">${hit.outlook ? CAL_ICON : ""}<b>${esc(title)}</b></div>
       <div class="pk-when">${esc(day)} · ${esc(when)}</div>
       <div class="pk-meta"><i style="background:${esc(cat ? cat.colour : "#9e9e9e")}"></i>${esc(cat ? cat.name : "No category")}
-        · ${hit.outlook || item.track === "plan" ? "Plan" : "Actual"}${hit.outlook ? " · from Outlook" : ""}</div>
+        · ${hit.outlook || item.track === "plan" ? "Plan" : "Actual"}${hit.outlook ? " · from your calendar" : ""}${locked ? " · locked" : ""}</div>
       ${hit.outlook && item.location ? `<div class="pk-loc">${PIN_ICON}${esc(item.location)}</div>` : ""}
       ${text ? `<div class="pk-text">${esc(text).replace(/\n/g, "<br>")}</div>` : ""}
-      ${this.data.readonly ? "" : `
+      ${locked ? `<div class="pk-note">Locked when the day started. Switch to <b>Actual</b> to change what happened.</div>` : ""}
+      ${viewOnly ? "" : `
       <div class="row">
         <button class="del">${hit.outlook ? "Remove" : "Delete"}</button>
         <button class="edit">Edit</button>
@@ -1552,7 +1367,7 @@ class Timetable {
     card.style.top = `${Math.max(8, Math.min(r.top, window.innerHeight - card.offsetHeight - 8))}px`;
     card.addEventListener("mousedown", (e) => e.stopPropagation());
 
-    if (this.data.readonly) return;
+    if (viewOnly) return;
     card.querySelector(".del").addEventListener("click", () => {
       this.commit([hit.outlook ? { opId: uid(), kind: "hide_outlook", uid: item.id }
                                : { opId: uid(), kind: "delete", id: item.id }]);
@@ -1567,109 +1382,6 @@ class Timetable {
       const box = card.getBoundingClientRect();
       this.openPopover(entry, box.left, box.top);
     });
-  }
-
-  // ---------- One timeline: correcting time that has passed ----------
-
-  pieceBlock(p) { return { label: p.en.label, categoryId: p.en.categoryId, details: p.en.details || null }; }
-
-  // Didn't happen: nothing in the Actual for those slots (the Plan stays as it was).
-  skipPiece(p) {
-    this.commit([{ opId: uid(), kind: "skip", date: this.data.days[p.di], start: slotTime(p.s), end: slotTime(p.e) }]);
-  }
-
-  // It did happen after all (a skipped piece), or something else happened instead.
-  replacePiece(p, block) {
-    this.commit([{ opId: uid(), kind: "replace", date: this.data.days[p.di], start: slotTime(p.s), end: slotTime(p.e),
-                   block, newId: uid() }]);
-  }
-
-  retimePiece(p, s, e) {
-    this.commit([{ opId: uid(), kind: "retime", date: this.data.days[p.di], fromStart: slotTime(p.s), fromEnd: slotTime(p.e),
-                   start: slotTime(s), end: slotTime(e), block: this.pieceBlock(p), newId: uid() }]);
-  }
-
-  // The details card of a passed piece, with the three corrections (or "It did happen" for a skipped one).
-  openPastCard(hit) {
-    this.closePopover();
-    this.cardHit = hit;
-    const p = hit.piece, en = p.en, date = this.data.days[p.di];
-    const cat = this.cats.get(en.categoryId);
-    const day = new Date(date + "T00:00").toLocaleDateString(LOC(), { weekday: "long", day: "numeric", month: "long" });
-    const gone = this.dayState[date].gone;
-    const card = document.createElement("div");
-    card.className = "tt-pop tt-peek";
-    card.setAttribute("role", "dialog");
-    card.setAttribute("aria-label", `${en.label}, ${PIECE_WORDS[p.kind].toLowerCase()}`);
-    const times = (sel, from, to) => Array.from({ length: to - from + 1 }, (_, k) => from + k)
-      .map((i) => `<option value="${i}" ${i === sel ? "selected" : ""}>${esc(fmtTime(slotTime(i)))}</option>`).join("");
-    const options = this.data.categories
-      .map((c) => `<option value="${esc(c.id)}" ${c.id === en.categoryId ? "selected" : ""}>${esc(c.name)}</option>`).join("");
-    card.innerHTML = `
-      <div class="pk-title"><b>${esc(en.label)}</b></div>
-      <div class="pk-when">${esc(day)} · ${esc(fmtRange(slotTime(p.s), slotTime(p.e)))}</div>
-      <div class="pk-meta"><i style="background:${esc(cat ? cat.colour : "#9e9e9e")}"></i>${esc(cat ? cat.name : "No category")} · ${PIECE_WORDS[p.kind]}</div>
-      ${this.data.readonly ? "" : p.kind === "skipped" ? `
-      <div class="row"><button class="undo-skip">It did happen</button></div>` : `
-      <div class="row fix">
-        <button class="skip">Didn't happen</button>
-        <button class="times" aria-expanded="false">Change times</button>
-        <button class="other" aria-expanded="false">Did something else</button>
-      </div>
-      <div class="pk-form f-times" hidden>
-        <label>From <select class="t-s" aria-label="Started at">${times(p.s, 0, gone - 1)}</select></label>
-        <label>to <select class="t-e" aria-label="Ended at">${times(p.e, 1, gone)}</select></label>
-        <button class="save">Save</button>
-      </div>
-      <div class="pk-form f-other" hidden>
-        <input class="p-label" list="tt-labels" aria-label="What you did instead" placeholder="What you did instead">
-        <select class="p-cat" aria-label="Category">${options}</select>
-        <button class="save">Save</button>
-      </div>`}`;
-    this.root.appendChild(card);
-    this.popover = card;
-    this.focusId = p.id;
-    const blockEl = this.blocksEl.querySelector(`[data-id="${CSS.escape(p.id)}"]`);
-    if (blockEl) blockEl.classList.add("focus");
-    const r = blockEl ? blockEl.getBoundingClientRect() : { left: 200, right: 200, top: 200 };
-    const w = 300;
-    card.style.left = `${r.right + 10 + w < window.innerWidth ? r.right + 10 : Math.max(8, r.left - 10 - w)}px`;
-    card.style.top = `${Math.max(8, Math.min(r.top, window.innerHeight - card.offsetHeight - 8))}px`;
-    card.addEventListener("mousedown", (e) => e.stopPropagation());
-    if (this.data.readonly) return;
-    const on = (sel, fn) => { const el = card.querySelector(sel); if (el) el.addEventListener("click", fn); };
-    on(".undo-skip", () => { this.replacePiece(p, this.pieceBlock(p)); this.closePopover(); });
-    if (p.kind === "skipped") return;                // (its card has just "It did happen")
-    on(".skip", () => { this.skipPiece(p); this.closePopover(); });
-    const show = (which) => {
-      for (const [btn, form] of [[".times", ".f-times"], [".other", ".f-other"]]) {
-        const open = form === which;
-        card.querySelector(form).hidden = !open;
-        card.querySelector(btn).setAttribute("aria-expanded", String(open));
-      }
-      const first = card.querySelector(`${which} select, ${which} input`);
-      if (first) first.focus();
-    };
-    on(".times", () => show(".f-times"));
-    on(".other", () => show(".f-other"));
-    on(".f-times .save", () => {
-      const a = +card.querySelector(".t-s").value, b = +card.querySelector(".t-e").value;
-      if (b <= a) { card.querySelector(".t-e").focus(); return; }
-      this.retimePiece(p, a, b);
-      this.closePopover();
-    });
-    const labelEl = card.querySelector(".p-label"), catEl = card.querySelector(".p-cat");
-    labelEl.addEventListener("input", () => {
-      const id = this.mapLabel(labelEl.value);
-      if (id && this.cats.has(id)) catEl.value = id;
-    });
-    const saveOther = () => {
-      const label = labelEl.value.trim() || this.cats.get(catEl.value).name;
-      this.replacePiece(p, { label, categoryId: catEl.value, details: null });
-      this.closePopover();
-    };
-    labelEl.addEventListener("keydown", (e) => { if (e.key === "Enter") saveOther(); });
-    on(".f-other .save", saveOther);
   }
 
   closePopover() {

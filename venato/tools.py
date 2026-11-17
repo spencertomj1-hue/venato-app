@@ -389,6 +389,9 @@ def add_block(date, track, start, end, label, category=None, details=None, confi
     if not label:
         raise ToolError("The block needs a label.")
     block = {"label": label, "category_id": _category(label, category), "details": (details or "").strip() or None}
+    if track == "plan" and store.day_started(day, _now()):
+        track = "actual"                            # that day's Plan is locked: changes are to what happens
+    store.lock_day(day, now=_now())                 # a started day's Plan copied into its Actual first (no-op later)
     names = _cat_names()
     what = f"{label} ({names[block['category_id']]}) {store.slot_time(s)}–{store.slot_time(e)} {track} on {nice_day(day)}"
 
@@ -397,8 +400,6 @@ def add_block(date, track, start, end, label, category=None, details=None, confi
         summary = f"Add {what}. This overwrites: " + "; ".join(describe_block(b, names) for b in affected)
         return Result("", pending=Pending(
             summary, lambda: add_block(date, track, start, end, label, category, details, True)))
-    if track == "actual":
-        store.materialise(day, now=_now())          # a correction: the rest of the day's passed Plan becomes Actual
     store.paint(day, track, s, e, block)
     return Result(f"Added {what}.", changed=True)
 
@@ -433,6 +434,11 @@ def update_block(block_id, label=None, category=None, date=None, track=None, sta
 
     day = _day(date) if date else old["date"]
     trk = _track(track) if track else old["track"]
+    if old["track"] == "plan" and store.day_started(old["date"], _now()):
+        raise ToolError(f"The Plan for {nice_day(old['date'])} is locked (the day has started). "
+                        "Change that day's actual blocks instead (query_blocks with track 'actual').")
+    if trk == "plan" and store.day_started(day, _now()):
+        trk = "actual"                              # moving into a started day: it goes in the Actual
     s = _slot(start, False) if start else store.slot_of(old["start"])
     e = _slot(end, True) if end else store.slot_of(old["end"])
     if e <= s:
@@ -448,6 +454,8 @@ def update_block(block_id, label=None, category=None, date=None, track=None, sta
     summary = f"Change {describe_block(old, names)} → {describe_block(new, names)}"
     if ev:
         summary += " (it becomes your own block; Outlook itself isn't changed)"
+    for d in {old["date"], day}:
+        store.lock_day(d, now=_now())               # before working out what it overwrites
     affected = store.preview_paint(day, trk, s, e, block, exclude=old["id"]) if moved else []
     if moved and affected:
         summary += ". This overwrites: " + "; ".join(describe_block(b, names) for b in affected)
@@ -455,9 +463,6 @@ def update_block(block_id, label=None, category=None, date=None, track=None, sta
         return Result("", pending=Pending(
             summary, lambda: update_block(block_id, label, category, date, track, start, end, details, True)))
 
-    for d, t in ((old["date"], old["track"]), (day, trk)):
-        if t == "actual":
-            store.materialise(d, now=_now())        # a correction (see add_block)
     if ev:
         old_id = store.detach_outlook(ev["uid"])
     else:
@@ -473,6 +478,9 @@ def update_block(block_id, label=None, category=None, date=None, track=None, sta
 
 def delete_block(block_id, confirmed=False):
     ev = _outlook_event(block_id)
+    if ev and store.day_started(ev["date"], _now()):
+        raise ToolError(f"The Plan for {nice_day(ev['date'])} is locked (the day has started), calendar events included. "
+                        "Delete the matching actual block instead (query_blocks with track 'actual').")
     if ev:   # an Outlook event: remove it from the timetable only
         what = f"Remove the Outlook event {ev['title']} ({ev['exact']}) on {nice_day(ev['date'])} from the timetable"
         if not confirmed:
@@ -480,11 +488,12 @@ def delete_block(block_id, confirmed=False):
         store.hide_outlook(ev["uid"])
         return Result(f"Done: {what}.", changed=True)
     b = _get_block(block_id)
+    if b["track"] == "plan" and store.day_started(b["date"], _now()):
+        raise ToolError(f"The Plan for {nice_day(b['date'])} is locked (the day has started). "
+                        "Delete the matching actual block instead (query_blocks with track 'actual').")
     summary = f"Delete {describe_block(b)}"
     if not confirmed:
         return Result("", pending=Pending(summary, lambda: delete_block(block_id, True)))
-    if b["track"] == "actual":
-        store.materialise(b["date"], now=_now())    # so the gap means "nothing happened", not "as planned"
     store.delete_block(b["id"])
     return Result(f"Done: {summary}.", changed=True)
 
@@ -517,9 +526,9 @@ def skip_block(block_id, confirmed=False):
 
 def confirm_day(date=None, end_date=None, confirmed=False, preview=False):
     """
-    Confirm that a day (or every unconfirmed day from date to end_date) went as planned: the passed Plan
-    becomes the Actual wherever the Actual is empty (nothing already there changes). Several days are
-    previewed first. The same as "All as planned" on Home and "Confirm week as planned" on the Timetable.
+    Confirm that a day's Actual (or every unconfirmed day's from date to end_date) is what the user did, so it
+    counts in stats and goals. A day not locked yet is locked first (its Plan copied into the empty Actual).
+    Several days are previewed first. The same as "Confirm" on Home and "Confirm week" on the Timetable.
     """
     first = _day(date) if date else _now().date().isoformat()
     last = _day(end_date) if end_date else first
@@ -530,10 +539,10 @@ def confirm_day(date=None, end_date=None, confirmed=False, preview=False):
         raise ToolError("That day hasn't happened yet.")
     days = store.unconfirmed_days(first, min(last, today), now=_now())
     if first == last == today and today not in days:
-        days = [today]                                    # today, as planned so far
+        days = [today]                                    # today, as it stands
     if not days:
         return Result(f"Nothing to confirm: every day from {nice_day(first)} to {nice_day(last)} is confirmed already.")
-    summary = "Confirm " + ", ".join(nice_day(d) for d in days) + " as planned"
+    summary = "Confirm " + ", ".join(nice_day(d) for d in days) + " as what you did"
     if (len(days) > 1 or preview) and not confirmed:
         return Result("", pending=Pending(summary, lambda: confirm_day(date, end_date, True)))
     for d in days:
@@ -543,15 +552,15 @@ def confirm_day(date=None, end_date=None, confirmed=False, preview=False):
 
 def confirm_all(confirmed=False):
     """
-    Confirm every past day that isn't confirmed yet and has something on it, in one go: each one's Plan
-    becomes its Actual wherever the Actual is empty. Always previewed first. "Confirm all" on the Timetable.
+    Confirm every past day that isn't confirmed yet and has something on it, in one go: each one's Actual
+    as it stands is what the user did. Always previewed first. "Confirm all" on the Timetable.
     """
     days = store.unconfirmed_days_with_blocks(now=_now())
     if not days:
         return Result("Nothing to confirm: every day that has passed is confirmed already.")
     n = len(days)
-    summary = (f"Confirm {n} day{'s' if n > 1 else ''} as planned: " + ", ".join(nice_day(d) for d in days) if n <= 7
-               else f"Confirm {n} days as planned, {nice_day(days[0])} to {nice_day(days[-1])}")
+    summary = (f"Confirm {n} day{'s' if n > 1 else ''} as what you did: " + ", ".join(nice_day(d) for d in days) if n <= 7
+               else f"Confirm {n} days as what you did, {nice_day(days[0])} to {nice_day(days[-1])}")
     if not confirmed:
         return Result("", pending=Pending(summary, lambda: confirm_all(True)))
     for d in days:
@@ -662,7 +671,7 @@ def plan_time(label, hours, start_date, end_date, category=None, earliest="09:00
         raise ToolError("Those days are already over; pick days from today on.")
 
     days = _spaced(days, need, chunk)
-    free = {d: store.free_runs(d, max(lo, _first_future_slot(d)), hi) for d in days}
+    free = {d: store.free_runs(d, max(lo, _first_future_slot(d)), hi, now=_now()) for d in days}
     placed = _place(days, free, need, chunk)
 
     if not placed:
@@ -677,7 +686,7 @@ def plan_time(label, hours, start_date, end_date, category=None, earliest="09:00
         return Result("", pending=Pending(summary, lambda: plan_time(
             label, hours, start_date, end_date, category, earliest, latest, max_block_hours, weekdays_only, True)))
     for d, s, e in placed:
-        store.paint(d, "plan", s, e, {"label": label, "category_id": cid, "details": None})
+        store.paint(d, store.live_track(d, _now()), s, e, {"label": label, "category_id": cid, "details": None})
     return Result(f"Done: {summary}.", changed=True)
 
 
@@ -1396,7 +1405,7 @@ def goal_spots(date=None, earliest="09:00", latest="21:00", max_block_hours=2, c
         days = [d for d in _days_between(max(w["first"], ctx.today).isoformat(), w["last"].isoformat(), False)
                 if _first_future_slot(d) < hi]
         for d in days:
-            free.setdefault(d, store.free_runs(d, max(lo, _first_future_slot(d)), hi))
+            free.setdefault(d, store.free_runs(d, max(lo, _first_future_slot(d)), hi, now=_now()))
         need = round(pace.half_up(add) * 2)
         spots = _place(_spaced(days, need, chunk), free, need, chunk)
         if spots:
@@ -1423,7 +1432,7 @@ def plan_goals(date=None, earliest="09:00", latest="21:00", max_block_hours=2, c
         return Result("", pending=Pending(summary, lambda: plan_goals(date, earliest, latest, max_block_hours, True)))
     for g, spots in placed:
         for d, s, e in spots:
-            store.paint(d, "plan", s, e, {"label": g["label"] or g["title"], "category_id": g["category_id"],
+            store.paint(d, store.live_track(d, _now()), s, e, {"label": g["label"] or g["title"], "category_id": g["category_id"],
                                           "details": None})
     return Result(f"Done: {summary}.", changed=True)
 

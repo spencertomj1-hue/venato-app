@@ -53,7 +53,7 @@ def test_outlook_events_and_settings(notify, store):
                      "VALUES ('a', '2026-10-30', '14:00', '15:00', 'Seminar', 'Room 101', 0, 1), "
                      "('b', '2026-10-30', NULL, NULL, 'Holiday', NULL, 1, 1)")
     assert notify.due(datetime(2026, 10, 30, 13, 50), 10, set()) == \
-        [("2026-10-30|14:00|Seminar", "Seminar", "14:00–15:00, in 10 min\nRoom 101")]
+        [("2026-10-30|14:00|Seminar", "Seminar", "14:00–15:00, in 10 min\nLocation: Room 101")]   # (the day has started: its Actual copy)
     store.save_settings(reminders=False)
     assert notify.check(set(), datetime(2026, 10, 30, 13, 50)) == []
     store.save_settings(reminders=True, reminder_minutes=0)

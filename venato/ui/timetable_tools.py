@@ -241,10 +241,10 @@ def open_plan_goals(week):
     _plan_goals_dialog(week)
 
 
-@st.dialog("Confirm the week as planned")
+@st.dialog("Confirm the week")
 def _confirm_week_dialog(first, last):
-    st.caption("For each day that has passed and isn't confirmed yet, what you planned becomes what happened, "
-               "wherever you haven't recorded anything else. Stats and goals then count those days.")
+    st.caption("Each day of this week that has passed and isn't confirmed yet: its Actual, as it is on the timetable "
+               "now, is what you did. Stats and goals then count those days.")
     if _confirm_box("Confirm"):
         return
     try:
@@ -259,10 +259,10 @@ def _confirm_week_dialog(first, last):
         st.info(r.text, icon=":material/info:")
 
 
-@st.dialog("Confirm all as planned")
+@st.dialog("Confirm all")
 def _confirm_all_dialog():
-    st.caption("Every day that has passed and isn't confirmed yet, in every week: what you planned becomes what "
-               "happened, wherever you haven't recorded anything else. Stats and goals then count those days.")
+    st.caption("Every day that has passed and isn't confirmed yet, in every week: its Actual, as it is on the "
+               "timetable now, is what you did. Stats and goals then count those days.")
     if _confirm_box("Confirm"):
         return
     r = tools.confirm_all()
@@ -285,9 +285,9 @@ def toolbar(day, row=None):
                                  help="Confirm every past day that isn't confirmed yet, in every week"):
         st.session_state.pop(PENDING, None)
         _confirm_all_dialog()
-    if waiting and set(waiting) != set(everything) and row.button(f"Confirm week as planned ({len(waiting)} day{'s' if len(waiting) > 1 else ''})",
+    if waiting and set(waiting) != set(everything) and row.button(f"Confirm week ({len(waiting)} day{'s' if len(waiting) > 1 else ''})",
                               icon=":material/task_alt:", key="tt_btn_confirm_week",
-                              help="Days that have passed are only assumed to have gone as planned until you confirm them"):
+                              help="Only confirmed days count in stats and goals: confirm that each day's Actual is what you did"):
         st.session_state.pop(PENDING, None)
         _confirm_week_dialog(first, first + timedelta(days=6))
     if b.button("Fit time", icon=":material/event_available:", key="tt_btn_fit",

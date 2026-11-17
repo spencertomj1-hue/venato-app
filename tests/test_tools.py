@@ -496,10 +496,11 @@ def test_weekly_habit_targets(tools, store):
         tools.set_habit_target("Gym", 9)
 
 
-def test_move_block(store):
+def test_move_block(store, monkeypatch):
     import importlib
     from venato import tools as t
     t = importlib.reload(t)
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 1, 8, 0))      # before those days: Plans not locked
     t.add_block("2026-10-29", "plan", "09:00", "10:00", "Gym", category="Exercise", details="Legs")
     t.add_block("2026-10-29", "plan", "11:00", "13:00", "Lecture")
     gym = store.blocks_between("2026-10-29", "2026-10-29")[0]

@@ -429,14 +429,6 @@ def region_section():
             st.rerun()
     st.caption(f"{length} hours a day. Anything after midnight counts as the day before, like a late night. "
                "Blocks outside these hours stay saved; widen the hours again to see them.")
-    views = {"one": "One timeline", "split": "Plan and Actual"}
-    view = st.segmented_control("Timetable view", list(views), default=store.timetable_view(),
-                                format_func=views.get, key="region_tt_view",
-                                help="One timeline: plan once, and correct what didn't go to plan. "
-                                     "Plan and Actual: two columns a day, filled in separately.")
-    if view and view != store.timetable_view():
-        store.save_settings(timetable_view=view)
-        st.rerun()
 
     st.subheader("Goals and your timetable")
     inflate = store.load_settings().get("goal_inflate", True)
