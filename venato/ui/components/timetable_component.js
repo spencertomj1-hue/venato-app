@@ -25,6 +25,7 @@ let SLOTS = 36;                   // 30-minute slots in a day (07:00 -> 01:00 by
 let FIRST_MIN = 7 * 60;           // the day's first minute
 const SWIPE_THRESHOLD = 120;      // px of sideways scroll that flips a week
 const RAIL = 4;                   // px: the Plan's strip down the left of a locked day's Actual column
+const SWAP_MS = 380;              // ms: the Plan / Actual cross-fade
 const SHOW_MISSED = true;         // also hatch Plan time where nothing was done (set false to drop it)
 
 // ---------- Small helpers ----------
@@ -355,11 +356,26 @@ class Timetable {
     this.closePopover();
     this.setPicked([]);
     remember("tt-mode", mode);
+    // Cross-fade: the old view, copied on top, fades out over the new one. On locked days the Plan
+    // grows out of its rail (Actual -> Plan) or shrinks back into it (Plan -> Actual).
+    const toPlan = mode === "plan";
+    const railDays = toPlan ? new Set(this.railDays || []) : null;
+    this.wrapEl.querySelectorAll(".tt-leaving").forEach((el) => el.remove());
+    const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const old = reduce ? null : this.blocksEl.cloneNode(true);
     this.paint();
-    // A quick fade, this once (removed after, so later redraws don't fade in again).
-    this.blocksEl.classList.add("swap");
-    clearTimeout(this.swapTimer);
-    this.swapTimer = setTimeout(() => this.blocksEl.classList.remove("swap"), 220);
+    if (!old) return;
+    old.classList.add("tt-leaving");
+    this.blocksEl.after(old);
+    const days = toPlan ? railDays : this.railDays || new Set();
+    const rail = `inset(0 calc(100% - ${RAIL}px) 0 0 round 2px)`, full = "inset(0 0 0 0 round 0px)";
+    const opts = { duration: SWAP_MS, easing: "cubic-bezier(.4,0,.2,1)" };
+    for (const el of (toPlan ? this.blocksEl : old).querySelectorAll(".blk.plan[data-di]")) {
+      if (!days.has(+el.dataset.di)) continue;
+      el.animate({ clipPath: toPlan ? [rail, full] : [full, rail] }, opts);
+    }
+    old.animate({ opacity: [1, 0] }, { ...opts, easing: toPlan ? "ease-out" : "ease-in" })
+      .finished.then(() => old.remove(), () => old.remove());
   }
 
   // Apply ops locally, queue them, and send everything still pending.
@@ -817,15 +833,15 @@ class Timetable {
         const tall = last.bottom - first.top >= 30;   // room for the time line under the title
         if (ghost) {          // a suggested sitting: dashed, "+ Study 2 h"
           const h = (e - s) / 2;
-          return `<div class="blk ghost ${tall ? "tall" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}--fill:${esc(bg)}">` +
+          return `<div data-di="${di}" class="blk ghost ${tall ? "tall" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}--fill:${esc(bg)}">` +
             `<b>+ ${esc(en.label)} ${h} h</b>${tall ? `<span>Suggested · click to add</span>` : ""}</div>`;
         }
         if (outlook) {
-          return `<div class="blk outlook plan ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+          return `<div data-di="${di}" class="blk outlook plan ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
             `--fill:${esc(bg)}">` +
             `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div class="blk ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${plan ? "plan" : "act"} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin, inset)}` +
+        return `<div data-di="${di}" class="blk ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${plan ? "plan" : "act"} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin, inset)}` +
           (plan ? `--fill:${esc(bg)}">` : `background:${esc(bg)};color:${fg}">`) +
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
