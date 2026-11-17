@@ -38,7 +38,7 @@
 
 ## Features
 
-**Core and optional blocks.** Venato is built from blocks. The core ones are always on: Timetable, Goals (to-dos and deadlines too), Focus, Grades and Review. The optional ones you switch on in the setup wizard or Settings → Blocks. Each brings its own page, Home widget and assistant skills, and Home orders the widgets by the priorities you set.
+**Core and optional blocks.** Venato is built from blocks. The core ones are always on: Timetable, Goals (to-dos and deadlines too), Focus, Grades and Review. The optional ones you switch on in Settings → Blocks (setup doesn't ask). Each brings its own page, Home widget and assistant skills, and Home orders the widgets by the priorities you set.
 
 | Block | What it does |
 |---|---|

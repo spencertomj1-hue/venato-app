@@ -52,6 +52,6 @@ BLOCKS = [
           "Mood, sleep, energy and water each day, habits with streaks, and your journal.",
           group="Health & body", page=_log_page, home=_log_home, order=60, default=True),
     Block("stats", "Review", ":material/monitoring:",
-          "Charts of mood, sleep, energy, water and habits, and your past weekly reviews.",
+          "Time planned vs done, your past weekly reviews, and mood and sleep charts when Daily Log is on.",
           group="Plan", page=_stats_page, order=50, core=True),
 ]
