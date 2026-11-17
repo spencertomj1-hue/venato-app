@@ -53,9 +53,8 @@ def _iso(day):
 
 
 def bounds(goal):
-    """(first day, last day) of a goal's month or year."""
-    start = _d(goal["period_start"])
-    return start, store.end_of_period(goal["period"], start)
+    """(first day, deadline) of a goal."""
+    return _d(goal["period_start"]), _d(goal["due"])
 
 
 def week_days(day):
@@ -82,8 +81,8 @@ def amount(goal, x):
 
 
 def priority(goals):
-    """Goals in priority order: each list's own order (drag / move up to rank), monthly before yearly on a tie."""
-    return sorted(goals, key=lambda g: (g["ord"], g["period"] != "monthly", g["created_at"]))
+    """Goals in priority order: the list's own order (move up / down to rank), the sooner deadline on a tie."""
+    return sorted(goals, key=lambda g: (g["ord"], g["due"], g["created_at"]))
 
 
 def inflation_on():
@@ -551,9 +550,9 @@ def _details(p):
 
 
 def pace_all(ctx=None):
-    """goal_pace for every goal in the current month and year, monthly first, each list in order."""
+    """goal_pace for every goal running today, in list order."""
     ctx = ctx or Ctx()
-    return [goal_pace(g, ctx) for period in store.GOAL_PERIODS for g in store.goals_in(period, ctx.today)]
+    return [goal_pace(g, ctx) for g in store.goals_active(ctx.today)]
 
 
 def history(goal, ctx):
@@ -610,7 +609,7 @@ def available_for(goal, ctx):
 def negotiation(goal, ctx=None):
     """
     For a goal that can't be finished with the time (or days) left: what's reachable and the offers
-    {"reachable", "deficit", "offers": [{"kind": "lower"|"carry"|"take", "text", ...}]}, else None.
+    {"reachable", "deficit", "offers": [{"kind": "lower"|"extend"|"take", "text", ...}]}, else None.
     """
     ctx = ctx or Ctx()
     p = goal_pace(goal, ctx)
@@ -635,10 +634,13 @@ def negotiation(goal, ctx=None):
     unit = lambda x: amount(goal, x)
     offers = [{"kind": "lower", "target": new_target,
                "text": f"Lower the target to {unit(new_target)} (what you're on course for)"}]
-    nxt = store.shift_period(goal["period"], start, 1)
-    offers.append({"kind": "carry", "target": new_target, "carry": deficit,
-                   "text": f"Keep {unit(new_target)} and carry {unit(deficit)} into "
-                           f"{store.period_title(goal['period'], nxt, ctx.today)}"})
+    # Keep the target and give it the time it needs: at your recent rate, or (none yet) the pace the goal was set at.
+    per_day = rate or float(goal["target"]) / ((end - start).days + 1)
+    if per_day > 0:
+        due = ctx.today + timedelta(days=math.ceil(p["remaining"] / per_day) - 1)
+        if due > end:
+            offers.append({"kind": "extend", "due": due.isoformat(),
+                           "text": f"Keep {unit(p['target'])} and move the deadline to {store.fmt_day(due, '%-d %b %Y')}"})
     if goal["kind"] == "hours":
         mine = [g for g in ctx.hours_goals(ctx.today, end)]
         ids = [g["id"] for g in mine]
@@ -691,7 +693,7 @@ def suggestions(ctx=None, limit=3):
     labels = {}
     for b in data["blocks"]:
         labels.setdefault(f"{b['category_id']}|{b['label'].strip().lower()}", b["label"].strip())
-    goals = [g for period in store.GOAL_PERIODS for g in store.goals_in(period, ctx.today) if g["kind"] == "hours"]
+    goals = [g for g in store.goals_active(ctx.today) if g["kind"] == "hours"]
     gone = set(store.load_settings().get("goal_suggestions_dismissed") or [])
     found = []
     for key, per_week in totals.items():

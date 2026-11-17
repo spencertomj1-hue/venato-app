@@ -221,9 +221,9 @@ def test_negotiation_offers(store, pace):
     low = store.add_goal("Guitar", "monthly", "2026-11-01", 10, "h", category_id="rest")
     n = pace.negotiation(g, pace.Ctx(NOW))
     kinds = [o["kind"] for o in n["offers"]]
-    assert kinds == ["lower", "carry", "take"]
+    assert kinds == ["lower", "extend", "take"]
     assert n["offers"][0]["target"] == 15                                      # today's 15 h is all there is
-    assert "December 2026" in n["offers"][1]["text"]
+    assert n["offers"][1]["due"] > "2026-11-30" and "move the deadline to" in n["offers"][1]["text"]
     assert n["offers"][2]["other"] == low["id"]
     assert pace.negotiation(low, pace.Ctx(NOW)) is not None                   # it can't get any time either
 
@@ -301,16 +301,16 @@ def test_goal_pace_and_week_budget_tools(store, tools):
     assert "Goals need" in text and "- Study: 0/" in text
 
 
-def test_resolve_goal_carries_into_next_month(store, pace, tools):
+def test_resolve_goal_moves_the_deadline(store, pace, tools):
     store.replace_outlook([event(f"x{i}", date(2026, 11, 11) + timedelta(days=i), "07:00", "01:00", "Busy")
                            for i in range(1, 21)])
     g = store.add_goal("Study", "monthly", "2026-11-01", 40, "h", category_id="study", label="Revision")
-    r = tools.resolve_goal(g["id"], "carry")
+    due = pace.negotiation(g, pace.Ctx(NOW))["offers"][1]["due"]
+    r = tools.resolve_goal(g["id"], "extend")
     assert r.pending
     r.pending.run()
-    assert store.get_goal(g["id"])["target"] == 15
-    nxt = store.goals_in("monthly", "2026-12-01")
-    assert [(x["title"], x["target"], x["category_id"], x["label"]) for x in nxt] == [("Study", 25, "study", "Revision")]
+    after = store.get_goal(g["id"])
+    assert (after["target"], after["due"]) == (40, due)
 
 
 def test_assistant_has_the_goal_tools_and_a_snapshot_line(store, pace):

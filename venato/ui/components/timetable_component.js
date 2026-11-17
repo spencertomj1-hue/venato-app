@@ -17,6 +17,7 @@
 //   {kind: "replace", date, start, end, block, newId}     did something else / an unplanned block
 //   {kind: "retime", date, fromStart, fromEnd, start, end, block, newId}   change times
 //   {kind: "confirm_day", date}                           all as planned
+//   {kind: "unconfirm_day", date}                         undo that: back to assumed
 // Suggested sittings (data.suggestions, worked out in Python by tools.goal_spots) are drawn dashed in
 // free time; clicking one sends {kind: "add_suggestion", date, start, end, block, newId, ghost}.
 // Each first materialises the day (store.materialise; mirrored here by materialiseLocal).
@@ -64,7 +65,7 @@ function helpHtml(single) {
     ["One timeline", "Plan your time once. From now on the timetable shows your Plan; time that has passed shows what happened."],
     ["Assumed", "Until you confirm a day, its Plan is <b>assumed</b> to have happened (drawn faded with a dashed edge). Stats and goals only count confirmed days."],
     ["Correct a day", "Click a block that has passed: <b>Didn't happen</b>, <b>Change times</b> or <b>Did something else</b>. Drag across empty past time (with a category picked) to add something you didn't plan."],
-    ["Confirm", "<b>Confirm</b> under a day's name, or Home's end-of-day prompt, says the day went as planned. Skipped blocks are hatched and struck through; unplanned ones are outlined."],
+    ["Confirm", "<b>Confirm</b> under a day's name (any time once it has started), or Home's end-of-day prompt, says the day went as planned; <b>Undo</b> next to \"Confirmed\" takes it back. Skipped blocks are hatched and struck through; unplanned ones are outlined."],
   ] : [
     ["Plan and Actual", "Each day has two columns: <b>Plan</b> is what you mean to do, <b>Actual</b> is what you really did."],
     ["Add a block", "Pick a category from the key, then drag down a column. The block takes the category's name; rename it in its details."],
@@ -286,6 +287,11 @@ class Timetable {
   applyLocal(op) {
     if (op.kind === "batch") { op.ops.forEach((o) => this.applyLocal(o)); return; }
     if (op.kind === "confirm_day") { this.materialiseLocal(op.date, true); return; }
+    if (op.kind === "unconfirm_day") {                // drop the Plan copies confirming made; back to assumed
+      for (const [id, en] of this.entries) if (en.date === op.date && en.track === "actual" && id.startsWith(`m:${op.date}:`)) this.entries.delete(id);
+      Object.assign(this.dayState[op.date] || {}, { upto: 0, confirmed: false });
+      return;
+    }
     if (op.kind === "add_suggestion") {
       this.ghostsTaken.add(op.ghost);
       this.planPaint({ date: op.date, track: "plan", start: op.start, end: op.end, block: op.block, newId: op.newId })
@@ -723,11 +729,13 @@ class Timetable {
       box.innerHTML = (this.data.outlookAllDay || []).filter((c) => c.date === date)
         .map((c) => `<span class="chip${c.deadline ? " due" : ""}" title="${esc(c.title)} (${c.deadline ? "deadline" : "Outlook, all day"})">${esc(c.title)}</span>`).join("");
     });
-    // Each day's state under its name: confirmed, or a Confirm button once it has passed (also in the block list).
+    // Each day's state under its name: Confirm once it has started (Unconfirm once confirmed); "Not confirmed"
+    // only once it's over (also in the block list).
     this.root.querySelectorAll("th.day .dstate").forEach((box) => {
       const date = this.data.days[+box.dataset.d], st = this.dayState[date] || {};
-      box.innerHTML = st.confirmed ? `<span class="ok">✓ Confirmed</span>`
-        : st.gone >= SLOTS && !this.data.readonly ? `<button class="confirm" tabindex="-1" data-confirm="${esc(date)}" title="It went as planned: confirm this day">Confirm</button>`
+      box.innerHTML = st.confirmed ? `<span class="ok">✓ Confirmed</span>` + (this.data.readonly ? ""
+          : ` <button class="unconfirm" tabindex="-1" data-unconfirm="${esc(date)}" title="Undo: back to assumed as planned">Undo</button>`)
+        : st.gone > 0 && !this.data.readonly ? `<button class="confirm" tabindex="-1" data-confirm="${esc(date)}" title="It went as planned: confirm this day">Confirm</button>`
         : st.gone >= SLOTS ? `<span class="unconf">Not confirmed</span>` : "";
     });
     this.layoutBlocks();
@@ -753,7 +761,8 @@ class Timetable {
         return `<button data-i="${i}">${esc(what)}</button>`;
       });
       const st = ONE && !this.data.readonly && this.dayState[d];
-      if (st && st.gone >= SLOTS && !st.confirmed) items.push(`<button data-confirm="${esc(d)}">Confirm ${esc(day)} as planned</button>`);
+      if (st && st.gone > 0 && !st.confirmed) items.push(`<button data-confirm="${esc(d)}">Confirm ${esc(day)} as planned</button>`);
+      if (st && st.confirmed) items.push(`<button data-unconfirm="${esc(d)}">Unconfirm ${esc(day)}</button>`);
       return items.length ? `<div role="group" aria-label="${esc(day)}"><span class="a11y-day">${esc(day)}</span>${items.join("")}</div>` : "";
     }).join("");
     list.innerHTML = groups || `<button disabled>Nothing in the timetable this ${this.data.single ? "day" : "week"}</button>`;
@@ -1040,6 +1049,8 @@ class Timetable {
 
     // "Confirm" under a day's name (and in the block list): the day went as planned.
     this.root.addEventListener("click", (e) => {
+      const u = e.target.closest("[data-unconfirm]");
+      if (u && !this.data.readonly) { this.commit([{ opId: uid(), kind: "unconfirm_day", date: u.dataset.unconfirm }]); return; }
       const c = e.target.closest("[data-confirm]");
       if (!c || this.data.readonly) return;
       this.commit([{ opId: uid(), kind: "confirm_day", date: c.dataset.confirm }]);

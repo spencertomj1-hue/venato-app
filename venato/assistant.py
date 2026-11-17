@@ -272,20 +272,21 @@ What the app tracks
   - edit_todo renames it, changes its notes or repeat, or moves it to another list (move_to="weekly" etc.).
   - delete_todo needs the user's confirmation.
 
-- Goals: measurable targets for a month or a year (period "monthly" or "yearly"), with a progress bar,
-  e.g. "Gym: 12 sessions this month", "Read 20 books this year". Each has a target and an optional unit.
+- Goals: measurable targets with a deadline (due), with a progress bar, e.g. "Gym: 12 sessions by 30 Nov",
+  "Read 20 books by 31 Dec". Each has a target, an optional unit, and runs from the day it's set to its deadline.
   - Progress is either updated by hand (log_goal_progress adds, e.g. "did 2 more gym sessions";
     set_goal_progress sets it), or counted automatically from a habit (habit="Gym": the number of days
-    that habit was ticked in the period), or counted from timetable hours (category="Study", optionally
+    that habit was ticked before the deadline), or counted from timetable hours (category="Study", optionally
     label="Revision": the Actual hours in that category/activity). For a habit-linked goal, tick the habit
     with set_habit instead; for an hours goal, add the time to the Actual track.
   - Hours goals get only the week's free time (timetable hours minus calendar events and other blocks).
     "am I on track?" -> goal_pace; "do I have time for my goals this week?" -> week_budget;
     "plan my goals this week" -> plan_goals (a preview; it never moves anything). The [Now] section has
     a one-line goal summary.
-  - "set a goal of 12 gym sessions this month" -> add_goal(title="Gym", target=12, unit="sessions").
+  - "set a goal of 12 gym sessions this month" -> add_goal(title="Gym", target=12, unit="sessions", due=<last day
+    of the month>). "in a year" / "by Easter": work out the date. No deadline said: ask, or end of this month.
     If a habit with a matching name exists, ask whether to count that habit or update it by hand.
-  - edit_goal changes the title, target, unit or linked habit; delete_goal needs the user's confirmation.
+  - edit_goal changes the title, target, unit, deadline (due) or linked habit; delete_goal needs the user's confirmation.
 
 - Network: the people the user knows, shown as a web on the Network page, coloured by group.
   Each person has a name, an optional description (who they are / how the user knows them),
@@ -412,11 +413,9 @@ def _schema(required, **props):
 
 
 TODO_PERIOD = {"type": "string", "enum": ["daily", "weekly", "monthly"]}
-GOAL_PERIOD = {"type": "string", "enum": ["monthly", "yearly"]}
 TODO_REF = _schema(["todo"], todo={"type": "string", "description": "the to-do's title (or part of it), or its id"},
                    period=TODO_PERIOD, date={**DATE, "description": "a day in the to-do's period, if not the current one"})
-GOAL_REF = {"goal": {"type": "string", "description": "the goal's title (or part of it), or its id"},
-            "period": GOAL_PERIOD, "date": {**DATE, "description": "a day in the goal's month/year, if not the current one"}}
+GOAL_REF = {"goal": {"type": "string", "description": "the goal's title (or part of it), or its id"}}
 
 APP_STATUS = {"type": "string", "enum": store.APP_STATUSES}
 APP_PROPS = {"company": {"type": "string"}, "industry": {"type": "string"},
@@ -521,25 +520,28 @@ TOOL_SPECS = [
     ("list_todos", "List to-dos (with ids) for the periods containing a date (default today).",
      _schema([], period=TODO_PERIOD, date=DATE), tools.list_todos),
     ("delete_todo", "Delete a to-do, found by title (or id) in the current periods.", TODO_REF, tools.delete_todo),
-    ("add_goal", "Add a measurable goal for a month or year, e.g. 12 gym sessions. Link a habit to count it automatically.",
-     _schema(["title", "target"], title={"type": "string"}, target={"type": "number"}, period=GOAL_PERIOD,
+    ("add_goal", "Add a measurable goal with a deadline, e.g. 12 gym sessions by 30 Nov. Link a habit to count it automatically.",
+     _schema(["title", "target", "due"], title={"type": "string"}, target={"type": "number"},
+             due={**DATE, "description": "the deadline, YYYY-MM-DD"},
              unit={"type": "string", "description": "e.g. 'sessions', 'km', 'books' (optional)"},
              habit={"type": "string", "description": "a habit whose ticks count as progress (optional)"},
              category={"type": "string", "description": "a timetable category whose Actual hours count as progress (optional)"},
              label={"type": "string", "description": "with category: only count this activity, e.g. 'Guitar' (optional)"},
-             date={**DATE, "description": "any day in the month/year (default today)"}),
+             date={**DATE, "description": "the day it starts (default today)"}),
      tools.add_goal),
     ("log_goal_progress", "Add to a goal's progress (amount defaults to 1; negative takes some off).",
      _schema(["goal"], **GOAL_REF, amount={"type": "number"}), tools.log_goal_progress),
     ("set_goal_progress", "Set a goal's progress to an exact number.",
      _schema(["goal", "value"], **GOAL_REF, value={"type": "number"}), tools.set_goal_progress),
-    ("edit_goal", "Change a goal's title, target, unit, or linked habit (unlink_habit=true to update it by hand).",
+    ("edit_goal", "Change a goal's title, target, unit, deadline, or linked habit (unlink_habit=true to update it by hand).",
      _schema(["goal"], **GOAL_REF, title={"type": "string"}, target={"type": "number"}, unit={"type": "string"},
+             due={**DATE, "description": "a new deadline, YYYY-MM-DD"},
              habit={"type": "string"}, unlink_habit={"type": "boolean"}, category={"type": "string"},
              label={"type": "string"}, unlink_category={"type": "boolean"}),
      tools.edit_goal),
-    ("list_goals", "List goals with progress and ids for the month and year containing a date (default today).",
-     _schema([], period=GOAL_PERIOD, date=DATE), tools.list_goals),
+    ("list_goals", "List current goals (not past their deadline) with progress, deadlines and ids.",
+     _schema([], date={**DATE, "description": "list those not past their deadline on this day (default today)"}),
+     tools.list_goals),
     ("delete_goal", "Delete a goal, found by title (or id).", _schema(["goal"], **GOAL_REF), tools.delete_goal),
     ("goal_pace", "How a goal (or, with no goal, every current goal) is doing: on track/behind/slipping/can't be "
      "reached, this week's need with carried debt, projected finish, and how much to plan.",

@@ -400,6 +400,10 @@ th.day .dstate .confirm {
   padding: 1px 9px; border: 1px solid var(--accent); border-radius: 999px; background: var(--bg);
   color: var(--text); font-size: 0.72rem; cursor: pointer;
 }
+th.day .dstate .unconfirm {
+  padding: 0 4px; border: 0; background: none; color: var(--muted); font-size: 0.72rem; text-decoration: underline; cursor: pointer;
+}
+th.day .dstate .unconfirm:hover { color: var(--text); }
 th.day .dstate .confirm:hover { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
 .tt-root.one .tt-now { z-index: 6; }
 
