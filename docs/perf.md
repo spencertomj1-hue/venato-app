@@ -55,3 +55,31 @@ one full Home rerun (about 410-500), so Home is the target. A tick on the Daily 
 ## After
 
 (to be filled in by re-running the script at the end of the plan)
+
+## Bundle size: leaving out unused parts of pyarrow
+
+Measured with a real Linux PyInstaller build (`pyinstaller packaging/venato.spec`, Python 3.13, pyarrow 26.0.1,
+PyInstaller 6.x; plotly already gone), before and after the excludes in `packaging/venato.spec`.
+
+| | Before | After | Saved |
+|---|---:|---:|---:|
+| `dist/Venato` folder | 1014.5 MB | 959.3 MB | 55.2 MB |
+| `_internal/pyarrow` | 163 MB | 110 MB | 53 MB |
+| the folder as a .tar.gz | 373.6 MB | 354.4 MB | 19.2 MB |
+
+What Streamlit loads from pyarrow to draw `st.dataframe` is only `pyarrow.lib`, `_compute`, `compute`, `ipc`,
+`pandas_compat` and their helpers. The spec now excludes `pyarrow.parquet`, `.flight`, `.acero`, `.dataset`,
+`.substrait`, `.gandiva` (plus `.orc` and `.tests`), drops their extension modules (`_parquet`, `_dataset*`,
+`_acero`, `_substrait`, `_flight`, `_orc`, the cloud filesystem ones) and the shared libraries nothing links to
+(`libarrow_flight` 32 MB, `libarrow_s3` 17 MB, the Flight and Parquet-encryption bridges).
+
+Not dropped, although the brief listed them: `libarrow_acero`, `libarrow_dataset`, `libarrow_substrait` and
+`libparquet` (about 24 MB). pyarrow's own `lib` module is linked against them, so without them `import pyarrow`
+fails: with `libparquet.so` removed, `--check` still passed (it never imports pyarrow) but the Money page showed
+`ImportError: libparquet.so.2600: cannot open shared object file` and no table drew. Getting rid of them needs a
+slimmer pyarrow build, not an exclude.
+
+Checked on the Linux bundle: `Venato --check` prints "Venato check OK: 8 pages drawn", `Venato --serve` answers
+`/_stcore/health` with `ok`, and the Money page (5 `st.dataframe` tables and 3 charts) renders with no exception.
+The Windows and macOS builds run in CI only and were not run here: the same exclusions apply, but their library
+names (`.dll` / `.dylib`) are only matched by name, not tried.
