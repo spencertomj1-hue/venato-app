@@ -6,8 +6,10 @@ from datetime import timedelta
 
 def _kit():
     import importlib
+    from venato import cache
     from venato.ui import kit
-    return importlib.reload(kit)        # (the `store` fixture reloads store, so kit must see the new one)
+    importlib.reload(cache)             # (the `store` fixture reloads store, so these must see the new one)
+    return importlib.reload(kit)
 
 
 def test_cached_stats_see_new_log(store):
@@ -51,7 +53,14 @@ def test_cached_sees_settings_change(store):
     assert cached_settings()["week_start"] == "sunday"
 
 
-def test_cached_is_per_database(store):
-    cached_habits = _kit().cached(store.get_habits)
+def test_cached_is_per_database(store, tmp_path, monkeypatch):
+    kit = _kit()
+    cached_habits = kit.cached(store.get_habits)
     store.add_habit("Gym")
     assert len(cached_habits()) == 1
+    version = store.data_version()
+    other = tmp_path / "other.db"
+    monkeypatch.setattr(store, "DB_PATH", other)
+    store.init_db()
+    monkeypatch.setattr(store, "data_version", lambda: version)      # same version, same arguments...
+    assert cached_habits() == []                                     # ...but another database

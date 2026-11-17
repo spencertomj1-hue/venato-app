@@ -30,7 +30,7 @@ import math
 from datetime import datetime, time, timedelta
 
 from venato import store
-from venato.ui import kit
+from venato.cache import cached
 
 TRAILING_DAYS = 28            # the Actual rate behind the projection: the last 4 weeks
 FOLLOW_WEEKS = 6              # follow-through looks at the last 6 complete weeks...
@@ -92,13 +92,13 @@ def inflation_on():
 
 
 # Reads remembered until the data changes (kit.cached). The lambdas look `store` up when called.
-goals_overlapping = kit.cached(lambda first, last: store.goals_overlapping(first, last))
-goals_active = kit.cached(lambda day=None: store.goals_active(day))
-goals_open = kit.cached(lambda day=None: store.goals_open(day))
-goals_past = kit.cached(lambda day=None: store.goals_past(day))
-_blocks_between = kit.cached(lambda first, last: store.blocks_between(first, last))
-_outlook_between = kit.cached(lambda first, last: store.outlook_between(first, last))
-_confirmed_days = kit.cached(lambda first, last: store.confirmed_days(first, last))
+goals_overlapping = cached(lambda first, last: store.goals_overlapping(first, last))
+goals_active = cached(lambda day=None: store.goals_active(day))
+goals_open = cached(lambda day=None: store.goals_open(day))
+goals_past = cached(lambda day=None: store.goals_past(day))
+_blocks_between = cached(lambda first, last: store.blocks_between(first, last))
+_outlook_between = cached(lambda first, last: store.outlook_between(first, last))
+_confirmed_days = cached(lambda first, last: store.confirmed_days(first, last))
 
 
 class Ctx:

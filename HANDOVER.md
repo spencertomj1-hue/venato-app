@@ -39,11 +39,14 @@ setup.ps1                      One-command install on Windows (venv, packages, S
 venato/                         The app's code, as a package (imported as `from venato import store`, ...)
   regional.py                Week start, clock, date format, water units (display only; data stays HH:mm / ISO / litres): use its time() / day_month() / long_date() / water_text()
   system.py                    Everything that differs by OS: data folder, opening a folder, words for the UI
-  store.py                     ALL SQL; timetable painting rules; settings.json; stats. No Streamlit.
+  store.py                     ALL SQL; timetable painting rules; settings.json; stats. No Streamlit. `data_version()` goes up on every committed write.
+                               Rule: anything that writes the live database outside `store.db()` must call `store.bump_version()` (undo.restore does);
+                               writes by another process aren't seen by the cache.
+  cache.py                     `cached(fn)`: reads remembered (st.cache_data) until the data changes; key = database, `data_version()`, settings.json mtime, today. No UI; `ui/kit.py` re-exports it
   tools.py                     What Claude can do: plain functions over store.py, previews for destructive changes
   assistant.py                 Claude via claude-agent-sdk: finds the CLI, system prompt, in-process "venato" MCP server
   quick.py                     Quick commands ("drank 500ml", "tick gym"): handled without Claude via the same tools.py actions
-  pace.py                      Goals meet the timetable: capacity, budget, pace, debt, follow-through, negotiation, suggestions (§5e). No SQL, no Streamlit
+  pace.py                      Goals meet the timetable: capacity, budget, pace, debt, follow-through, negotiation, suggestions (§5e). No SQL, no Streamlit UI (it uses `venato.cache` for cached reads)
   blocks/                      Blocks. Core (always on): timetable, goals, focus, grades, stats (shown as "Review"). Optional:
                                log ("Daily Log"), money, workouts. Each has its own tables, migrations, tools, prompt, context,
                                search, weekly-review lines and page (__init__.py: the Block shape; core.py: timetable, goals, log, stats)
