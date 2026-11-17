@@ -73,7 +73,7 @@ function helpHtml(single) {
     ["Fit time", "<b>Fit time</b> (above) finds free gaps for hours of something, e.g. 6 hours of revision, and shows you before adding them."],
     ["Categories", "<b>Adjust categories</b> (above) adds, renames and recolours categories, and sets which category an activity uses."],
   ];
-  if (!single) items.push(["Change week", "‹ Today › at the top, the date box, or swipe sideways on a trackpad."]);
+  if (!single) items.push(["Change week", "‹ Today › at the top, or swipe sideways on a trackpad."]);
   const legend =
     `<div class="tt-help-key" aria-label="Key">` +
     `<span><i class="k-did"></i>What you did</span>` +
@@ -465,7 +465,6 @@ class Timetable {
           <button data-nav="0">Today</button>
           <button data-nav="1" title="Next week">›</button>
         </div>
-        <input type="date" class="tt-goto" title="Go to date" aria-label="Go to date" value="${days[0]}">
         <div class="tt-mode" role="group" aria-label="Show">
           <button data-mode="plan" title="What you planned: each day's Plan, locked when the day started">Plan</button>
           <button data-mode="actual" title="What you did: started days' Actual (change it as the day goes), later days' Plan">Actual</button>
@@ -844,9 +843,6 @@ class Timetable {
       el.addEventListener("click", () => this.setMode(el.dataset.mode)));
     this.root.querySelectorAll("[data-nav]").forEach((el) =>
       el.addEventListener("click", () => this.nav({ dir: +el.dataset.nav })));
-    this.root.querySelector(".tt-goto").addEventListener("change", (e) => {
-      if (e.target.value) this.nav({ date: e.target.value });
-    });
 
     table.addEventListener("mousedown", (e) => {
       const td = e.target.closest("td.s");

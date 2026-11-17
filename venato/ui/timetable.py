@@ -217,7 +217,7 @@ def _shift_week(weeks):
 
 
 def _on_nav(key):
-    """Component callback: ‹ / Today / › buttons, the date box, or a sideways swipe."""
+    """Component callback: ‹ / Today / › buttons or a sideways swipe."""
     nav = st.session_state[key]["nav"]
     if not nav:
         return

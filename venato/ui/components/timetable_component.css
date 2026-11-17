@@ -33,19 +33,19 @@ button, input, select { font: inherit; }
   margin-bottom: 8px;
 }
 .tt-title { font-family: var(--venato-serif, inherit); font-size: 2.1rem; font-weight: 500; letter-spacing: -0.01em; margin-right: 6px; }
-.tt-nav { display: inline-flex; flex: none; border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 10px; overflow: hidden; background: var(--bg); }
+.tt-nav { display: inline-flex; flex: none; gap: 2px; padding: 2px; border-radius: 8px; background: rgba(128, 128, 128, 0.14); }
 .tt-nav button {
   border: none;
+  border-radius: 6px;
   background: transparent;
   color: var(--text);
-  font-size: 0.875rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  padding: 9px 14px;
+  padding: 3px 10px;
   cursor: pointer;
 }
-.tt-nav button + button { border-left: 1px solid rgba(128, 128, 128, 0.35); }
-.tt-nav button[data-nav="-1"], .tt-nav button[data-nav="1"] { font-size: 1.15rem; line-height: 1; padding: 6px 14px 8px; }
-.tt-nav button:hover { background: rgba(128, 128, 128, 0.1); }
+.tt-nav button[data-nav="-1"], .tt-nav button[data-nav="1"] { font-size: 0.95rem; line-height: 1; padding: 2px 8px 4px; }
+.tt-nav button:hover { background: rgba(128, 128, 128, 0.14); }
 .tt-goto {
   padding: 8px 12px;
   border: 1px solid rgba(128, 128, 128, 0.35);
@@ -59,7 +59,7 @@ button, input, select { font: inherit; }
 
 /* The "?" at the top right and its panel */
 .tt-help-btn {
-  width: 38px; height: 38px; border-radius: 10px; border: 1px solid rgba(128, 128, 128, 0.35);
+  width: 28px; height: 28px; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.35);
   background: var(--bg); color: var(--text); font-weight: 700; font-size: 0.85rem; cursor: pointer; line-height: 1;
 }
 .tt-help-btn:hover, .tt-help-btn[aria-expanded="true"] { background: var(--head-bg); }
@@ -308,11 +308,11 @@ td.s.sel.box { --tile: color-mix(in srgb, var(--accent) 16%, transparent); }
 .tt-outlook { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; color: var(--muted); }
 .tt-sync, .tt-ol-toggle {
   display: inline-flex; align-items: center; gap: 5px;
-  border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 10px;
-  background: var(--bg); color: var(--text); cursor: pointer; min-height: 38px;
+  border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 8px;
+  background: var(--bg); color: var(--text); cursor: pointer; min-height: 28px;
 }
-.tt-sync { width: 38px; height: 38px; justify-content: center; padding: 0; }
-.tt-ol-toggle { padding: 6px 12px; font-size: 0.875rem; font-weight: 600; opacity: 0.8; }
+.tt-sync { width: 28px; height: 28px; justify-content: center; padding: 0; }
+.tt-ol-toggle { padding: 3px 10px; font-size: 0.78rem; font-weight: 600; opacity: 0.8; }
 .tt-ol-toggle.on { opacity: 1; background: rgba(128, 128, 128, 0.12); }
 .tt-sync:hover, .tt-ol-toggle:hover { background: rgba(128, 128, 128, 0.1); }
 .msr {   /* Streamlit's Material Symbols font, loaded on the page */
@@ -368,12 +368,12 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 @media (prefers-reduced-motion: reduce) { .tt-pop.tt-peek, .tt-blocks.swap .blk { animation: none; } }
 
 /* The Plan / Actual switch. */
-.tt-mode { display: inline-flex; border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 10px; overflow: hidden; }
-.tt-mode button { padding: 9px 14px; border: 0; background: var(--bg); color: var(--text); font-size: 0.875rem; font-weight: 600; cursor: pointer;
-                  transition: background 0.12s, color 0.12s; }
-.tt-mode button + button { border-left: 1px solid rgba(128, 128, 128, 0.35); }
-.tt-mode button:hover { background: rgba(128, 128, 128, 0.1); }
-.tt-mode button.on { background: var(--text); color: var(--bg); font-weight: 600; }
+/* A small pill track: the chosen side is a solid pill inside it, the other is see-through. */
+.tt-mode { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: rgba(128, 128, 128, 0.14); }
+.tt-mode button { padding: 3px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text);
+                  font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: background 0.12s, color 0.12s; }
+.tt-mode button:hover { background: rgba(128, 128, 128, 0.14); }
+.tt-mode button.on { background: var(--text); color: var(--bg); }
 .tt-root.readonly .tt-mode { display: none; }
 .tt-peek .pk-title { display: flex; align-items: flex-start; gap: 6px; font-size: 0.95rem; }
 .tt-peek .pk-title .cal-ic { margin-top: 4px; }
@@ -442,7 +442,6 @@ th.day.bp::before { background: color-mix(in srgb, var(--bp) 11%, var(--head-bg)
 
 /* "Plan" under a day that hasn't started (Actual view), and the switch turns blue in Plan view. */
 th.day .dstate .ptag { color: var(--bp); font-weight: 700; font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.tt-root.plan-mode .tt-mode { border-color: color-mix(in srgb, var(--bp) 55%, transparent); }
 .tt-root.plan-mode .tt-mode button.on { background: var(--bp); color: #fff; }
 
 /* The key, in the (?) panel. */
