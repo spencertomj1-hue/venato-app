@@ -294,3 +294,13 @@ def test_time_zone(store, monkeypatch):
     at.toggle(key="region_tz_auto").set_value(False).run()
     at.selectbox(key="region_tz").set_value("Australia/Sydney").run()
     assert store.load_settings()["timezone"] == "Australia/Sydney" and not at.exception
+
+
+def test_finish_keeps_a_saved_block_choice(store):
+    """Finishing the wizard again (wizard_done false, blocks already chosen) doesn't wipe the choice."""
+    from venato import setup_checks
+    from venato.ui import settings_ui
+    store.save_settings(wizard_done=False, blocks=["money"])
+    settings_ui._finish()
+    s = setup_checks.load_settings()
+    assert s["blocks"] == ["money"] and s["wizard_done"] is True
