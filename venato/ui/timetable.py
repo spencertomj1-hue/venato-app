@@ -275,18 +275,18 @@ def render_page():
     # Fit time / Categories: the same things Claude can do, by hand.
     from venato import pace
     from venato.ui import goal_time, timetable_tools
-    # One line above the grid (buttons, then the suggestions), so the grid gets as much height as it can.
-    row = st.container(horizontal=True, gap="small", vertical_alignment="center", key="tt_toolbar")
-    timetable_tools.toolbar(day, row)
-    ctx = pace.Ctx()                             # one look at the timetable for the bar, the grid and the panel
+    ctx = pace.Ctx()                             # one look at the timetable for the grid, the panel and the bar
     sugg = goal_time.suggestions_for(monday, ctx)
-    goal_time.suggestion_bar(monday, sugg, ctx, row)
     grid, panel = st.columns([4, 1.3], gap="medium")     # the panel stacks under the grid on narrow screens
     with grid:
         render_grid([monday + timedelta(days=i) for i in range(7)], suggestions=sugg)
-    st.html("<style>.st-key-tt_panel { max-height: calc(100vh - 260px); overflow-y: auto; }</style>")   # scrolls itself, not the page
+    st.html("<style>.st-key-tt_panel { max-height: calc(100vh - 160px); overflow-y: auto; }</style>")   # scrolls itself, not the page
     with panel.container(key="tt_panel"):
         goal_time.planner(monday, ctx)
+    # The buttons and the suggestions go below everything, so the week is the first thing you see.
+    row = st.container(horizontal=True, gap="small", vertical_alignment="center", key="tt_toolbar")
+    timetable_tools.toolbar(day, row)
+    goal_time.suggestion_bar(monday, sugg, ctx, row)
 
 
 # ---------------------------------------------------------------------------

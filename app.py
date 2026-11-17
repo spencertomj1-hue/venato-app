@@ -62,6 +62,8 @@ appearance.sync()
 appearance.apply_text_colours()
 appearance.apply_text_size()
 sidebar_theme.apply()
+from venato.ui import paper                  # serif headings; in light mode paper background, sidebar and buttons
+paper.apply()
 
 
 def ready_marker():
