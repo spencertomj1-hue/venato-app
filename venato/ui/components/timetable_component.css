@@ -227,6 +227,7 @@ td.s::before {
 }
 td.s.first::before { left: var(--day-gap); }                          /* a gap between days (Plan and Actual stay together) */
 td.s.today { --tile: rgba(128, 128, 128, 0.11); }
+.tt-root td.s.filled::before { background: transparent; }   /* a block sits on these cells: no tile under it */
 td.s:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.18); }
 td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
 
