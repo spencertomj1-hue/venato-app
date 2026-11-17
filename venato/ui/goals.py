@@ -232,8 +232,10 @@ def _goal_row(g, ctx=None, neighbours=None):
     p = pace.goal_pace(g, ctx) if ctx is not None else None
     with st.container(border=True, key=f"goal_card_{g['id']}"):
         text, minus, plus, more = st.columns([5, 1, 1, 1.4], vertical_alignment="center")
-        badge = f"  \n{goal_time.badge(p['state'])}" if p and p["state"] != "upcoming" else ""
-        text.markdown(f"**{goal_time.md(g['title'])}** :gray[{due_line(g)}]{badge}")
+        when, left = due_parts(g)
+        badge = f"{goal_time.badge(p['state'])} " if p and p["state"] != "upcoming" else ""
+        # The deadline stays on the title's line (non-breaking spaces keep "by 31/12" in one piece).
+        text.markdown(f"**{goal_time.md(g['title'])}**\u00a0:gray[{when.replace(' ', chr(160))}]  \n{badge}:gray[{left}]")
         if g["kind"] != "count":
             minus.empty()
             plus.empty()
@@ -265,17 +267,18 @@ def _goal_row(g, ctx=None, neighbours=None):
                        "on days you've confirmed")
 
 
-def due_line(g, today=None):
-    """"by 31 Dec · 44 days left", "by 31 Oct · ended", "from 1 Dec, by 31 Dec"."""
+def due_parts(g, today=None):
+    """(the deadline, how long is left): ("by 31/12", "44 days left"), ("by 31/10", "ended"),
+    ("by 31/12", "starts 01/12")."""
     today = today or store.local_today()
     due, start = date.fromisoformat(g["due"]), date.fromisoformat(g["period_start"])
     left = (due - today).days
     when = store.goal_title_due(due, today)
     if start > today:
-        return f"from {regional.short_date(start, today)}, {when}"
+        return when, f"starts {regional.short_date(start, today)}"
     if left < 0:
-        return f"{when} · ended"
-    return f"{when} · " + ("due today" if left == 0 else "1 day left" if left == 1 else f"{left} days left")
+        return when, "ended"
+    return when, "due today" if left == 0 else "1 day left" if left == 1 else f"{left} days left"
 
 
 def _section(today, ctx):
