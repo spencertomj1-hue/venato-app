@@ -337,7 +337,7 @@ def _savings():
     cols = st.columns(3)
     for i, g in enumerate(goals):
         gs = mn.goal_status(g)
-        colour = good if gs["pct"] >= 100 else kit.PALETTE[i % len(kit.PALETTE)]
+        colour = good if gs["pct"] >= 100 else kit.colours(range(i + 1))[i]
         with cols[i % 3], st.container(border=True, height="stretch"):
             st.markdown(f"**{g['name']}**")
             st.caption(f"by {store.fmt_day(store._as_date(g['deadline']), '%-d %b %Y')}" if g["deadline"] else "No deadline")

@@ -35,3 +35,11 @@ def test_no_plotly():
     found = [str(p.relative_to(ROOT)) for p in [ROOT / "app.py", ROOT / "desktop.py", *(ROOT / "venato").rglob("*.py")]
              if "plotly" in p.read_text(encoding="utf-8")]
     assert found == []
+
+
+def test_check_arrow_serialises_a_table():
+    """desktop.py --check must exercise the pyarrow path st.dataframe uses (the bundle excludes parts of pyarrow)."""
+    import sys
+    sys.path.insert(0, str(ROOT))
+    import desktop
+    desktop.check_arrow()
