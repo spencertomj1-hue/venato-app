@@ -428,15 +428,23 @@ th.day.bp::before { background: color-mix(in srgb, var(--bp) 11%, var(--head-bg)
 .blk.plan.frozen { background: color-mix(in srgb, var(--fill) 30%, var(--bg)); border-color: var(--fill); }
 .blk.plan span { opacity: 0.75; }
 
-/* Actual view: the Plan behind a day that went differently, as a faint outline. */
-.pghost {
+/* Actual view of a locked day: the Plan as a thin rail down the column's left edge (the Actual blocks move
+   over to make room). Bright where the day went differently, faint where it matched. */
+.prail {
   position: absolute; box-sizing: border-box; pointer-events: none;
-  border: 1.5px solid color-mix(in srgb, var(--fill) 70%, transparent); border-radius: var(--tile-radius);
-  background: color-mix(in srgb, var(--fill) 6%, transparent);
+  border-radius: 2px; background: var(--fill); opacity: 0.3;
 }
-.pghost span {
-  position: absolute; right: 5px; bottom: 2px; padding: 0 3px; border-radius: 3px; background: var(--bg);
-  font-size: 0.6rem; font-weight: 600; color: var(--muted); white-space: nowrap; max-width: calc(100% - 10px);
+.prail.off { opacity: 0.95; }
+/* Planned time where nothing was done: hatched in the Plan's colour, "Skipped: Gym 18:00–19:00". */
+.pmiss {
+  position: absolute; box-sizing: border-box; pointer-events: none; border-radius: var(--tile-radius);
+  background: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--fill) 22%, transparent) 0 4px, transparent 4px 9px);
+  border: 1px dashed color-mix(in srgb, var(--fill) 55%, transparent);
+}
+.pmiss span {
+  position: absolute; left: 4px; top: 2px; padding: 0 3px; border-radius: 3px; background: var(--bg);
+  font-size: 0.6rem; font-weight: 600; color: var(--muted); white-space: nowrap; max-width: calc(100% - 8px);
   overflow: hidden; text-overflow: ellipsis;
 }
 
@@ -449,5 +457,7 @@ th.day .dstate .ptag { color: var(--bp); font-weight: 700; font-size: 0.66rem; l
 .tt-help-key span { display: flex; align-items: center; gap: 8px; }
 .tt-help-key i { flex: none; width: 22px; height: 12px; border-radius: 3px; box-sizing: border-box; }
 .tt-help-key .k-did { background: #00b050; }
-.tt-help-key .k-planned { border: 1.5px solid rgba(0, 176, 80, 0.6); background: rgba(0, 176, 80, 0.06); }
+.tt-help-key .k-rail { width: 5px; margin: 0 9px 0 8px; background: #00b050; border-radius: 2px; }
+.tt-help-key .k-miss { border: 1px dashed rgba(0, 176, 80, 0.55);
+  background: repeating-linear-gradient(135deg, rgba(0, 176, 80, 0.22) 0 3px, transparent 3px 7px); }
 .tt-help-key .k-plan { border: 1.5px solid #00b050; background: color-mix(in srgb, #00b050 18%, var(--bg)); }

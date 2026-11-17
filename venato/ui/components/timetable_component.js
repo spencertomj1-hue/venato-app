@@ -22,6 +22,8 @@
 let SLOTS = 36;                   // 30-minute slots in a day (07:00 -> 01:00 by default; from Python)
 let FIRST_MIN = 7 * 60;           // the day's first minute
 const SWIPE_THRESHOLD = 120;      // px of sideways scroll that flips a week
+const RAIL = 4;                   // px: the Plan's strip down the left of a locked day's Actual column
+const SHOW_MISSED = true;         // also hatch Plan time where nothing was done (set false to drop it)
 
 // ---------- Small helpers ----------
 
@@ -77,7 +79,8 @@ function helpHtml(single) {
   const legend =
     `<div class="tt-help-key" aria-label="Key">` +
     `<span><i class="k-did"></i>What you did</span>` +
-    `<span><i class="k-planned"></i>What you planned (behind a day that went differently)</span>` +
+    `<span><i class="k-rail"></i>What you planned (the strip on the left: bright where the day went differently)</span>` +
+    `<span><i class="k-miss"></i>Planned but skipped (nothing done then)</span>` +
     `<span><i class="k-plan"></i>Plan (blueprint: days that haven't started, and the Plan view)</span></div>`;
   return `<div class="tt-help-h">How the timetable works</div>${legend}<dl>` +
     items.map(([t, d]) => `<dt>${t}</dt><dd>${d}</dd>`).join("") + "</dl>";
@@ -541,7 +544,9 @@ class Timetable {
     this.occupant = days.map(() => ({ plan: [], actual: [] }));
     this.outlookAt = days.map(() => []);
     this.blocks = [];
-    this.outlines = [];                           // Actual view: the Plan, faintly, where the day went differently
+    this.railDays = new Set();
+    this.rails = [];                              // Actual view of a locked day: its Plan as a thin strip down the left edge
+    this.missed = [];                             // ...and Plan time with nothing done in it, hatched
     const evs = this.visibleOutlook();
     days.forEach((date, di) => {
       const track = this.trackFor(di), frozen = this.frozen(di);
@@ -604,8 +609,9 @@ class Timetable {
     this.renderBlockList();
   }
 
-  // Actual view of a locked day: where its Plan (blocks and calendar events) differs from the Actual, a faint
-  // outline of the Plan behind it, "Planned: Gym 18:00–19:00". Where they match, nothing (no noise).
+  // Actual view of a locked day: its Plan (blocks and calendar events) as a thin rail down the left edge of the
+  // column, bright where the day went differently, faint where it matched. Plan time where nothing was done at
+  // all is also hatched in the gap ("Skipped: Gym 18:00–19:00"), when SHOW_MISSED is on.
   addPlanOutlines(date, di) {
     const planAt = [], actAt = [];
     const fill = (arr, item, a, b) => { for (let i = Math.max(0, a); i < Math.min(b, SLOTS); i++) arr[i] = item; };
@@ -614,12 +620,24 @@ class Timetable {
       fill(planAt, { id: `ol:${ev.id}`, label: ev.title, categoryId: ev.categoryId }, slotOf(ev.start), slotOf(ev.end));
     for (const en of this.entriesFor(date, "actual")) fill(actAt, en, slotOf(en.start), slotOf(en.end));
     const differs = (i) => planAt[i] && !(actAt[i] && actAt[i].label === planAt[i].label && actAt[i].categoryId === planAt[i].categoryId);
+    this.railDays.add(di);
+    if (SHOW_MISSED) {
+      let i = 0;
+      while (i < SLOTS) {
+        if (!planAt[i] || actAt[i]) { i++; continue; }
+        let j = i;
+        while (j < SLOTS && planAt[j] === planAt[i] && !actAt[j]) j++;
+        this.missed.push({ en: planAt[i], di, s: i, e: j });
+        i = j;
+      }
+    }
     let i = 0;
     while (i < SLOTS) {
-      if (!differs(i)) { i++; continue; }
+      if (!planAt[i]) { i++; continue; }
       let j = i;
-      while (j < SLOTS && differs(j) && planAt[j] === planAt[i]) j++;
-      this.outlines.push({ en: { ...planAt[i], track: "actual" }, di, s: i, e: j });
+      const d = differs(i);
+      while (j < SLOTS && planAt[j] === planAt[i] && differs(j) === d) j++;
+      this.rails.push({ en: planAt[i], di, s: i, e: j, differs: d });
       i = j;
     }
   }
@@ -740,13 +758,13 @@ class Timetable {
 
   // Where a block goes: exactly over the tiles it covers (the same gaps and rounded corners),
   // so blocks and empty tiles line up. The gaps come from the CSS (--gap, --day-gap).
-  boxStyle(first, last, origin) {
+  boxStyle(first, last, origin, inset = 0) {
     const css = getComputedStyle(this.root);
     const gap = parseFloat(css.getPropertyValue("--gap")) || 2.5;
     const dayGap = parseFloat(css.getPropertyValue("--day-gap")) || 7;
     const a = first.getBoundingClientRect(), b = last.getBoundingClientRect();
     const border = parseFloat(getComputedStyle(last).borderBottomWidth) || 0;
-    const left = a.left - origin.left + (first.classList.contains("first") ? dayGap : gap);
+    const left = a.left - origin.left + (first.classList.contains("first") ? dayGap : gap) + inset;
     const top = a.top - origin.top + gap;
     const right = a.right - origin.left - gap;
     const bottom = b.bottom - origin.top - border - gap;
@@ -758,16 +776,23 @@ class Timetable {
     this.drawLines();
     if (!this.blocks) return;
     const origin = this.wrapEl.getBoundingClientRect();
-    const outlines = (this.outlines || []).map(({ en, di, s, e }) => {
-      const firstTd = this.cells[di].plan[s], lastTd = this.cells[di].plan[e - 1];
-      const cat = this.cats.get(en.categoryId);
-      const tall = lastTd.getBoundingClientRect().bottom - firstTd.getBoundingClientRect().top >= 30;
-      return `<div class="pghost" style="${this.boxStyle(firstTd, lastTd, origin)}--fill:${esc(cat ? cat.colour : "#9e9e9e")}" ` +
-        `title="Planned: ${esc(en.label)} ${esc(fmtRange(slotTime(s), slotTime(e)))}">` +
-        `${tall ? `<span>Planned: ${esc(en.label)} ${esc(fmtRange(slotTime(s), slotTime(e)))}</span>` : ""}</div>`;
+    const fillOf = (en) => esc((this.cats.get(en.categoryId) || {}).colour || "#9e9e9e");
+    const rails = (this.rails || []).map(({ en, di, s, e, differs }) => {
+      const a = this.cells[di].plan[s], b = this.cells[di].plan[e - 1];
+      const box = this.boxStyle(a, b, origin).replace(/width:[^;]+;/, `width:${RAIL}px;`);
+      return `<div class="prail${differs ? " off" : ""}" style="${box}--fill:${fillOf(en)}" ` +
+        `title="Planned: ${esc(en.label)} ${esc(fmtRange(slotTime(s), slotTime(e)))}"></div>`;
     }).join("");
-    this.blocksEl.innerHTML = outlines + this.blocks
+    const missed = (this.missed || []).map(({ en, di, s, e }) => {
+      const a = this.cells[di].plan[s], b = this.cells[di].plan[e - 1];
+      const tall = b.getBoundingClientRect().bottom - a.getBoundingClientRect().top >= 30;
+      const what = `Skipped: ${esc(en.label)} ${esc(fmtRange(slotTime(s), slotTime(e)))}`;
+      return `<div class="pmiss" style="${this.boxStyle(a, b, origin, RAIL + 2)}--fill:${fillOf(en)}" title="${what}">` +
+        `${tall ? `<span>${what}</span>` : ""}</div>`;
+    }).join("");
+    this.blocksEl.innerHTML = rails + missed + this.blocks
       .map(({ en, di, s, e, outlook, ghost, frozen, plan }) => {
+        const inset = !plan && this.railDays.has(di) ? RAIL + 2 : 0;   // room for the Plan rail
         const firstTd = this.cells[di][en.track][s], lastTd = this.cells[di][en.track][e - 1];
         const first = firstTd.getBoundingClientRect(), last = lastTd.getBoundingClientRect();
         const cat = this.cats.get(en.categoryId);
@@ -784,7 +809,7 @@ class Timetable {
             `--fill:${esc(bg)}">` +
             `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div class="blk ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${plan ? "plan" : "act"} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+        return `<div class="blk ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${plan ? "plan" : "act"} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin, inset)}` +
           (plan ? `--fill:${esc(bg)}">` : `background:${esc(bg)};color:${fg}">`) +
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
