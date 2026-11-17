@@ -30,7 +30,7 @@ VENATO_DATA_DIR=<folder> .venv/bin/streamlit run app.py   # run against any data
 ## 3. Files
 
 ```
-app.py                         Streamlit entry: global CSS, wizard gate, sidebar nav, Home/Stats pages, chat bar, Outlook autosync
+app.py                         Streamlit entry: global CSS, wizard gate, sidebar nav, Home/Review pages, chat bar, Outlook autosync
 desktop.py                     Native window launcher with a splash screen (pywebview); what Venato.app / the Windows shortcut runs
 setup.sh                       One-command install on macOS (venv, packages, Venato.app)
 setup.ps1                      One-command install on Windows (venv, packages, Start menu + desktop shortcuts)
@@ -54,7 +54,7 @@ venato/                         The app's code, as a package (imported as `from 
   outlook.py                   Read-only Outlook import: link checks, Keychain, fetch, recurrence expansion, sync
   notify.py                    Reminders: a background thread that notifies before Plan blocks / Outlook events start
   updates.py                   Daily check of GitHub's latest release vs venato/VERSION (written by packaging/venato.spec; none = "dev", not checked); banner in app.py
-  review.py                    Weekly review numbers (summary, due_week: from 7pm Sunday); ui/review.py shows the pop-up and Stats' history; reflections in `weekly_reviews`
+  review.py                    Weekly review numbers (summary, due_week: from 7pm Sunday); ui/review.py shows the pop-up and Review's history; reflections in `weekly_reviews`
   undo.py                      Undo: whole-database snapshot before deletes / overwrites (ui/undo_bar.py offers it)
   setup_checks.py              Logic behind the wizard/Settings: Claude status, mic test, backups, Finder
   ui/                          One module per page or section (imported as `from venato.ui import goals`, ...)
@@ -67,8 +67,8 @@ venato/                         The app's code, as a package (imported as `from 
     goal_chart.py              The Goals page's pace chart: an SVG drawn as an <img> (st.html strips inline SVG), alt text with the numbers; legend() once per page
     goal_time.py               Timetable: the "Plan this week" panel (free hours per day, goal bars with Fit N h, Plan all goals, I'm away) and suggested sittings; Share hours; the Goals page's pace lines, offers and suggestions
     deadlines.py               Deadlines section (Goals page) and Home's list, with "Make time"
-    review.py                  Weekly review pop-up and Stats' history
-    home.py, stats.py          Home (agenda, widgets) and Stats pages
+    review.py                  Weekly review pop-up and Review's history
+    home.py, stats.py          Home (agenda, widgets) and Review (stats.py) pages
     blocks_ui.py               Settings → Blocks; one page module per block (focus.py, money.py, ...)
     undo_bar.py, page_fade.py  The Undo bar; the fade between pages
     chat.py                    The chat bar / Home ask box, and its flow (send → transcribe → Claude → rerun)
@@ -90,12 +90,22 @@ scripts/
 tests/                         pytest + AppTest; tests/fixtures/sample.ics is a fake calendar; tests/fragment_run.py runs interactions as the browser does (§8)
 ```
 
+## 3b. Blocks: tiers and hooks (`venato/blocks/`)
+
+- **Two tiers.** `core=True` blocks are always on (`chosen_keys()` adds them even if settings.json lacks them): Timetable, Goals (also to-dos and deadlines), Focus, Grades, Review (key `stats`, in `blocks/core.py`). Optional blocks are switched on in the setup wizard (it no longer asks) or Settings → Blocks: Daily Log (key `log`: habits, journal, mood), Money, Workouts. Settings.json `blocks` lists the keys switched on, in the user's priority order, which is also the order of the Home widgets. Removed features (Food, Recipes, Cut down, Health data, Involvement, Applications, Network) have no code; their tables stay in old databases untouched and are never dropped.
+- **Hooks on `Block`** (all optional; the shared code asks the switched-on blocks, so a block never needs an `if` somewhere else):
+  - `search`: `{kind: (select, haystack[, order])}`, merged by `blocks.search_kinds()` into Home's search; `search_icons`: `{kind: Material icon}` for its results; `search_open(result, session_state)`: routes a click on a result to the block's page (`blocks.search_block(kind)` finds the owner; core kinds have none).
+  - `review(first, last)` -> `{"title", "lines"}`: lines for the weekly review (`blocks.review_sections`); no lines = no section.
+  - `status`: `{word in a tool's name: text}`: what the chat shows while one of the block's tools runs.
+  - Plus the older ones: `page`, `home`, `tools`, `prompt`, `context`, `quick`, `schema`, `migrate`.
+- **Adding a block** = adding a file in `venato/blocks/` with a `BLOCK`; set `search*` / `review` / `status` there rather than in `store.py`, `review.py` or `chat.py`.
+
 ## 4. Data model (`store.py`)
 
 | Table | Contents |
 |---|---|
 | `entries` | Daily log: `date` (PK), `mood` 1–5, `sleep` hours, `energy` 1–5, `notes`, `water` litres (added by `_add_column`; `save_entry(water=KEEP)` leaves it alone) |
-| `habits`, `habit_log` | Habits (`per_week`: NULL = every day, else a weekly target 1–7), and one row per (habit, date) ticked. Cascade delete. Weekly habits: `week_ticks`, `weekly_streaks` (weeks that hit the target), `habit_progress` gives the one-line summary; Stats counts them as % of the target. |
+| `habits`, `habit_log` | Habits (`per_week`: NULL = every day, else a weekly target 1–7), and one row per (habit, date) ticked. Cascade delete. Weekly habits: `week_ticks`, `weekly_streaks` (weeks that hit the target), `habit_progress` gives the one-line summary; Review counts them as % of the target. |
 | `tt_categories` | `id`, `name`, `colour` (#RRGGBB), `text_colour` (NULL = automatic), `grp` (heading in the key), `ord` |
 | `tt_label_map` | Activity label → default category (case-insensitive lookups) |
 | `tt_entries` | The user's timetable blocks: `id`, `date`, `track` (plan/actual), `start`/`"end"` ("HH:mm", end exclusive, may be "01:00"), `label`, `category_id`, `details` |
@@ -243,9 +253,17 @@ Two different things:
   - A fragment can only draw into its own container, and its arguments are reused on its own reruns: read anything that changes (today, settings) inside it. A button inside a fragment that changes the page (`page`) needs an app rerun; keep such buttons outside (Home's habits "Manage").
   - Tests: AppTest's `.run()` always reruns the whole app; `tests/fragment_run.py` runs an interaction as the browser does (just its fragment) and fires component triggers. `st.session_state["home_draws"]` counts full Home draws.
 
+- **Cache rules** (`venato/cache.py`): wrap a read in `@cached` (`kit.cached` is the same) and it is remembered until the data changes. The key is the database path, `store.data_version()` (up on every write through `store.db()`, `save_settings` and `undo.restore`), settings.json's mtime and size, and today's date. So:
+  - Only cache reads that depend on the database, settings and today. Anything that reads the clock beyond the date, the network or a file elsewhere (the Outlook cache, `.ics`) must not be cached, or call `store.bump_version()` when it changes.
+  - Return picklable data (lists, dicts, DataFrames), never connections. Callers get a copy and may change it.
+  - A write that bypasses `store.db()` (another process, a file copy) must call `store.bump_version()`; writes by another process are not seen.
+  - Tests that write to the database directly and then read through a cached function should do it through the store, or the cache serves the old answer.
+- **Timetable op acknowledgements and rollback:** the grid is local-first: it applies an op in the browser at once and keeps it pending (replayed over incoming data) until Python acknowledges its `opId` in `data.acked`. `_on_ops` acknowledges every op, saved or not. One Python could not save (a locked Plan, or an exception) is acknowledged with the reason in `data.rejected`; the JS drops that op, the block goes back to what was saved, and the reason shows over the grid for a few seconds. Never skip the acknowledgement for an op you refuse: the grid would resend it forever.
+
 ## 8b. Installers (`packaging/`, `.github/workflows/release.yml`)
 
-- **One PyInstaller recipe** (`packaging/venato.spec`) builds `dist/Venato/Venato.exe` on Windows and `dist/Venato.app` on macOS, with Python and every package inside. `app.py`, `.streamlit/config.toml`, `assets/` and the components are data files; `collect_all` picks up packages with data/plugins (Streamlit, Plotly, keyring, pywebview, the SDK with its bundled CLI, faster-whisper…).
+- **Slimmer bundle:** `venato.spec` leaves out the parts of pyarrow Streamlit never loads (parquet, flight, dataset, acero, substrait, gandiva and their libraries). Plotly is not a dependency any more: charts are Altair, which Streamlit already brings. If a new feature imports a pyarrow part that was excluded, `--check` draws a table through pyarrow to catch it. Measurements: `docs/perf.md`.
+- **One PyInstaller recipe** (`packaging/venato.spec`) builds `dist/Venato/Venato.exe` on Windows and `dist/Venato.app` on macOS, with Python and every package inside. `app.py`, `.streamlit/config.toml`, `assets/` and the components are data files; `collect_all` picks up packages with data/plugins (Streamlit, keyring, pywebview, the SDK with its bundled CLI, faster-whisper…).
 - **The bundle runs itself twice:** the window process starts a copy of itself with `--serve PORT`, which runs Streamlit in-process (`desktop.serve`). `--check` imports every module and sets up a throwaway database. A windowed `.exe` has no console, so output goes to `<data folder>/logs/venato.log`.
 - **The workflow** builds both on GitHub's runners, smoke-tests each (`--check`, then `--serve` and `/_stcore/health`), makes `Venato-Setup.exe` (Inno Setup, `packaging/venato.iss`: per-user, no admin, Start menu + optional desktop shortcut) and `Venato.dmg` (`hdiutil`, drag to Applications), and keeps both as downloads on the run. Run it from the Actions tab with a version and "publish" (or push a `v*` tag) to make a GitHub Release with both attached.
 - **Not signed:** Windows shows SmartScreen ("More info → Run anyway"); macOS needs "Open Anyway" in Privacy & Security. Signing needs paid certificates (Apple Developer ID, a Windows code-signing certificate). The Mac build is Apple silicon only (`macos-latest`).
@@ -260,7 +278,7 @@ Two different things:
 - **Contrast (WCAG AA):** text must be 4.5:1. Colours for each mode are in `.streamlit/config.toml` (`[theme.light]` / `[theme.dark]`: accent, red/orange/grey text). Components use `--muted` (mixed from the text colour, fine in both modes) rather than fixed greys; captions are overridden in `appearance.apply_text_colours()` (Streamlit fades them to 3.7:1). Don't fade text below `opacity: 0.72`. Check with axe-core's `color-contrast` rule in both modes after UI changes.
 
 - **Always read and write text files as UTF-8** (`read_text(encoding="utf-8")`). Windows defaults to cp1252, which garbles the components' `›`, `…`, `×` etc.
-- **No `%-d` (or other `%-x`) in Python date formats:** Windows' `strftime` doesn't support them. Use `x.day` instead. (Plotly's `tickformat` is fine; it runs in the browser.)
+- **No `%-d` (or other `%-x`) in Python date formats:** Windows' `strftime` doesn't support them. Use `x.day` instead. (Altair's `format` / `labelExpr` are fine; they run in the browser.)
 - **Accessibility in the components:** the custom parts are keyboard-usable and labelled: to-do titles are focusable (Enter edits, Menu key / Shift+F10 opens the menu, Alt+↑/↓ reorders), the timetable has a hidden-until-focused list of its blocks (`renderBlockList`). Keep new interactive bits focusable with an `aria-label`, and keep focus where it was across redraws.
 - **OS differences go in `venato/system.py`** (data folder, opening folders, UI words), so the rest of the code stays the same everywhere.
 
