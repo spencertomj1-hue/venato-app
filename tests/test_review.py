@@ -65,7 +65,7 @@ def test_popup_once_and_history(store, monkeypatch):
     assert review.should_show() is None
     at = AppTest.from_file(APP, default_timeout=60).run()                      # opened again: not shown again
     assert not any(m.label == "Hours logged" for m in at.metric)
-    at.sidebar.radio[0].set_value("Stats").run()
+    at.sidebar.radio[0].set_value("Review").run()
     assert not at.exception and any("Weekly reviews" in s.value for s in at.subheader)
 
 

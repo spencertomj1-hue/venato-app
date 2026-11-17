@@ -587,4 +587,4 @@ def _home():
 BLOCK = Block("workouts", "Workouts", ":material/fitness_center:",
               "Log workouts set by set, save plans, and track personal bests, 1RMs and weekly volume.",
               group="Health & body", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=32)
+              quick=[_quick], schema=SCHEMA, order=80)

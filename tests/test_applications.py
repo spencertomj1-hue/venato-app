@@ -15,6 +15,8 @@ def apps(store):
     from venato import tools
     importlib.reload(tools)                       # picks up the reloaded store
     from venato.blocks import applications
+    from venato import blocks
+    blocks.save([*blocks.chosen_keys(), "applications"])      # optional now: switched on for these tests
     return applications
 
 
@@ -51,12 +53,14 @@ def test_search_finds_applications(store, apps):
 
 
 def test_page_and_table_edits(store, apps):
+    from venato import blocks
+    blocks.save([*blocks.chosen_keys(), "network"])
     apps.add_application(company="Acme", status="Applied", deadline="2099-01-01")
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.sidebar.radio[0].set_value("Applications").run()
     assert not at.exception
     assert list(at.sidebar.radio[0].options).index("Applications") == list(at.sidebar.radio[0].options).index("Network") - 1
-    assert list(at.sidebar.radio[0].options).index("Network") < list(at.sidebar.radio[0].options).index("Stats")
+    assert list(at.sidebar.radio[0].options).index("Network") > list(at.sidebar.radio[0].options).index("Review")
     assert any("1 in total" in c.value for c in at.caption)
 
     # What the table sends: one op per change.

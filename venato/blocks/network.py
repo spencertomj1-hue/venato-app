@@ -630,5 +630,5 @@ def _page():
 BLOCK = Block("network", "Network", ":material/hub:",
               "A map of the people you know, the groups they're in, and when you last met.",
               group="People & life", page=_page, tools=TOOLS, prompt=PROMPT, schema=SCHEMA, migrate=_migrate,
-              order=80, default=True, search=SEARCH, search_icons=SEARCH_ICONS, search_open=_search_open,
+              order=170, search=SEARCH, search_icons=SEARCH_ICONS, search_open=_search_open,
               review=_review, status=STATUS)

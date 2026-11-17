@@ -16,6 +16,8 @@ def net(store):
     from venato import tools
     importlib.reload(tools)                       # picks up the reloaded store
     from venato.blocks import network
+    from venato import blocks
+    blocks.save([*blocks.chosen_keys(), "network"])      # optional now: switched on for these tests
     return network
 
 

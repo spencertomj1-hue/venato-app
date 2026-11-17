@@ -42,7 +42,7 @@ def _open(r):
         ss["page"] = "Timetable"
         ss["tt_day"] = store._as_date(r["date"])
     elif kind == "Review":
-        ss["page"] = "Stats"
+        ss["page"] = "Review"
         ss["review_week"] = store._as_date(r["date"])
 
 
