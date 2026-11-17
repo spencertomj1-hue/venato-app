@@ -2289,8 +2289,6 @@ _SEARCH = {
     "To-do": ("SELECT id, title, notes, period_start, period FROM todos", "title || ' ' || COALESCE(notes, '')"),
     "Goal": ("SELECT id, title, unit, period_start, period FROM goals", "title"),
     "Deadline": ("SELECT id, title, notes, due, done FROM deadlines", "title || ' ' || COALESCE(notes, '')"),
-    "Habit": ("SELECT id, name, NULL, NULL, per_week FROM habits", "name", "name"),
-    "Journal": ("SELECT date, notes, NULL, date, NULL FROM entries", "COALESCE(notes, '')"),
     "Timetable": ("SELECT id, label, details, date, track || ' ' || start || '-' || \"end\" FROM tt_entries",
                   "label || ' ' || COALESCE(details, '')"),
     "Outlook": ("SELECT uid, title, location, date, start FROM tt_outlook",

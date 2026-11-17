@@ -13,7 +13,7 @@ import streamlit as st
 from venato import regional
 from venato import store
 
-ICONS = {"To-do": "check_circle", "Goal": "flag", "Deadline": "event", "Habit": "repeat", "Journal": "edit_note",
+ICONS = {"To-do": "check_circle", "Goal": "flag", "Deadline": "event",
          "Timetable": "calendar_view_week", "Outlook": "calendar_month", "Review": "insights"}
 
 
@@ -33,11 +33,6 @@ def _open(r):
         ss["page"] = "Goals"
         if kind == "Goal":
             ss[f"goals_start_{r['extra']}"] = store._as_date(r["date"])
-    elif kind in ("Habit", "Journal"):
-        ss["page"] = "Daily Log"
-        if r["date"]:
-            ss["log_day"] = store._as_date(r["date"])
-            ss["log_month"] = ss["log_day"].replace(day=1)
     elif kind in ("Timetable", "Outlook"):
         ss["page"] = "Timetable"
         ss["tt_day"] = store._as_date(r["date"])

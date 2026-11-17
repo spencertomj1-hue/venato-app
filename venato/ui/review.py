@@ -9,7 +9,7 @@ from datetime import timedelta
 import pandas as pd
 import streamlit as st
 
-from venato import regional
+from venato import blocks, regional
 from venato import review
 from venato import store
 from venato.ui import kit
@@ -33,30 +33,34 @@ def render(first, key):
         st.caption("This week isn't over yet: these are the numbers so far.")
 
     # --- The headline numbers ---
+    log_on = blocks.is_on("log")                 # habits, mood and the journal are Daily Log's
     habits_hit = sum(h["hit"] for h in s["habits"])
     t = s["todos"]
-    a, b, c, d = st.columns(4)
+    a, b, *rest = st.columns(4 if log_on else 3)
+    habits_col, todos_col = (rest[0], rest[1]) if log_on else (None, rest[0])
     a.metric("Plan followed", f"{s['followed_pct']}%" if s["followed_pct"] is not None else "–",
              help="The share of your planned time where you did what you planned (same category).")
     b.metric("Hours logged", f"{s['actual_hours']:g} h", help=f"{s['planned_hours']:g} h were planned.")
-    c.metric("Habits on target", f"{habits_hit}/{len(s['habits'])}" if s["habits"] else "–")
-    d.metric("To-dos done", f"{t['weekly_done'] + t['daily_done']}/{t['weekly'] + t['daily']}"
-             if t["weekly"] + t["daily"] else "–")
-    log = s["log"]
-    a, b, c, p, d = st.columns(5)
-    for col, name, k, unit, fmt in ((a, "Mood", "mood", "/10", "{:g}"), (b, "Sleep", "sleep", " h", "{:g}"),
-                                    (c, "Energy", "energy", "/10", "{:g}"), (p, "Productivity", "productivity", "/10", "{:g}"),
-                                    (d, "Water", "water", "", "{}")):
-        now, before = log[k]["now"], log[k]["before"]
-        if k == "water":
-            value = regional.water_text(now) if now is not None else "–"
-            delta = None if now is None or before is None else \
-                round(regional.water_out(now) - regional.water_out(before), 1)
-        else:
-            value, delta = _delta(now, before, unit, fmt)
-        col.metric(f"Avg {name.lower()}", value, delta=delta, help="Change from the week before.")
-    st.caption(f"Daily log filled in on {s['days_logged']} of 7 days. Time is counted from "
-               f"{s['days_confirmed']} of {s['days_so_far']} days confirmed on the timetable.")
+    if log_on:
+        habits_col.metric("Habits on target", f"{habits_hit}/{len(s['habits'])}" if s["habits"] else "–")
+    todos_col.metric("To-dos done", f"{t['weekly_done'] + t['daily_done']}/{t['weekly'] + t['daily']}"
+                     if t["weekly"] + t["daily"] else "–")
+    if log_on:
+        log = s["log"]
+        a, b, c, p, d = st.columns(5)
+        for col, name, k, unit, fmt in ((a, "Mood", "mood", "/10", "{:g}"), (b, "Sleep", "sleep", " h", "{:g}"),
+                                        (c, "Energy", "energy", "/10", "{:g}"), (p, "Productivity", "productivity", "/10", "{:g}"),
+                                        (d, "Water", "water", "", "{}")):
+            now, before = log[k]["now"], log[k]["before"]
+            if k == "water":
+                value = regional.water_text(now) if now is not None else "–"
+                delta = None if now is None or before is None else \
+                    round(regional.water_out(now) - regional.water_out(before), 1)
+            else:
+                value, delta = _delta(now, before, unit, fmt)
+            col.metric(f"Avg {name.lower()}", value, delta=delta, help="Change from the week before.")
+    st.caption((f"Daily log filled in on {s['days_logged']} of 7 days. " if log_on else "")
+               + f"Time is counted from {s['days_confirmed']} of {s['days_so_far']} days confirmed on the timetable.")
 
     # --- Time: planned vs done per category ---
     if s["time"]:

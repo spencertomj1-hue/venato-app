@@ -89,14 +89,17 @@ def summary(first):
     time = [{"category": names.get(c, "Uncategorised"), "colour": colours.get(c, "#8B8D98"), **h}
             for c, h in sorted(hours.items(), key=lambda kv: -(kv[1]["actual"] + kv[1]["plan"]))]
 
-    # --- Daily log, against the week before ---
+    # --- Daily log, against the week before (nothing when the Daily Log block is off) ---
+    log_on = blocks.is_on("log")
     this = store.entries_between(days[0], days[-1]).to_dict("records")
     prev = store.entries_between((first - timedelta(days=7)).isoformat(), (first - timedelta(days=1)).isoformat()).to_dict("records")
+    if not log_on:
+        this, prev = [], []
     log = {k: {"now": _avg(this, k), "before": _avg(prev, k)} for k in ("mood", "sleep", "energy", "productivity", "water")}
 
     # --- Habits ---
     targets, habits = store.habit_targets(), []
-    for hid, name in store.get_habits():
+    for hid, name in (store.get_habits() if log_on else []):
         done = store.get_habit_dates(hid)
         ticks = sum(d in done for d in days)
         target = targets.get(hid, 7)
@@ -115,7 +118,7 @@ def summary(first):
     from venato import pace
     goals = pace.review_rows(first)
 
-    journal = store.journal_entries(first=days[0], last=days[-1])
+    journal = store.journal_entries(first=days[0], last=days[-1]) if log_on else []
     sections = blocks.review_sections(first, last)        # what the switched-on blocks say about the week
     has_data = bool(hours or store.blocks_between(days[0], days[-1]) or any(this) or any(h["ticks"] for h in habits) or weekly or daily or journal or sections)
     return {

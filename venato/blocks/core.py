@@ -41,16 +41,27 @@ def _stats_page():
     stats.page_stats()
 
 
+def _log_search_open(r, ss):
+    ss["page"] = "Daily Log"
+    if r["date"]:
+        from venato import store
+        ss["log_day"] = store._as_date(r["date"])
+        ss["log_month"] = ss["log_day"].replace(day=1)
+
+
 BLOCKS = [
     Block("timetable", "Timetable", ":material/calendar_view_week:",
-          "Your week in Plan and Actual columns, with Outlook events and Fit time.",
+          "Your week, with a Plan / Actual switch, Outlook events and Fit time.",
           group="Plan", page=_timetable_page, order=10, core=True),
     Block("goals", "Goals", ":material/flag:",
           "To-dos for the day, week and month, goals with progress bars, and deadlines.",
           group="Plan", page=_goals_page, home=_goals_home, order=20, core=True),
     Block("log", "Daily Log", ":material/edit_calendar:",
           "Mood, sleep, energy and water each day, habits with streaks, and your journal.",
-          group="Health & body", page=_log_page, home=_log_home, order=60, default=True),
+          group="Health & body", page=_log_page, home=_log_home, order=60, default=True,
+          search={"Habit": ("SELECT id, name, NULL, NULL, per_week FROM habits", "name", "name"),
+                  "Journal": ("SELECT date, notes, NULL, date, NULL FROM entries", "COALESCE(notes, '')")},
+          search_icons={"Habit": "repeat", "Journal": "edit_note"}, search_open=_log_search_open),
     Block("stats", "Review", ":material/monitoring:",
           "Time planned vs done, your past weekly reviews, and mood and sleep charts when Daily Log is on.",
           group="Plan", page=_stats_page, order=50, core=True),
