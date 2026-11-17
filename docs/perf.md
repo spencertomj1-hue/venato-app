@@ -54,6 +54,8 @@ one full Home rerun (about 410-500), so Home is the target. A tick on the Daily 
 
 ### Fragments (Task 9)
 
+(The pair below and the After table further down are separate runs; expect about 10% noise between them.)
+
 From Task 9 the script runs interactions the way the browser does (`tests/fragment_run.py`): a widget inside
 an `st.fragment` reruns just that fragment (plus the whole app when `kit.rerun_app_if` asks), and the
 components' triggers (to-do list, Focus timer, calendar, timetable grid) are fired as their JS would, instead
