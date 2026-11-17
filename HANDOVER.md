@@ -44,9 +44,9 @@ venato/                         The app's code, as a package (imported as `from 
   assistant.py                 Claude via claude-agent-sdk: finds the CLI, system prompt, in-process "venato" MCP server
   quick.py                     Quick commands ("drank 500ml", "tick gym"): handled without Claude via the same tools.py actions
   pace.py                      Goals meet the timetable: capacity, budget, pace, debt, follow-through, negotiation, suggestions (§5e). No SQL, no Streamlit
-  blocks/                      Optional blocks (Applications, Network, Focus, Workouts, Food, Recipes, Cut down, Grades, Money,
-                               Involvement, Health): each has its own tables, migrations, tools, prompt, context, search,
-                               weekly-review lines and page (__init__.py: the Block shape; core.py: timetable, goals, log, stats)
+  blocks/                      Blocks. Core (always on): timetable, goals, focus, grades, stats (shown as "Review"). Optional:
+                               log ("Daily Log"), money, workouts. Each has its own tables, migrations, tools, prompt, context,
+                               search, weekly-review lines and page (__init__.py: the Block shape; core.py: timetable, goals, log, stats)
   voice.py                     Microphone recording (sounddevice) and local transcription (faster-whisper)
   outlook.py                   Read-only Outlook import: link checks, Keychain, fetch, recurrence expansion, sync
   notify.py                    Reminders: a background thread that notifies before Plan blocks / Outlook events start
@@ -55,7 +55,7 @@ venato/                         The app's code, as a package (imported as `from 
   undo.py                      Undo: whole-database snapshot before deletes / overwrites (ui/undo_bar.py offers it)
   setup_checks.py              Logic behind the wizard/Settings: Claude status, mic test, backups, Finder
   ui/                          One module per page or section (imported as `from venato.ui import goals`, ...)
-    search.py                  Home's search box: store.search (every word, any case, per kind) and Open (sets page + day / person)
+    search.py                  Home's search box: store.search (every word, any case, per kind) and Open (sets page + day)
     timetable.py               Timetable page and the week/day grid's Python side
     timetable_tools.py         Buttons above the grid: Add block, Fit time, Categories (dialogs calling the same tools.py functions as Claude)
     daily_log.py               Daily Log page (month calendar, day card, the day's habits, entry form with the journal box, past entries) and Home's habits
@@ -66,10 +66,8 @@ venato/                         The app's code, as a package (imported as `from 
     deadlines.py               Deadlines section (Goals page) and Home's list, with "Make time"
     review.py                  Weekly review pop-up and Stats' history
     home.py, stats.py          Home (agenda, widgets) and Stats pages
-    applications.py            Applications page (apps_component.*)
     blocks_ui.py               Settings → Blocks; one page module per block (focus.py, money.py, ...)
     undo_bar.py, page_fade.py  The Undo bar; the fade between pages
-    network.py                 Network page: the web's Python side, plus the add / edit dialogs (incl. the interaction log)
     chat.py                    The chat bar / Home ask box, and its flow (send → transcribe → Claude → rerun)
     settings_ui.py             First-run wizard and the Settings page
     appearance.py              Light / dark / system: syncs settings.json "theme" into Streamlit's own theme choice (localStorage), is_dark()
@@ -77,7 +75,6 @@ venato/                         The app's code, as a package (imported as `from 
     components/                Front ends (Streamlit components v2, shadow root), read once at import:
       timetable_component.*    the week/day grid
       todos_component.*        the Reminders-style to-do lists
-      network_component.*      the people web (SVG + a small force layout, no libraries)
       calendar_component.*     the month calendar
       chat_component.*         the chat bar
 
@@ -103,11 +100,7 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
 | `tt_outlook_hidden` | Outlook occurrences the user removed or detached (kept across syncs) |
 | `todos` | `id`, `title`, `notes`, `period` (daily/weekly/monthly), `period_start` (the day, its Monday or the 1st), `done`, `done_at`, `"repeat"`, `ord`, `created_at` |
 | `todo_rollover` | Per period kind, the last period repeating to-dos were copied into (see §5b) |
-| `net_groups` | Network groups: `id`, `name` (unique, any case), `colour`, `ord`, `parent_id` (the group it's inside; NULL = top level; no loops). Seeded from `DEFAULT_NET_GROUPS` |
-| `net_people` | `id`, `name` (not unique), `description`, `works_for`, `group_id` (`ON DELETE SET NULL`), `created_at` |
 | `deadlines` | `id`, `title`, `due` (date), `notes`, `done`, `done_at`, `created_at`. UI in `ui/deadlines.py` (Goals page section, Home list); chips on the timetable header (`outlookAllDay` with `deadline: true`) and agenda; `notify.due_deadlines` announces today/tomorrow once a day from 9 am |
-| `net_interactions` | Times the user met/spoke to someone: `id`, `person_id` (cascade), `date`, `note`, `created_at` |
-| `net_links` | Undirected connections: `a`, `b` (always `a < b`, enforced by a CHECK), `reason`. Cascade-deleted with either person |
 | `goals` | `id`, `title`, `period` (legacy tag: monthly if due by the end of its first month, else yearly), `period_start` (the day it was set), `due` (the deadline; older goals got their month's or year's last day), `target`, `unit`, `progress` (kept by hand), `habit_id` (NULL = by hand; `ON DELETE SET NULL`), `ord` (also its priority), `created_at`, `category_id` (counts timetable hours; `ON DELETE SET NULL`; never together with `habit_id`), `label` (optional: only that activity) |
 | `goal_week` | The user's split of a week between hours goals: `goal_id` (cascade), `week_start`, `hours`. None = automatic |
 | `tt_outlook_away` | All-day calendar events marked "I'm away" (that day has no free time for goals); kept across syncs |
@@ -155,17 +148,6 @@ Two different things:
 - **Goals page:** one bordered section of the goals not past their deadline (`store.goals_open`), and a "Past goals" expander (`goals_past`). The deadline field is `goals.due_picker` (component `due_picker_component.*`): a scrolling calendar with markers from `handy_deadlines` and "End of the year" / "In a year" shortcuts. Each goal shows `value / target unit`, a percentage and a bar. Hand-kept goals have − / + (via `add_goal_progress`); every goal has a ⋯ popover to edit it (including the "Update it myself" / "Count a habit's ticks" choice) or delete it. "New goal" is a popover with the same form.
 - **Bars:** HTML in the theme's primary colour (`st.progress` uses a different one), the same on both pages.
 - **Home:** this month's and this year's goals as bars in a card, with "See all" (a button whose callback sets the sidebar radio, `page`), the "by today" tick and one status line each (`goals.status_line`). Above the to-dos, `goal_time.needs_you` lists only goals behind or short this week ("N h to plan") with Plan my goals; both share one `pace.Ctx` (`blocks/core._goals_home`).
-
-## 5c. Network
-
-- **Self-contained:** tables, store functions, Claude's tools (`tool_*`), prompt, Home search (Person / Group / Met) and the weekly review's "People you saw" all live in `blocks/network.py`; the page is `ui/network.py`. Applications is the same (`blocks/applications.py`, `ui/applications.py`). No shared file refers to either.
-
-- **Tree:** You → a hub circle per group (ids `g:<group id>`) → sub-group hubs → people; ungrouped people hang off You. Only groups with someone in them (or below them) get a hub. Tree lines are solid and tinted with the parent's colour; person-to-person links are dashed.
-- **Web (`network_component.*`, key `network`):** SVG drawn once per data change; positions come from a small force simulation (repulsion, with hubs and You pushing harder; springs along tree lines, short for people, longer for groups; weak springs for cross-links; a weak pull to the centre; speeds capped). New data is pre-settled for up to 400 steps, then fitted to the frame the first time. Labels scale up when zoomed out (`--label`). Positions, pan/zoom and hidden top-level groups are kept in sessionStorage. A dragged circle stays where it's dropped.
-- **Cards and dialogs:** selection is local to the JS. Card buttons send `edit` `{kind: person|group, id}`, `{kind: new_person, group}` or `{kind: new_group, parent}`; `_on_edit` stores it in `net_edit`, and `render_page` pops it and opens the matching `st.dialog` once (clicks inside a dialog rerun only the dialog). Dialog buttons are never disabled: Streamlit text boxes only commit on Enter/blur, so they validate on click instead.
-- **Claude:** `add_person`, `update_person`, `connect_people`, `disconnect_people` (confirm), `delete_person` (confirm), `add_group` (with `inside`), `edit_group` (rename/recolour/move), `delete_group` (confirm; its people and sub-groups move up a level), `find_people` (lists groups as a tree). Names aren't unique: lookups match an exact name first, then part of a name, and several matches is an error that lists them. Everyone is implicitly linked to the user, so there's no "me" person.
-
-- **Interaction log:** `net_interactions`, newest first. The person dialog adds/removes entries; the card shows "Last spoke" and the latest 3 (`recent` in the component data). Claude: `log_interaction`, `person_history`; `find_people` shows the last one.
 
 ## 5d. Journal and reminders
 
@@ -236,7 +218,7 @@ Two different things:
   - `plan_time`: fits N hours of an activity into the Plan's free gaps (`store.free_runs`: around the user's blocks and visible Outlook events) between two dates, within earliest/latest, in sittings of up to `max_block_hours`, spread over evenly spaced days with a 30-minute break between sittings on the same day. Always a preview (Confirm paints them). Never plans in the past (`_first_future_slot`, using `_now()`, which tests pin).
   - `list_categories`, `edit_category`, `set_activity_default`, `set_outlook_category`
   - `log_day` also takes `water` (litres, the day's total; changing it needs no confirmation since it's a running total).
-  - Journal: `write_journal`, `read_journal`. Network interactions: `log_interaction`, `person_history`.
+  - Journal: `write_journal`, `read_journal`.
   - To-dos: `add_todo`, `complete_todo`, `uncomplete_todo`, `list_todos`, `delete_todo` (confirm first).
   - Goals: `goal_pace`, `week_budget`, `plan_goals` (§5e), `add_goal` (habit or category/label), `log_goal_progress`, `set_goal_progress`, `edit_goal`, `list_goals`, `delete_goal` (confirm first). Progress tools refuse habit-linked goals and point Claude at `set_habit`.
   - Both are found by id or title in the current periods: exact title, then part of a title, then the most shared words ("finish problem sheet" → "Problem sheet 4"). Several matches is an error that lists them, so Claude asks.
@@ -270,7 +252,7 @@ Two different things:
 
 - **Always read and write text files as UTF-8** (`read_text(encoding="utf-8")`). Windows defaults to cp1252, which garbles the components' `›`, `…`, `×` etc.
 - **No `%-d` (or other `%-x`) in Python date formats:** Windows' `strftime` doesn't support them. Use `x.day` instead. (Plotly's `tickformat` is fine; it runs in the browser.)
-- **Accessibility in the components:** the custom parts are keyboard-usable and labelled: to-do titles are focusable (Enter edits, Menu key / Shift+F10 opens the menu, Alt+↑/↓ reorders), the timetable has a hidden-until-focused list of its blocks (`renderBlockList`), network circles are focusable buttons. Keep new interactive bits focusable with an `aria-label`, and keep focus where it was across redraws.
+- **Accessibility in the components:** the custom parts are keyboard-usable and labelled: to-do titles are focusable (Enter edits, Menu key / Shift+F10 opens the menu, Alt+↑/↓ reorders), the timetable has a hidden-until-focused list of its blocks (`renderBlockList`). Keep new interactive bits focusable with an `aria-label`, and keep focus where it was across redraws.
 - **OS differences go in `venato/system.py`** (data folder, opening folders, UI words), so the rest of the code stays the same everywhere.
 
 - **The sidebar radio has `key="page"`.** Home's "See all" sets it from a component callback, which runs before the radio is drawn; don't set it anywhere after that.

@@ -1,6 +1,6 @@
 """
 Shared look for the block pages: cards, stat tiles, charts, tables, progress rings and pills,
-so Money, Food, Workouts, Grades, Involvement and Health all read as one app.
+so Money, Workouts and Grades all read as one app.
 
 Everything is built from Streamlit's own pieces (bordered containers, st.metric, st.dataframe,
 Plotly) plus a little HTML for rings and pills, and works in light and dark mode.

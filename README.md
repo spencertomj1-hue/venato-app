@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>A private, offline life tracker for your Mac or PC: plan your week, log what actually happened, and see the gap.</strong><br>
-  For students and anyone who wants their timetable, habits, journal, goals and people in one app, on their own computer.
+  For students and anyone who wants their timetable, to-dos, deadlines, goals and grades in one app, on their own computer.
 </p>
 
 <p align="center">
@@ -33,24 +33,23 @@
 
 - **Plan, then adjust, then confirm.** Your Plan for a day is locked in when the day starts and copied into its Actual, so you never log your day twice: move, stretch or delete blocks as the day really goes, then confirm it at the end. The weekly review then tells you how much of your plan you followed, per category, counting only the days you've confirmed. Notion and Daylio don't do that out of the box.
 - **Your data never leaves your computer.** No account, no server, no cloud sync. Everything is one SQLite file in your data folder, the app only listens on `127.0.0.1`, and voice is transcribed locally.
-- **Everything in one place.** Timetable, daily log (mood, sleep, energy, water), journal, habits with streaks, to-dos, goals, deadlines and a map of the people you know, all linked: tick a habit and the goal it counts towards moves; a deadline shows on the timetable and gets a reminder.
+- **Everything in one place.** Timetable, to-dos, deadlines, goals, focus sessions and grades, with an optional daily log (mood, sleep, energy, water), journal and habits, all linked: tick a habit and the goal it counts towards moves; a deadline shows on the timetable and gets a reminder.
 - **Optional Claude assistant.** Type or say "Fit 6 hours of revision into next week around my lectures" or "Mood 4, slept 7.5 hours, tick reading". It works through a fixed set of Venato actions, previews anything destructive for you to confirm, and is off unless you switch it on. Everything also works by hand.
 
 ## Features
 
-**Pick your blocks.** Venato is built from blocks you switch on in the setup wizard (or Settings → Blocks). Each brings its own page, Home widget and assistant skills, and Home orders the widgets by the priorities you set. The original pages are on by default; the rest are off until you want them:
+**Pick your blocks.** Venato is built from blocks. The core ones are always on: Timetable, Goals, Focus, Grades and Review (the weekly review and stats). The optional ones you switch on in the setup wizard or Settings → Blocks. Each brings its own page, Home widget and assistant skills, and Home orders the widgets by the priorities you set.
 
 | Block | What it does |
 |---|---|
-| **Focus** | Pomodoro or stopwatch with auto breaks; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". |
-| **Workouts** | Sets, reps, weight, distance; 1RM, personal bests, progress charts, weekly volume, saved plans; kg/lb, km/mi. "bench 3x8 at 60". |
-| **Food** | Food diary with calorie and macro targets, and a weekly meal planner. "ate a banana". |
-| **Recipes** | Recipes with ingredients and nutrition, and a shopping list grouped by aisle, filled from recipes or the meal plan. "add milk to the shopping list". |
-| **Cut down** | Caffeine, alcohol, smoking, screen time or anything else: daily and weekly limits, one-tap presets, streaks, days free, money saved. "had a coffee". |
-| **Grades** | Modules and weighted assessments, mark needed for your target, UK classification or US GPA, year weightings. "got 68 in acp coursework". |
-| **Money** | Spending and income by category, monthly budgets, savings goals, subscriptions (logged when they renew) and bank CSV import. "spent £12 on lunch". |
-| **Involvement** | Societies, clubs, faith, charities, volunteering, work: your role and duties, goals per organisation, hours, practice, donations, events and tickets. "volunteered 3h at oxfam". |
-| **Health data** | Import Apple Health, Google Fit, Strava and Whoop exports: steps, sleep, heart rate, HRV, recovery, strain, weight, and workouts. |
+| **Timetable** | Weekly plan in 30-minute slots with a Plan / Actual switch, calendar events, and fit-time planning. Always on. |
+| **Goals** | Goals with deadlines and a pace, to-dos and deadlines. Always on. |
+| **Focus** | Pomodoro or stopwatch with auto breaks; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". Always on. |
+| **Grades** | Modules and weighted assessments, mark needed for your target, UK classification or US GPA, year weightings. "got 68 in acp coursework". Always on. |
+| **Review** | Weekly review, charts and history. Always on. |
+| **Daily Log** | Mood, sleep, energy and water by day, a journal, and habits with streaks. Optional. |
+| **Money** | Spending and income by category, monthly budgets, savings goals, subscriptions (logged when they renew) and bank CSV import. "spent £12 on lunch". Optional. |
+| **Workouts** | Sets, reps, weight, distance; 1RM, personal bests, progress charts, weekly volume, saved plans; kg/lb, km/mi. "bench 3x8 at 60". Optional. |
 
 **Planning**
 - **Weekly timetable** in 30-minute slots with a **Plan / Actual** switch. A day's Plan is locked when the day starts and copied into its Actual; after that you change the Actual as the day goes, and confirm it at the end (Confirm under the day, "Confirm week", or Home's "Is the timetable right for today?"). Stats and goals count confirmed days only and say how many. Drag to add blocks; point at a block to select it (a thin red outline), click for its details, drag it to move it or drag its top or bottom edge to stretch or shrink it; ⌘/Ctrl+C and ⌘/Ctrl+V copy and paste, Backspace deletes; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
@@ -66,21 +65,14 @@
 - **Needs you this week:** only the goals that are behind or short of time, each with its state and "N h to plan", and Plan my goals. Every goal's bar (with a "should be here by today" tick and one status line) is in the Goals card; to-dos, deadlines, habits and search as before.
 
 **Tracking**
-- **Daily log:** a month calendar of mood, sleep, energy and water. Click a day to tick habits and write notes.
-- **Habits:** daily or with a weekly target ("Gym 3 times a week"), with current and best streaks.
-- **Journal:** each day's notes, with a daily prompt and a searchable list of past entries.
-- **Stats:** charts of mood, energy, sleep and water, plus habit completion rates.
-- **Weekly review:** pops up after 7pm on Sunday with plan followed, time per category, mood/sleep/energy/water vs last week, habits, to-dos, deadlines, people you saw and two questions to reflect on.
-
-**Applications**
-- **Application tracker:** a table of industry, company, route, description, contact / lead, deadline (with a countdown), status and notes. Compact rows: long text ends in "…" (click it to read it all); click a cell to edit; colour-coded status; filter by status.
-
-**People**
-- **Network:** an interactive map of the people you know, grouped into groups and sub-groups, with who-knows-who links.
-- **Times you met:** log coffees and calls; each person's card shows when you last spoke.
+- **Daily log (optional):** a month calendar of mood, sleep, energy and water. Click a day to tick habits and write notes.
+- **Habits (optional):** daily or with a weekly target ("Gym 3 times a week"), with current and best streaks.
+- **Journal (optional):** each day's notes, with a daily prompt and a searchable list of past entries.
+- **Review:** charts of mood, energy, sleep and water, plus habit completion rates.
+- **Weekly review:** pops up after 7pm on Sunday with plan followed, time per category, mood/sleep/energy/water vs last week, habits, to-dos, deadlines and two questions to reflect on.
 
 **Everything else**
-- **Search** across to-dos, goals, deadlines, applications, habits, journal, timetable, calendar events, people and past reviews.
+- **Search** across to-dos, goals, deadlines, habits, journal, timetable, calendar events and past reviews.
 - **Calendars (optional, read only):** Outlook, Google, Apple (iCloud) or any .ics calendar shows in your Plan, synced every 15 minutes.
 - **Reminders:** desktop notifications a few minutes before each planned block or event.
 - **Undo** for deletes and overwrites, for two minutes.
@@ -147,12 +139,10 @@ It runs on **Claude Haiku 5.5** at low effort, kept open between messages, and r
 
 **Google and Apple calendars.** Settings → Calendar → Other calendars. Google: calendar.google.com → Settings → your calendar → Integrate calendar → **Secret address in iCal format**. Apple: Calendar on a Mac or iCloud.com → Share Calendar → **Public Calendar** → copy the link. Links are kept in the secret store like Outlook's.
 
-**Health data.** Nothing connects live (Google Fit's APIs close in 2026 and Apple Health has no web API), so you import the files the apps export: Apple Health (Health app → your picture → Export All Health Data; the export.zip, or its path for big ones), Google Fit (Google Takeout → Fit → "Daily activity metrics.csv"), Strava (Settings → My Account → Download your data → activities.csv) and Whoop (Settings → Data export). Venato guesses the columns and shows a preview first; importing the same file again never doubles up.
-
 ## Privacy
 
 - **Stays on your computer:** all your data (in `~/Library/Application Support/Venato/` on a Mac, `%APPDATA%\Venato` on Windows, `~/.local/share/Venato` on Linux, never inside the repo), voice recordings and their transcripts, and chat history (memory only, never saved).
-- **Leaves your computer only if you turn it on:** chat messages go to Anthropic, each with a short snapshot of today (your timetable for today and tomorrow, today's log, habits, current to-dos, open deadlines and applications in progress, plus a line from each block you've switched on, such as this month's spending or your 7-day health averages) so Claude can answer without looking things up, plus anything else Claude looks up; published calendars you add are downloaded from Microsoft, Google, Apple or wherever they're hosted (imported health and bank files are read on your computer and never sent anywhere); the daily update check asks GitHub for the latest version number.
+- **Leaves your computer only if you turn it on:** chat messages go to Anthropic, each with a short snapshot of today (your timetable for today and tomorrow, today's log, habits, current to-dos, open deadlines, plus a line from each block you've switched on, such as this month's spending) so Claude can answer without looking things up, plus anything else Claude looks up; published calendars you add are downloaded from Microsoft, Google, Apple or wherever they're hosted (imported bank files are read on your computer and never sent anywhere); the daily update check asks GitHub for the latest version number.
 
 Nothing else is sent anywhere.
 
@@ -169,12 +159,12 @@ Nothing else is sent anywhere.
 
 ## Tech stack
 
-- **Python 3.13** with **[Streamlit](https://streamlit.io)** for the UI, plus custom JS/CSS components (timetable, to-dos, network map, chat)
+- **Python 3.13** with **[Streamlit](https://streamlit.io)** for the UI, plus custom JS/CSS components (timetable, to-dos, chat)
 - **SQLite** for storage, **Plotly** and **pandas** for stats
 - **[pywebview](https://pywebview.flowrl.com)** for the native desktop window
 - **[Claude Agent SDK](https://docs.claude.com/en/docs/claude-code/sdk)** for the optional assistant
 - **[faster-whisper](https://github.com/SYSTRAN/faster-whisper)** for on-device speech to text
-- **icalendar** / **recurring-ical-events** for calendars, **defusedxml** for Apple Health exports, **keyring** for secrets
+- **icalendar** / **recurring-ical-events** for calendars, **keyring** for secrets
 - **PyInstaller** and **Inno Setup** for the installers, **GitHub Actions** for tests on Windows, macOS and Linux
 
 ## Roadmap
