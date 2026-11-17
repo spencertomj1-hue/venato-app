@@ -11,6 +11,7 @@ too. Nothing user-specific is kept in the project folder.
 import json
 import os
 import sqlite3
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
@@ -67,6 +68,23 @@ DEFAULT_LABEL_MAP = {
 # Connection + schema
 # ---------------------------------------------------------------------------
 
+_version = 0
+_version_lock = threading.Lock()      # the Outlook sync and reminder threads write too
+
+
+def data_version():
+    """A number that goes up whenever the database (or settings.json) is written: what cached reads
+    are keyed on (see kit.cached). Process-wide; anything that writes the live database outside db()
+    must call bump_version()."""
+    return _version
+
+
+def bump_version():
+    global _version
+    with _version_lock:
+        _version += 1
+
+
 @contextmanager
 def db():
     """Open a connection, commit on success, and always close it."""
@@ -75,6 +93,8 @@ def db():
     try:
         yield conn
         conn.commit()
+        if conn.total_changes:
+            bump_version()
     finally:
         conn.close()
 
@@ -349,6 +369,7 @@ def save_settings(**changes):
     settings = {**load_settings(), **changes}
     settings_path().parent.mkdir(parents=True, exist_ok=True)
     settings_path().write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    bump_version()
     if {"day_start", "day_end"} & set(changes):
         _apply_day_hours()
     return settings
@@ -1842,7 +1863,7 @@ def goal_hours(goal, first, last, track, data=None, window=None):
     events = [ev for ev in data.get("events") or []
               if track in ("plan", "live") and not ev["all_day"] and ev["start"] and first <= ev["date"] <= last]
     if events:
-        cat = outlook_category("")
+        cat = data.get("outlook_category") or outlook_category("")     # (a Ctx already looked it up once)
         for ev in events:
             if _goal_matches(goal, cat, ev["title"], event=True):
                 total += slots(ev["date"], slot_of(ev["start"]), slot_of(ev["end"]))

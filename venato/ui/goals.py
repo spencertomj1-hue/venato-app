@@ -282,7 +282,8 @@ def due_parts(g, today=None):
 
 
 def _section(today, ctx):
-    goals = store.goals_open(today)
+    from venato import pace
+    goals = pace.goals_open(today)
     done = sum(fraction(g) >= 1 for g in goals)
     with st.container(border=True):
         st.subheader(f"Goals :gray[{done}/{len(goals)}]", anchor=False)
@@ -294,7 +295,7 @@ def _section(today, ctx):
         if not goals:
             st.caption("No goals yet.")
         _new_goal()
-    past = store.goals_past(today)
+    past = pace.goals_past(today)
     if past:
         with st.expander(f"Past goals ({sum(fraction(g) >= 1 for g in past)}/{len(past)} done)"):
             cols = st.columns(2, gap="small")
@@ -384,7 +385,7 @@ def render_home(ctx=None):
     warn, ok = ("#FBBF24", "#4ADE80") if appearance.is_dark() else ("#B45309", "#146C2E")
     tone = {"done": ok, "on_track": ok, "behind": warn, "slipping": warn, "unreachable": warn}
     rows = []
-    for g in store.goals_active(today):
+    for g in pace.goals_active(today):
         pct = 100 * fraction(g)
         when = store.goal_title_due(g["due"], today)
         p = pace.goal_pace(g, ctx)

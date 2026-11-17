@@ -30,6 +30,7 @@ import math
 from datetime import datetime, time, timedelta
 
 from venato import store
+from venato.ui import kit
 
 TRAILING_DAYS = 28            # the Actual rate behind the projection: the last 4 weeks
 FOLLOW_WEEKS = 6              # follow-through looks at the last 6 complete weeks...
@@ -90,6 +91,16 @@ def inflation_on():
     return bool(store.load_settings().get("goal_inflate", True))
 
 
+# Reads remembered until the data changes (kit.cached). The lambdas look `store` up when called.
+goals_overlapping = kit.cached(lambda first, last: store.goals_overlapping(first, last))
+goals_active = kit.cached(lambda day=None: store.goals_active(day))
+goals_open = kit.cached(lambda day=None: store.goals_open(day))
+goals_past = kit.cached(lambda day=None: store.goals_past(day))
+_blocks_between = kit.cached(lambda first, last: store.blocks_between(first, last))
+_outlook_between = kit.cached(lambda first, last: store.outlook_between(first, last))
+_confirmed_days = kit.cached(lambda first, last: store.confirmed_days(first, last))
+
+
 class Ctx:
     """
     One look at the data: "now", the calendar's reach, the away days, and the timetable's
@@ -122,8 +133,8 @@ class Ctx:
                 lo, hi = min(lo, self._window[0]), max(hi, self._window[1])
             self._window = (lo, hi)
             store.lock_started(lo, hi, self.now)     # started days' Plans are locked (copied into the Actual): see "live"
-            blocks = store.blocks_between(lo.isoformat(), hi.isoformat())
-            events = store.outlook_between(lo.isoformat(), hi.isoformat())
+            blocks = _blocks_between(lo.isoformat(), hi.isoformat())
+            events = _outlook_between(lo.isoformat(), hi.isoformat())
             by_day = {}
             for b in blocks:
                 by_day.setdefault(b["date"], {"blocks": [], "events": []})["blocks"].append(b)
@@ -139,7 +150,7 @@ class Ctx:
                 by_day[b["date"]].setdefault("live", []).append(b)
             self._data = {"blocks": blocks + live, "events": events, "live_events": live_events,
                           "outlook_category": self.ocat, "by_day": by_day,
-                          "confirmed": set(store.confirmed_days(lo.isoformat(), hi.isoformat()))}
+                          "confirmed": set(_confirmed_days(lo.isoformat(), hi.isoformat()))}
             self._day_cap = {}
             self._avg_fixed = None
         return self._data
@@ -179,7 +190,7 @@ class Ctx:
         """Hours goals whose period overlaps first..last, in priority order (cached)."""
         key = (_iso(first), _iso(last))
         if key not in self._goals:
-            self._goals[key] = priority([g for g in store.goals_overlapping(first, last) if g["kind"] == "hours"])
+            self._goals[key] = priority([g for g in goals_overlapping(first, last) if g["kind"] == "hours"])
         return self._goals[key]
 
     # --- capacity ---
@@ -562,7 +573,7 @@ def _details(p):
 def pace_all(ctx=None):
     """goal_pace for every goal running today, in list order."""
     ctx = ctx or Ctx()
-    return [goal_pace(g, ctx) for g in store.goals_active(ctx.today)]
+    return [goal_pace(g, ctx) for g in goals_active(ctx.today)]
 
 
 def history(goal, ctx):
@@ -703,7 +714,7 @@ def suggestions(ctx=None, limit=3):
     labels = {}
     for b in data["blocks"]:
         labels.setdefault(f"{b['category_id']}|{b['label'].strip().lower()}", b["label"].strip())
-    goals = [g for g in store.goals_active(ctx.today) if g["kind"] == "hours"]
+    goals = [g for g in goals_active(ctx.today) if g["kind"] == "hours"]
     gone = set(store.load_settings().get("goal_suggestions_dismissed") or [])
     found = []
     for key, per_week in totals.items():
@@ -760,7 +771,7 @@ def review_rows(first, ctx=None):
     ctx = ctx or Ctx()
     days = week_days(first)
     out = []
-    for g in priority(store.goals_overlapping(days[0], days[-1])):
+    for g in priority(goals_overlapping(days[0], days[-1])):
         start, end = bounds(g)
         a, b = max(days[0], start), min(days[-1], end)
         need, _ = week_need(g, days[0], ctx)

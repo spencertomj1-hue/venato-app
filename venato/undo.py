@@ -86,6 +86,7 @@ def restore():
     if label is None:
         return None
     _copy(_snapshot(), store.DB_PATH)
+    store.bump_version()            # replaced the live database outside store.db()
     dismiss()
     return label
 
