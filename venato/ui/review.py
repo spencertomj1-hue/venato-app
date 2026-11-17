@@ -102,6 +102,11 @@ def render(first, key):
                 line = e["text"].strip().splitlines()[0]
                 st.markdown(f"{regional.day_month(e['date'])} · {line[:90]}{'…' if len(line) > 90 else ''}")
 
+    for sec in s.get("sections", []):
+        st.markdown(f"**{sec['title']}**")
+        for line in sec["lines"]:
+            st.markdown(line)
+
     # --- Reflections ---
     st.markdown("**Looking back**")
     saved = s["review"]

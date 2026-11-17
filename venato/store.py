@@ -2661,9 +2661,10 @@ def search(query, per_kind=8):
     words = str(query or "").split()
     if not words:
         return []
+    from venato import blocks
     out = []
     with db() as conn:
-        for kind, (select, haystack) in _SEARCH.items():
+        for kind, (select, haystack) in {**_SEARCH, **blocks.search_kinds()}.items():
             where = " AND ".join(f"{haystack} LIKE ? ESCAPE '\\'" for _ in words)
             params = ["%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for w in words]
             order = " ORDER BY 4 DESC" if kind not in ("Habit", "Group", "Person") else " ORDER BY 2"

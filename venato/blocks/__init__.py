@@ -36,6 +36,10 @@ class Block:
     default: bool = False            # on for someone who never chose (existing installs: the original pages)
     core: bool = False               # always on
     page_name: str = ""              # the sidebar page it shares, when not its own name (e.g. Recipes is on Food)
+    search: dict = field(default_factory=dict)      # Home search: kind -> (select, haystack), as in store._SEARCH
+    search_icons: dict = field(default_factory=dict)  # kind -> Material icon name for its search results
+    search_open: Callable | None = None             # (result, session_state) -> None: routes a click on a result
+    review: Callable | None = None   # (first, last) -> {"title": str, "lines": [str]} for the weekly review; no lines = nothing
 
 
 GROUPS = ["Plan", "Health & body", "Food", "Study & work", "Money", "People & life", "Connections", "Other"]
@@ -99,6 +103,30 @@ def pages():
     for b in all_blocks():
         if b.page and b.key in on:
             out.setdefault(b.page_name or b.name, b.page)
+    return out
+
+
+def search_kinds():
+    """{kind: (select, haystack)} from the switched-on blocks."""
+    out = {}
+    for b in enabled():
+        out.update(b.search)
+    return out
+
+
+def search_block(kind):
+    """The switched-on block that owns this search kind, or None (a core kind)."""
+    return next((b for b in enabled() if kind in b.search), None)
+
+
+def review_sections(first, last):
+    """[{key, title, lines}] from the switched-on blocks that have something to say about the week."""
+    out = []
+    for b in enabled():
+        if b.review:
+            r = b.review(first, last) or {}
+            if r.get("lines"):
+                out.append({"key": b.key, "title": r.get("title") or b.name, "lines": list(r["lines"])})
     return out
 
 
