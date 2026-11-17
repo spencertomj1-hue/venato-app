@@ -200,7 +200,7 @@ Everything about them moves into their block files, so deleting those files remo
 
 ### Task 11: Private copy keeps the cut features
 
-On `venato-private` branch `claude/funny-shannon-v696o7`.
+On branch `claude/funny-shannon-v696o7`.
 
 - [ ] **Step 1:** `git fetch` the public branch and merge it. The deletions from Task 5 come through.
 - [ ] **Step 2:** Restore the seven block files, their UI modules, the two components and their tests from the pre-merge commit (`git checkout <pre-merge> -- <paths>`), using the Task 3 versions of `applications.py` and `network.py` (taken from the public branch's commit before Task 5). Because they are self-contained, no shared file changes.
