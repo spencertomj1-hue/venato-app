@@ -136,16 +136,49 @@ def _goal_form(key, goal=None):
         values["label"] = d.text_input("Only this activity (optional)", value=(goal.get("label") or "") if mode == 2 else "",
                                        key=f"{key}_label", placeholder="e.g. Guitar").strip() or None
         values["unit"] = values["unit"] or "h"
+    values["start"], values["earlier"] = _earlier(key, values, goal)
     return values
+
+
+EARLIER_UNITS = {"weeks": 7, "months": None, "days": 1}
+
+
+def _earlier(key, values, goal=None):
+    """Folded away under the form: progress made before today. "Count from N weeks / months / days ago"
+    moves the goal's start back (a habit's ticks or timetable hours from then count by themselves);
+    a goal kept by hand also takes how much was done in that time. Returns (new start or None, amount)."""
+    today = store.local_today()
+    since = date.fromisoformat(goal["period_start"]) if goal else today
+    with st.expander("Already made progress?", icon=":material/history:",
+                     expanded=bool(st.session_state.get(f"{key}_ago_n"))):          # (stays open once filled in)
+        if goal:
+            st.caption(f"Counting from {store._short(since, since.year != today.year)}.")
+        a, b = st.columns([1, 1.4])
+        n = a.number_input("Count from", min_value=0, step=1, value=0, key=f"{key}_ago_n",
+                           help="Move the goal's start back so what you did then counts")
+        unit = b.selectbox("ago", list(EARLIER_UNITS), key=f"{key}_ago_unit")
+        if not n:
+            return None, 0.0
+        start = _months_on(today, -n) if unit == "months" else today - timedelta(days=n * EARLIER_UNITS[unit])
+        auto = store.counted_between(start, today, values["habit_id"], values["category_id"], values["label"])
+        if auto is not None:
+            what = f"{_num(auto)} {values['unit'] or ''}".strip()
+            st.caption(f"From {store._short(start, start.year != today.year)}: {what} so far, counted automatically.")
+            return start, 0.0
+        done = st.number_input("Done in that time", min_value=0.0, step=1.0, value=0.0, format="%g",
+                               key=f"{key}_ago_done")
+        return start, done
 
 
 def _new_goal():
     with st.popover("New goal", icon=":material/add:", width="stretch"):
         values = _goal_form("new_goal")
         if st.button("Add goal", key="new_goal_add", type="primary", disabled=not values or not values["title"]):
-            store.add_goal(values["title"], None, store.local_today(), values["target"], values["unit"],
-                           values["habit_id"], category_id=values["category_id"], label=values["label"],
-                           due=values["due"])
+            g = store.add_goal(values["title"], None, values["start"] or store.local_today(), values["target"],
+                               values["unit"], values["habit_id"], category_id=values["category_id"],
+                               label=values["label"], due=max(values["due"], values["start"] or values["due"]))
+            if values["earlier"]:
+                store.set_goal_progress(g["id"], values["earlier"])
             for k in [k for k in st.session_state if k.startswith("new_goal_")]:
                 del st.session_state[k]                      # an empty form next time
             st.rerun()
@@ -178,12 +211,14 @@ def _edit_goal(g, ids=None):
         save, delete = st.columns(2)
         if save.button("Save", key=f"{key}_save", type="primary", width="stretch",
                        disabled=not values or not values["title"]):
-            if values["due"] < date.fromisoformat(g["period_start"]):
-                values["due"] = date.fromisoformat(g["period_start"])     # (never before the day it was set)
-            store.update_goal(g["id"], **values)
-            st.session_state.pop(f"{key}_due", None)
+            start, earlier = values.pop("start"), values.pop("earlier")
+            first = start or date.fromisoformat(g["period_start"])
+            values["due"] = max(values["due"], first)                     # (never before the day it counts from)
+            store.update_goal(g["id"], **values, **({"start": start} if start else {}))
+            for k in ("due", "ago_n", "ago_done"):
+                st.session_state.pop(f"{key}_{k}", None)
             if g["kind"] == "count" and values["habit_id"] is None and values["category_id"] is None:
-                store.set_goal_progress(g["id"], progress)
+                store.set_goal_progress(g["id"], progress + earlier)
             st.rerun()
         if delete.button("Delete", key=f"{key}_delete", icon=":material/delete:", width="stretch"):
             undo.checkpoint(f"Deleted the goal '{g['title']}'")

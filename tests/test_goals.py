@@ -108,3 +108,19 @@ def test_old_goals_table_becomes_todos(tmp_path, monkeypatch):
     assert len(backups) == 1
     with sqlite3.connect(backups[0]) as conn:                 # the backup has everything as it was
         assert conn.execute("SELECT COUNT(*) FROM goals").fetchone()[0] == 3
+
+
+def test_moving_a_goal_start_back_counts_earlier_progress(store):
+    import pytest
+    store.add_habit("Gym")
+    hid = store.find_habit("gym")[0]
+    tick(store, hid, "2026-10-20", "2026-10-27", "2026-11-03")
+    g = store.add_goal("Gym", None, "2026-11-01", 20, habit_id=hid, due="2026-12-31")
+    assert g["value"] == 1
+    assert store.counted_between("2026-10-15", "2026-11-05", habit_id=hid) == 3
+    assert store.counted_between("2026-10-15", "2026-11-05") is None                # kept by hand: nothing to count
+    store.update_goal(g["id"], start="2026-10-15")
+    g = store.get_goal(g["id"])
+    assert (g["period_start"], g["value"], g["due"]) == ("2026-10-15", 3, "2026-12-31")
+    with pytest.raises(ValueError):
+        store.update_goal(g["id"], start="2027-01-05")                              # after its deadline

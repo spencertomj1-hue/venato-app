@@ -1031,14 +1031,17 @@ def set_goal_progress(goal, value, period=None, date=None):
 
 
 def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit=False, period=None, date=None,
-              category=None, label=None, unlink_category=False, due=None):
-    """Change a goal's title, target, unit, deadline, or what (a habit, timetable hours, or nothing) it counts."""
+              category=None, label=None, unlink_category=False, due=None, start=None):
+    """Change a goal's title, target, unit, deadline, start (the day it counts from: earlier to count
+    progress already made), or what (a habit, timetable hours, or nothing) it counts."""
     g = _find_goal(goal, period, date)
     changes = {}
+    if start is not None:
+        changes["start"] = _due(start)
     if due is not None:
         changes["due"] = _due(due)
-        if changes["due"] < store._as_date(g["period_start"]):
-            raise ToolError("The deadline can't be before the goal was set.")
+    if (changes.get("due") or store._as_date(g["due"])) < (changes.get("start") or store._as_date(g["period_start"])):
+        raise ToolError("The deadline can't be before the day the goal counts from.")
     if title:
         changes["title"] = title
     if target is not None:
@@ -1060,7 +1063,7 @@ def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit
     if label is not None:
         changes["label"] = label
     if not changes:
-        raise ToolError("Say what to change: title, target, unit, due, habit, category, label, unlink_habit or unlink_category.")
+        raise ToolError("Say what to change: title, target, unit, due, start, habit, category, label, unlink_habit or unlink_category.")
     store.update_goal(g["id"], **changes)
     return Result(f"Updated: {describe_goal(store.get_goal(g['id']))}.", changed=True)
 
