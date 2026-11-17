@@ -73,11 +73,12 @@ def chosen_keys():
     from venato import store
     saved = store.load_settings().get("blocks")
     known = {b.key for b in all_blocks()}
-    if saved is None:
+    missing = lambda keys: [b.key for b in all_blocks() if b.core and b.key not in keys]
+    if saved is None:                      # never chose: the core blocks, then the defaults
         keys = [b.key for b in all_blocks() if b.default]
-    else:
-        keys = [k for k in saved if k in known]
-    return [b.key for b in all_blocks() if b.core and b.key not in keys] + keys
+        return missing(keys) + keys
+    keys = [k for k in saved if k in known]
+    return keys + missing(keys)            # core blocks the list lacks (added since it was saved) go after it
 
 
 def enabled():

@@ -257,7 +257,8 @@ def _go(step):
 def _finish():
     if "ai_enabled" not in setup_checks.load_settings():
         setup_checks.save_settings(ai_enabled=False)  # skipped the question: the assistant stays off
-    if not setup_checks.load_settings().get("wizard_done"):
+    done = setup_checks.load_settings()
+    if not done.get("wizard_done") and "blocks" not in done:
         setup_checks.save_settings(blocks=[])         # first setup: the core pages only, the rest are added in Settings
     setup_checks.save_settings(wizard_done=True)
     st.session_state["wizard_open"] = False

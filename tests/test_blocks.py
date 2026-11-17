@@ -26,7 +26,7 @@ def test_registry_and_defaults(store):
 def test_switch_order_and_pages(store):
     b = _blocks()
     b.save(["stats", "timetable", "nonsense", "stats", "money"])   # unknown keys and repeats are dropped
-    assert b.chosen_keys() == ["goals", "focus", "grades", "stats", "timetable", "money"]   # core first if left out
+    assert b.chosen_keys() == ["stats", "timetable", "money", "goals", "focus", "grades"]   # core left out goes after the saved order
     assert list(b.pages()) == ["Timetable", "Goals", "Focus", "Grades", "Review", "Money"]   # the sidebar keeps its own order
     assert b.is_on("stats") and not b.is_on("workouts")
 
@@ -34,7 +34,7 @@ def test_switch_order_and_pages(store):
 def test_sidebar_is_core_then_optional_and_unknown_keys_are_ignored(store):
     b = _blocks()
     b.save(["gone", "no_such_block", "workouts", "money", "log"])      # keys of no block: dropped
-    assert b.chosen_keys() == ["timetable", "goals", "focus", "grades", "stats", "workouts", "money", "log"]
+    assert b.chosen_keys() == ["workouts", "money", "log", "timetable", "goals", "focus", "grades", "stats"]
     assert list(b.pages()) == ["Timetable", "Goals", "Focus", "Grades", "Review", "Daily Log", "Money", "Workouts"]
 
 
@@ -76,9 +76,9 @@ def test_core_always_on(store):
 def test_unknown_saved_keys_ignored(store):
     b = _blocks()
     store.save_settings(blocks=["gone", "no_such_block", "money"])    # e.g. blocks a later version removed
-    assert b.chosen_keys() == [*CORE, "money"]
+    assert b.chosen_keys() == ["money", *CORE]
     store.save_settings(blocks=["gone", "money"])
-    assert b.chosen_keys() == [*CORE, "money"]
+    assert b.chosen_keys() == ["money", *CORE]
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
 
@@ -134,3 +134,12 @@ def test_review_sections_from_block(store, monkeypatch):
     assert "Gadgets: Made 3 from 2026-10-26" in review.as_text(s)
     blocks.save(["timetable"])
     assert all(x["key"] != "fake" for x in review.summary(date(2026, 10, 26))["sections"])
+
+
+def test_new_core_blocks_go_after_a_saved_order(store):
+    """An upgrade that adds core blocks: the user's saved order stays first, the new ones follow."""
+    b = _blocks()
+    store.save_settings(blocks=["timetable", "goals", "stats", "log", "money"])    # saved before Focus and Grades existed
+    assert b.chosen_keys() == ["timetable", "goals", "stats", "log", "money", "focus", "grades"]
+    store.save_settings(blocks=[])                                              # new install: core, in sidebar order
+    assert b.chosen_keys() == CORE
