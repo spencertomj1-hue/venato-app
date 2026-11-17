@@ -290,10 +290,15 @@ def test_complete_todo_by_shared_words(tools, store, friday):
 
 def test_add_and_update_goal_by_hand(tools, store, friday):
     r = tools.add_goal("Read books", 20, "yearly", unit="books")
-    assert r.changed and r.text == "Added the goal 'Read books' (2026: 0/20 books)."
+    assert r.changed and r.text == "Added the goal 'Read books' (by 31 Dec: 0/20 books)."
     assert "already" in tools.add_goal("read books", 5, "year").text
-    assert tools.log_goal_progress("read", 2).text == "Updated 'Read books' (2026: 2/20 books)."
-    assert tools.set_goal_progress("books", 5).text == "Set 'Read books' (2026: 5/20 books) (was 2)."
+    assert tools.log_goal_progress("read", 2).text == "Updated 'Read books' (by 31 Dec: 2/20 books)."
+    assert tools.set_goal_progress("books", 5).text == "Set 'Read books' (by 31 Dec: 5/20 books) (was 2)."
+    r = tools.add_goal("Swim", 10, due="2027-02-14")
+    assert r.text == "Added the goal 'Swim' (by 14 Feb 2027: 0/10)."
+    assert "by 1 Mar 2027" in tools.edit_goal("swim", due="2027-03-01").text
+    with pytest.raises(tools.ToolError):
+        tools.add_goal("Late", 3, due="2026-10-01")          # before today
     with pytest.raises(tools.ToolError):
         tools.add_goal("Gym", 12, "weekly")                  # goals are monthly or yearly
     with pytest.raises(tools.ToolError):
@@ -303,9 +308,9 @@ def test_add_and_update_goal_by_hand(tools, store, friday):
 def test_goal_linked_to_habit(tools, store, friday):
     tools.add_habit("Gym")
     r = tools.add_goal("Gym", 12, unit="sessions", habit="gym")
-    assert "counted from the habit Gym" in r.text and "October 2026: 0/12" in r.text
+    assert "counted from the habit Gym" in r.text and "by 31 Oct: 0/12" in r.text
     tools.set_habit("2026-10-29", "Gym", True)
-    assert "1/12 sessions (8%)" in tools.list_goals("monthly").text
+    assert "1/12 sessions (8%)" in tools.list_goals().text
     with pytest.raises(tools.ToolError, match="Tick the habit"):
         tools.log_goal_progress("gym")
     with pytest.raises(tools.ToolError, match="no habit"):
@@ -318,9 +323,9 @@ def test_edit_list_and_delete_goal(tools, store, friday):
     tools.add_goal("Run", 50, unit="km")
     assert "80 km" in tools.edit_goal("run", target=80).text
     listing = tools.list_goals().text
-    assert "Monthly goals (October 2026):" in listing and "Yearly goals (2026): none" in listing
+    assert "- Run by 31 Oct: 0/80 km" in listing
     r = tools.delete_goal("run")
-    assert r.pending and r.pending.summary == "Delete the goal 'Run' (October 2026: 0/80 km)"
+    assert r.pending and r.pending.summary == "Delete the goal 'Run' (by 31 Oct: 0/80 km)"
     assert store.goals_in("monthly", "2026-10-01")
     r.pending.run()
     assert store.goals_in("monthly", "2026-10-01") == []

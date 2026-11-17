@@ -54,6 +54,18 @@ def test_today_materialises_only_what_has_passed(store):
     assert store.confirmed_days(today, today) == [today]
 
 
+def test_unconfirm_takes_a_day_back_to_assumed_and_keeps_your_own_blocks(store):
+    put(store, DAY, "09:00", "11:00", "Revision", "study")
+    put(store, DAY, "12:00", "13:00", "Focus", "study", track="actual")       # entered by hand: it stays
+    store.confirm_day(DAY, now=NOW)
+    assert store.confirmed_days(DAY, DAY) == [DAY]
+    store.unconfirm_day(DAY)
+    assert store.confirmed_days(DAY, DAY) == [] and DAY not in store.day_status(DAY, DAY)
+    assert actual(store) == [("12:00", "13:00", "Focus")]
+    store.confirm_day(DAY, now=NOW)                                           # and it can be confirmed again
+    assert store.confirmed_days(DAY, DAY) == [DAY] and len(actual(store)) == 2
+
+
 def test_corrections_leave_the_rest_of_the_day_as_planned(store):
     put(store, DAY, "09:00", "11:00", "Revision", "study")
     put(store, DAY, "14:00", "16:00", "Project", "work")

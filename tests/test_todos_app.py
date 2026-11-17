@@ -37,7 +37,7 @@ def test_see_all_opens_goals_page(store):
     assert at.header[0].value == "Goals"
 
 
-def test_goals_page_plus_minus_and_navigation(store):
+def test_goals_page_plus_minus_and_past_goals(store):
     today = store.local_today()
     g = store.add_goal("Read", "monthly", today, 4, "books")
     store.add_habit("Gym")
@@ -49,10 +49,23 @@ def test_goals_page_plus_minus_and_navigation(store):
     at.button(key=f"minus_{g['id']}").click().run()
     assert store.get_goal(g["id"])["value"] == 1
     assert not [b for b in at.button if b.key and b.key.startswith("plus_") and b.key != f"plus_{g['id']}"]
-    at.button(key="prev_monthly").click().run()               # last month: empty, with a way back
-    assert at.session_state["goals_start_monthly"] == store.shift_period("monthly", today, -1)
-    at.button(key="now_monthly").click().run()
-    assert at.session_state["goals_start_monthly"] == today.replace(day=1)
+    assert "Past goals" not in [e.label.split(" (")[0] for e in at.expander]
+    from datetime import timedelta
+    store.add_goal("Old", None, today - timedelta(days=40), 3, due=today - timedelta(days=10))
+    at.run()
+    assert any(e.label.startswith("Past goals (0/1") for e in at.expander)       # a past deadline: folded away
+
+
+def test_deadline_marks_and_default(store):
+    from datetime import date
+    from venato.ui import goals
+    today = date(2026, 11, 17)
+    assert [(d.isoformat(), t) for d, t in goals.handy_deadlines(today)] == [
+        ("2026-11-30", "End of the month"), ("2026-12-01", "2 weeks from now"), ("2026-12-17", "A month from now"),
+        ("2026-12-31", "End of the year"), ("2027-11-17", "A year from now")]
+    assert goals.default_due(today) == date(2026, 11, 30)
+    assert goals.default_due(date(2026, 11, 27)) == date(2026, 12, 27)         # its last week: a month on
+    assert goals._months_on(date(2027, 1, 31), 1) == date(2027, 2, 28)
 
 
 def test_settings_has_todo_and_goal_exports(store):

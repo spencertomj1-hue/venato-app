@@ -585,10 +585,10 @@ def _data_section():
         "optional `id`, `notes`, `done`, `done_at`, `repeat`, `ord` and `created_at`.",
     )
     _csv_section(
-        "Goals", "goals", store.load_goals, store.save_goals, ["title", "period", "target"],
-        "`title`, `period` (monthly or yearly), `target` and `period_start` (YYYY-MM-DD, any day in the "
-        "month or year); optional `id`, `unit`, `progress`, `habit` (a habit's name, to count its ticks), "
-        "`ord` and `created_at`.",
+        "Goals", "goals", store.load_goals, store.save_goals, ["title", "target"],
+        "`title`, `target` and `due` (the deadline, YYYY-MM-DD; or, from older exports, `period`: monthly or "
+        "yearly); optional `period_start` (the day it was set), `id`, `unit`, `progress`, `habit` (a habit's name, "
+        "to count its ticks), `category`, `label`, `ord` and `created_at`.",
     )
 
 

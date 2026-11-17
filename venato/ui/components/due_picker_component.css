@@ -1,0 +1,51 @@
+/* A goal's deadline picker: a field, and a small scrolling calendar under it. */
+.dp-root {
+  --line: rgba(128, 128, 128, 0.25);
+  --text: var(--st-text-color, #31333f);
+  --bg: var(--st-background-color, #fff);
+  --soft: var(--st-secondary-background-color, #f6f7f9);
+  --muted: color-mix(in srgb, var(--text) 72%, var(--bg));
+  --accent: var(--st-primary-color, #ff4b4b);
+  --mark: #2f7de1;
+  --radius: var(--st-base-radius, 0.5rem);
+  font: inherit; color: var(--text);
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+.field {
+  display: flex; max-width: 380px; align-items: center; gap: 8px; width: 100%; padding: 7px 11px; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--soft);
+}
+.field:hover, .field[aria-expanded="true"] { border-color: var(--accent); }
+.field .lbl { font-size: 0.8rem; color: var(--muted); }
+.field .val { font-weight: 600; }
+.field .rel { font-size: 0.8rem; color: var(--muted); margin-left: auto; }
+.field svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; flex: none; }
+.pop { max-width: 380px; margin-top: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); padding: 8px; }
+.pop[hidden] { display: none; }
+.key { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-bottom: 6px; }
+.kchip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border: 1px solid var(--line);
+         border-radius: 999px; background: transparent; font-size: 0.72rem; color: var(--muted); }
+.kchip:hover { color: var(--text); border-color: var(--mark); }
+.kchip i { width: 6px; height: 6px; border-radius: 50%; background: var(--mark); }
+.scroll { position: relative; max-height: 236px; overflow-y: auto; overscroll-behavior: contain; scroll-snap-type: y proximity; padding-right: 2px; }
+.month { scroll-snap-align: start; padding-bottom: 6px; }
+.month h4 { position: sticky; top: 0; margin: 0; padding: 4px 2px; font-size: 0.85rem; font-weight: 600; background: var(--bg); z-index: 1; }
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.wd { text-align: center; font-size: 0.68rem; color: var(--muted); padding: 2px 0; }
+.day { position: relative; aspect-ratio: 1; max-height: 34px; border: 1px solid transparent; border-radius: 6px;
+       background: transparent; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.day:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
+.day.past { opacity: 0.35; cursor: default; }
+.day.today { border-color: var(--line); font-weight: 600; }
+.day.mark::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 5px; height: 5px; margin-left: -2.5px;
+                   border-radius: 50%; background: var(--mark); }
+.day.sel { background: var(--accent); color: #fff; font-weight: 600; }
+.day.sel.mark::after { background: #fff; }
+.day.flash { outline: 2px solid var(--mark); outline-offset: 1px; }
+.day:focus-visible, .field:focus-visible, .sc:focus-visible, .kchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.short { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.sc { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 5px 6px; border: 1px solid var(--line);
+      border-radius: var(--radius); background: var(--soft); font-size: 0.82rem; font-weight: 600; }
+.sc small { font-weight: 400; font-size: 0.7rem; color: var(--muted); }
+.sc:hover { border-color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .scroll { scroll-behavior: auto; } }

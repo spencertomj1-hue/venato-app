@@ -1,22 +1,24 @@
 """
-Goals: measurable targets for a month or a year ("Gym: 12 sessions"), each
+Goals: measurable targets with a deadline ("Gym: 12 sessions by 31 Dec"), each
 with a progress bar. Progress is either updated by hand (− / + / a number) or
-counted automatically from a habit's ticks in that period.
+counted automatically from a habit's ticks or timetable hours, from the day the goal is set to its deadline.
 
-The Goals page lists this month's and this year's goals (with ‹ › to look at
-other months and years); Home shows the current ones as a compact list of bars.
+The Goals page lists the goals not past their deadline (past ones folded away under them);
+Home shows the running ones as a compact list of bars.
 """
 
+import calendar
+from datetime import date, timedelta
 from html import escape
+from pathlib import Path
 
 import streamlit as st
 
+from venato import regional
 from venato import store
 from venato import undo
 
 PAGE = "Goals"                                  # sidebar label (also what "See all" switches to)
-NAMES = {"monthly": "Monthly", "yearly": "Yearly"}
-CURRENT = {"monthly": "This month", "yearly": "This year"}
 BY_HAND, BY_HABIT, BY_HOURS = "Update it myself", "Count a habit's ticks", "Count timetable hours"
 
 
@@ -33,21 +35,66 @@ def fraction(g):
     return min(g["value"] / g["target"], 1.0) if g["target"] else 0.0
 
 
-def _start_key(period):
-    return f"goals_start_{period}"
-
-
-def _shift(period, n):
-    """‹ / › / back to the current month or year."""
-    key = _start_key(period)
-    if n == 0:
-        st.session_state[key] = store.start_of_period(period, store.local_today())
-    else:
-        st.session_state[key] = store.shift_period(period, st.session_state[key], n)
-
-
 def _go_to_goals():
     st.session_state["page"] = PAGE        # the sidebar radio's key; button callbacks run before it's drawn
+
+
+# ---------------------------------------------------------------------------
+# The deadline picker: a field that opens a small scrolling calendar
+# ---------------------------------------------------------------------------
+
+_due_component = st.components.v2.component(
+    "goal_due",
+    html='<div class="dp-root"></div>',
+    css=(Path(__file__).parent / "components" / "due_picker_component.css").read_text(encoding="utf-8"),
+    js=(Path(__file__).parent / "components" / "due_picker_component.js").read_text(encoding="utf-8"),
+)
+
+
+def _months_on(day, n):
+    """The same day n months later (the month's last day if it's shorter)."""
+    m = day.month - 1 + n
+    y, m = day.year + m // 12, m % 12 + 1
+    return date(y, m, min(day.day, calendar.monthrange(y, m)[1]))
+
+
+def handy_deadlines(today):
+    """The deadlines marked on the calendar, soonest first: [(date, label)]."""
+    marks = {}
+    for day, text in [(today + timedelta(days=14), "2 weeks from now"),
+                      (store.end_of_period("monthly", today.replace(day=1)), "End of the month"),
+                      (_months_on(today, 1), "A month from now"), (date(today.year, 12, 31), "End of the year"),
+                      (_months_on(today, 12), "A year from now")]:
+        marks[day] = f"{marks[day]} · {text}" if day in marks else text      # two on one day: one marker
+    return sorted(marks.items())
+
+
+def default_due(today):
+    """A new goal's deadline until you pick one: the end of the month (a month from now in its last week)."""
+    end = store.end_of_period("monthly", today.replace(day=1))
+    return end if (end - today).days >= 7 else _months_on(today, 1)
+
+
+def due_picker(key, value, label="Deadline"):
+    """The deadline field for the form with this key; returns the picked date (kept in session state)."""
+    today = store.local_today()
+    skey = f"{key}_due"
+    st.session_state.setdefault(skey, value)
+
+    def picked():
+        day = (st.session_state[f"{key}_duecal"]["pick"] or {}).get("date")
+        if day:
+            st.session_state[skey] = date.fromisoformat(day)
+
+    due = st.session_state[skey]
+    months = max(26, (due.year - today.year) * 12 + due.month - today.month + 3)
+    _due_component(data={"value": due.isoformat(), "today": today.isoformat(), "months": months, "label": label,
+                         "weekStart": regional.week_start(), "weekdays": regional.weekday_names(),
+                         "marks": [{"date": d.isoformat(), "label": text} for d, text in handy_deadlines(today)],
+                         "shortcuts": [{"date": date(today.year, 12, 31).isoformat(), "label": "End of the year"},
+                                       {"date": _months_on(today, 12).isoformat(), "label": "In a year"}]},
+                   key=f"{key}_duecal", on_pick_change=picked)
+    return due
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +102,7 @@ def _go_to_goals():
 # ---------------------------------------------------------------------------
 
 def _goal_form(key, goal=None):
-    """Title, target, unit and how progress is tracked. Returns the values, or None if a habit choice is missing."""
+    """Title, target, unit, deadline and how progress is tracked. Returns the values, or None if a habit choice is missing."""
     habits = dict(store.get_habits())                       # id -> name
     cats = store.load_categories()
     categories = dict(zip(cats["id"], cats["name"]))        # id -> name
@@ -66,13 +113,14 @@ def _goal_form(key, goal=None):
                             key=f"{key}_target")
     unit = b.text_input("Unit (optional)", value=(goal["unit"] or "") if goal else "", key=f"{key}_unit",
                         placeholder="sessions, km, books…")
+    due = due_picker(key, date.fromisoformat(goal["due"]) if goal else default_due(store.local_today()))
     mode = 2 if goal and goal.get("kind") == "hours" else 1 if goal and goal["habit_id"] is not None else 0
     how = st.radio("Progress", [BY_HAND, BY_HABIT, BY_HOURS], index=mode, key=f"{key}_how", horizontal=True,
-                   help="Count a habit's ticks: every day you tick that habit in the period adds 1. "
+                   help="Count a habit's ticks: every day you tick that habit before the deadline adds 1. "
                         "Count timetable hours: the hours in your timetable's Actual track in a category "
                         "(and, if you like, only one activity) add up by themselves.")
     values = {"title": title.strip(), "target": target, "unit": unit.strip() or None, "habit_id": None,
-              "category_id": None, "label": None}
+              "category_id": None, "label": None, "due": due}
     if how == BY_HABIT:
         if not habits:
             st.caption("You have no habits yet. Add one on the Daily Log page, or update this goal yourself.")
@@ -91,13 +139,14 @@ def _goal_form(key, goal=None):
     return values
 
 
-def _new_goal(period, start):
+def _new_goal():
     with st.popover("New goal", icon=":material/add:", width="stretch"):
-        values = _goal_form(f"new_{period}")
-        if st.button("Add goal", key=f"new_{period}_add", type="primary", disabled=not values or not values["title"]):
-            store.add_goal(values["title"], period, start, values["target"], values["unit"], values["habit_id"],
-                           category_id=values["category_id"], label=values["label"])
-            for k in [k for k in st.session_state if k.startswith(f"new_{period}_")]:
+        values = _goal_form("new_goal")
+        if st.button("Add goal", key="new_goal_add", type="primary", disabled=not values or not values["title"]):
+            store.add_goal(values["title"], None, store.local_today(), values["target"], values["unit"],
+                           values["habit_id"], category_id=values["category_id"], label=values["label"],
+                           due=values["due"])
+            for k in [k for k in st.session_state if k.startswith("new_goal_")]:
                 del st.session_state[k]                      # an empty form next time
             st.rerun()
 
@@ -129,7 +178,10 @@ def _edit_goal(g, ids=None):
         save, delete = st.columns(2)
         if save.button("Save", key=f"{key}_save", type="primary", width="stretch",
                        disabled=not values or not values["title"]):
+            if values["due"] < date.fromisoformat(g["period_start"]):
+                values["due"] = date.fromisoformat(g["period_start"])     # (never before the day it was set)
             store.update_goal(g["id"], **values)
+            st.session_state.pop(f"{key}_due", None)
             if g["kind"] == "count" and values["habit_id"] is None and values["category_id"] is None:
                 store.set_goal_progress(g["id"], progress)
             st.rerun()
@@ -145,14 +197,14 @@ def _edit_goal(g, ids=None):
 
 def _goal_row(g, ctx=None, neighbours=None):
     """One goal as a card: title, state badge, − / + (kept by hand) and ⋯; its number; the pace chart
-    (from now on) or a bar (past periods); short detail lines, and this week's numbers for hours goals."""
+    (from now on) or a bar (past goals); short detail lines, and this week's numbers for hours goals."""
     from venato import pace
     from venato.ui import goal_chart, goal_time
     p = pace.goal_pace(g, ctx) if ctx is not None else None
     with st.container(border=True, key=f"goal_card_{g['id']}"):
         text, minus, plus, more = st.columns([5, 1, 1, 1.4], vertical_alignment="center")
         badge = f"  \n{goal_time.badge(p['state'])}" if p and p["state"] != "upcoming" else ""
-        text.markdown(f"**{goal_time.md(g['title'])}**{badge}")
+        text.markdown(f"**{goal_time.md(g['title'])}** :gray[{due_line(g)}]{badge}")
         if g["kind"] != "count":
             minus.empty()
             plus.empty()
@@ -184,23 +236,24 @@ def _goal_row(g, ctx=None, neighbours=None):
                        "on days you've confirmed")
 
 
-def _section(period, today, now_ctx=None):
-    start = st.session_state.setdefault(_start_key(period), store.start_of_period(period, today))
-    current = start == store.start_of_period(period, today)
-    goals = store.goals_in(period, start)
+def due_line(g, today=None):
+    """"by 31 Dec · 44 days left", "by 31 Oct · ended", "from 1 Dec, by 31 Dec"."""
+    today = today or store.local_today()
+    due, start = date.fromisoformat(g["due"]), date.fromisoformat(g["period_start"])
+    left = (due - today).days
+    when = store.goal_title_due(due, today)
+    if start > today:
+        return f"from {store._short(start, start.year != today.year)}, {when}"
+    if left < 0:
+        return f"{when} · ended"
+    return f"{when} · " + ("due today" if left == 0 else "1 day left" if left == 1 else f"{left} days left")
+
+
+def _section(today, ctx):
+    goals = store.goals_open(today)
     done = sum(fraction(g) >= 1 for g in goals)
-    from venato import pace
-    ctx = (now_ctx or pace.Ctx()) if store.start_of_period(period, today) <= start else None    # pace for now and later
     with st.container(border=True):
-        st.subheader(f"{NAMES[period]} :gray[{done}/{len(goals)}]", anchor=False)
-        prev, label, nxt, back = st.columns([1, 4, 1, 3], vertical_alignment="center")
-        prev.button("", icon=":material/chevron_left:", key=f"prev_{period}", on_click=_shift, args=(period, -1),
-                    help=f"Previous {'month' if period == 'monthly' else 'year'}")
-        label.markdown(f"**{store.period_title(period, start, today)}**")
-        nxt.button("", icon=":material/chevron_right:", key=f"next_{period}", on_click=_shift, args=(period, 1),
-                   help=f"Next {'month' if period == 'monthly' else 'year'}")
-        if not current:
-            back.button(CURRENT[period], key=f"now_{period}", on_click=_shift, args=(period, 0))
+        st.subheader(f"Goals :gray[{done}/{len(goals)}]", anchor=False)
         ids = [g["id"] for g in goals]
         cols = st.columns(2, gap="small")
         for i, g in enumerate(goals):
@@ -208,12 +261,19 @@ def _section(period, today, now_ctx=None):
                 _goal_row(g, ctx, ids)
         if not goals:
             st.caption("No goals yet.")
-        _new_goal(period, start)
+        _new_goal()
+    past = store.goals_past(today)
+    if past:
+        with st.expander(f"Past goals ({sum(fraction(g) >= 1 for g in past)}/{len(past)} done)"):
+            cols = st.columns(2, gap="small")
+            for i, g in enumerate(past):
+                with cols[i % 2]:
+                    _goal_row(g)
 
 
 def render_page():
     st.header("Goals", anchor=False)
-    st.caption("Measurable targets for the month or year, and deadlines. Day-to-day to-dos live on Home.")
+    st.caption("Measurable targets, each with a deadline, and deadlines for work. Day-to-day to-dos live on Home.")
     today = store.local_today()
     from venato import pace
     from venato.ui import goal_time
@@ -222,8 +282,7 @@ def render_page():
     main, side = st.columns([2.3, 1], gap="medium")      # the side panel stacks under on narrow screens
     with main:
         st.html(goal_chart.legend())                    # once, for every goal's pace chart
-        for period in store.GOAL_PERIODS:
-            _section(period, today, ctx)
+        _section(today, ctx)
     with side:
         goal_time.free_split(ctx)                       # where this week's free time goes, by goal
         goal_time.offers(ctx)                           # "X can't be finished in time"
@@ -253,7 +312,7 @@ BAR_CSS = """<style>
 
 
 def _marker(g, today):
-    """The "should be here by today" tick on a goal's bar (an even pace through its month or year)."""
+    """The "should be here by today" tick on a goal's bar (an even pace from the day it was set to its deadline)."""
     from venato import pace
     should = pace.expected(g, today)
     if fraction(g) >= 1 or should <= 0:
@@ -293,24 +352,23 @@ def render_home(ctx=None):
     warn, ok = ("#FBBF24", "#4ADE80") if appearance.is_dark() else ("#B45309", "#146C2E")
     tone = {"done": ok, "on_track": ok, "behind": warn, "slipping": warn, "unreachable": warn}
     rows = []
-    for period in store.GOAL_PERIODS:
-        for g in store.goals_in(period, today):
-            pct = 100 * fraction(g)
-            when = "this month" if period == "monthly" else "this year"
-            p = pace.goal_pace(g, ctx)
-            rows.append(
-                f'<div class="hg-row{" done" if pct >= 100 else ""}">'
-                f'<div class="hg-top"><span class="hg-title">{escape(g["title"])}</span>'
-                f'<span class="hg-when">{when}</span>'
-                f'<span class="hg-amount">{"✓ " if pct >= 100 else ""}{escape(amount(g))}</span></div>'
-                f'<div class="hg-track"><div class="hg-bar">{_fill(g)}</div>{_marker(g, today)}</div>'
-                f'<div class="hg-status" style="color:{tone.get(p["state"], "inherit")}">{escape(status_line(p))}</div></div>'
-            )
+    for g in store.goals_active(today):
+        pct = 100 * fraction(g)
+        when = store.goal_title_due(g["due"], today)
+        p = pace.goal_pace(g, ctx)
+        rows.append(
+            f'<div class="hg-row{" done" if pct >= 100 else ""}">'
+            f'<div class="hg-top"><span class="hg-title">{escape(g["title"])}</span>'
+            f'<span class="hg-when">{when}</span>'
+            f'<span class="hg-amount">{"✓ " if pct >= 100 else ""}{escape(amount(g))}</span></div>'
+            f'<div class="hg-track"><div class="hg-bar">{_fill(g)}</div>{_marker(g, today)}</div>'
+            f'<div class="hg-status" style="color:{tone.get(p["state"], "inherit")}">{escape(status_line(p))}</div></div>'
+        )
     with st.container(border=True, key="home_goals_card"):
         head = st.container(horizontal=True, vertical_alignment="center")
         head.markdown("**Goals**", width="stretch")
         head.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
-        body = "".join(rows) or '<div class="hg-empty">No goals for this month or year yet.</div>'
+        body = "".join(rows) or '<div class="hg-empty">No goals yet.</div>'
         st.html(f"""<style>
           .hg {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 28px; }}  /* two-up when wide */
           .hg-top {{ display: flex; align-items: baseline; gap: 8px; font-size: 0.88rem; margin-bottom: 4px; }}

@@ -926,7 +926,7 @@ def _amount(goal, n=None):
 
 
 def describe_goal(g):
-    when = store.period_title(g["period"], g["period_start"])
+    when = store.goal_title_due(g["due"])
     how = f", counted from the habit {g['habit']}" if g["habit"] else ""
     if g.get("category"):
         how = f", counted from Actual hours of {g['label'] + ' (' + g['category'] + ')' if g.get('label') else g['category']}"
@@ -944,20 +944,18 @@ def _habit_id(name):
 
 
 def _find_goal(goal, period=None, date=None):
-    """A goal by id, or by title in the month and year containing `date` (default today)."""
+    """A goal by id, or by title among those not past their deadline on `date` (default today)."""
     found = store.get_goal(str(goal).strip())
     if found:
         return found
-    day = _period_day(date)
-    periods = [_period(period, store.GOAL_PERIODS)] if period else store.GOAL_PERIODS
-    pool = [g for p in periods for g in store.goals_in(p, day)]
+    pool = store.goals_open(_period_day(date))
     matches = _best_match(pool, goal)
     if len(matches) == 1:
         return matches[0]
     if matches:
         options = "; ".join(f"id {g['id']}: {describe_goal(g)}" for g in matches)
         raise ToolError(f"More than one goal matches '{goal}': {options}. Ask the user which one, or pass its id.")
-    raise ToolError(f"There's no goal matching '{goal}' this month or year. Use list_goals to find it.")
+    raise ToolError(f"There's no current goal matching '{goal}'. Use list_goals to find it.")
 
 
 def _goal_category(category):
@@ -968,10 +966,26 @@ def _goal_category(category):
     return cid
 
 
-def add_goal(title, target, period="monthly", unit=None, habit=None, date=None, category=None, label=None):
-    """A measurable goal for the month or year containing `date` (default today). With a category (and
-    optionally an activity label) it counts the timetable's Actual hours instead of a hand-kept number."""
-    per = _period(period, store.GOAL_PERIODS)
+def _due(due):
+    try:
+        return date.fromisoformat(_day(due))
+    except (TypeError, ValueError):
+        raise ToolError("due must be a date, YYYY-MM-DD.")
+
+
+def add_goal(title, target, period=None, unit=None, habit=None, date=None, category=None, label=None, due=None):
+    """A measurable goal with a deadline (`due`), from today (or `date`). Without a deadline, `period`
+    "monthly" / "yearly" makes it due at the end of the month / year (default: this month). With a
+    category (and optionally an activity label) it counts the timetable's Actual hours instead of a hand-kept number."""
+    day = _period_day(date)
+    per = None
+    if due is None:                              # the month's or year's: from its first day to its last
+        per = _period(period or "monthly", store.GOAL_PERIODS)
+        due = store.end_of_period(per, store.start_of_period(per, day))
+    else:
+        due = _due(due)
+    if due < day:
+        raise ToolError("The deadline can't be before the goal starts.")
     try:
         target = float(target)
     except (TypeError, ValueError):
@@ -981,14 +995,13 @@ def add_goal(title, target, period="monthly", unit=None, habit=None, date=None, 
     title = str(title).strip()
     if not title:
         raise ToolError("The goal needs a title.")
-    day = _period_day(date)
-    if any(g["title"].lower() == title.lower() for g in store.goals_in(per, day)):
-        return Result(f"There's already a goal called '{title}' for {store.period_title(per, day)}.")
+    if any(g["title"].lower() == title.lower() and g["due"] == due.isoformat() for g in store.goals_open(day)):
+        return Result(f"There's already a goal called '{title}' {store.goal_title_due(due)}.")
     if habit and category:
         raise ToolError("A goal counts either a habit's ticks or timetable hours, not both.")
     cid = _goal_category(category) if category else None
     g = store.add_goal(title, per, day, target, (unit or "h") if cid else unit, _habit_id(habit),
-                       category_id=cid, label=label if cid else None)
+                       category_id=cid, label=label if cid else None, due=None if per else due)
     return Result(f"Added the goal {describe_goal(g)}.", changed=True)
 
 
@@ -1018,10 +1031,14 @@ def set_goal_progress(goal, value, period=None, date=None):
 
 
 def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit=False, period=None, date=None,
-              category=None, label=None, unlink_category=False):
-    """Change a goal's title, target, unit, or what (a habit, timetable hours, or nothing) it counts."""
+              category=None, label=None, unlink_category=False, due=None):
+    """Change a goal's title, target, unit, deadline, or what (a habit, timetable hours, or nothing) it counts."""
     g = _find_goal(goal, period, date)
     changes = {}
+    if due is not None:
+        changes["due"] = _due(due)
+        if changes["due"] < store._as_date(g["period_start"]):
+            raise ToolError("The deadline can't be before the goal was set.")
     if title:
         changes["title"] = title
     if target is not None:
@@ -1043,7 +1060,7 @@ def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit
     if label is not None:
         changes["label"] = label
     if not changes:
-        raise ToolError("Say what to change: title, target, unit, habit, category, label, unlink_habit or unlink_category.")
+        raise ToolError("Say what to change: title, target, unit, due, habit, category, label, unlink_habit or unlink_category.")
     store.update_goal(g["id"], **changes)
     return Result(f"Updated: {describe_goal(store.get_goal(g['id']))}.", changed=True)
 
@@ -1058,18 +1075,17 @@ def delete_goal(goal, period=None, date=None, confirmed=False):
 
 
 def list_goals(period=None, date=None):
-    """Goals (with ids and progress) for the month and year containing `date` (default today)."""
+    """Goals (with ids, progress and deadlines) not past their deadline on `date` (default today)."""
     day = _period_day(date)
-    lines = []
-    for per in ([_period(period, store.GOAL_PERIODS)] if period else store.GOAL_PERIODS):
-        goals = store.goals_in(per, day)
-        lines.append(f"{per.capitalize()} goals ({store.period_title(per, day)}):" + ("" if goals else " none"))
-        for g in goals:
+    goals = store.goals_open(day)
+    lines = ["Goals:" + ("" if goals else " none")]
+    for g in goals:
+        if True:
             pct = round(100 * min(g["value"] / g["target"], 1))
             how = f"; counts habit {g['habit']}" if g["habit"] else ""
             if g.get("category"):
                 how = f"; counts Actual hours of {g['label'] + ' (' + g['category'] + ')' if g.get('label') else g['category']}"
-            lines.append(f"- {g['title']}: {_amount(g)} ({pct}%) (id {g['id']}{how})")
+            lines.append(f"- {g['title']} {store.goal_title_due(g['due'], day)}: {_amount(g)} ({pct}%) (id {g['id']}{how})")
     return Result("\n".join(lines))
 
 
@@ -1335,7 +1351,7 @@ def goal_pace(goal=None, period=None, date=None):
     if goal:
         found = [_find_goal(goal, period, date)]
     else:
-        found = [g for per in store.GOAL_PERIODS for g in store.goals_in(per, ctx.today)]
+        found = store.goals_active(ctx.today)
     if not found:
         return Result("No goals this month or year.")
     return Result("\n".join(f"- {g['title']} ({_amount(g)}): {pace.goal_pace(g, ctx)['line']}" for g in found))
@@ -1412,7 +1428,7 @@ def plan_goals(date=None, earliest="09:00", latest="21:00", max_block_hours=2, c
 def resolve_goal(goal, offer, confirmed=False):
     """
     Take one of the offers for a goal that can't be finished with the time left (pace.negotiation):
-    "lower" its target to what's reachable, "carry" the rest into the next month/year, or "take" hours
+    "lower" its target to what's reachable, "extend" its deadline to when this rate gets there, or "take" hours
     from a lower-priority goal. Always previewed first.
     """
     from venato import pace
@@ -1424,16 +1440,10 @@ def resolve_goal(goal, offer, confirmed=False):
     if not confirmed:
         return Result("", pending=Pending(f"{g['title']}: {chosen['text']}",
                                           lambda: resolve_goal(g["id"], offer, True)))
-    if offer in ("lower", "carry"):
+    if offer == "lower":
         store.update_goal(g["id"], target=chosen["target"])
-    if offer == "carry":
-        start = store.shift_period(g["period"], g["period_start"], 1)
-        same = [x for x in store.goals_in(g["period"], start) if x["title"].lower() == g["title"].lower()]
-        if same:
-            store.update_goal(same[0]["id"], target=float(same[0]["target"]) + chosen["carry"])
-        else:
-            store.add_goal(g["title"], g["period"], start, chosen["carry"], g["unit"], g["habit_id"],
-                           category_id=g["category_id"], label=g["label"])
+    if offer == "extend":
+        store.update_goal(g["id"], due=chosen["due"])
     if offer == "take":
         other = store.get_goal(chosen["other"])
         store.update_goal(other["id"], target=float(other["target"]) - chosen["hours"])

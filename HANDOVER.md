@@ -107,7 +107,7 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
 | `deadlines` | `id`, `title`, `due` (date), `notes`, `done`, `done_at`, `created_at`. UI in `ui/deadlines.py` (Goals page section, Home list); chips on the timetable header (`outlookAllDay` with `deadline: true`) and agenda; `notify.due_deadlines` announces today/tomorrow once a day from 9 am |
 | `net_interactions` | Times the user met/spoke to someone: `id`, `person_id` (cascade), `date`, `note`, `created_at` |
 | `net_links` | Undirected connections: `a`, `b` (always `a < b`, enforced by a CHECK), `reason`. Cascade-deleted with either person |
-| `goals` | `id`, `title`, `period` (monthly/yearly), `period_start`, `target`, `unit`, `progress` (kept by hand), `habit_id` (NULL = by hand; `ON DELETE SET NULL`), `ord` (also its priority), `created_at`, `category_id` (counts timetable hours; `ON DELETE SET NULL`; never together with `habit_id`), `label` (optional: only that activity) |
+| `goals` | `id`, `title`, `period` (legacy tag: monthly if due by the end of its first month, else yearly), `period_start` (the day it was set), `due` (the deadline; older goals got their month's or year's last day), `target`, `unit`, `progress` (kept by hand), `habit_id` (NULL = by hand; `ON DELETE SET NULL`), `ord` (also its priority), `created_at`, `category_id` (counts timetable hours; `ON DELETE SET NULL`; never together with `habit_id`), `label` (optional: only that activity) |
 | `goal_week` | The user's split of a week between hours goals: `goal_id` (cascade), `week_start`, `hours`. None = automatic |
 | `tt_outlook_away` | All-day calendar events marked "I'm away" (that day has no free time for goals); kept across syncs |
 | `away_days` | Days marked "I'm away" by hand (`date`), no calendar event needed |
@@ -137,7 +137,7 @@ Notes on the schema:
 
 Two different things:
 - **To-dos** are tick-off lists for a day, a week or a month, shown only on Home.
-- **Goals** are measurable targets for a month or a year, with progress bars, on the Goals page and on Home.
+- **Goals** are measurable targets with a deadline (`period_start` .. `due`), with progress bars, on the Goals page and on Home.
 
 **Periods (shared):** all period maths is in `store.py` (`start_of_period`, `shift_period`, `end_of_period`, `period_title`), on dates in the user's time zone (`local_today()`). Weeks run Monday to Sunday, like the timetable.
 
@@ -151,7 +151,7 @@ Two different things:
 
 **Goals:**
 - **Value:** `goals_in` / `get_goal` add `value` (current progress), `kind` (`hours` / `habit` / `count`), `habit` and `category` (names). Linked to a habit, `value` is the number of days that habit was ticked within the period; counting timetable hours, it's the Actual hours of that category (and label) in the period, from `store.goal_hours`; otherwise it's the hand-kept `progress`. Deleting the habit or category unlinks the goal (back to `progress`).
-- **Goals page:** two bordered sections (Monthly, Yearly), each with ‹ › and a "This month / This year" jump (`goals_start_<period>`). Each goal shows `value / target unit`, a percentage and a bar. Hand-kept goals have − / + (via `add_goal_progress`); every goal has a ⋯ popover to edit it (including the "Update it myself" / "Count a habit's ticks" choice) or delete it. "New goal" is a popover with the same form.
+- **Goals page:** one bordered section of the goals not past their deadline (`store.goals_open`), and a "Past goals" expander (`goals_past`). The deadline field is `goals.due_picker` (component `due_picker_component.*`): a scrolling calendar with markers from `handy_deadlines` and "End of the year" / "In a year" shortcuts. Each goal shows `value / target unit`, a percentage and a bar. Hand-kept goals have − / + (via `add_goal_progress`); every goal has a ⋯ popover to edit it (including the "Update it myself" / "Count a habit's ticks" choice) or delete it. "New goal" is a popover with the same form.
 - **Bars:** HTML in the theme's primary colour (`st.progress` uses a different one), the same on both pages.
 - **Home:** this month's and this year's goals as bars in a card, with "See all" (a button whose callback sets the sidebar radio, `page`), the "by today" tick and one status line each (`goals.status_line`). Above the to-dos, `goal_time.needs_you` lists only goals behind or short this week ("N h to plan") with Plan my goals; both share one `pace.Ctx` (`blocks/core._goals_home`).
 
@@ -175,7 +175,7 @@ Two different things:
 - **Capacity:** per day, the slots from now on that aren't fixed. Fixed = visible timed calendar events + Plan blocks that serve no hours goal active that day (+ every `ol:` block). Time already planned for a goal counts as free for goals. Past days and away days have none; all-day events don't block. Past `calendar_horizon()` (8 weeks, the sync window) a day uses the average fixed load for its weekday and is flagged `estimate`. Sleep isn't subtracted.
 - **Need and debt:** `week_need` spreads what was left at the start of the week (now, for later weeks) over the days left, times the week's days in the period (partial weeks work). Baseline = target × days / period days; need − baseline is the carried debt. Computed, never stored.
 - **Follow-through:** Actual ÷ Plan for the goal over the last 6 complete weeks with a Plan, needing 3 of them, clamped 30–100%. `want` = done + rest of need ÷ follow-through (or `goal_week`'s hours). Setting `goal_inflate` (default on) switches the inflation off.
-- **Budget / competition:** `week_goals` hands the rest of the week's capacity out top-down by priority (`ord`, monthly first on a tie) as `alloc`; `budget_short` is what doesn't fit. Count goals (books, money) get pace and debt but no budget. Yearly goals are budgeted week by week like monthly ones.
+- **Budget / competition:** `week_goals` hands the rest of the week's capacity out top-down by priority (`ord`, the sooner deadline on a tie) as `alloc`; `budget_short` is what doesn't fit. Count goals (books, money) get pace and debt but no budget. Yearly goals are budgeted week by week like monthly ones.
 - **Pace states:** done; unreachable (hours: remaining > free time left; habit: remaining > days left); behind (covered < want this week; habit/count: below the even-pace line and late at the trailing rate); slipping (planned enough, but Actual trails Plan this week by 1 h+); on track. Projection: the last 28 days' rate (hand-kept: the period so far).
 - **Negotiation:** `negotiation(goal)` when remaining > what the goal can get after higher-priority goals (`available_for`), or unreachable: offers lower / carry / take, applied by `tools.resolve_goal` (a Pending; the UI calls `undo.checkpoint`). `goal_offers_dismissed` in settings.json.
 - **Suggestions:** categories / activities with 2 h+ of Actual time in 3 of the last 4 weeks and no goal counting them; dismissals in `goal_suggestions_dismissed`. Categories in `pace.NEVER_SUGGEST` (Sleep, by id or name) are never suggested.
@@ -235,7 +235,7 @@ Two different things:
   - To-dos: `add_todo`, `complete_todo`, `uncomplete_todo`, `list_todos`, `delete_todo` (confirm first).
   - Goals: `goal_pace`, `week_budget`, `plan_goals` (§5e), `add_goal` (habit or category/label), `log_goal_progress`, `set_goal_progress`, `edit_goal`, `list_goals`, `delete_goal` (confirm first). Progress tools refuse habit-linked goals and point Claude at `set_habit`.
   - Both are found by id or title in the current periods: exact title, then part of a title, then the most shared words ("finish problem sheet" → "Problem sheet 4"). Several matches is an error that lists them, so Claude asks.
-  - The prompt tells Claude that "today's goals" / "this week's goals" mean to-dos, since goals are only monthly or yearly.
+  - The prompt tells Claude that "today's goals" / "this week's goals" mean to-dos, since goals have deadlines, not days or weeks.
 - **Confirm-first:** anything that deletes data or overwrites/trims other data returns `Result(pending=Pending(summary, run))`. The UI shows Confirm/Cancel, and `run()` re-runs the tool with `confirmed=True` against current data.
 - **Chat UI:** the bar is fixed to the bottom of the main column on every page except Home, where it's an inline box with the latest reply under it and the full history in a pop-up.
 - **Flow:** callbacks set `chat_busy`. `chat.render()` draws first, does the slow work (transcribe, then Claude) and then calls `st.rerun()`, so changes show immediately.

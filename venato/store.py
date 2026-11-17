@@ -281,6 +281,7 @@ def init_db():
         # Goals that count timetable hours: Actual time in a category (and optionally one activity label).
         _add_column(conn, "goals", "category_id", "TEXT REFERENCES tt_categories(id) ON DELETE SET NULL")
         _add_column(conn, "goals", "label", "TEXT")
+        _goals_get_deadlines(conn)
         conn.executescript(
             """
             -- The hours the user chose to give each goal in a week, when goals compete for time
@@ -488,6 +489,15 @@ def _forget_future_status(conn):
     week ahead): drop those, so they start unconfirmed when they come.
     """
     conn.execute("DELETE FROM tt_day_status WHERE date > ?", (local_today().isoformat(),))
+
+
+def _goals_get_deadlines(conn):
+    """Goals have a deadline (`due`) instead of being a month's or a year's: an older goal's is the
+    last day of its month or year."""
+    _add_column(conn, "goals", "due", "TEXT")
+    rows = conn.execute("SELECT id, period, period_start FROM goals WHERE due IS NULL").fetchall()
+    conn.executemany("UPDATE goals SET due = ? WHERE id = ?",
+                     [(end_of_period(p, start).isoformat(), gid) for gid, p, start in rows])
 
 
 def _add_column(conn, table, column, kind):
@@ -1505,6 +1515,15 @@ def confirm_day(day, now=None):
     return materialise(day, now=now, confirm=True)
 
 
+def unconfirm_day(day):
+    """Undo a confirm: the day goes back to assumed. The Plan copies confirming made (ids "m:<day>:...")
+    are removed and the day's status cleared; Actual blocks you added yourself stay."""
+    day = _as_date(day).isoformat()
+    with db() as conn:
+        conn.execute("DELETE FROM tt_entries WHERE date = ? AND track = 'actual' AND id LIKE ?", (day, f"m:{day}:%"))
+        conn.execute("DELETE FROM tt_day_status WHERE date = ?", (day,))
+
+
 def mark_confirmed(day):
     """The side-by-side view: the user filled in this day's Actual by hand, so it's the truth as it is.
     Not for a day that hasn't started: filling in the future isn't a record of what happened."""
@@ -1866,14 +1885,28 @@ def save_todos(df, replace=False):
 
 
 # ---------------------------------------------------------------------------
-# Goals: measurable targets for a month or a year ("Gym 12 sessions").
+# Goals: measurable targets with a deadline ("Gym 12 sessions by 31 Dec").
 #
+# A goal runs from period_start (the day it was set) to `due` (its deadline), inclusive.
 # Progress is either a number the user updates (`progress`), or, when the goal
-# is linked to a habit, the number of days that habit was ticked in the period.
+# is linked to a habit, the number of days that habit was ticked in that span.
+# `period` is from when goals were a month's or a year's: kept (the column requires it)
+# as "monthly" for a goal due by the end of its first month, else "yearly".
 # ---------------------------------------------------------------------------
 
 GOAL_PERIODS = ("monthly", "yearly")
-GOAL_COLS = "id, title, period, period_start, target, unit, progress, habit_id, ord, created_at, category_id, label"
+GOAL_COLS = "id, title, period, period_start, target, unit, progress, habit_id, ord, created_at, category_id, label, due"
+
+
+def _period_for(start, due):
+    """The legacy `period` tag for a goal running start..due."""
+    return "monthly" if _as_date(due) <= end_of_period("monthly", start_of_period("monthly", start)) else "yearly"
+
+
+def goal_title_due(due, today=None):
+    """A deadline for people: "by 31 Dec", "by 4 Jan 2028" (the year when it isn't this one)."""
+    due, today = _as_date(due), today or local_today()
+    return f"by {_short(due, year=due.year != today.year)}"
 
 
 def _num(x):
@@ -1949,7 +1982,7 @@ def _with_value(conn, row):
     g["habit"] = g["category"] = None
     g["value"] = g["progress"]
     g["kind"] = "count"
-    end = end_of_period(g["period"], g["period_start"]).isoformat()
+    end = g["due"]
     if g["habit_id"] is not None:
         name = conn.execute("SELECT name FROM habits WHERE id = ?", (g["habit_id"],)).fetchone()
         g["habit"] = name[0] if name else None
@@ -1968,25 +2001,38 @@ def _with_value(conn, row):
 
 
 def goals_in(period, start):
-    """The goals of one month or year, in list order, each with its current `value`."""
-    start = start_of_period(period, start).isoformat()
+    """The goals tagged `period` (see above) set in the month or year containing `start`, in list order,
+    each with its current `value`."""
+    first = start_of_period(period, start)
+    return _goals_where("period = ? AND period_start BETWEEN ? AND ?",
+                        (period, first.isoformat(), end_of_period(period, first).isoformat()), order="ord, created_at")
+
+
+def _goals_where(where, params, order="ord, due, created_at"):
     with db() as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(f"SELECT {GOAL_COLS} FROM goals WHERE period = ? AND period_start = ? ORDER BY ord, created_at",
-                            (period, start)).fetchall()
+        rows = conn.execute(f"SELECT {GOAL_COLS} FROM goals WHERE {where} ORDER BY {order}", params).fetchall()
         return [_with_value(conn, r) for r in rows]
 
 
 def goals_overlapping(first, last):
-    """Every goal whose month or year overlaps first..last (dates), monthly before yearly, each in list order."""
-    first, last = _as_date(first), _as_date(last)
-    out = []
-    for period in GOAL_PERIODS:
-        start = start_of_period(period, first)
-        while start <= last:
-            out += goals_in(period, start)
-            start = shift_period(period, start, 1)
-    return out
+    """Every goal whose span (set .. deadline) overlaps first..last (dates), in list order."""
+    return _goals_where("period_start <= ? AND due >= ?", (_as_date(last).isoformat(), _as_date(first).isoformat()))
+
+
+def goals_active(day=None):
+    """Goals running on `day` (default today): set on or before it, due on or after it. In list order."""
+    return goals_overlapping(day or local_today(), day or local_today())
+
+
+def goals_open(day=None):
+    """Goals not past their deadline on `day` (default today), including ones that start later. In list order."""
+    return _goals_where("due >= ?", (_as_date(day or local_today()).isoformat(),))
+
+
+def goals_past(day=None):
+    """Goals whose deadline was before `day` (default today), the latest deadline first."""
+    return _goals_where("due < ?", (_as_date(day or local_today()).isoformat(),), order="due DESC, ord, created_at")
 
 
 def get_goal(goal_id):
@@ -2011,32 +2057,51 @@ def _check_tracking(conn, habit_id, category_id):
         raise ValueError(f"There's no category {category_id}.")
 
 
-def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None, category_id=None, label=None):
-    """Add a goal to the month or year containing `day`; returns it. category_id (and optionally an
-    activity label) makes it count the Actual hours of that category instead of a hand-kept number."""
+def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None, category_id=None, label=None,
+             due=None):
+    """Add a goal; returns it. With `due`, it runs from `day` (default today) to that deadline; without,
+    `period` makes it the month's or year's containing `day` (due on its last day). category_id (and
+    optionally an activity label) makes it count the Actual hours of that category instead of a hand-kept number."""
     title = str(title).strip()
     if not title:
         raise ValueError("A goal needs a title.")
-    if period not in GOAL_PERIODS:
-        raise ValueError(f"Goals are monthly or yearly, not {period}.")
-    start = start_of_period(period, day).isoformat()
+    if due is not None:
+        start = _as_date(day or local_today())
+        due = _as_date(due)
+        if due < start:
+            raise ValueError("A goal's deadline can't be before the day it's set.")
+        period, start, due = _period_for(start, due), start.isoformat(), due.isoformat()
+    else:
+        if period not in GOAL_PERIODS:
+            raise ValueError(f"Goals are monthly or yearly, not {period}.")
+        start = start_of_period(period, day).isoformat()
+        due = end_of_period(period, start).isoformat()
     goal_id = goal_id or uuid.uuid4().hex
     label = (label or "").strip() or None if category_id else None
     with db() as conn:
         _check_tracking(conn, habit_id, category_id)
         conn.execute(
             f"INSERT OR IGNORE INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, 0, ?, "
-            "(SELECT COALESCE(MAX(ord) + 1, 0) FROM goals WHERE period = ? AND period_start = ?), ?, ?, ?)",
+            "(SELECT COALESCE(MAX(ord) + 1, 0) FROM goals), ?, ?, ?, ?)",
             (goal_id, title, period, start, _check_target(target), (unit or "").strip() or None, habit_id,
-             period, start, stamp(), category_id or None, label),
+             stamp(), category_id or None, label, due),
         )
     return get_goal(goal_id)
 
 
-def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP, category_id=KEEP, label=KEEP):
-    """Change a goal's title, target, unit, linked habit or counted category (None unlinks them).
+def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP, category_id=KEEP, label=KEEP,
+                due=KEEP):
+    """Change a goal's title, target, unit, deadline, linked habit or counted category (None unlinks them).
     Linking a habit unlinks the category and the other way round."""
     fields = {}
+    if due is not KEEP:
+        with db() as conn:
+            row = conn.execute("SELECT period_start FROM goals WHERE id = ?", (goal_id,)).fetchone()
+        if row:
+            due = _as_date(due)
+            if due < _as_date(row[0]):
+                raise ValueError("A goal's deadline can't be before the day it was set.")
+            fields["due"], fields["period"] = due.isoformat(), _period_for(row[0], due)
     if title is not KEEP:
         fields["title"] = str(title).strip()
         if not fields["title"]:
@@ -2145,16 +2210,16 @@ def calendar_horizon():
 
 def load_goals():
     """Every goal, for export (the linked habit by name, so the CSV makes sense on its own)."""
-    return _read(f"""SELECT g.id, g.title, g.period, g.period_start, g.target, g.unit, g.progress,
+    return _read(f"""SELECT g.id, g.title, g.period, g.period_start, g.due, g.target, g.unit, g.progress,
                             h.name AS habit, c.name AS category, g.label, g.ord, g.created_at
                      FROM goals g LEFT JOIN habits h ON h.id = g.habit_id
                      LEFT JOIN tt_categories c ON c.id = g.category_id
-                     ORDER BY g.period_start, g.period, g.ord""")
+                     ORDER BY g.due, g.ord""")
 
 
 def save_goals(df, replace=False):
     """
-    Import goals (the export's columns; title, period and target are required).
+    Import goals (the export's columns; title, target and either `due` (a deadline) or `period` are required).
     A habit name that doesn't exist is ignored (the goal is then updated by hand).
     Rows with an existing id update that goal; replace=True wipes all goals first. Returns the count.
     """
@@ -2168,22 +2233,31 @@ def save_goals(df, replace=False):
             title = _clean(row.get("title"), str)
             period = (_clean(row.get("period"), str) or "").strip().lower()
             target = _clean(row.get("target"), float)
-            if not title or period not in GOAL_PERIODS or not target or target <= 0:
+            due = _clean(row.get("due"), str)
+            due = pd.to_datetime(due).date() if due else None
+            if not title or (due is None and period not in GOAL_PERIODS) or not target or target <= 0:
                 continue
             day = _clean(row.get("period_start"), str)
-            start = start_of_period(period, pd.to_datetime(day).date() if day else local_today()).isoformat()
+            day = pd.to_datetime(day).date() if day else local_today()
+            if due is None:
+                start = start_of_period(period, day)
+                due = end_of_period(period, start)
+            else:
+                start = min(day, due)
+                period = _period_for(start, due)
+            start, due = start.isoformat(), due.isoformat()
             habit = _clean(row.get("habit"), str)
             habit_id = habits.get(habit.strip().lower()) if habit else None
             category = _clean(row.get("category"), str)
             category_id = cats.get(category.strip().lower()) if category and habit_id is None else None
             ord_ = _clean(row.get("ord"), int)
             conn.execute(
-                f"INSERT OR REPLACE INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT OR REPLACE INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (_clean(row.get("id"), str) or uuid.uuid4().hex, title.strip(), period, start, target,
                  _clean(row.get("unit"), str), max(0.0, _clean(row.get("progress"), float) or 0.0),
                  habit_id, count if ord_ is None else ord_,
                  _clean(row.get("created_at"), str) or stamp(), category_id,
-                 (_clean(row.get("label"), str) or None) if category_id else None),
+                 (_clean(row.get("label"), str) or None) if category_id else None, due),
             )
             count += 1
     return count

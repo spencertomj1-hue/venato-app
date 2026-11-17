@@ -90,6 +90,7 @@ def apply_grid_op(op):
       {kind: "replace", date, start, end, block, newId}   did something else, or something unplanned
       {kind: "retime", date, fromStart, fromEnd, start, end, block, newId}   change times
       {kind: "confirm_day", date}                         all as planned
+      {kind: "unconfirm_day", date}                       undo that: back to assumed
       {kind: "add_suggestion", date, start, end, block}   one suggested sitting, added to the Plan if still free
     Painting over an Outlook event detaches it first (store.paint), so it's trimmed like any block.
     In the side-by-side view, filling in a day's Actual by hand confirms it (it's the truth as it is).
@@ -141,10 +142,12 @@ def _apply(op):
                      store.slot_of(op["start"]), store.slot_of(op["end"]), _block(op["block"]), new_id=op.get("newId"))
     elif kind == "confirm_day":
         store.confirm_day(op["date"])
+    elif kind == "unconfirm_day":
+        store.unconfirm_day(op["date"])
     elif kind == "add_suggestion":
         from venato.ui import goal_time
         goal_time.add_suggestion(op["date"], op["start"], op["end"], _block(op["block"]), new_id=op.get("newId"))
-    if kind in ("skip", "replace", "retime", "confirm_day", "add_suggestion"):
+    if kind in ("skip", "replace", "retime", "confirm_day", "unconfirm_day", "add_suggestion"):
         return
     if op["kind"] == "paint":
         s, e = store.slot_of(op["start"]), store.slot_of(op["end"])

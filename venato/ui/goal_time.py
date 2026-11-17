@@ -500,28 +500,27 @@ def needs_you(ctx=None):
 
 
 def offers(ctx=None):
-    """Cards for goals that can't be finished with the time (or days) left: lower, carry or take hours."""
+    """Cards for goals that can't be finished with the time (or days) left: lower the target, move the deadline or take hours."""
     ctx = ctx or _ctx()
     if _confirm_box():
         return
     gone = pace.dismissed_offers()
-    for period in store.GOAL_PERIODS:
-        for g in store.goals_in(period, ctx.today):
-            if g["id"] in gone:
-                continue
-            n = pace.negotiation(g, ctx)
-            if not n:
-                continue
-            with st.container(border=True, key=f"offer_card_{g['id']}"):
-                p = n["pace"]
-                st.markdown(f"**:material/error: {md(g['title'])} can't be finished in time**")
-                st.caption(f"{md(pace.amount(g, p['remaining']))} to go, about "
-                           f"{md(pace.amount(g, n['reachable'] - p['value']))} within reach.")
-                for o in n["offers"]:
-                    st.button(o["text"], key=f"offer_{o['kind']}_{g['id']}", on_click=_offer, args=(g["id"], o["kind"]),
-                              width="stretch")
-                st.button("Not now", key=f"offer_no_{g['id']}", type="tertiary", on_click=pace.dismiss_offer,
-                          args=(g["id"],), help="Hide this for this goal")
+    for g in store.goals_active(ctx.today):
+        if g["id"] in gone:
+            continue
+        n = pace.negotiation(g, ctx)
+        if not n:
+            continue
+        with st.container(border=True, key=f"offer_card_{g['id']}"):
+            p = n["pace"]
+            st.markdown(f"**:material/error: {md(g['title'])} can't be finished in time**")
+            st.caption(f"{md(pace.amount(g, p['remaining']))} to go, about "
+                       f"{md(pace.amount(g, n['reachable'] - p['value']))} within reach.")
+            for o in n["offers"]:
+                st.button(o["text"], key=f"offer_{o['kind']}_{g['id']}", on_click=_offer, args=(g["id"], o["kind"]),
+                          width="stretch")
+            st.button("Not now", key=f"offer_no_{g['id']}", type="tertiary", on_click=pace.dismiss_offer,
+                      args=(g["id"],), help="Hide this for this goal")
 
 
 def _accept(s, target):
