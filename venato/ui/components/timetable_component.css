@@ -5,7 +5,7 @@
   --line-soft: rgba(128, 128, 128, 0.11);   /* half-hour lines, Plan|Actual split */
   --line-day: rgba(128, 128, 128, 0.38);    /* between days */
   --gap: 2.5px;                             /* around each tile and block */
-  --day-gap: 7px;                           /* before each day */
+  --day-gap: 14px;                          /* before each day */
   --tile-radius: 5px;
   --time-line: color-mix(in srgb, var(--text) 14%, transparent);   /* half-hour lines (dark on light, light on dark) */
   --hour-line: color-mix(in srgb, var(--text) 24%, transparent);   /* hour lines */
@@ -363,9 +363,8 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 .tt-peek .pk-note { font-size: 0.78rem; color: var(--muted); padding-top: 6px; border-top: 1px solid var(--line); }
 @keyframes tt-pop-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
 /* Switching Plan / Actual: the blocks fade in. */
-.tt-blocks.swap .blk { animation: tt-fade 0.18s ease-out; }
-@keyframes tt-fade { from { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .tt-pop.tt-peek, .tt-blocks.swap .blk { animation: none; } }
+.tt-blocks.tt-leaving { z-index: 2; }      /* the old view, fading out on top of the new one */
+@media (prefers-reduced-motion: reduce) { .tt-pop.tt-peek { animation: none; } }
 
 /* The Plan / Actual switch. */
 /* A small pill track: the chosen side is a solid pill inside it, the other is see-through. */
@@ -388,7 +387,6 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 /* Home: where "now" is on today's timetable */
 .tt-now { position: absolute; height: 2px; margin-top: -1px; background: #E53935; pointer-events: none; z-index: 6;
   transition: top 1s linear; }
-.tt-now::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #E53935; }
 
 /* Each day's state under its name: "✓ Confirmed", a Confirm button (Actual), or "Locked" (Plan). */
 th.day .dstate { min-height: 1.2em; margin-top: 2px; font-size: 0.72rem; font-weight: 500; }
