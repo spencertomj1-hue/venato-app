@@ -237,7 +237,7 @@ def ai_switch(prefix):
 
 AI_PITCH = ("Venato works fully by hand. Optionally, switch on the **Claude assistant** to get a chat box "
             "where you type (or say) things like *\"I went to the gym 6 till 7\"*, *\"fit 6 hours of revision "
-            "into next week\"* or *\"had coffee with Sam\"*, and Claude makes the changes for you. "
+            "into next week\"* or *\"move my essay to Friday\"*, and Claude makes the changes for you. "
             "It needs an Anthropic API key or a Claude subscription, and the messages you send go to Anthropic.")
 
 
@@ -278,8 +278,8 @@ def wizard():
             st.markdown(
                 "Venato keeps track of your days:\n\n"
                 "- :material/calendar_view_week: a **timetable** of what you planned and what you actually did\n"
-                "- :material/mood: a **daily log** of mood, energy and productivity (out of 10), sleep and water, a journal, and your **habits**\n"
-                "- :material/checklist: **to-dos** and **goals**, and a map of the **people** you know\n"
+                "- :material/checklist: **to-dos** and **deadlines**, and **goals** with a pace to keep\n"
+                "- :material/timer: **focus** sessions and **grades**, with a **weekly review** to see how it went\n"
                 "- :material/chat: optionally, a **Claude assistant** that can update it all for you\n\n"
                 f":material/lock: **Your data stays on your {system.COMPUTER}.** Nothing is uploaded (unless you switch on "
                 "the assistant, which sends your messages to Claude).\n\nThis takes about two minutes. You can skip "
@@ -508,8 +508,8 @@ def page_settings():
     with about:
         st.subheader("About Venato", anchor=False)
         st.markdown(
-            "A personal life tracker: timetable, daily log and journal, habits, to-dos, goals, your network, "
-            "stats, and an optional Claude assistant. "
+            "A tracker for university life: a timetable with Plan and Actual, to-dos and deadlines, goals, "
+            "focus sessions, grades, a weekly review, and an optional Claude assistant. "
             f"Built with Streamlit and SQLite; runs entirely on your {system.COMPUTER}.\n\n"
             "Open source under the **MIT licence**."
         )

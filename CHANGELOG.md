@@ -9,7 +9,12 @@ Venato was called **Arete** up to 1.1.1.
 
 ## [Unreleased]
 
+### Removed
+- Food, Recipes, Cut down, Health data, Involvement, Applications and Network are gone from the public app, so Venato can focus on student life. Your data in them stays in your database, untouched: nothing is deleted or dropped, it just isn't shown or searched any more, and new installs don't create those tables.
+- The defusedxml dependency (it was only used to read Apple Health exports).
+
 ### Changed
+- Blocks come in two tiers. Core blocks are always on: Timetable, Goals, Focus, Grades and Review. Optional blocks (Daily Log, Money, Workouts) are switched on in setup or Settings → Blocks. Setup is shorter. Stats is now called Review.
 - Timetable: the Plan is locked in when a day starts, and the day is changed in its Actual. Before a day starts, whatever is on it is the Plan. When it starts the Plan is locked (that's what Plan vs Actual compares against) and copied into the day's Actual; from then on you move, stretch, delete or add blocks freely and only the Actual changes. At the end of the day you confirm it (Confirm under the day, or Home's "Is the timetable right for today?"), so the day you actually had is the one you acknowledged; only confirmed days count in stats and goals, and nothing is confirmed for you. A Plan / Actual switch on the timetable shows either one (days that haven't started show their Plan in both; a locked Plan is view only, marked "Locked"). The "Timetable view" setting (one timeline / Plan and Actual) is gone, and so are the assumed / skipped / unplanned pieces and the Didn't happen / Change times / Did something else card. Reminders follow today's Actual. The assistant changes a started day's Actual, never its locked Plan.
 - Timetable: the Plan looks like a plan. It's drawn as a blueprint (pale blocks outlined in the category colour, on light blue graph paper) wherever it shows: the Plan view, and days that haven't started (tagged "Plan"). What you did stays solid. In the Actual view, where a day didn't go to plan, the Plan shows as a faint outline behind it ("Planned: Gym 18:00–19:00"). The key is in the (?) panel. Switching Plan / Actual is instant (no reload, no flash).
 - Timetable: pointing at a block selects it with a thin red outline (⌘/Ctrl+C copies, ⌘/Ctrl+V pastes where you point, Backspace deletes, a click shows its details), its top and bottom edges are easier to grab for stretching or shrinking either way, and the details card and the Plan / Actual switch fade in.

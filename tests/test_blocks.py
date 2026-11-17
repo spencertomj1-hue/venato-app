@@ -31,11 +31,12 @@ def test_switch_order_and_pages(store):
     assert b.is_on("stats") and not b.is_on("workouts")
 
 
-def test_leftover_blocks_come_after_optional(store):
+def test_sidebar_is_core_then_optional_and_removed_keys_are_ignored(store):
     b = _blocks()
-    b.save(["health", "food", "workouts", "money", "log"])
-    assert list(b.pages()) == ["Timetable", "Goals", "Focus", "Grades", "Review", "Daily Log", "Money", "Workouts",
-                               "Food", "Health data"]
+    b.save(["food", "network", "workouts", "money", "log"])      # food and network no longer exist: dropped
+    assert b.chosen_keys() == ["timetable", "goals", "focus", "grades", "stats", "workouts", "money", "log"]
+    assert list(b.pages()) == ["Timetable", "Goals", "Focus", "Grades", "Review", "Daily Log", "Money", "Workouts"]
+    assert not {"food", "network", "health", "applications"} & {x.key for x in b.all_blocks()}
 
 
 def test_app_follows_the_choice(store):
@@ -75,8 +76,8 @@ def test_core_always_on(store):
 
 def test_unknown_saved_keys_ignored(store):
     b = _blocks()
-    store.save_settings(blocks=["food", "network", "money"])      # food and network still exist, but are not core
-    assert set(b.chosen_keys()) >= {*CORE, "money"}
+    store.save_settings(blocks=["food", "network", "money"])      # food and network were removed from the app
+    assert b.chosen_keys() == [*CORE, "money"]
     store.save_settings(blocks=["gone", "money"])
     assert b.chosen_keys() == [*CORE, "money"]
     at = AppTest.from_file(APP, default_timeout=60).run()
