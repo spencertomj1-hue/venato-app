@@ -257,6 +257,22 @@ def init_db():
             CREATE TABLE IF NOT EXISTS tt_outlook_away (uid TEXT PRIMARY KEY);
             -- Days the user marked "I'm away" by hand (no calendar event needed): no free time for goals.
             CREATE TABLE IF NOT EXISTS away_days (date TEXT PRIMARY KEY);
+
+            -- To-dos the journal made from "quoted" / ^marked^ text, so re-saving never adds them twice
+            CREATE TABLE IF NOT EXISTS journal_todos (
+                date   TEXT NOT NULL,          -- the journal page
+                period TEXT NOT NULL,          -- daily / weekly
+                title  TEXT NOT NULL COLLATE NOCASE,
+                PRIMARY KEY (date, period, title)
+            );
+
+            -- Day trackers: the user's own numbers for each day (their list is in settings.json)
+            CREATE TABLE IF NOT EXISTS day_values (
+                date    TEXT NOT NULL,
+                tracker TEXT NOT NULL,         -- the tracker's id
+                value   REAL NOT NULL,
+                PRIMARY KEY (date, tracker)
+            );
             """
         )
         _scores_out_of_ten(conn)
@@ -509,6 +525,100 @@ def save_entry(conn, day, mood, sleep, energy, notes, water=KEEP, productivity=K
     )
 
 
+# The journal's left page sets these one at a time (water in litres, like save_entry).
+ENTRY_FIELDS = {"mood": (1, 10), "energy": (1, 10), "productivity": (1, 10), "sleep": (0, 24),
+                "water": (0, 20)}
+DECIMAL_FIELDS = ("sleep", "water")
+
+
+def set_entry_field(day, field, value):
+    """Set one ENTRY_FIELDS value for a day, keeping the rest of its entry (and its journal page)."""
+    lo, hi = ENTRY_FIELDS[field]
+    value = None if value is None else max(lo, min(hi, float(value) if field in DECIMAL_FIELDS else int(value)))
+    with db() as conn:
+        conn.execute(f"INSERT INTO entries (date, {field}) VALUES (?, ?) "
+                     f"ON CONFLICT(date) DO UPDATE SET {field} = excluded.{field}", (str(day), value))
+
+
+# ---------------------------------------------------------------------------
+# Day trackers: numbers the user chose to log each day (e.g. "Reading, hours, 0.5" or
+# "Coffee, cups, 1"). Their list is in settings.json ("day_trackers": [{id, name, unit, step}]),
+# so nothing about them is in the code; the values are in day_values.
+# ---------------------------------------------------------------------------
+
+def day_trackers():
+    return [dict(t) for t in load_settings().get("day_trackers", [])]
+
+
+def find_day_tracker(ref):
+    """A tracker by id or name (any case), or None."""
+    ref = str(ref or "").strip().lower()
+    return next((t for t in day_trackers() if t["id"] == ref or t["name"].lower() == ref), None)
+
+
+def add_day_tracker(name, unit="", step=1):
+    """Add a tracker; returns it. Raises ValueError for a missing or taken name, or a bad step."""
+    name, unit = str(name or "").strip(), str(unit or "").strip()
+    if not name:
+        raise ValueError("A tracker needs a name.")
+    if find_day_tracker(name):
+        raise ValueError(f"There's already a tracker called '{name}'.")
+    step = float(step or 1)
+    if step <= 0:
+        raise ValueError("The step must be more than 0.")
+    tracker = {"id": uuid.uuid4().hex[:10], "name": name, "unit": unit, "step": step}
+    save_settings(day_trackers=day_trackers() + [tracker])
+    return tracker
+
+
+def update_day_tracker(tracker_id, **changes):
+    trackers = day_trackers()
+    for t in trackers:
+        if t["id"] == tracker_id:
+            if "name" in changes:
+                name = str(changes["name"] or "").strip()
+                if not name:
+                    raise ValueError("A tracker needs a name.")
+                if any(o["id"] != tracker_id and o["name"].lower() == name.lower() for o in trackers):
+                    raise ValueError(f"There's already a tracker called '{name}'.")
+                t["name"] = name
+            if "unit" in changes:
+                t["unit"] = str(changes["unit"] or "").strip()
+            if "step" in changes and float(changes["step"] or 0) > 0:
+                t["step"] = float(changes["step"])
+    save_settings(day_trackers=trackers)
+
+
+def delete_day_tracker(tracker_id):
+    """Remove a tracker and everything logged for it."""
+    save_settings(day_trackers=[t for t in day_trackers() if t["id"] != tracker_id])
+    with db() as conn:
+        conn.execute("DELETE FROM day_values WHERE tracker = ?", (tracker_id,))
+
+
+def set_day_value(day, tracker_id, value):
+    """Set a tracker's number for a day (0 or more); None clears it."""
+    with db() as conn:
+        if value is None:
+            conn.execute("DELETE FROM day_values WHERE date = ? AND tracker = ?", (str(day), tracker_id))
+        else:
+            conn.execute("INSERT OR REPLACE INTO day_values VALUES (?, ?, ?)",
+                         (str(day), tracker_id, max(0.0, min(float(value), 100000.0))))
+
+
+def day_values(day):
+    """{tracker id: value} logged for a day."""
+    with db() as conn:
+        return dict(conn.execute("SELECT tracker, value FROM day_values WHERE date = ?", (str(day),)).fetchall())
+
+
+def day_values_between(first, last):
+    """[(date, tracker id, value)] between two ISO dates (inclusive), oldest first."""
+    with db() as conn:
+        return conn.execute("SELECT date, tracker, value FROM day_values WHERE date BETWEEN ? AND ? ORDER BY date",
+                            (str(first), str(last))).fetchall()
+
+
 def entries_between(first, last):
     """Daily entries between two ISO dates (inclusive), oldest first."""
     return _read("SELECT * FROM entries WHERE date BETWEEN ? AND ? ORDER BY date", (first, last))
@@ -529,6 +639,13 @@ def _journal_became_notes(conn):
         conn.execute("INSERT INTO entries (date, notes) VALUES (?, ?) "
                      "ON CONFLICT(date) DO UPDATE SET notes = excluded.notes", (day, new))
     conn.execute("DROP TABLE journal")
+
+
+def journal_todo_new(day, period, title):
+    """Record that the journal made this to-do; False if it already had (so it isn't added again)."""
+    with db() as conn:
+        cur = conn.execute("INSERT OR IGNORE INTO journal_todos VALUES (?, ?, ?)", (str(day), period, title.strip()))
+        return cur.rowcount == 1
 
 
 def get_journal(day):
