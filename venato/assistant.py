@@ -527,7 +527,8 @@ TOOL_SPECS = [
              habit={"type": "string", "description": "a habit whose ticks count as progress (optional)"},
              category={"type": "string", "description": "a timetable category whose Actual hours count as progress (optional)"},
              label={"type": "string", "description": "with category: only count this activity, e.g. 'Guitar' (optional)"},
-             date={**DATE, "description": "the day it starts (default today)"}),
+             date={**DATE, "description": "the day it counts from (default today; earlier to count progress "
+                                         "already made, e.g. 'I've done 3 in the last 2 weeks')"}),
      tools.add_goal),
     ("log_goal_progress", "Add to a goal's progress (amount defaults to 1; negative takes some off).",
      _schema(["goal"], **GOAL_REF, amount={"type": "number"}), tools.log_goal_progress),
@@ -536,6 +537,7 @@ TOOL_SPECS = [
     ("edit_goal", "Change a goal's title, target, unit, deadline, or linked habit (unlink_habit=true to update it by hand).",
      _schema(["goal"], **GOAL_REF, title={"type": "string"}, target={"type": "number"}, unit={"type": "string"},
              due={**DATE, "description": "a new deadline, YYYY-MM-DD"},
+             start={**DATE, "description": "a new day it counts from, YYYY-MM-DD (earlier counts past progress)"},
              habit={"type": "string"}, unlink_habit={"type": "boolean"}, category={"type": "string"},
              label={"type": "string"}, unlink_category={"type": "boolean"}),
      tools.edit_goal),

@@ -2000,6 +2000,19 @@ def _with_value(conn, row):
     return g
 
 
+def counted_between(first, last, habit_id=None, category_id=None, label=None):
+    """What a habit or hours goal would count between two days (inclusive): the habit's ticks, or
+    confirmed Actual hours of the category (and label). None for a goal kept by hand."""
+    first, last = _as_date(first).isoformat(), _as_date(last).isoformat()
+    if habit_id is not None:
+        with db() as conn:
+            return conn.execute("SELECT COUNT(*) FROM habit_log WHERE habit_id = ? AND date BETWEEN ? AND ?",
+                                (habit_id, first, last)).fetchone()[0]
+    if category_id:
+        return _num(goal_hours({"category_id": category_id, "label": label}, first, last, "actual"))
+    return None
+
+
 def goals_in(period, start):
     """The goals tagged `period` (see above) set in the month or year containing `start`, in list order,
     each with its current `value`."""
@@ -2090,18 +2103,20 @@ def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None,
 
 
 def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP, category_id=KEEP, label=KEEP,
-                due=KEEP):
-    """Change a goal's title, target, unit, deadline, linked habit or counted category (None unlinks them).
+                due=KEEP, start=KEEP):
+    """Change a goal's title, target, unit, deadline, start (the day it counts from: earlier to count
+    progress you'd already made), linked habit or counted category (None unlinks them).
     Linking a habit unlinks the category and the other way round."""
     fields = {}
-    if due is not KEEP:
+    if due is not KEEP or start is not KEEP:
         with db() as conn:
-            row = conn.execute("SELECT period_start FROM goals WHERE id = ?", (goal_id,)).fetchone()
+            row = conn.execute("SELECT period_start, due FROM goals WHERE id = ?", (goal_id,)).fetchone()
         if row:
-            due = _as_date(due)
-            if due < _as_date(row[0]):
-                raise ValueError("A goal's deadline can't be before the day it was set.")
-            fields["due"], fields["period"] = due.isoformat(), _period_for(row[0], due)
+            s = _as_date(row[0] if start is KEEP else start)
+            d = _as_date(row[1] if due is KEEP else due)
+            if d < s:
+                raise ValueError("A goal's deadline can't be before the day it counts from.")
+            fields["period_start"], fields["due"], fields["period"] = s.isoformat(), d.isoformat(), _period_for(s, d)
     if title is not KEEP:
         fields["title"] = str(title).strip()
         if not fields["title"]:
