@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Cut the installer by ~440 MB, cut Venato down to a student-focused core, and make the pages that change most stop rerunning the whole app.
+**Goal:** Cut the installer (plotly now, unused pyarrow parts; Whisper later), cut Venato down to a student-focused core, and make the pages that change most stop rerunning the whole app.
 
 **Architecture:** Generic work goes on `venato-app` branch `claude/funny-shannon-v696o7` (Tasks 1–10). Removed features are first moved into self-contained block files, so the private copy can keep them with no edits to shared files (Task 11). Speed comes from a data-version cache, `st.fragment` around the busy widgets, and local-first JS components, all chosen from measured numbers.
 
@@ -14,12 +14,12 @@
 
 | # | Question | Recommendation |
 |---|---|---|
-| D1 | Daily Log's mood/sleep/energy/water: the list doesn't say. Habits and Journal are on the same page today. | **Optional**, as one "Daily Log" block (habits + journal + mood). Not split into three blocks. |
-| D2 | Cut down isn't in the list. | **Gone from public**, kept in private. |
-| D3 | Stats isn't in the list, but it holds the weekly review history. | **Core**, renamed **Review**. |
-| D4 | Whisper in the installers: download inside the app, or drop it? A downloaded engine is unsigned native code, which a signed and notarised Mac app refuses to load without weakening its security settings. | **Drop it from the installers.** The mic button uses the system's own dictation (Fn Fn on Mac, Win+H on Windows). Whisper stays for source installs via `./setup.sh --voice`. |
-| D5 | Can pandas go? **No.** Streamlit itself requires pandas (80 MB) and pyarrow (170 MB). | Remove plotly only (61 MB), and use Altair, which Streamlit already ships. |
-| D6 | Users of the public app who have data in removed features. | Tables and data stay in `life.db` untouched (no `DROP`); only the pages go. Mentioned in the CHANGELOG. |
+| D1 | Daily Log | **Confirmed:** Optional, one block, same page (habits + journal + mood). |
+| D2 | Cut down | **Confirmed:** gone from public, kept in private. |
+| D3 | Stats | **Confirmed:** Core, renamed **Review**. |
+| D4 | Whisper in the installers | **Deferred** until the assistant work. Task 6 is parked. |
+| D5 | pandas / pyarrow | Can't go (Streamlit imports both). Remove plotly; exclude pyarrow's unused parts (Parquet, Flight, Acero, Dataset, Substrait, Gandiva) from the bundle (Task 7 Step 4). |
+| D6 | Data in removed features | **Confirmed:** stays in `life.db` untouched; only the pages go. |
 
 ## Measured sizes (installed, Linux, current `requirements.txt`)
 
@@ -131,7 +131,7 @@ Everything about them moves into their block files, so deleting those files remo
 - [ ] **Step 2:** `pyflakes venato app.py` clean; full suite passes; `scripts/profile_pages.py` runs (every page renders).
 - [ ] **Step 3:** Commit `Remove Food, Recipes, Health, Involvement, Cut down, Applications and Network from the public app`.
 
-### Task 6: Whisper out of the installers; system dictation
+### Task 6 (PARKED until the assistant work): Whisper out of the installers; system dictation
 
 **Files:**
 - Create: `requirements-voice.txt` (`faster-whisper==1.2.1`, `sounddevice==0.5.6`)
@@ -161,6 +161,7 @@ Everything about them moves into their block files, so deleting those files remo
 - [ ] **Step 1:** Failing test `test_code.py::test_no_plotly`: no file under `venato/` or `app.py` imports `plotly`.
 - [ ] **Step 2:** Convert each chart, one module at a time, comparing a screenshot in light and dark with the plotly version (Playwright on `streamlit run` with demo data) for the same series, colours and axes.
 - [ ] **Step 3:** Full suite passes, `pip uninstall plotly` in the venv and every page still renders via `scripts/profile_pages.py`. Commit `Charts: Altair instead of plotly`.
+- [ ] **Step 4:** `packaging/venato.spec`: exclude `pyarrow.parquet`, `pyarrow.flight`, `pyarrow.acero`, `pyarrow.dataset`, `pyarrow.substrait`, `pyarrow.gandiva` and drop their shared libraries from the collected binaries. The release workflow's smoke test (bundle imports everything, server answers) must pass, and a table page (`st.dataframe`) must render. Record the size change in `docs/perf.md`. Commit `Bundle: leave out unused parts of pyarrow`.
 
 ### Task 8: Data-version cache
 
