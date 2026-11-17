@@ -25,13 +25,10 @@ def test_context_snapshot(store):
     tools.add_block(today, "plan", "10:00", "12:00", "Lecture")
     tools.add_habit("Gym")
     tools.add_todo("Finish essay", "daily")
-    tools.add_application(company="Acme", status="Interview")
-    tools.add_application(company="Old Co", status="Rejected")
     text = a.with_context("hi", datetime(2026, 11, 3, 9, 30))
     assert text.startswith("[Now]\nIt is Tuesday 03 November 2026, 09:30") and text.endswith("[/Now]\n\nhi")
-    for bit in ("Lecture", "Gym", "Finish essay", "Acme"):
+    for bit in ("Lecture", "Gym", "Finish essay"):
         assert bit in text, bit
-    assert "Old Co" not in text                                  # finished applications are left out
     a.CONTEXT_EXTRAS.append(("Broken", lambda: 1 / 0))           # a failing section is skipped, not fatal
     try:
         assert "Broken" not in a.context()
@@ -42,8 +39,8 @@ def test_context_snapshot(store):
 def test_tool_status_labels(store):
     a = _assistant()
     assert a._status("mcp__venato__add_block") == "Updating your timetable"
-    assert a._status("mcp__venato__list_applications") == "Looking that up"
-    assert a._status("mcp__venato__edit_application") == "Updating your applications"
+    assert a._status("mcp__venato__list_todos") == "Looking that up"
+    assert a._status("mcp__venato__edit_todo") == "Updating your to-dos"
     assert a._status("mcp__venato__plan_time") == "Finding free time"
 
 

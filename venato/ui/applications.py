@@ -14,6 +14,7 @@ import streamlit as st
 from venato import regional
 from venato import store
 from venato import undo
+from venato.blocks import applications as apps
 
 HERE = Path(__file__).parent
 PAGE = "Applications"
@@ -41,19 +42,19 @@ _table = st.components.v2.component(
 
 def apply_op(op):
     """Save one op from the table: {kind: "edit", id, field, value} or {kind: "delete", id}."""
-    a = store.get_application(op.get("id"))
+    a = apps.get_application(op.get("id"))
     if not a:
         return
     if op["kind"] == "delete":
         undo.checkpoint(f"Deleted {a['company'] or 'an application'}")
-        store.delete_application(a["id"])
+        apps.delete_application(a["id"])
     elif op["kind"] == "edit" and op.get("field") in COLUMNS:
         field, value = op["field"], op.get("value")
-        if field == "status" and value not in store.APP_STATUSES:
+        if field == "status" and value not in apps.APP_STATUSES:
             return
         if a[field] and (value or None) != a[field]:
             undo.checkpoint(f"Changed {a['company'] or 'an application'}", quiet=True)   # Cmd/Ctrl+Z puts it back
-        store.update_application(a["id"], **{field: value})
+        apps.update_application(a["id"], **{field: value})
 
 
 def _on_ops():
@@ -76,7 +77,7 @@ def _countdown(row, today):
 
 
 def _add_form():
-    with st.expander("Add application", icon=":material/add:", expanded=not store.applications()):
+    with st.expander("Add application", icon=":material/add:", expanded=not apps.applications()):
         with st.form("apps_new", clear_on_submit=True, border=False):
             a, b, c = st.columns(3)
             company = a.text_input("Company")
@@ -85,12 +86,12 @@ def _add_form():
             a, b, c = st.columns(3)
             contact = a.text_input("Contact / lead")
             deadline = b.date_input("Deadline", value=None, format=regional.input_format())
-            status = c.selectbox("Status", store.APP_STATUSES)
+            status = c.selectbox("Status", apps.APP_STATUSES)
             description = st.text_input("Description")
             notes = st.text_area("Notes", height=80)
             if st.form_submit_button("Add", type="primary"):
                 try:
-                    store.add_application(company=company, industry=industry, route=route, contact=contact,
+                    apps.add_application(company=company, industry=industry, route=route, contact=contact,
                                           deadline=deadline, status=status, description=description, notes=notes)
                 except ValueError as e:
                     st.error(str(e))
@@ -99,7 +100,7 @@ def _add_form():
 def render_page():
     st.title("Applications")
     _add_form()                       # first, so a new one is in the table drawn below
-    rows = store.applications()
+    rows = apps.applications()
     today = store.local_today()
 
     if rows:
@@ -107,7 +108,7 @@ def render_page():
         live = sum(n for s, n in counts.items() if s not in DONE and s != "To apply")
         st.caption(f"{len(rows)} in total · {live} in progress · "
                    + " · ".join(f"{n} {s.lower()}" for s, n in counts.items()))
-    shown = st.pills("Show", store.APP_STATUSES, selection_mode="multi", key="apps_filter",
+    shown = st.pills("Show", apps.APP_STATUSES, selection_mode="multi", key="apps_filter",
                      label_visibility="collapsed")
     if shown:
         rows = [r for r in rows if r["status"] in shown]
@@ -115,7 +116,7 @@ def render_page():
     _table(data={
         "rows": [{**{k: r[k] for k in COLUMNS}, "id": r["id"], "due": _countdown(r, today),
                   "deadlineText": regional.numeric_date(r["deadline"]) if r["deadline"] else ""} for r in rows],
-        "statuses": store.APP_STATUSES, "colours": COLOURS, "acked": st.session_state.get(ACKED, []),
+        "statuses": apps.APP_STATUSES, "colours": COLOURS, "acked": st.session_state.get(ACKED, []),
     }, key=EDITOR, on_ops_change=_on_ops)
     if not rows:
         st.caption("Nothing here yet: add one above." if not shown else "None with that status.")

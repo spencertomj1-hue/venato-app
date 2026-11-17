@@ -1,8 +1,9 @@
 """
 Search everything, from Home (bottom of the right-hand column): to-dos, goals,
-deadlines, habits, the journal, timetable blocks, Outlook events, people,
-groups, times you met someone and weekly reviews. Each result's Open button goes
-to the right page (and day / person). The matching is store.search.
+deadlines, habits, the journal, timetable blocks, Outlook events and weekly reviews,
+plus whatever the switched-on blocks add (Block.search). Each result's Open button goes
+to the right page (and day); a block's results go where its search_open says. The
+matching is store.search.
 """
 
 from html import escape
@@ -12,9 +13,8 @@ import streamlit as st
 from venato import regional
 from venato import store
 
-ICONS = {"To-do": "check_circle", "Goal": "flag", "Deadline": "event", "Application": "work", "Habit": "repeat", "Journal": "edit_note",
-         "Timetable": "calendar_view_week", "Outlook": "calendar_month", "Person": "person", "Group": "group",
-         "Met": "forum", "Review": "insights"}
+ICONS = {"To-do": "check_circle", "Goal": "flag", "Deadline": "event", "Habit": "repeat", "Journal": "edit_note",
+         "Timetable": "calendar_view_week", "Outlook": "calendar_month", "Review": "insights"}
 
 
 def _icon(kind):
@@ -41,12 +41,6 @@ def _open(r):
     elif kind in ("Timetable", "Outlook"):
         ss["page"] = "Timetable"
         ss["tt_day"] = store._as_date(r["date"])
-    elif kind in ("Person", "Met", "Group"):
-        ss["page"] = "Network"
-        ss["net_edit"] = {"kind": "group" if kind == "Group" else "person", "id": r["id"]}
-    elif kind == "Application":
-        ss["page"] = "Applications"
-        ss.pop("apps_filter", None)
     elif kind == "Review":
         ss["page"] = "Stats"
         ss["review_week"] = store._as_date(r["date"])
@@ -86,7 +80,7 @@ def _when(r):
 
 
 def render_home():
-    query = st.text_input("Search everything", placeholder="Search to-dos, journal, people, timetable…",
+    query = st.text_input("Search everything", placeholder="Search to-dos, journal, timetable…",
                           label_visibility="collapsed", key="global_search", icon=":material/search:")
     if not query.strip():
         return
@@ -97,7 +91,7 @@ def render_home():
     words = query.split()
     st.caption(f"{len(results)} result{'s' * (len(results) != 1)}")
     for i, r in enumerate(results):
-        text, detail = (r["detail"] or r["title"], r["title"]) if r["kind"] in ("Met", "Review") else (r["title"], r["detail"])
+        text, detail = (r["detail"] or r["title"], r["title"]) if r["kind"] == "Review" else (r["title"], r["detail"])
         if r["kind"] == "Journal":
             text, detail = r["title"], None
         left, right = st.columns([5, 1], vertical_alignment="center")
@@ -106,9 +100,9 @@ def render_home():
             f'<span aria-hidden="true" style="font-family:\'Material Symbols Rounded\';font-size:1rem;vertical-align:-3px;opacity:.8">'
             f'{_icon(r["kind"])}</span> '
             f'<span style="opacity:.8">{escape(r["kind"])}{" · " + escape(_when(r)) if _when(r) else ""}'
-            f'{" · " + escape(detail) if detail and r["kind"] in ("Met", "Review") else ""}</span><br>'
+            f'{" · " + escape(detail) if detail and r["kind"] == "Review" else ""}</span><br>'
             f'{_snippet(text, words)}'
-            f'{"<br><span style=opacity:.8>" + _snippet(detail, words) + "</span>" if detail and r["kind"] not in ("Met", "Review") else ""}'
+            f'{"<br><span style=opacity:.8>" + _snippet(detail, words) + "</span>" if detail and r["kind"] != "Review" else ""}'
             f'</div>')
         if r["kind"] != "To-do":         # to-dos are already here on Home
             right.button("Open", key=f"search_open_{i}_{r['kind']}_{r['id']}", on_click=_open, args=(r,),

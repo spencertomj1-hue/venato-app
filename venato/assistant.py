@@ -203,7 +203,7 @@ def system_prompt(now=None):
 You change their data only through the venato tools. You have no other tools.
 
 Each message starts with a [Now] section: the current date and time, and a snapshot of today
-(timetable, habits, to-dos, deadlines, applications). Use it instead of looking those up, and
+(timetable, habits, to-dos, deadlines, and more). Use it instead of looking those up, and
 work out relative dates ("tomorrow", "next Tuesday", "last night") from it. Always pass
 dates to tools as YYYY-MM-DD. Weeks start on {store.week_start_name()}. Tools always take 24-hour
 "HH:mm" times and litres; the user sees {regional.clock()} times and water in {regional.water_unit()}, so
@@ -289,40 +289,6 @@ What the app tracks
     If a habit with a matching name exists, ask whether to count that habit or update it by hand.
   - edit_goal changes the title, target, unit, deadline (due) or linked habit; delete_goal needs the user's confirmation.
 
-- Network: the people the user knows, shown as a web on the Network page, coloured by group.
-  Each person has a name, an optional description (who they are / how the user knows them),
-  works_for (company, university, team) and a group (see find_people for the list).
-  Groups can have sub-groups, e.g. "Northfield" containing "Physics Society" and "Robotics Lab"; in the
-  web the user sits in the middle, each group branches off them, sub-groups branch off their group,
-  and people branch off the group they're in. Put people in the most specific group that fits.
-  - "add Physics Society and Robotics Lab under Northfield" -> add_group("Physics Society", inside="Northfield") etc.
-    (add Northfield first if it doesn't exist). edit_group renames, recolours or moves a group;
-    delete_group needs the user's confirmation.
-  - "Sam works at Google, a friend from uni" -> add_person(name="Sam", works_for="Google",
-    group="Friends", description="Friend from uni"). Pick the group that fits best; if none does, ask.
-  - Connections between people are separate: connect_people(person, other, reason), e.g. "Sam knows
-    Alex from football" -> connect_people("Sam", "Alex", reason="Football"). Add anyone new first.
-    Everyone is already linked to the user in the web, so never connect someone to the user.
-  - Use find_people to look someone up or check who exists before adding (avoid duplicates).
-  - disconnect_people and delete_person need the user's confirmation.
-  - Times the user sees or speaks to someone go in their interaction log: "had coffee with Priya,
-    talked about her thesis" -> log_interaction(person="Priya", note="Coffee; talked about her thesis")
-    (date defaults to today; "yesterday" etc. -> pass the date). person_history lists them (with ids);
-    delete_interaction removes one (needs confirmation). If the person isn't in the network yet, ask
-    whether to add them first.
-
-- Applications: the Applications page is a table of things the user has applied for, or means to
-  (jobs, internships, grad schemes, courses). Each has industry, company, route (e.g. "Graduate scheme",
-  "Internship", "Spring week"), description, contact (contact / lead: who they know there or who to ask),
-  deadline, status and notes. Status is one of: {", ".join(store.APP_STATUSES)}.
-  - "I applied to Acme's internship, deadline 1 Dec" -> add_application(company="Acme", route="Internship",
-    status="Applied", deadline=...). New ones default to "To apply".
-  - "got an interview at Acme" -> edit_application(application="Acme", status="Interview"). Use
-    append_notes=true to add to the notes rather than replace them. list_applications shows them
-    (filter by status or words); delete_application needs confirmation.
-  - Applying for something with a deadline doesn't also need add_deadline unless they ask: the table
-    has its own countdown.
-
 - Journal: the day's notes in the Daily Log (one entry per day). "journal: today was rough, ...",
   "note for today: ..." or "write in my journal that ..." -> write_journal(text) in the user's own words (first person; tidy
   grammar but don't summarise or add anything). It adds to the day's entry; only use replace=true
@@ -362,7 +328,7 @@ def _section(title, text):
 
 def context(now=None):
     """What Claude would otherwise look up first: today's and tomorrow's timetable, today's log,
-    habits, current to-dos, open deadlines and active applications (with ids)."""
+    habits, current to-dos and open deadlines (with ids), and each switched-on block's own lines."""
     now = now or store.local_now()
     today = now.date()
     tomorrow = today + timedelta(days=1)
@@ -374,9 +340,6 @@ def context(now=None):
         ("To-dos", lambda: tools.list_todos().text),
         ("Deadlines", lambda: tools.list_deadlines().text),
         ("Goals this week", lambda: _goals_snapshot(now)),
-        ("Applications in progress", lambda: "\n".join(
-            l for l in tools.list_applications().text.splitlines()
-            if not any(f": {s}" in l for s in ("Accepted", "Rejected", "Withdrawn")))),
     ] + list(CONTEXT_EXTRAS) + _block_contexts()
     for title, get in sections:
         try:
@@ -417,13 +380,6 @@ TODO_PERIOD = {"type": "string", "enum": ["daily", "weekly", "monthly"]}
 TODO_REF = _schema(["todo"], todo={"type": "string", "description": "the to-do's title (or part of it), or its id"},
                    period=TODO_PERIOD, date={**DATE, "description": "a day in the to-do's period, if not the current one"})
 GOAL_REF = {"goal": {"type": "string", "description": "the goal's title (or part of it), or its id"}}
-
-APP_STATUS = {"type": "string", "enum": store.APP_STATUSES}
-APP_PROPS = {"company": {"type": "string"}, "industry": {"type": "string"},
-             "route": {"type": "string", "description": "e.g. Graduate scheme, Internship, Spring week"},
-             "description": {"type": "string"},
-             "contact": {"type": "string", "description": "contact / lead: who they know there, or who to ask"},
-             "deadline": DATE, "status": APP_STATUS, "notes": {"type": "string"}}
 
 TOOL_SPECS = [
     ("log_day", "Set mood/sleep/energy/productivity/water/notes for a date (scores 1-10). Fields not given are left as they are.",
@@ -495,8 +451,8 @@ TOOL_SPECS = [
     ("set_outlook_category", "Set which category (and so colour) Outlook calendar events use.",
      _schema(["category"], category={"type": "string"}), tools.set_outlook_category),
     ("weekly_review", "The week's main numbers: time planned vs done per category, how much of the Plan was "
-     "followed, daily-log averages vs the week before, habits, to-dos, deadlines, people seen, journal count, and the "
-     "user's reflections. Default: the latest finished week (the Sunday-evening review).",
+     "followed, daily-log averages vs the week before, habits, to-dos, deadlines, journal count, what the "
+     "switched-on blocks add, and the user's reflections. Default: the latest finished week (the Sunday-evening review).",
      _schema([], date={**DATE, "description": "any day in the week"}), tools.weekly_review),
     ("add_deadline", "Add a deadline: something due on a date.",
      _schema(["title", "due"], title={"type": "string"}, due=DATE, notes={"type": "string"}), tools.add_deadline),
@@ -557,40 +513,6 @@ TOOL_SPECS = [
      _schema([], date={**DATE, "description": "any day in the week (default this week)"},
              earliest=TIME, latest=TIME, max_block_hours={"type": "number", "description": "longest sitting (default 2)"}),
      tools.plan_goals),
-    ("add_person", "Add someone to the user's network.",
-     _schema(["name"], name={"type": "string"}, description={"type": "string", "description": "who they are / how the user knows them"},
-             works_for={"type": "string", "description": "company, university or team"},
-             group={"type": "string", "description": "a network group, e.g. 'Friends'"}),
-     tools.add_person),
-    ("update_person", "Change a person's name, description, works_for or group (by name or id).",
-     _schema(["person"], person={"type": "string"}, name={"type": "string"}, description={"type": "string"},
-             works_for={"type": "string"}, group={"type": "string"}, clear_group={"type": "boolean"}),
-     tools.update_person),
-    ("connect_people", "Record that two people in the network know each other, and why.",
-     _schema(["person", "other"], person={"type": "string"}, other={"type": "string"},
-             reason={"type": "string", "description": "how they know each other, e.g. 'Work together at Google'"}),
-     tools.connect_people),
-    ("disconnect_people", "Remove the connection between two people.",
-     _schema(["person", "other"], person={"type": "string"}, other={"type": "string"}), tools.disconnect_people),
-    ("delete_person", "Remove someone from the network (and their connections).",
-     _schema(["person"], person={"type": "string"}), tools.delete_person),
-    ("add_group", "Add a network group, optionally inside another group as a sub-group (e.g. 'Physics Society' inside 'Northfield').",
-     _schema(["name"], name={"type": "string"}, inside={"type": "string", "description": "the parent group's name"},
-             colour={"type": "string", "description": "hex, e.g. #3E8EF7 (sub-groups default to their parent's)"}),
-     tools.add_group),
-    ("edit_group", "Rename, recolour or move a network group (inside another group, or top_level=true).",
-     _schema(["group"], group={"type": "string"}, name={"type": "string"}, inside={"type": "string"},
-             top_level={"type": "boolean"}, colour={"type": "string"}),
-     tools.edit_group),
-    ("delete_group", "Delete a network group; its people and sub-groups move up a level.",
-     _schema(["group"], group={"type": "string"}), tools.delete_group),
-    ("log_interaction", "Note a time the user saw or spoke to someone in their network (date defaults to today).",
-     _schema(["person", "note"], person={"type": "string"},
-             note={"type": "string", "description": "what happened, e.g. 'Coffee; talked about her thesis'"},
-             date=DATE),
-     tools.log_interaction),
-    ("person_history", "List the interactions logged with someone, newest first.",
-     _schema(["person"], person={"type": "string"}), tools.person_history),
     ("write_journal", "Write in the user's journal: adds a paragraph to a day's entry (today by default). "
      "replace=true rewrites the whole entry (needs the user's confirmation).",
      _schema(["text"], text={"type": "string"}, date=DATE, replace={"type": "boolean"}), tools.write_journal),
@@ -606,25 +528,10 @@ TOOL_SPECS = [
     ("edit_todo", "Change a to-do's title, notes or repeat, and/or move it to the day, week or month list.",
      {**TODO_REF, "properties": {**TODO_REF["properties"], "title": {"type": "string"}, "notes": {"type": "string"},
                                  "repeat": {"type": "boolean"}, "move_to": TODO_PERIOD}}, tools.edit_todo),
-    ("delete_interaction", "Remove a logged meeting with someone (id from person_history, or words from its note).",
-     _schema(["person", "interaction"], person={"type": "string"}, interaction={"type": "string"}),
-     tools.delete_interaction),
     ("save_review_answers", "Save the user's answers to the weekly review's questions: what went well, what to change.",
      _schema([], went_well={"type": "string"}, to_change={"type": "string"},
              date={**DATE, "description": "any day in the week (default: the latest review week)"}),
      tools.save_review_answers),
-    ("list_applications", "List applications (with ids), optionally by status or matching words.",
-     _schema([], status=APP_STATUS, query={"type": "string"}), tools.list_applications),
-    ("add_application", "Add an application (a job, internship, course...). At least a company or what it's for.",
-     _schema([], **APP_PROPS), tools.add_application),
-    ("edit_application", "Change an application's fields, found by company (or id). Only pass what changes.",
-     _schema(["application"], application={"type": "string", "description": "company / route words, or its id"},
-             append_notes={"type": "boolean", "description": "add to the notes instead of replacing them"},
-             **APP_PROPS), tools.edit_application),
-    ("delete_application", "Delete an application (needs the user's confirmation).",
-     _schema(["application"], application={"type": "string"}), tools.delete_application),
-    ("find_people", "List people in the network (with ids, groups and connections), optionally filtered by a search.",
-     _schema([], query={"type": "string"}), tools.find_people),
     ("set_activity_default", "Set which category an activity label (e.g. 'Lecture') uses by default.",
      _schema(["label", "category"], label={"type": "string"}, category={"type": "string"}),
      tools.set_activity_default),
@@ -722,12 +629,11 @@ IDLE_CLOSE = 15 * 60         # a session unused this long is closed
 TIMINGS = store.DATA_DIR / "logs" / "assistant.jsonl"     # how long each message took (no message text)
 
 TOOL_STATUS = [              # (word in the tool's name, what the chat shows while it runs)
-    ("application", "Updating your applications"), ("problem", "Updating your problem sets"),
+    ("problem", "Updating your problem sets"),
     ("module", "Updating your problem sets"), ("journal", "Writing in your journal"),
     ("review", "Updating your weekly review"), ("todo", "Updating your to-dos"),
     ("goal", "Updating your goals"), ("deadline", "Updating your deadlines"),
-    ("habit", "Updating your habits"), ("person", "Updating your network"), ("people", "Updating your network"),
-    ("group", "Updating your network"), ("interaction", "Updating your network"),
+    ("habit", "Updating your habits"),
     ("block", "Updating your timetable"), ("plan_time", "Finding free time"), ("category", "Updating categories"),
     ("activity", "Updating categories"), ("outlook", "Updating categories"), ("log_day", "Updating your daily log"),
 ]
@@ -735,9 +641,11 @@ TOOL_STATUS = [              # (word in the tool's name, what the chat shows whi
 
 def _status(tool_name):
     name = tool_name.rsplit("__", 1)[-1]
-    if name.startswith(("list_", "query_", "read_", "find_", "get_")) or name in ("weekly_review", "person_history"):
+    if name.startswith(("list_", "query_", "read_", "find_", "get_")) or name == "weekly_review":
         return "Looking that up"
-    return next((label for word, label in TOOL_STATUS if word in name), "Working on it")
+    from venato import blocks
+    words = TOOL_STATUS + [(w, label) for b in blocks.enabled() for w, label in b.status.items()]
+    return next((label for word, label in words if word in name), "Working on it")
 
 
 class Job:

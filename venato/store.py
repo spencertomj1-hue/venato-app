@@ -55,16 +55,6 @@ DEFAULT_CATEGORIES = [
 # Outlook events use this category unless settings.json says otherwise ("outlook_category").
 DEFAULT_OUTLOOK_CATEGORY = "classes"
 
-# Network groups (they colour people in the Network web); editable on the Network page.
-DEFAULT_NET_GROUPS = [
-    ("family", "Family", "#E5484D"),
-    ("friends", "Friends", "#F5A524"),
-    ("uni", "Uni", "#3E8EF7"),
-    ("work", "Work", "#30A46C"),
-    ("mentors", "Mentors", "#8E4EC6"),
-    ("other", "Other", "#8B8D98"),
-]
-
 # Typing one of these activities picks its category automatically.
 DEFAULT_LABEL_MAP = {
     "Sleep": "sleep", "Breakfast": "meals", "Lunch": "meals", "Dinner": "meals",
@@ -197,39 +187,6 @@ def init_db():
                 created_at   TEXT NOT NULL
             );
 
-            -- Network: people you know, the groups that colour them, and who knows whom
-            CREATE TABLE IF NOT EXISTS net_groups (
-                id     TEXT PRIMARY KEY,
-                name   TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                colour TEXT NOT NULL,                    -- "#RRGGBB"
-                ord    INTEGER NOT NULL,
-                parent_id TEXT                           -- the group it sits inside; NULL = top level
-            );
-            CREATE TABLE IF NOT EXISTS net_people (
-                id          TEXT PRIMARY KEY,
-                name        TEXT NOT NULL,
-                description TEXT,                        -- who they are, how you know them
-                works_for   TEXT,                        -- company, university, team...
-                group_id    TEXT REFERENCES net_groups(id) ON DELETE SET NULL,
-                created_at  TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS net_links (       -- undirected: always stored with a < b
-                a      TEXT NOT NULL REFERENCES net_people(id) ON DELETE CASCADE,
-                b      TEXT NOT NULL REFERENCES net_people(id) ON DELETE CASCADE,
-                reason TEXT,                             -- how they know each other
-                PRIMARY KEY (a, b),
-                CHECK (a < b)
-            );
-            -- Times the user saw or spoke to someone ("had coffee, talked about X")
-            CREATE TABLE IF NOT EXISTS net_interactions (
-                id         TEXT PRIMARY KEY,
-                person_id  TEXT NOT NULL REFERENCES net_people(id) ON DELETE CASCADE,
-                date       TEXT NOT NULL,                -- YYYY-MM-DD
-                note       TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS net_interactions_person ON net_interactions (person_id, date);
-
             -- Weekly reviews: one row per reviewed week (its first day), with the user's reflections
             CREATE TABLE IF NOT EXISTS weekly_reviews (
                 week_start TEXT PRIMARY KEY,               -- YYYY-MM-DD
@@ -248,21 +205,6 @@ def init_db():
                 done_at    TEXT,
                 created_at TEXT NOT NULL
             );
-
-            -- Applications: jobs, internships, courses... one row each, with where it's up to
-            CREATE TABLE IF NOT EXISTS applications (
-                id          TEXT PRIMARY KEY,
-                industry    TEXT,
-                company     TEXT,
-                route       TEXT,                        -- e.g. Graduate scheme, Internship, Spring week
-                description TEXT,
-                contact     TEXT,                        -- contact / lead
-                deadline    TEXT,                        -- YYYY-MM-DD, or NULL
-                status      TEXT NOT NULL,
-                notes       TEXT,
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL
-            );
             """
         )
         # Each block's own tables (venato/blocks/*), then their later changes.
@@ -276,7 +218,6 @@ def init_db():
         _add_column(conn, "habits", "per_week", "INTEGER")          # NULL = every day; else N times a week
         _journal_became_notes(conn)
         _add_column(conn, "tt_outlook", "description", "TEXT")
-        _add_column(conn, "net_groups", "parent_id", "TEXT")
         _add_column(conn, "entries", "productivity", "INTEGER")    # 1-10, self-rated
         # Goals that count timetable hours: Actual time in a category (and optionally one activity label).
         _add_column(conn, "goals", "category_id", "TEXT REFERENCES tt_categories(id) ON DELETE SET NULL")
@@ -308,9 +249,6 @@ def init_db():
             )
         if conn.execute("SELECT COUNT(*) FROM tt_label_map").fetchone()[0] == 0:
             conn.executemany("INSERT INTO tt_label_map VALUES (?, ?)", DEFAULT_LABEL_MAP.items())
-        if conn.execute("SELECT COUNT(*) FROM net_groups").fetchone()[0] == 0:
-            conn.executemany("INSERT INTO net_groups (id, name, colour, ord) VALUES (?, ?, ?, ?)",
-                             [(gid, name, colour, i) for i, (gid, name, colour) in enumerate(DEFAULT_NET_GROUPS)])
 
 
 
@@ -677,74 +615,6 @@ def set_deadline_done(did, done):
 def delete_deadline(did):
     with db() as conn:
         conn.execute("DELETE FROM deadlines WHERE id = ?", (did,))
-
-
-# ---------------------------------------------------------------------------
-# Applications (the Applications page)
-# ---------------------------------------------------------------------------
-
-APP_STATUSES = ["To apply", "Applied", "Online test", "Interview", "Assessment centre",
-                "Offer", "Accepted", "Rejected", "Withdrawn"]
-APP_TEXT = ("industry", "company", "route", "description", "contact", "notes")
-APP_COLS = "id, " + ", ".join(APP_TEXT[:5]) + ", deadline, status, notes, created_at, updated_at"
-
-
-def _application_fields(fields):
-    """Tidy user input: stripped text (blank -> None), a real date or None, a known status."""
-    out = {}
-    for k, v in fields.items():
-        if k in APP_TEXT:
-            out[k] = (str(v).strip() if v is not None and str(v) not in ("nan", "NaT", "None") else "") or None
-        elif k == "deadline":
-            out[k] = _as_date(str(v)[:10]).isoformat() if v not in (None, "") and str(v) not in ("nan", "NaT", "None") else None
-        elif k == "status":
-            if v not in APP_STATUSES:
-                raise ValueError(f"Status must be one of: {', '.join(APP_STATUSES)}.")
-            out[k] = v
-        else:
-            raise ValueError(f"Unknown application field: {k}")
-    return out
-
-
-def add_application(status="To apply", **fields):
-    """Add an application; returns its id. Fields: industry, company, route, description,
-    contact, deadline, notes."""
-    row = _application_fields({"status": status or "To apply", **fields})
-    if not any(row.get(k) for k in ("company", "industry", "route", "description")):
-        raise ValueError("Say at least the company (or what it's for).")
-    aid, now = uuid.uuid4().hex, stamp()
-    cols = ["id", *row, "created_at", "updated_at"]
-    with db() as conn:
-        conn.execute(f"INSERT INTO applications ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
-                     (aid, *row.values(), now, now))
-    return aid
-
-
-def applications():
-    """Every application: soonest deadline first (no deadline last), then newest."""
-    with db() as conn:
-        rows = conn.execute(f"SELECT {APP_COLS} FROM applications "
-                            "ORDER BY deadline IS NULL, deadline, created_at DESC").fetchall()
-    return [dict(zip(APP_COLS.split(", "), r)) for r in rows]
-
-
-def get_application(aid):
-    with db() as conn:
-        row = conn.execute(f"SELECT {APP_COLS} FROM applications WHERE id = ?", (aid,)).fetchone()
-    return dict(zip(APP_COLS.split(", "), row)) if row else None
-
-
-def update_application(aid, **fields):
-    row = _application_fields(fields)
-    if row:
-        with db() as conn:
-            conn.execute(f"UPDATE applications SET {', '.join(f'{k} = ?' for k in row)}, updated_at = ? WHERE id = ?",
-                         (*row.values(), stamp(), aid))
-
-
-def delete_application(aid):
-    with db() as conn:
-        conn.execute("DELETE FROM applications WHERE id = ?", (aid,))
 
 
 def countdown(due, today=None):
@@ -2285,232 +2155,6 @@ def save_goals(df, replace=False):
     return count
 
 
-# ---------------------------------------------------------------------------
-# Network: people, their groups (colours) and who knows whom.
-#
-# Links are undirected and stored once, with the smaller id first (net_links
-# has CHECK (a < b)), so "A knows B" and "B knows A" are the same row.
-# ---------------------------------------------------------------------------
-
-PERSON_COLS = ("id", "name", "description", "works_for", "group_id", "created_at")
-
-
-def net_groups():
-    """[{id, name, colour, parent_id}] in order: each group's sub-groups follow it."""
-    with db() as conn:
-        rows = conn.execute("SELECT id, name, colour, parent_id FROM net_groups ORDER BY ord, name").fetchall()
-    groups = [dict(zip(("id", "name", "colour", "parent_id"), r)) for r in rows]
-    ids = {g["id"] for g in groups}
-    out = []
-
-    def walk(parent):
-        for g in groups:
-            if g["parent_id"] == parent or (parent is None and g["parent_id"] not in ids):
-                out.append(g)
-                walk(g["id"])
-    walk(None)
-    return out
-
-
-def group_path(group_id, groups=None):
-    """"Northfield › Physics Society" for a sub-group, or just the name."""
-    by_id = {g["id"]: g for g in (groups or net_groups())}
-    names, gid = [], group_id
-    while gid in by_id and len(names) < 10:
-        names.append(by_id[gid]["name"])
-        gid = by_id[gid]["parent_id"]
-    return " › ".join(reversed(names))
-
-
-def _descendants(conn, group_id):
-    """Ids of a group's sub-groups, their sub-groups, and so on."""
-    found, todo = set(), [group_id]
-    while todo:
-        kids = [r[0] for r in conn.execute(
-            f"SELECT id FROM net_groups WHERE parent_id IN ({','.join('?' * len(todo))})", todo)]
-        todo = [k for k in kids if k not in found]
-        found.update(todo)
-    return found
-
-
-def find_net_group(name):
-    """A group's id by name (any case), or None. Group names are unique."""
-    with db() as conn:
-        row = conn.execute("SELECT id FROM net_groups WHERE name = ? COLLATE NOCASE", (str(name).strip(),)).fetchone()
-    return row[0] if row else None
-
-
-def add_net_group(name, colour=None, parent_id=None):
-    """A new group (inside `parent_id`, if given). Sub-groups take their parent's colour unless given one."""
-    name = str(name).strip()
-    if not name:
-        raise ValueError("A group needs a name.")
-    gid = uuid.uuid4().hex[:8]
-    with db() as conn:
-        if not colour and parent_id:
-            row = conn.execute("SELECT colour FROM net_groups WHERE id = ?", (parent_id,)).fetchone()
-            colour = row[0] if row else None
-        conn.execute("INSERT INTO net_groups (id, name, colour, ord, parent_id) "
-                     "VALUES (?, ?, ?, (SELECT COALESCE(MAX(ord) + 1, 0) FROM net_groups), ?)",
-                     (gid, name, (colour or "#8B8D98").upper(), parent_id))
-    return gid
-
-
-NO_CHANGE = object()   # update_net_group / update_person: leave this field as it is
-
-
-def update_net_group(group_id, name=None, colour=None, parent_id=NO_CHANGE):
-    """Rename, recolour or move a group (parent_id=None puts it at the top level)."""
-    fields = {}
-    if name is not None:
-        fields["name"] = str(name).strip()
-        if not fields["name"]:
-            raise ValueError("A group needs a name.")
-    if colour is not None:
-        fields["colour"] = colour.upper()
-    with db() as conn:
-        if parent_id is not NO_CHANGE:
-            if parent_id == group_id or parent_id in _descendants(conn, group_id):
-                raise ValueError("A group can't sit inside itself or one of its own sub-groups.")
-            fields["parent_id"] = parent_id
-        if fields:
-            conn.execute(f"UPDATE net_groups SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
-                         (*fields.values(), group_id))
-
-
-def delete_net_group(group_id):
-    """Remove a group. Its sub-groups and people move up to the group it was inside (or the top level)."""
-    with db() as conn:
-        row = conn.execute("SELECT parent_id FROM net_groups WHERE id = ?", (group_id,)).fetchone()
-        if not row:
-            return
-        conn.execute("UPDATE net_groups SET parent_id = ? WHERE parent_id = ?", (row[0], group_id))
-        conn.execute("UPDATE net_people SET group_id = ? WHERE group_id = ?", (row[0], group_id))
-        conn.execute("DELETE FROM net_groups WHERE id = ?", (group_id,))
-
-
-def net_people():
-    """Everyone, by name."""
-    with db() as conn:
-        rows = conn.execute(f"SELECT {', '.join(PERSON_COLS)} FROM net_people ORDER BY name COLLATE NOCASE").fetchall()
-    return [dict(zip(PERSON_COLS, r)) for r in rows]
-
-
-def get_person(person_id):
-    with db() as conn:
-        row = conn.execute(f"SELECT {', '.join(PERSON_COLS)} FROM net_people WHERE id = ?", (person_id,)).fetchone()
-    return dict(zip(PERSON_COLS, row)) if row else None
-
-
-def find_people(name):
-    """People whose name matches exactly (any case), else whose name contains `name`."""
-    want = str(name).strip().lower()
-    everyone = net_people()
-    return [p for p in everyone if p["name"].lower() == want] or [p for p in everyone if want in p["name"].lower()]
-
-
-def _person_fields(name=None, description=None, works_for=None):
-    out = {}
-    if name is not None:
-        out["name"] = str(name).strip()
-        if not out["name"]:
-            raise ValueError("A person needs a name.")
-    if description is not None:
-        out["description"] = str(description).strip() or None
-    if works_for is not None:
-        out["works_for"] = str(works_for).strip() or None
-    return out
-
-
-def add_person(name, description=None, works_for=None, group_id=None, person_id=None):
-    """Add someone to the network; returns them."""
-    fields = _person_fields(name, description, works_for)
-    person_id = person_id or uuid.uuid4().hex
-    with db() as conn:
-        conn.execute(f"INSERT INTO net_people ({', '.join(PERSON_COLS)}) VALUES (?, ?, ?, ?, ?, ?)",
-                     (person_id, fields["name"], fields.get("description"), fields.get("works_for"), group_id,
-                      stamp()))
-    return get_person(person_id)
-
-
-KEEP_GROUP = NO_CHANGE
-
-
-def update_person(person_id, name=None, description=None, works_for=None, group_id=KEEP_GROUP):
-    """Change any of name, description, works_for (None = leave as is; "" = clear) and group (None = no group)."""
-    fields = _person_fields(name, description, works_for)
-    if group_id is not KEEP_GROUP:
-        fields["group_id"] = group_id
-    if fields:
-        with db() as conn:
-            conn.execute(f"UPDATE net_people SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
-                         (*fields.values(), person_id))
-
-
-def delete_person(person_id):
-    """Remove someone (and their connections)."""
-    with db() as conn:
-        conn.execute("DELETE FROM net_people WHERE id = ?", (person_id,))
-
-
-def _pair(a, b):
-    if a == b:
-        raise ValueError("Someone can't be connected to themselves.")
-    return (a, b) if a < b else (b, a)
-
-
-def link_people(a, b, reason=None):
-    """Connect two people (or update why they're connected)."""
-    a, b = _pair(a, b)
-    with db() as conn:
-        conn.execute("INSERT INTO net_links VALUES (?, ?, ?) ON CONFLICT(a, b) DO UPDATE SET reason = excluded.reason",
-                     (a, b, (str(reason).strip() or None) if reason else None))
-
-
-def unlink_people(a, b):
-    a, b = _pair(a, b)
-    with db() as conn:
-        conn.execute("DELETE FROM net_links WHERE a = ? AND b = ?", (a, b))
-
-
-def net_links():
-    """[{a, b, reason}] for every connection."""
-    with db() as conn:
-        rows = conn.execute("SELECT a, b, reason FROM net_links").fetchall()
-    return [{"a": a, "b": b, "reason": r} for a, b, r in rows]
-
-
-def add_interaction(person_id, note, day):
-    """Log a time the user saw or spoke to someone; returns its id."""
-    note = str(note).strip()
-    if not note:
-        raise ValueError("Say what happened.")
-    iid = uuid.uuid4().hex
-    with db() as conn:
-        conn.execute("INSERT INTO net_interactions VALUES (?, ?, ?, ?, ?)",
-                     (iid, person_id, _as_date(day).isoformat(), note, stamp()))
-    return iid
-
-
-def interactions_of(person_id, limit=None):
-    """[{id, date, note}] for one person, newest first."""
-    with db() as conn:
-        rows = conn.execute("SELECT id, date, note FROM net_interactions WHERE person_id = ? "
-                            "ORDER BY date DESC, created_at DESC" + (f" LIMIT {int(limit)}" if limit else ""),
-                            (person_id,)).fetchall()
-    return [{"id": i, "date": d, "note": n} for i, d, n in rows]
-
-
-def interactions_between(first, last):
-    """[{date, note, person}] logged between two dates (inclusive), oldest first."""
-    with db() as conn:
-        rows = conn.execute(
-            "SELECT i.date, i.note, p.name FROM net_interactions i JOIN net_people p ON p.id = i.person_id "
-            "WHERE i.date BETWEEN ? AND ? ORDER BY i.date, i.created_at",
-            (_as_date(first).isoformat(), _as_date(last).isoformat())).fetchall()
-    return [{"date": d, "note": n, "person": p} for d, n, p in rows]
-
-
 # --- Weekly reviews ---
 
 def get_review(week_start):
@@ -2540,25 +2184,6 @@ def reviews():
         rows = conn.execute("SELECT week_start, seen_at, went_well, to_change FROM weekly_reviews "
                             "ORDER BY week_start DESC").fetchall()
     return [dict(zip(("week_start", "seen_at", "went_well", "to_change"), r)) for r in rows]
-
-
-def last_interactions():
-    """{person_id: date of the latest interaction}."""
-    with db() as conn:
-        return dict(conn.execute("SELECT person_id, MAX(date) FROM net_interactions GROUP BY person_id").fetchall())
-
-
-def delete_interaction(interaction_id):
-    with db() as conn:
-        conn.execute("DELETE FROM net_interactions WHERE id = ?", (interaction_id,))
-
-
-def connections_of(person_id):
-    """[(other person, reason)] for one person, by name."""
-    people = {p["id"]: p for p in net_people()}
-    out = [(people[l["b"] if l["a"] == person_id else l["a"]], l["reason"])
-           for l in net_links() if person_id in (l["a"], l["b"])]
-    return sorted(out, key=lambda x: x[0]["name"].lower())
 
 
 # ---------------------------------------------------------------------------
@@ -2630,26 +2255,18 @@ def get_stats(days=None, today=None):
 # Search: one box for everything (Home)
 # ---------------------------------------------------------------------------
 
-# kind -> SQL giving (id, title, detail, date, extra) for rows whose `haystack` contains every word.
+# kind -> (SQL giving (id, title, detail, date, extra), the `haystack` that must contain every word, and
+# optionally the order: "name" (by title) or "date" (newest first, the default). Blocks add their own kinds.
 _SEARCH = {
     "To-do": ("SELECT id, title, notes, period_start, period FROM todos", "title || ' ' || COALESCE(notes, '')"),
     "Goal": ("SELECT id, title, unit, period_start, period FROM goals", "title"),
     "Deadline": ("SELECT id, title, notes, due, done FROM deadlines", "title || ' ' || COALESCE(notes, '')"),
-    "Application": ("SELECT id, COALESCE(company, industry, route, 'Application'), "
-                    "TRIM(COALESCE(route, '') || ' · ' || status, ' ·'), deadline, status FROM applications",
-                    "COALESCE(industry, '') || ' ' || COALESCE(company, '') || ' ' || COALESCE(route, '') || ' ' || "
-                    "COALESCE(description, '') || ' ' || COALESCE(contact, '') || ' ' || COALESCE(notes, '')"),
-    "Habit": ("SELECT id, name, NULL, NULL, per_week FROM habits", "name"),
+    "Habit": ("SELECT id, name, NULL, NULL, per_week FROM habits", "name", "name"),
     "Journal": ("SELECT date, notes, NULL, date, NULL FROM entries", "COALESCE(notes, '')"),
     "Timetable": ("SELECT id, label, details, date, track || ' ' || start || '-' || \"end\" FROM tt_entries",
                   "label || ' ' || COALESCE(details, '')"),
     "Outlook": ("SELECT uid, title, location, date, start FROM tt_outlook",
                 "title || ' ' || COALESCE(location, '') || ' ' || COALESCE(description, '')"),
-    "Person": ("SELECT id, name, description, NULL, works_for FROM net_people",
-               "name || ' ' || COALESCE(description, '') || ' ' || COALESCE(works_for, '')"),
-    "Group": ("SELECT id, name, NULL, NULL, NULL FROM net_groups", "name"),
-    "Met": ("SELECT i.person_id, p.name, i.note, i.date, NULL FROM net_interactions i "
-            "JOIN net_people p ON p.id = i.person_id", "i.note || ' ' || p.name"),
     "Review": ("SELECT week_start, 'Weekly review', COALESCE(went_well, '') || ' ' || COALESCE(to_change, ''), "
                "week_start, NULL FROM weekly_reviews", "COALESCE(went_well, '') || ' ' || COALESCE(to_change, '')"),
 }
@@ -2664,10 +2281,10 @@ def search(query, per_kind=8):
     from venato import blocks
     out = []
     with db() as conn:
-        for kind, (select, haystack) in {**_SEARCH, **blocks.search_kinds()}.items():
+        for kind, (select, haystack, *order) in {**_SEARCH, **blocks.search_kinds()}.items():
             where = " AND ".join(f"{haystack} LIKE ? ESCAPE '\\'" for _ in words)
             params = ["%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for w in words]
-            order = " ORDER BY 4 DESC" if kind not in ("Habit", "Group", "Person") else " ORDER BY 2"
+            order = " ORDER BY 2" if order == ["name"] else " ORDER BY 4 DESC"
             rows = conn.execute(f"{select} WHERE {where}{order} LIMIT {int(per_kind)}", params).fetchall()
             out += [{"kind": kind, "id": r[0], "title": r[1], "detail": r[2], "date": r[3], "extra": r[4]} for r in rows]
     return out
