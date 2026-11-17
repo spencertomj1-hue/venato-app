@@ -450,4 +450,4 @@ TOOLS = [
 BLOCK = Block("focus", "Focus", ":material/timer:",
               "A Pomodoro timer with breaks and a stopwatch for tracking time; sessions go into your timetable.",
               group="Plan", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=15)
+              quick=[_quick], schema=SCHEMA, order=30, core=True)

@@ -16,37 +16,72 @@ def _blocks():
 def test_registry_and_defaults(store):
     b = _blocks()
     keys = [x.key for x in b.all_blocks()]
-    assert {"timetable", "goals", "log", "applications", "network", "stats"} <= set(keys)
+    assert {"timetable", "goals", "log", "focus", "grades", "money", "workouts", "stats"} <= set(keys)
     assert len(keys) == len(set(keys))
-    assert b.chosen_keys()[:2] == ["timetable", "goals"]          # never chose: the original pages, on
-    assert all(b.get(k).default for k in b.chosen_keys())
+    assert b.chosen_keys()[:2] == ["timetable", "goals"]          # never chose: core plus the defaults
+    assert all(b.get(k).core or b.get(k).default for k in b.chosen_keys())
 
 
 def test_switch_order_and_pages(store):
     b = _blocks()
-    b.save(["stats", "timetable", "nonsense", "stats"])            # unknown keys and repeats are dropped
-    assert b.chosen_keys() == ["stats", "timetable"]
-    assert list(b.pages()) == ["Timetable", "Stats"]                # the sidebar keeps its own order
-    assert b.is_on("stats") and not b.is_on("network")
+    b.save(["stats", "timetable", "nonsense", "stats", "money"])   # unknown keys and repeats are dropped
+    assert b.chosen_keys() == ["goals", "focus", "grades", "stats", "timetable", "money"]   # core first if left out
+    assert list(b.pages()) == ["Timetable", "Goals", "Focus", "Grades", "Review", "Money"]   # the sidebar keeps its own order
+    assert b.is_on("stats") and not b.is_on("workouts")
 
 
 def test_app_follows_the_choice(store):
     b = _blocks()
-    b.save(["timetable", "stats"])
+    b.save(["money"])
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    assert list(at.sidebar.radio[0].options) == ["Home", "Timetable", "Stats", "Settings"]
+    assert list(at.sidebar.radio[0].options) == ["Home", "Timetable", "Goals", "Focus", "Grades", "Review", "Money", "Settings"]
 
 
 def test_settings_tab_switches_blocks(store):
     b = _blocks()
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.sidebar.radio[0].set_value("Settings").run()
-    at.toggle(key="set_block_network").set_value(False).run()
-    assert not at.exception and not b.is_on("network")
-    assert "Network" not in at.sidebar.radio[0].options
+    at.toggle(key="set_block_money").set_value(True).run()
+    assert not at.exception and b.is_on("money")
+    assert "Money" in at.sidebar.radio[0].options
+    at.toggle(key="set_block_money").set_value(False).run()
+    assert not at.exception and not b.is_on("money")
+    assert "Money" not in at.sidebar.radio[0].options
+    assert not [t for t in at.toggle if t.key in ("set_block_timetable", "set_block_stats")]   # core: always on
+    assert any(c.value == "Always on" for c in at.caption)
     at.button(key="set_down_timetable").click().run()                # priority order
     assert b.chosen_keys()[:2] == ["goals", "timetable"]
+
+
+CORE = ["timetable", "goals", "focus", "grades", "stats"]
+
+
+def test_core_always_on(store):
+    b = _blocks()
+    store.save_settings(blocks=[])
+    assert b.chosen_keys() == CORE
+    assert [x.key for x in b.all_blocks() if x.core] == CORE
+    assert b.get("stats").name == "Review"
+
+
+def test_unknown_saved_keys_ignored(store):
+    b = _blocks()
+    store.save_settings(blocks=["food", "network", "money"])      # food and network still exist, but are not core
+    assert set(b.chosen_keys()) >= {*CORE, "money"}
+    store.save_settings(blocks=["gone", "money"])
+    assert b.chosen_keys() == [*CORE, "money"]
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.exception
+
+
+def test_existing_install_keeps_log(store):
+    b = _blocks()
+    settings = store.load_settings()
+    settings.pop("blocks", None)
+    (store.DATA_DIR / "settings.json").write_text(__import__("json").dumps(settings))
+    assert b.is_on("log") and all(k in b.chosen_keys() for k in CORE)
+    assert not b.is_on("money") and not b.is_on("workouts")
 
 
 def _install(monkeypatch, **extra):

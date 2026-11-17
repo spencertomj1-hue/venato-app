@@ -68,7 +68,7 @@ def test_region_settings_page(store):
     s = store.load_settings()
     assert not at.exception and (s["clock"], s["week_start"], s["date_format"], s["water_unit"]) == \
         ("12-hour", "Sunday", "MM/DD/YYYY", "US fl oz")
-    for page in ("Home", "Timetable", "Daily Log", "Stats", "Goals"):
+    for page in ("Home", "Timetable", "Daily Log", "Review", "Goals"):
         at.sidebar.radio[0].set_value(page).run()
         assert not at.exception, page
 

@@ -270,5 +270,5 @@ def _page():
 BLOCK = Block("applications", "Applications", ":material/work:",
               "A table of jobs, internships and courses you've applied for, with status and deadlines.",
               group="Study & work", page=_page, tools=TOOLS, prompt=PROMPT, context=_context, schema=SCHEMA,
-              order=60, default=True, search=SEARCH, search_icons={"Application": "work"}, search_open=_search_open,
+              order=160, search=SEARCH, search_icons={"Application": "work"}, search_open=_search_open,
               status=STATUS)

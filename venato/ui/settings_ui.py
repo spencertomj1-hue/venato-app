@@ -23,7 +23,7 @@ from venato import store
 from venato import undo
 from venato import system
 
-STEPS = [("Welcome", ":material/waving_hand:"), ("Blocks", ":material/widgets:"), ("Assistant", ":material/chat:"),
+STEPS = [("Welcome", ":material/waving_hand:"), ("Assistant", ":material/chat:"),
          ("Calendar", ":material/calendar_month:"), ("Microphone", ":material/mic:"), ("Done", ":material/check_circle:")]
 
 
@@ -245,7 +245,7 @@ def needs_wizard():
     return st.session_state.get("wizard_open") or not setup_checks.load_settings().get("wizard_done")
 
 
-MIC = 4          # STEPS index of the microphone step
+MIC = 3          # STEPS index of the microphone step
 
 
 def _go(step):
@@ -257,6 +257,8 @@ def _go(step):
 def _finish():
     if "ai_enabled" not in setup_checks.load_settings():
         setup_checks.save_settings(ai_enabled=False)  # skipped the question: the assistant stays off
+    if not setup_checks.load_settings().get("wizard_done"):
+        setup_checks.save_settings(blocks=[])         # first setup: the core pages only, the rest are added in Settings
     setup_checks.save_settings(wizard_done=True)
     st.session_state["wizard_open"] = False
     st.session_state["wizard_step"] = 0
@@ -284,18 +286,11 @@ def wizard():
                 "anything and set it up later in **Settings**."
             )
         elif step == 1:
-            st.header(f"{icon} Choose your blocks", anchor=False)
-            from venato.ui import blocks_ui
-            if store.load_settings().get("blocks") is None:
-                from venato import blocks
-                blocks.save(blocks.chosen_keys())      # start from the usual ones, ticked
-            blocks_ui.section("wiz")
-        elif step == 2:
             st.header(f"{icon} Claude assistant (optional)", anchor=False)
             st.markdown(AI_PITCH)
             if ai_switch("wiz"):
                 claude_section("wiz")
-        elif step == 3:
+        elif step == 2:
             st.header(f"{icon} Outlook calendar (optional)", anchor=False)
             st.markdown("Show your Outlook events (classes, meetings) in the timetable. Venato only reads them.")
             if not calendar_status("wiz"):

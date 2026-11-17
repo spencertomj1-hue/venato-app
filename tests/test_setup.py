@@ -117,8 +117,6 @@ def test_wizard_shows_on_a_fresh_data_folder_and_finishes(store, monkeypatch):
     assert at.title[0].value == "Welcome to Venato"
     assert not at.sidebar.radio                                  # no app yet
 
-    at.button(key="wiz_next").click().run()                      # -> blocks: the usual ones ticked
-    assert at.toggle(key="wiz_block_timetable").value is True
     at.button(key="wiz_next").click().run()                      # -> the assistant: optional, off to start with
     assert at.toggle(key="wiz_ai_on").value is False and not at.text_input
     at.toggle(key="wiz_ai_on").set_value(True).run()             # on: how to connect Claude (an API key by default)
@@ -134,6 +132,7 @@ def test_wizard_shows_on_a_fresh_data_folder_and_finishes(store, monkeypatch):
     assert not at.exception
     assert setup_checks.load_settings()["wizard_done"] is True
     assert at.sidebar.radio[0].value == "Home"                   # the app
+    assert setup_checks.load_settings()["blocks"] == []          # core only; optional blocks are chosen later
 
     # Reopening the app later doesn't show it again.
     assert AppTest.from_file(APP, default_timeout=60).run().sidebar.radio
@@ -181,12 +180,34 @@ def test_check_api_key_messages(monkeypatch):
         assert result[0] is ok and words in result[1] and "sk-ant-x" not in result[1]
 
 
+def test_wizard_has_no_blocks_step(store):
+    from venato.ui import settings_ui
+    assert "Blocks" not in [name for name, _ in settings_ui.STEPS]
+    os.remove(store.DATA_DIR / "settings.json")
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    for _ in range(2):
+        at.button(key="wiz_next").click().run()
+        assert not [t for t in at.toggle if "_block_" in (t.key or "")]
+        assert not any("Choose your blocks" in h.value for h in at.header)
+
+
+def test_wizard_saves_core_only(store):
+    from venato import blocks, setup_checks
+    os.remove(store.DATA_DIR / "settings.json")
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.button(key="wiz_next").click().run()
+    at.button(key="wiz_skip").click().run()
+    at.button(key="wiz_skip").click().run()
+    at.button(key="wiz_finish").click().run()
+    assert not at.exception and setup_checks.load_settings()["blocks"] == []
+    assert not blocks.is_on("log") and blocks.is_on("stats")
+
+
 def test_wizard_without_the_assistant(store):
     """Leaving the assistant off: no microphone step, and no chat anywhere in the app."""
     from venato import setup_checks
     os.remove(store.DATA_DIR / "settings.json")
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.button(key="wiz_next").click().run()                      # -> blocks
     at.button(key="wiz_next").click().run()                      # -> the assistant (left off)
     at.button(key="wiz_next").click().run()                      # -> Calendar
     at.button(key="wiz_next").click().run()                      # -> straight to Done (no microphone)

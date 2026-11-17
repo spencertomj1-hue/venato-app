@@ -29,7 +29,7 @@ def _date_axis(fig, stats):
 
 
 def page_stats():
-    st.header("Stats", anchor=False)
+    st.header("Review", anchor=False)
     periods = {"Last 7 days": 7, "Last 30 days": 30, "Last 90 days": 90, "All time": None}
     period = st.radio("Period", list(periods), index=1, horizontal=True)
 
