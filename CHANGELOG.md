@@ -10,6 +10,7 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Added
+- Timetable: "Confirm all (N days)" confirms every past unconfirmed day that has something on it, in every week, after a preview. The assistant can do the same (`confirm_all`).
 - Timetable: one timeline. Plan once; time that has passed shows what happened. A day is assumed to have gone as planned (drawn faded and dashed, with "?") until you confirm it: Confirm under the day, "Confirm week as planned" (with a preview), or Home's end-of-day prompt "Anything not go to plan today?" (All as planned / Review; also for yesterday). Click a passed block for Didn't happen, Change times (or drag its edges) or Did something else; drag across empty passed time to add something unplanned. Skipped blocks are hatched and struck through, unplanned ones outlined, with a text equivalent in the keyboard block list. The side-by-side Plan and Actual view is still there (Settings → Region → Timetable view); new installs start with one timeline, existing ones keep two columns until they switch.
 - Timetable: suggested sittings. When hours goals are short this week, the grid draws where Plan my goals would put their time as dashed blocks in free gaps (never in the past, never over anything). Click one to add just that sitting; "Add all to Plan" (with a preview) or "Dismiss" (for that week); "Show suggestions" turns them off. The keyboard block list reads them out ("Suggested: Study 16:00–18:00").
 - Timetable: a "Plan this week" panel beside the grid (under it on narrow screens): free hours per day, each hours goal's week as a bar with "Fit N h", Plan all goals, Share hours and I'm away for each day. It replaces the goal chips above the grid.
@@ -67,6 +68,7 @@ Venato was called **Arete** up to 1.1.1.
 - `CONTRIBUTING.md` now covers setting up, running and opening a pull request.
 
 ### Fixed
+- Timetable: days that haven't happened yet no longer show as Confirmed. Upgrading marked every day with an Actual block confirmed, future ones too; those are cleared on the next start, and a day that hasn't started can't be confirmed (nor by filling in its Actual in the side-by-side view).
 - Windows: the new blocks' pages (Workouts, Food, Money, Grades, Recipes, Involvement) no longer crash on dates (Windows can't format a day without its leading zero the way Mac and Linux can).
 - No grey focus ring after clicking and pressing a key (e.g. Backspace on empty time): focus rings now only show when you use Tab.
 - Timetable blocks now sit exactly over their tiles with all four corners rounded (the first column of each day had a square corner, and blocks were slightly out of line).

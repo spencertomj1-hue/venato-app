@@ -259,13 +259,33 @@ def _confirm_week_dialog(first, last):
         st.info(r.text, icon=":material/info:")
 
 
+@st.dialog("Confirm all as planned")
+def _confirm_all_dialog():
+    st.caption("Every day that has passed and isn't confirmed yet, in every week: what you planned becomes what "
+               "happened, wherever you haven't recorded anything else. Stats and goals then count those days.")
+    if _confirm_box("Confirm"):
+        return
+    r = tools.confirm_all()
+    if r.pending:
+        st.session_state[PENDING] = r.pending
+        _confirm_box("Confirm")
+    else:
+        st.info(r.text, icon=":material/info:")
+
+
 def toolbar(day, row=None):
     """Confirm week / Fit time / Adjust categories, into `row` if given (the Timetable's one toolbar line)."""
     row = row or st.container(horizontal=True, gap="small")     # sized to the text, so bigger text never truncates
     b = c = row
     first = store.week_start_of(day)
     waiting = store.unconfirmed_days(first, min(first + timedelta(days=6), store.local_today()))
-    if waiting and row.button(f"Confirm week as planned ({len(waiting)} day{'s' if len(waiting) > 1 else ''})",
+    everything = store.unconfirmed_days_with_blocks()
+    if everything and row.button(f"Confirm all ({len(everything)} day{'s' if len(everything) > 1 else ''})",
+                                 icon=":material/done_all:", key="tt_btn_confirm_all",
+                                 help="Confirm every past day that isn't confirmed yet, in every week"):
+        st.session_state.pop(PENDING, None)
+        _confirm_all_dialog()
+    if waiting and set(waiting) != set(everything) and row.button(f"Confirm week as planned ({len(waiting)} day{'s' if len(waiting) > 1 else ''})",
                               icon=":material/task_alt:", key="tt_btn_confirm_week",
                               help="Days that have passed are only assumed to have gone as planned until you confirm them"):
         st.session_state.pop(PENDING, None)

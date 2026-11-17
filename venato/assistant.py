@@ -475,6 +475,8 @@ TOOL_SPECS = [
     ("confirm_day", "Confirm a day went as planned (or every unconfirmed day from date to end_date): its passed "
                     "Plan becomes its Actual where the Actual is empty. Default: today.",
      _schema([], date=DATE, end_date=DATE), tools.confirm_day),
+    ("confirm_all", "Confirm every past unconfirmed day that has blocks, in every week, as planned. "
+                    "Previewed for the user to confirm.", _schema([]), tools.confirm_all),
     ("query_blocks", "List timetable blocks (with ids) between two dates, optionally one track.",
      _schema(["start_date", "end_date"], start_date=DATE, end_date=DATE, track=TRACK), tools.query_blocks),
     ("query_entries", "List daily log entries and ticked habits between two dates.",
