@@ -8,7 +8,8 @@
 // never makes the grid flicker back to old data.
 // Swiping sideways on the grid sends a "nav" trigger (-1 / +1 week).
 //
-// Plan and Actual (data.mode, switched with the Plan / Actual buttons; a "mode" trigger tells Python):
+// Plan and Actual (switched with the Plan / Actual buttons, in the browser only: no rerun, remembered in
+// sessionStorage; data.mode, when set, forces one, e.g. "actual" from Home's Review):
 //   A day's Plan is locked when the day starts (dayState[date].locked; store.lock_day copied it into
 //   the Actual). Actual mode shows a started day's Actual (editable: that's what you did) and a day
 //   that hasn't started's Plan (editable: nothing has happened yet). Plan mode shows every day's Plan:
@@ -241,7 +242,8 @@ class Timetable {
     this.nowAt = { min: data.nowMin, ms: Date.now() };   // the time in the user's zone when Python drew this
     this.cats = new Map(data.categories.map((c) => [c.id, c]));
     this.dayIndex = new Map(data.days.map((d, i) => [d, i]));
-    this.mode = data.mode === "plan" ? "plan" : "actual";
+    if (data.mode) { this.mode = data.mode; if (!data.readonly) remember("tt-mode", data.mode); }   // (Home: always Actual)
+    else if (!this.mode) this.mode = recall("tt-mode") === "plan" ? "plan" : "actual";
     // Per day: {gone: slots passed, locked: started (Plan frozen), confirmed}. Replayed ops update it.
     this.dayState = Object.fromEntries(data.days.map((d) => [d, { gone: 0, locked: false, confirmed: false, ...((data.dayState || {})[d] || {}) }]));
 
@@ -339,11 +341,12 @@ class Timetable {
     this.mode = mode;
     this.closePopover();
     this.setPicked([]);
-    this.trigger("mode", { mode });
-    this.blocksEl.classList.remove("swap");
-    void this.blocksEl.offsetWidth;            // restart the little fade
-    this.blocksEl.classList.add("swap");
+    remember("tt-mode", mode);
     this.paint();
+    // A quick fade, this once (removed after, so later redraws don't fade in again).
+    this.blocksEl.classList.add("swap");
+    clearTimeout(this.swapTimer);
+    this.swapTimer = setTimeout(() => this.blocksEl.classList.remove("swap"), 220);
   }
 
   // Apply ops locally, queue them, and send everything still pending.
