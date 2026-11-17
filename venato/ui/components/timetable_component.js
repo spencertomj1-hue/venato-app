@@ -682,7 +682,9 @@ class Timetable {
         else this.blocks.push({ en: { ...p.ev, label: p.ev.title, track: "plan" }, di, s: i, e: j, outlook: true });
         i = j;
       }
-      // Passed slots: one piece per run of the same thing.
+      // Passed slots: one piece per run of the same activity (label + category), whatever mix of
+      // done / not planned / assumed it is, so a block isn't chopped where those meet. Skipped stays apart.
+      const live = st.gone < SLOTS;          // today, still going: nothing is "unconfirmed" until it ends
       const kindAt = [];
       for (let k = 0; k < st.gone; k++) {
         const a = actAt[k], p = planAt[k];
@@ -690,14 +692,21 @@ class Timetable {
         else if (p && k < st.upto) kindAt[k] = { kind: "skipped", en: asEntry(p), key: (p.en || p.ev).id };
         else if (p) kindAt[k] = { kind: "assumed", en: asEntry(p), key: (p.en || p.ev).id };
       }
+      const runKey = (k) => `${k.kind === "skipped" ? "x" : ""}${k.en.label}\u0000${k.en.categoryId}`;
       i = 0;
       while (i < st.gone) {
         const k = kindAt[i];
         if (!k) { i++; continue; }
         let j = i;
-        while (j < st.gone && kindAt[j] && kindAt[j].key === k.key && kindAt[j].kind === k.kind) j++;
-        const piece = { en: k.en, di, s: i, e: j, kind: k.kind, past: true, id: `past:${date}:${slotTime(i)}` };
-        this.blocks.push(piece);
+        while (j < st.gone && kindAt[j] && runKey(kindAt[j]) === runKey(k)) j++;
+        const kinds = new Set(kindAt.slice(i, j).map((x) => x.kind));
+        const kind = ["skipped", "actual", "unplanned", "assumed"].find((x) => kinds.has(x));
+        const piece = { en: k.en, di, s: i, e: j, kind, past: true, live: live && kind === "assumed",
+                        id: `past:${date}:${slotTime(i)}` };
+        // Runs on into the Plan block starting now (same activity): draw them as one block.
+        const next = j === st.gone && kind !== "skipped" &&
+          this.blocks.find((b) => b.di === di && !b.past && b.s === j && b.en.label === k.en.label && b.en.categoryId === k.en.categoryId);
+        if (next) next.vs = i; else this.blocks.push(piece);
         for (let x = i; x < j; x++) {
           this.pieceAt[di][x] = piece;
           const td = this.cells[di].plan[x];
@@ -718,8 +727,8 @@ class Timetable {
     this.root.querySelectorAll("th.day .dstate").forEach((box) => {
       const date = this.data.days[+box.dataset.d], st = this.dayState[date] || {};
       box.innerHTML = st.confirmed ? `<span class="ok">✓ Confirmed</span>`
-        : st.gone > 0 && !this.data.readonly ? `<button class="confirm" tabindex="-1" data-confirm="${esc(date)}" title="It went as planned: confirm this day">Confirm</button>`
-        : st.gone > 0 ? `<span class="unconf">Not confirmed</span>` : "";
+        : st.gone >= SLOTS && !this.data.readonly ? `<button class="confirm" tabindex="-1" data-confirm="${esc(date)}" title="It went as planned: confirm this day">Confirm</button>`
+        : st.gone >= SLOTS ? `<span class="unconf">Not confirmed</span>` : "";
     });
     this.layoutBlocks();
     this.renderBlockList();
@@ -744,7 +753,7 @@ class Timetable {
         return `<button data-i="${i}">${esc(what)}</button>`;
       });
       const st = ONE && !this.data.readonly && this.dayState[d];
-      if (st && st.gone > 0 && !st.confirmed) items.push(`<button data-confirm="${esc(d)}">Confirm ${esc(day)} as planned</button>`);
+      if (st && st.gone >= SLOTS && !st.confirmed) items.push(`<button data-confirm="${esc(d)}">Confirm ${esc(day)} as planned</button>`);
       return items.length ? `<div role="group" aria-label="${esc(day)}"><span class="a11y-day">${esc(day)}</span>${items.join("")}</div>` : "";
     }).join("");
     list.innerHTML = groups || `<button disabled>Nothing in the timetable this ${this.data.single ? "day" : "week"}</button>`;
@@ -835,7 +844,8 @@ class Timetable {
     if (!this.blocks) return;
     const origin = this.wrapEl.getBoundingClientRect();
     this.blocksEl.innerHTML = this.blocks
-      .map(({ en, di, s, e, outlook, past, kind, id, ghost }) => {
+      .map(({ en, di, s, e, vs, outlook, past, kind, live, id, ghost }) => {
+        if (vs !== undefined) s = vs;          // drawn from earlier: the passed part of the same activity
         const firstTd = this.cells[di][en.track][s], lastTd = this.cells[di][en.track][e - 1];
         const first = firstTd.getBoundingClientRect(), last = lastTd.getBoundingClientRect();
         const cat = this.cats.get(en.categoryId);
@@ -846,6 +856,10 @@ class Timetable {
           const h = (e - s) / 2;
           return `<div class="blk ghost ${tall ? "tall" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}--fill:${esc(bg)}">` +
             `<b>+ ${esc(en.label)} ${h} h</b>${tall ? `<span>Suggested · click to add</span>` : ""}</div>`;
+        }
+        if (live) {           // today, assumed so far: just the Plan, no "?" until the day is over
+          return `<div class="blk ${tall ? "tall" : ""} ${this.focusId === id ? "focus" : ""}${this.hovered === id ? " hover" : ""}${this.picked.has(id) ? " picked" : ""}" data-id="${esc(id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+            `background:${esc(bg)};color:${fg}"><b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(slotTime(s), slotTime(e)))}</span>` : ""}</div>`;
         }
         if (past) {           // one timeline, time that has passed: what happened (see paintOne)
           const mark = kind === "assumed" ? "?" : kind === "skipped" ? "✕" : kind === "unplanned" ? "+" : "✓";
