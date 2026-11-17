@@ -171,12 +171,15 @@ table.tt th {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-th.day { padding: 7px 4px 2px; }
+/* The bubble is the padding box: the transparent bottom border is the gap above the grid, and the
+   padding is equal top and bottom, so the name, date and state sit centred. Left and right match the
+   grid's tiles, so the text is centred on the bubble, not on the column. */
+th.day { padding: 6px var(--gap) 6px var(--day-gap); border-bottom: 5px solid transparent; line-height: 18px; }
 th.day::before, th.sub::before {
   content: ""; position: absolute; inset: 0; z-index: -1; background: var(--head-bg);
 }
 th.sub::before { bottom: 5px; }                            /* a small gap above the grid */
-th.day::before { border-radius: 10px 10px 0 0; left: var(--day-gap); }       /* the same gap between days as the grid */
+th.day::before { border-radius: 10px; left: var(--day-gap); right: var(--gap); }   /* a fully rounded bubble, same gap as the tiles */
 th.sub.first::before { border-radius: 0 0 0 10px; left: var(--day-gap); }
 th.sub:not(.first)::before { border-radius: 0 0 10px 0; }
 th.day .dn { display: inline; font-family: var(--venato-serif, inherit); font-weight: 600; font-size: 0.88rem; letter-spacing: -0.01em; }                  /* name and date on one line (wraps if narrow), */
@@ -355,7 +358,7 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 
 /* Home (view only, one day): the title already says which day, so the header keeps
    just PLAN / ACTUAL (and any all-day chips), leaving more room for the rows. */
-.tt-root.readonly th.day { padding-top: 3px; }
+.tt-root.readonly th.day { padding-top: 4px; padding-bottom: 4px; }
 .tt-root.readonly th.day .dn, .tt-root.readonly th.day .dd { display: none; }
 .tt-root.readonly .tt-head { margin-bottom: 4px; }
 .tt-root.readonly .tt-title { font-size: 1.5rem; margin-right: 0; }
@@ -398,7 +401,11 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
   transition: top 1s linear; }
 
 /* Each day's state under its name: "✓ Confirmed", a Confirm button (Actual), or "Locked" (Plan). */
-th.day .dstate { min-height: 1.2em; margin-top: 2px; font-size: 0.72rem; font-weight: 500; }
+/* A fixed-height row, so Plan, Actual, Confirm and Confirmed all leave the header (and the grid under it) the same height. */
+th.day .dstate {
+  height: 20px; margin-top: 3px; font-size: 0.72rem; font-weight: 500;
+  display: flex; align-items: center; justify-content: safe center; gap: 4px; white-space: nowrap;
+}
 th.day .dstate .ok, th.day .dstate .lock { color: var(--muted); }
 th.day .dstate .lock { display: inline-flex; align-items: center; gap: 3px; }
 th.day .dstate .lock .cal-ic { width: 11px; height: 11px; }
