@@ -41,14 +41,37 @@ for package in ["streamlit", "keyring", "webview", "claude_agent_sdk", "faster_w
     binaries += b
     hiddenimports += h
 
+# Streamlit uses pyarrow only to turn a table into bytes for st.dataframe (pyarrow.lib, .compute, .ipc,
+# .pandas_compat). Parquet, Flight, Acero, datasets, Substrait, Gandiva, ORC and the cloud filesystems are never
+# imported, so their Python modules and extension modules are left out. Four shared libraries stay even though
+# nothing here calls them (libarrow_acero / _dataset / _substrait and libparquet): pyarrow's lib module is linked
+# against them, so removing them would stop `import pyarrow` loading. Verified with a Linux build.
+PYARROW_UNUSED = ["pyarrow.parquet", "pyarrow.flight", "pyarrow.acero", "pyarrow.dataset", "pyarrow.substrait",
+                  "pyarrow.gandiva", "pyarrow.orc", "pyarrow.tests"]
+PYARROW_UNUSED_MODULES = ("_parquet", "_dataset", "_acero", "_substrait", "_flight", "_gandiva", "_orc", "_s3fs",
+                          "_gcsfs", "_hdfs", "_azurefs", "_pyarrow_cpp_tests")
+PYARROW_UNUSED_LIBS = ("arrow_flight", "arrow_python_flight", "arrow_s3", "arrow_python_parquet_encryption",
+                       "arrow_gandiva", "gandiva")
+
+
+def _unused_pyarrow_binary(dest):
+    parts = Path(dest.replace("\\", "/")).parts
+    name = parts[-1]
+    if name.removeprefix("lib").startswith(PYARROW_UNUSED_LIBS):      # also the copy PyInstaller links at the top
+        return True
+    return "pyarrow" in parts and name.startswith(PYARROW_UNUSED_MODULES)
+
+
 a = Analysis(
     [str(ROOT / "desktop.py")],
     pathex=[str(ROOT)],
     datas=datas,
     binaries=binaries,
     hiddenimports=hiddenimports,
-    excludes=["tkinter", "pytest"],
+    excludes=["tkinter", "pytest", *PYARROW_UNUSED],
 )
+a.binaries = [b for b in a.binaries if not _unused_pyarrow_binary(b[0])]
+a.datas = [d for d in a.datas if not _unused_pyarrow_binary(d[0])]      # (PyInstaller lists the top-level symlinks here)
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
