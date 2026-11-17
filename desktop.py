@@ -87,6 +87,17 @@ def serve(port):
     sys.exit(streamlit_cli.main())
 
 
+def check_arrow():
+    """Serialise a small table the way st.dataframe does. AppTest never does, so without this a missing pyarrow
+    module or library (the packaging/venato.spec excludes) would pass `--check` and break every table on screen."""
+    import pandas as pd
+    from streamlit import dataframe_util
+    import pyarrow.lib, pyarrow.compute, pyarrow.ipc  # noqa: F401,E401  (what Streamlit's dataframe path loads)
+    frame = pd.DataFrame({"n": [1, 2], "s": ["a", "b"], "d": pd.to_datetime(["2026-01-01", "2026-01-02"])})
+    if not dataframe_util.convert_pandas_df_to_arrow_bytes(frame):
+        raise RuntimeError("pyarrow produced nothing")
+
+
 def check():
     """
     Run the real app, headless, on a throwaway data folder and open every page
@@ -100,6 +111,11 @@ def check():
     data = Path(os.environ.setdefault("VENATO_DATA_DIR", tempfile.mkdtemp(prefix="venato-check-")))
     data.mkdir(parents=True, exist_ok=True)
     (data / "settings.json").write_text(json.dumps({"wizard_done": True}), encoding="utf-8")
+    try:
+        check_arrow()
+    except Exception as e:
+        print(f"Venato check FAILED:\ntables (pyarrow): {type(e).__name__}: {e}")
+        sys.exit(1)
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file(str(APP_DIR / "app.py"), default_timeout=180).run()
     pages = at.sidebar.radio[0].options if at.sidebar.radio else []

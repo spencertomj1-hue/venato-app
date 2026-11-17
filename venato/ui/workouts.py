@@ -176,7 +176,7 @@ def _log_tab(today):
     if summary:
         names = [e["name"] for e in wk.exercises()]
         colours = kit.colours(names)
-        kit.pills([(part, colours.get(next((n for n in names if part.startswith(n)), ""), kit.PALETTE[0]))
+        kit.pills([(part, colours.get(next((n for n in names if part.startswith(n)), ""), kit.colours([0])[0]))
                    for part in summary.split(", ")])
     a, b = st.columns([3, 2])
     with a, kit.card("Sets"):
