@@ -92,10 +92,6 @@ def render(first, key):
             for x in s["goals"]:
                 st.markdown(f"{goal_time.badge(x['state'])} {goal_time.md(x['goal']['title'])}  \n"
                             f":gray[{goal_time.md(x['text'].split(': ', 1)[1].rsplit(' · ', 1)[0])}]")
-        if s["people"]:
-            st.markdown("**People you saw**")
-            for p in s["people"]:
-                st.markdown(f"{p['person']} · {p['note']}")
         if s["journal"]:
             st.markdown(f"**Journal** ({len(s['journal'])} entr{'y' if len(s['journal']) == 1 else 'ies'})")
             for e in reversed(s["journal"]):

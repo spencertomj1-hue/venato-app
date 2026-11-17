@@ -116,8 +116,8 @@ def summary(first):
     goals = pace.review_rows(first)
 
     journal = store.journal_entries(first=days[0], last=days[-1])
-    people = store.interactions_between(first, last)
-    has_data = bool(hours or store.blocks_between(days[0], days[-1]) or any(this) or any(h["ticks"] for h in habits) or weekly or daily or journal or people)
+    sections = blocks.review_sections(first, last)        # what the switched-on blocks say about the week
+    has_data = bool(hours or store.blocks_between(days[0], days[-1]) or any(this) or any(h["ticks"] for h in habits) or weekly or daily or journal or sections)
     return {
         "first": first, "last": last, "complete": last < today, "has_data": has_data,
         "time": time, "planned_hours": planned / 2, "actual_hours": sum(h["actual"] for h in time),
@@ -129,9 +129,9 @@ def summary(first):
                   "daily_done": sum(t["done"] for t in daily), "daily": len(daily)},
         "deadlines": {"met": [d for d in due if d["done"]], "missed": [d for d in due if not d["done"]],
                       "upcoming": upcoming},
-        "journal": journal, "people": people, "goals": goals,
+        "journal": journal, "goals": goals,
         "review": store.get_review(first),
-        "sections": blocks.review_sections(first, last),
+        "sections": sections,
     }
 
 
@@ -157,8 +157,6 @@ def as_text(s):
                      f"next week {[x['title'] + ' ' + x['due'] for x in d['upcoming']]}")
     if s.get("goals"):
         lines.append("Goal pace: " + "; ".join(x["text"] for x in s["goals"]))
-    if s["people"]:
-        lines.append("Saw: " + "; ".join(f"{p['person']} ({p['note']})" for p in s["people"]))
     if s["journal"]:
         lines.append(f"Journal entries: {len(s['journal'])}")
     for sec in s.get("sections", []):

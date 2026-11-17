@@ -36,10 +36,11 @@ class Block:
     default: bool = False            # on for someone who never chose (existing installs: the original pages)
     core: bool = False               # always on
     page_name: str = ""              # the sidebar page it shares, when not its own name (e.g. Recipes is on Food)
-    search: dict = field(default_factory=dict)      # Home search: kind -> (select, haystack), as in store._SEARCH
+    search: dict = field(default_factory=dict)      # Home search: kind -> (select, haystack[, order]), as in store._SEARCH
     search_icons: dict = field(default_factory=dict)  # kind -> Material icon name for its search results
     search_open: Callable | None = None             # (result, session_state) -> None: routes a click on a result
     review: Callable | None = None   # (first, last) -> {"title": str, "lines": [str]} for the weekly review; no lines = nothing
+    status: dict = field(default_factory=dict)      # word in its tools' names -> what the chat shows while one runs
 
 
 GROUPS = ["Plan", "Health & body", "Food", "Study & work", "Money", "People & life", "Connections", "Other"]
@@ -107,7 +108,7 @@ def pages():
 
 
 def search_kinds():
-    """{kind: (select, haystack)} from the switched-on blocks."""
+    """{kind: (select, haystack[, order])} from the switched-on blocks."""
     out = {}
     for b in enabled():
         out.update(b.search)

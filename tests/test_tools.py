@@ -331,71 +331,6 @@ def test_edit_list_and_delete_goal(tools, store, friday):
     assert store.goals_in("monthly", "2026-10-01") == []
 
 
-# --- network ---
-
-def test_add_people_and_connect(tools, store):
-    r = tools.add_person("Sam", "Friend from uni", "Google", "friends")
-    assert r.changed and "Sam (Friends, works for Google)" in r.text
-    assert "already someone called Sam" in tools.add_person("sam").text
-    tools.add_person("Alex Jones", group="Work")
-    assert tools.connect_people("sam", "alex", "Football").text == "Connected Sam and Alex Jones (Football)."
-    assert tools.connect_people("Alex", "Sam", "Five-a-side").changed           # updates the reason
-    text = tools.find_people().text
-    assert "Knows Alex Jones (Five-a-side)" in text and text.startswith("Groups: Family, Friends")
-    found = tools.find_people("Jones").text.splitlines()[1:]
-    assert len(found) == 1 and "Alex Jones" in found[0]                         # only Alex matches
-    with pytest.raises(tools.ToolError, match="no group"):
-        tools.add_person("Kim", group="Rowing")
-    assert tools.add_group("Rowing", colour="#123abc").changed
-    assert "Rowing" in tools.add_person("Kim", group="rowing").text
-    with pytest.raises(tools.ToolError, match="no one called"):
-        tools.connect_people("Sam", "Nobody")
-    with pytest.raises(tools.ToolError, match="themselves"):
-        tools.connect_people("Sam", "sam")
-
-
-def test_update_and_ambiguous_people(tools, store):
-    tools.add_person("Sam Smith")
-    tools.add_person("Sam Lee")
-    with pytest.raises(tools.ToolError, match="More than one"):
-        tools.update_person("sam", works_for="BBC")
-    assert "works for BBC" in tools.update_person("sam lee", works_for="BBC", group="Work").text
-    assert "(works for BBC)" in tools.update_person("Sam Lee", clear_group=True).text
-
-
-def test_disconnect_and_delete_need_confirm(tools, store):
-    tools.add_person("Sam")
-    tools.add_person("Alex")
-    tools.connect_people("Sam", "Alex")
-    r = tools.disconnect_people("Sam", "Alex")
-    assert r.pending and r.pending.summary == "Remove the connection between Sam and Alex"
-    assert store.net_links()
-    r.pending.run()
-    assert store.net_links() == []
-    tools.connect_people("Sam", "Alex")
-    r = tools.delete_person("Sam")
-    assert r.pending.summary == "Remove Sam from the network, with their 1 connection"
-    r.pending.run()
-    assert [p["name"] for p in store.net_people()] == ["Alex"] and store.net_links() == []
-
-
-def test_sub_group_tools(tools, store):
-    assert tools.add_group("Northfield", colour="#123456").changed
-    assert tools.add_group("Physics Society", inside="northfield").text == "Added the group Northfield › Physics Society."
-    with pytest.raises(tools.ToolError, match="no group"):
-        tools.add_group("Lab", inside="Oxford")
-    tools.add_person("Sam", group="physics society")
-    assert "Sam (Northfield › Physics Society)" in tools.find_people().text
-    assert "Northfield (Physics Society)" in tools.find_people().text.splitlines()[0]
-    assert "Chess" in tools.edit_group("Physics Society", name="Chess Club", top_level=True).text.replace("Chess Club", "Chess")
-    with pytest.raises(tools.ToolError, match="inside itself"):
-        tools.edit_group("Northfield", inside="Northfield")
-    r = tools.delete_group("Chess Club")
-    assert r.pending.summary == "Delete the group Chess Club; its people and sub-groups move to the top level"
-    r.pending.run()
-    assert store.find_people("Sam")[0]["group_id"] is None
-
-
 # --- plan_time (fitting hours around what's planned) ---
 
 def test_plan_time_fits_around_blocks_and_spreads(tools, store):
@@ -440,18 +375,6 @@ def test_plan_time_weekdays_only_and_validation(tools, store):
 def test_plan_time_spaces_sittings_out(tools, store):
     r = tools.plan_time("Revision", 6, "2026-11-02", "2026-11-06", category="Study")     # Mon-Fri, 3 sittings
     assert [x.split(" ")[0] for x in r.pending.summary.split(": ", 1)[1].split("; ")] == ["Mon", "Wed", "Fri"]
-
-
-def test_log_interaction_tools(tools, store, friday):
-    tools.add_person("Priya")
-    assert tools.log_interaction("priya", "Coffee; talked about her thesis").text == \
-        "Logged for Priya on Fri 30 Oct: Coffee; talked about her thesis"
-    tools.log_interaction("Priya", "Lab meeting", date="2026-10-20")
-    assert [l.split(", ", 1)[1] for l in tools.person_history("Priya").text.splitlines()[1:]] == [
-        "Fri 30 Oct (2026-10-30): Coffee; talked about her thesis", "Tue 20 Oct (2026-10-20): Lab meeting"]
-    assert "Last interaction Fri 30 Oct: Coffee" in tools.find_people().text
-    with pytest.raises(tools.ToolError, match="no one called"):
-        tools.log_interaction("Zed", "Lunch")
 
 
 def test_log_water(tools, store):

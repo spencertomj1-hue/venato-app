@@ -44,8 +44,9 @@ venato/                         The app's code, as a package (imported as `from 
   assistant.py                 Claude via claude-agent-sdk: finds the CLI, system prompt, in-process "venato" MCP server
   quick.py                     Quick commands ("drank 500ml", "tick gym"): handled without Claude via the same tools.py actions
   pace.py                      Goals meet the timetable: capacity, budget, pace, debt, follow-through, negotiation, suggestions (§5e). No SQL, no Streamlit
-  blocks/                      Optional blocks (Focus, Workouts, Food, Recipes, Cut down, Grades, Money, Involvement, Health):
-                               each has its own tables, migrations, tools, prompt, context and page (core.py: the Block shape)
+  blocks/                      Optional blocks (Applications, Network, Focus, Workouts, Food, Recipes, Cut down, Grades, Money,
+                               Involvement, Health): each has its own tables, migrations, tools, prompt, context, search,
+                               weekly-review lines and page (__init__.py: the Block shape; core.py: timetable, goals, log, stats)
   voice.py                     Microphone recording (sounddevice) and local transcription (faster-whisper)
   outlook.py                   Read-only Outlook import: link checks, Keychain, fetch, recurrence expansion, sync
   notify.py                    Reminders: a background thread that notifies before Plan blocks / Outlook events start
@@ -156,6 +157,8 @@ Two different things:
 - **Home:** this month's and this year's goals as bars in a card, with "See all" (a button whose callback sets the sidebar radio, `page`), the "by today" tick and one status line each (`goals.status_line`). Above the to-dos, `goal_time.needs_you` lists only goals behind or short this week ("N h to plan") with Plan my goals; both share one `pace.Ctx` (`blocks/core._goals_home`).
 
 ## 5c. Network
+
+- **Self-contained:** tables, store functions, Claude's tools (`tool_*`), prompt, Home search (Person / Group / Met) and the weekly review's "People you saw" all live in `blocks/network.py`; the page is `ui/network.py`. Applications is the same (`blocks/applications.py`, `ui/applications.py`). No shared file refers to either.
 
 - **Tree:** You → a hub circle per group (ids `g:<group id>`) → sub-group hubs → people; ungrouped people hang off You. Only groups with someone in them (or below them) get a hub. Tree lines are solid and tinted with the parent's colour; person-to-person links are dashed.
 - **Web (`network_component.*`, key `network`):** SVG drawn once per data change; positions come from a small force simulation (repulsion, with hubs and You pushing harder; springs along tree lines, short for people, longer for groups; weak springs for cross-links; a weak pull to the centre; speeds capped). New data is pre-settled for up to 400 steps, then fitted to the frame the first time. Labels scale up when zoomed out (`--label`). Positions, pan/zoom and hidden top-level groups are kept in sessionStorage. A dragged circle stays where it's dropped.

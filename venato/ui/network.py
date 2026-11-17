@@ -15,6 +15,7 @@ import streamlit as st
 from venato import regional
 from venato import store
 from venato import undo
+from venato.blocks import network as net
 
 HERE = Path(__file__).parent
 PAGE = "Network"
@@ -34,18 +35,18 @@ def _on_edit():
 
 def _group_picker(label, key, current=None, exclude=None, none_label="No group"):
     """Selectbox of groups shown as "Northfield › Physics Society"; returns a group id or None."""
-    groups = store.net_groups()
+    groups = net.net_groups()
     if exclude:
         groups = [g for g in groups if g["id"] not in exclude]
     options = [None] + [g["id"] for g in groups]
-    names = {g["id"]: store.group_path(g["id"], store.net_groups()) for g in groups}
+    names = {g["id"]: net.group_path(g["id"], net.net_groups()) for g in groups}
     return st.selectbox(label, options, index=options.index(current) if current in options else 0,
                         format_func=lambda gid: names.get(gid, none_label), key=key)
 
 
 def _below(group_id):
     """A group and all its sub-groups (it can't be moved inside any of them)."""
-    groups = store.net_groups()
+    groups = net.net_groups()
     out, todo = {group_id}, [group_id]
     while todo:
         kids = [g["id"] for g in groups if g["parent_id"] in todo]
@@ -77,13 +78,13 @@ def _new_person_dialog(group=None):
         if not values:
             st.error("Give them a name.")
         else:
-            store.add_person(*values)
+            net.add_person(*values)
             st.rerun()
 
 
 @st.dialog("Edit person", width="medium")
 def _person_dialog(person_id):
-    p = store.get_person(person_id)
+    p = net.get_person(person_id)
     if not p:
         st.caption("This person has been removed.")
         return
@@ -92,11 +93,11 @@ def _person_dialog(person_id):
         if not values:
             st.error("They need a name.")
         else:
-            store.update_person(person_id, *values)
+            net.update_person(person_id, *values)
             st.rerun()
 
     st.markdown("**Connections**")
-    links = store.connections_of(person_id)
+    links = net.connections_of(person_id)
     if not links:
         st.caption("None yet.")
     for other, reason in links:
@@ -104,16 +105,16 @@ def _person_dialog(person_id):
         left.markdown(other["name"] + (f" · :gray[{reason}]" if reason else ""))
         if right.button("", icon=":material/link_off:", key=f"net_unlink_{other['id']}", help="Remove this connection"):
             undo.checkpoint(f"Disconnected {p['name']} and {other['name']}")
-            store.unlink_people(person_id, other["id"])
+            net.unlink_people(person_id, other["id"])
             st.rerun(scope="fragment")
-    others = [o for o in store.net_people() if o["id"] != person_id and o["id"] not in {x["id"] for x, _ in links}]
+    others = [o for o in net.net_people() if o["id"] != person_id and o["id"] not in {x["id"] for x, _ in links}]
     if others:
         a, b, c = st.columns([3, 4, 2], vertical_alignment="bottom")
         names = {o["id"]: o["name"] for o in others}
         other = a.selectbox("Connect to", list(names), format_func=names.get, key=f"net_link_to_{person_id}")
         reason = b.text_input("How they know each other", key=f"net_link_why_{person_id}", placeholder="e.g. Work together")
         if c.button("Connect", icon=":material/link:", key=f"net_link_{person_id}"):
-            store.link_people(person_id, other, reason)
+            net.link_people(person_id, other, reason)
             st.rerun(scope="fragment")
 
     st.markdown("**Times you've met or spoken**")
@@ -122,9 +123,9 @@ def _person_dialog(person_id):
         when = a.date_input("When", value=store.local_today(), format=regional.input_format())
         note = b.text_input("What happened", placeholder="e.g. Coffee; talked about her thesis")
         if c.form_submit_button("Add", icon=":material/add:") and note.strip():
-            store.add_interaction(person_id, note, when)
+            net.add_interaction(person_id, note, when)
             st.rerun(scope="fragment")
-    history = store.interactions_of(person_id)
+    history = net.interactions_of(person_id)
     if not history:
         st.caption("Nothing logged yet." + (" You can also tell Venato, e.g. \"had coffee with them today\"."
                                             if store.ai_enabled() else ""))
@@ -134,20 +135,20 @@ def _person_dialog(person_id):
         left.markdown(f"**{regional.day_month(d, year=True)}** · {item['note']}")
         if right.button("", icon=":material/delete:", key=f"net_meet_del_{item['id']}", help="Remove this"):
             undo.checkpoint(f"Removed '{item['note']}' from {p['name']}'s history")
-            store.delete_interaction(item["id"])
+            net.delete_interaction(item["id"])
             st.rerun(scope="fragment")
 
     st.divider()
     if st.button(f"Remove {p['name']} from the network", icon=":material/delete:", key=f"net_del_go_{person_id}"):
         undo.checkpoint(f"Removed {p['name']} from the network")
-        store.delete_person(person_id)
+        net.delete_person(person_id)
         st.rerun()
 
 
 def _group_form(key, g=None, parent=None):
     a, b = st.columns([3, 1])
     name = a.text_input("Group name", g["name"] if g else "", key=f"{key}_name", placeholder="e.g. Northfield, Physics Society")
-    start = g["colour"] if g else next((x["colour"] for x in store.net_groups() if x["id"] == parent), "#8B8D98")
+    start = g["colour"] if g else next((x["colour"] for x in net.net_groups() if x["id"] == parent), "#8B8D98")
     colour = b.color_picker("Colour", start, key=f"{key}_colour")
     inside = _group_picker("Inside", f"{key}_parent", g["parent_id"] if g else parent,
                            exclude=_below(g["id"]) if g else None, none_label="Nothing (a top-level group)")
@@ -160,35 +161,35 @@ def _new_group_dialog(parent=None):
     if st.button("Add", type="primary"):
         if not name:
             st.error("Give the group a name.")
-        elif store.find_net_group(name):
+        elif net.find_net_group(name):
             st.error(f"There's already a group called {name}.")
         else:
-            store.add_net_group(name, colour, inside)
+            net.add_net_group(name, colour, inside)
             st.rerun()
 
 
 @st.dialog("Edit group")
 def _group_dialog(group_id):
-    g = next((x for x in store.net_groups() if x["id"] == group_id), None)
+    g = next((x for x in net.net_groups() if x["id"] == group_id), None)
     if not g:
         st.caption("This group has been removed.")
         return
     name, colour, inside = _group_form(f"net_editg_{group_id}", g)
     if st.button("Save", type="primary"):
-        clash = store.find_net_group(name)
+        clash = net.find_net_group(name)
         if not name:
             st.error("The group needs a name.")
         elif clash and clash != group_id:
             st.error(f"There's already a group called {name}.")
         else:
-            store.update_net_group(group_id, name, colour, inside)
+            net.update_net_group(group_id, name, colour, inside)
             st.rerun()
     st.divider()
-    up = store.group_path(g["parent_id"]) if g["parent_id"] else "no group"
+    up = net.group_path(g["parent_id"]) if g["parent_id"] else "no group"
     if st.button(f"Delete {g['name']}", icon=":material/delete:", key=f"net_delg_go_{group_id}",
                  help=f"Its people and sub-groups move to {up}."):
         undo.checkpoint(f"Deleted the group {g['name']}")
-        store.delete_net_group(group_id)
+        net.delete_net_group(group_id)
         st.rerun()
 
 
@@ -211,11 +212,11 @@ def render_page():
     data = {
         "people": [{"id": p["id"], "name": p["name"], "description": p["description"],
                     "worksFor": p["works_for"], "groupId": p["group_id"],
-                    "recent": store.interactions_of(p["id"], limit=3)} for p in store.net_people()],
+                    "recent": net.interactions_of(p["id"], limit=3)} for p in net.net_people()],
         "today": store.local_today().isoformat(),
         "ai": store.ai_enabled(),
-        "links": store.net_links(),
-        "groups": store.net_groups(),
+        "links": net.net_links(),
+        "groups": net.net_groups(),
     }
     _network_component(data=data, key="network", on_edit_change=_on_edit)
 
