@@ -399,6 +399,16 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 /* Home: where "now" is on today's timetable */
 .tt-now { position: absolute; height: 2px; margin-top: -1px; background: #E53935; pointer-events: none; z-index: 6;
   transition: top 1s linear; }
+/* The dot on its left end, just past the time labels (the line starts at the grid's edge, not over them). */
+.tt-now::before {
+  content: ""; position: absolute; left: -3.5px; top: -2.5px; width: 7px; height: 7px;
+  border-radius: 50%; background: #E53935;
+}
+
+/* Plan / Actual switch: the tiles and the Plan tint fade over the same 380ms as the blocks (JS SWAP_MS). */
+.tt-root.swapping td.s::before, .tt-root.swapping th.day::before {
+  transition: background 380ms cubic-bezier(.4,0,.2,1);
+}
 
 /* Each day's state under its name: "✓ Confirmed", a Confirm button (Actual), or "Locked" (Plan). */
 /* A fixed-height row, so Plan, Actual, Confirm and Confirmed all leave the header (and the grid under it) the same height. */

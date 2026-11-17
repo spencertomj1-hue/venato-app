@@ -363,6 +363,12 @@ class Timetable {
     this.wrapEl.querySelectorAll(".tt-leaving").forEach((el) => el.remove());
     const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
     const old = reduce ? null : this.blocksEl.cloneNode(true);
+    // The 30-minute tiles and the Plan tint fade over the same SWAP_MS (CSS: .swapping), not jump.
+    if (!reduce) {
+      this.root.classList.add("swapping");
+      clearTimeout(this.swapTimer);
+      this.swapTimer = setTimeout(() => this.root.classList.remove("swapping"), SWAP_MS + 20);
+    }
     this.paint();
     if (!old) return;
     old.classList.add("tt-leaving");
@@ -374,6 +380,8 @@ class Timetable {
       if (!days.has(+el.dataset.di)) continue;
       el.animate({ clipPath: toPlan ? [rail, full] : [full, rail] }, opts);
     }
+    // Blocks fade in as the old ones fade out, so both views cross-fade the same way.
+    this.blocksEl.animate({ opacity: [0, 1] }, { ...opts, easing: toPlan ? "ease-in" : "ease-out" });
     old.animate({ opacity: [1, 0] }, { ...opts, easing: toPlan ? "ease-out" : "ease-in" })
       .finished.then(() => old.remove(), () => old.remove());
   }
@@ -756,7 +764,10 @@ class Timetable {
     if (di === undefined || slot < 0 || slot >= SLOTS || !this.cells[di]) { if (line) line.remove(); return; }
     const origin = this.wrapEl.getBoundingClientRect();
     const cell = this.cells[di].plan[Math.floor(slot)].getBoundingClientRect();
-    const end = (this.cells[di].actual[Math.floor(slot)] || this.cells[di].plan[Math.floor(slot)]).getBoundingClientRect();
+    // Across the whole table: from the edge of the time labels (the dot sits there) to the last day's edge.
+    const last = this.cells.length - 1;
+    const tableLeft = this.cells[0].plan[0].getBoundingClientRect().left;
+    const tableRight = (this.cells[last].actual[0] || this.cells[last].plan[0]).getBoundingClientRect().right;
     if (!line) {
       line = document.createElement("div");
       line.className = "tt-now";
@@ -764,8 +775,8 @@ class Timetable {
       this.wrapEl.appendChild(line);
     }
     line.style.top = `${cell.top - origin.top + (slot - Math.floor(slot)) * cell.height}px`;
-    line.style.left = `${cell.left - origin.left}px`;
-    line.style.width = `${end.right - cell.left}px`;
+    line.style.left = `${tableLeft - origin.left}px`;
+    line.style.width = `${tableRight - tableLeft}px`;
     clearTimeout(this.nowTimer);
     this.nowTimer = setTimeout(() => this.drawNow(), 30000);    // keep it moving
   }
