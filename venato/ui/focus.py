@@ -7,12 +7,13 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from venato import store
 from venato.blocks import focus
+from venato.ui import kit
 
 HERE = Path(__file__).parent
 
@@ -211,10 +212,9 @@ def render_page():
             df["day"] = pd.to_datetime(df["started"].str[:10])
             df["hours"] = df["minutes"] / 60
             daily = df.groupby(["day", "label"], as_index=False)["hours"].sum()
-            fig = px.bar(daily, x="day", y="hours", color="label", title="Hours per day",
-                         labels={"day": "", "hours": "Hours", "label": ""})
-            fig.update_xaxes(tickformat="%-d %b")
-            st.plotly_chart(fig, width="stretch")
+            kit.show(kit.bar_chart(daily, "day", "hours", color="label", stack=True, title="Hours per day",
+                                   x_axis=alt.Axis(format=kit.DAY_FORMAT, labelOverlap=True, grid=False, labelAngle=0),
+                                   y_axis=alt.Axis(title="Hours"), size=14))
             by_label = df.groupby("label", as_index=False)["hours"].sum().sort_values("hours", ascending=False)
             st.dataframe(by_label.rename(columns={"label": "Activity", "hours": "Hours"}).round(1),
                          hide_index=True, width="stretch")

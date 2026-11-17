@@ -3,8 +3,8 @@ The data and the maths are in venato/blocks/workouts.py."""
 
 from datetime import timedelta
 
+import altair as alt
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from venato import store
@@ -218,11 +218,10 @@ def _history_tab(today):
         if k in counts:
             counts[k] += 1
     with kit.card("Workouts per week", stretch=False):
-        fig = go.Figure(go.Bar(x=pd.to_datetime(weeks), y=list(counts.values()), marker_color=kit.PALETTE[0],
-                               hovertemplate="Week of %{x|%-d %b}: %{y}<extra></extra>"))
-        fig.update_xaxes(tickformat="%-d %b")
-        fig.update_yaxes(dtick=1)
-        kit.chart(fig, "wk_hist_chart", 200)
+        per_week = pd.DataFrame({"Week of": pd.to_datetime(weeks), "Workouts": list(counts.values())})
+        kit.show(kit.bar_chart(per_week, "Week of", "Workouts", height=200, size=18,
+                               x_axis=alt.Axis(format=kit.DAY_FORMAT, labelOverlap=True, grid=False, labelAngle=0),
+                               y_axis=alt.Axis(tickMinStep=1, format="d", title=None)))
     cols = st.columns(3)
     for i, w in enumerate(rows[:30]):
         with cols[i % 3], st.container(border=True, height="stretch"):
@@ -272,22 +271,21 @@ def _progress_tab(today):
         if rows:
             df = pd.DataFrame(rows, columns=["date", "orm", "top", "reps", "km"])
             df["date"] = pd.to_datetime(df["date"])
-            fig = go.Figure()
+            x_axis = alt.Axis(format=kit.DAY_FORMAT, labelOverlap=True, grid=False, labelAngle=0)
             if ex["kind"] == "cardio":
-                fig.add_scatter(x=df["date"], y=df["km"].map(wk.km_out), mode="lines+markers", name="Distance",
-                                line=dict(color=kit.PALETTE[2], width=3))
-                fig.update_yaxes(ticksuffix=f" {d_unit}")
+                df["Distance"] = df["km"].map(wk.km_out)
+                chart = kit.line_chart(df, "date", ["Distance"], palette={"Distance": kit.colours(range(3))[2]}, height=300,
+                                       x_axis=x_axis, y_axis=alt.Axis(labelExpr=f"datum.value + ' {d_unit}'"))
             elif df["top"].notna().any():
-                fig.add_scatter(x=df["date"], y=df["orm"].map(wk.kg_out), mode="lines+markers", name="Est. 1RM",
-                                line=dict(color=kit.PALETTE[0], width=3))
-                fig.add_scatter(x=df["date"], y=df["top"].map(wk.kg_out), mode="lines+markers", name="Top set",
-                                line=dict(color=kit.PALETTE[1], width=2, dash="dot"))
-                fig.update_yaxes(ticksuffix=f" {w_unit}")
+                df["Est. 1RM"] = df["orm"].map(wk.kg_out)
+                df["Top set"] = df["top"].map(wk.kg_out)
+                chart = kit.line_chart(df, "date", ["Est. 1RM", "Top set"], height=300, x_axis=x_axis,
+                                       palette=kit.colours(["Est. 1RM", "Top set"]),
+                                       y_axis=alt.Axis(labelExpr=f"datum.value + ' {w_unit}'"))
             else:
-                fig.add_bar(x=df["date"], y=df["reps"], name="Total reps", marker_color=kit.PALETTE[0])
-            fig.update_xaxes(tickformat="%-d %b")
-            fig.update_layout(hovermode="x unified")
-            kit.chart(fig, "wk_prog_chart", 300, legend=True)
+                df["Total reps"] = df["reps"]
+                chart = kit.bar_chart(df, "date", "Total reps", height=300, size=14, x_axis=x_axis)
+            kit.show(chart)
         else:
             kit.empty("No working sets of this one yet.")
     with b, kit.card("Sets per muscle group", "This week against last week"):
@@ -296,14 +294,13 @@ def _progress_tab(today):
         last = wk.weekly_volume(week0 - timedelta(days=7), week0 - timedelta(days=1))
         muscles = sorted(set(this) | set(last), key=lambda m: -(this.get(m, {}).get("sets", 0)))
         if muscles:
-            fig = go.Figure()
-            fig.add_bar(y=muscles, x=[last.get(m, {}).get("sets", 0) for m in muscles], orientation="h",
-                        name="Last week", marker_color="rgba(128,128,128,.35)")
-            fig.add_bar(y=muscles, x=[this.get(m, {}).get("sets", 0) for m in muscles], orientation="h",
-                        name="This week", marker_color=kit.PALETTE[0])
-            fig.update_layout(barmode="group")
-            fig.update_yaxes(autorange="reversed")
-            kit.chart(fig, "wk_vol_chart", max(200, 40 * len(muscles) + 60), legend=True)
+            vol = pd.DataFrame([{"Muscle": m, "Week": label, "Sets": data.get(m, {}).get("sets", 0)}
+                                for m in muscles for label, data in (("Last week", last), ("This week", this))])
+            chart = kit.bar_chart(vol, "Muscle", "Sets", color="Week", horizontal=True,
+                                  height=max(200, 40 * len(muscles) + 60),
+                                  palette={"Last week": kit.muted(), "This week": kit.colours([0])[0]},
+                                  y_axis=alt.Axis(tickMinStep=1, format="d"))
+            kit.show(chart)
         else:
             kit.empty("No sets in the last two weeks.")
     with kit.card("Personal bests", stretch=False):

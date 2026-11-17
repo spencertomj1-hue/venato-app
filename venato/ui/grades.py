@@ -4,8 +4,8 @@ The data and maths are in venato/blocks/grades.py."""
 
 from html import escape
 
+import altair as alt
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from venato import store
@@ -78,25 +78,32 @@ def _chart(ms):
         return
     rows.sort(key=lambda r: r[1]["projected"])
     names = [m["code"] or m["name"] for m, _ in rows]
-    fig = go.Figure()
-    fig.add_bar(y=names, x=[n["projected"] for _, n in rows], orientation="h",
-                marker_color=[_band(n["projected"])[1] for _, n in rows],
-                customdata=[[m["name"], _band(n["projected"])[0], n["done_weight"]] for m, n in rows],
-                hovertemplate="%{customdata[0]}: %{x:.1f}% (%{customdata[1]}) · %{customdata[2]:.0f}% marked"
-                              "<extra></extra>",
-                text=[f"{n['projected']:.0f}%" for _, n in rows], textposition="inside", insidetextanchor="start",
-                textfont=dict(color="#111318" if kit.appearance.is_dark() else "white"))
-    targets = [(names[i], m["target"]) for i, (m, _) in enumerate(rows) if m["target"] is not None]
-    if targets:
-        fig.add_scatter(y=[t[0] for t in targets], x=[t[1] for t in targets], mode="markers", name="Target",
-                        marker=dict(symbol="line-ns", size=18, line=dict(width=3, color="rgba(128,128,128,.9)")),
-                        hovertemplate="Target %{x:.0f}%<extra></extra>")
-    lines = [40, 50, 60, 70] if gr.settings()["system"] != "US" else [60, 70, 80, 90]
-    for x in lines:
-        fig.add_vline(x=x, line=dict(color="rgba(128,128,128,.35)", dash="dot", width=1))
     top = max(100, max(n["projected"] for _, n in rows))
-    fig.update_xaxes(range=[0, top], ticksuffix="%", dtick=10)
-    kit.chart(fig, "gr_chart", max(220, 46 * len(rows) + 40))
+    df = pd.DataFrame({"Module": names, "Projected": [n["projected"] for _, n in rows],
+                       "Name": [m["name"] for m, _ in rows], "Band": [_band(n["projected"])[0] for _, n in rows],
+                       "Marked": [n["done_weight"] for _, n in rows], "Colour": [_band(n["projected"])[1] for _, n in rows],
+                       "Label": [f"{n['projected']:.0f}%" for _, n in rows]})
+    x_enc = alt.X("Projected", type="quantitative", scale=alt.Scale(domain=[0, top], nice=False),
+                  axis=alt.Axis(values=list(range(0, int(top) + 1, 10)), labelExpr="datum.value + '%'", title=None))
+    y_enc = alt.Y("Module", type="nominal", sort=names[::-1], axis=alt.Axis(grid=False, title=None))
+    bars = alt.Chart(df).mark_bar(size=24).encode(
+        x=x_enc, y=y_enc, color=alt.Color("Colour", type="nominal", scale=None),
+        tooltip=["Name", alt.Tooltip("Projected", format=".1f", title="Projected %"), "Band",
+                 alt.Tooltip("Marked", format=".0f", title="Marked %")])
+    ink = "#111318" if kit.appearance.is_dark() else "white"
+    text = alt.Chart(df).mark_text(align="left", dx=6, color=ink, fontSize=12).encode(
+        x=alt.value(0), y=y_enc, text="Label:N")
+    layers = bars + text
+    targets = pd.DataFrame([{"Module": names[i], "Target": m["target"]} for i, (m, _) in enumerate(rows)
+                            if m["target"] is not None])
+    if not targets.empty:
+        layers += alt.Chart(targets).mark_tick(thickness=3, size=30, color="rgba(128,128,128,0.9)").encode(
+            x=alt.X("Target", type="quantitative", scale=alt.Scale(domain=[0, top], nice=False)), y=y_enc,
+            tooltip=[alt.Tooltip("Target", format=".0f", title="Target %")])
+    lines = [40, 50, 60, 70] if gr.settings()["system"] != "US" else [60, 70, 80, 90]
+    layers = alt.Chart(pd.DataFrame({"x": lines})).mark_rule(strokeDash=[2, 3], color="rgba(128,128,128,0.4)").encode(
+        x=alt.X("x:Q", scale=alt.Scale(domain=[0, top], nice=False))) + layers
+    kit.show(kit.style(layers, max(220, 46 * len(rows) + 40), legend=False), key="gr_chart")
     st.caption("Bars are each module's projected mark; the grey tick is its target; dotted lines are the grade "
                "boundaries.")
 

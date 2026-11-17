@@ -33,7 +33,7 @@ hiddenimports = [".".join(p.relative_to(ROOT).with_suffix("").parts)
 hiddenimports = [m.removesuffix(".__init__") for m in hiddenimports]
 
 # Packages with data files, plugins or entry points that PyInstaller can't find by itself.
-for package in ["streamlit", "plotly", "keyring", "webview", "claude_agent_sdk", "faster_whisper",
+for package in ["streamlit", "keyring", "webview", "claude_agent_sdk", "faster_whisper",
                 "ctranslate2", "sounddevice", "_sounddevice_data", "icalendar", "recurring_ical_events",
                 "tzdata"]:
     d, b, h = collect_all(package)
