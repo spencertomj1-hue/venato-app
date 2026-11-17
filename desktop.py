@@ -26,9 +26,9 @@ FROZEN = getattr(sys, "frozen", False)          # running as the packaged Venato
 APP_DIR = Path(sys._MEIPASS) if FROZEN else Path(__file__).parent
 ICON = APP_DIR / "assets" / "icon.png"   # built by scripts/make_icon.py
 SPLASH_LOGO = APP_DIR / "assets" / "splash.png"   # also built by scripts/make_icon.py
-SPLASH_SECONDS = 2.0                     # minimum time the loading screen shows
+SPLASH_SECONDS = 0.6                     # minimum time the loading screen shows
 READY_TIMEOUT = 45                       # give up waiting for the page after this (it shows anyway)
-SETTLE_SECONDS = 0.8                     # the page must hold still this long before the splash lifts
+SETTLE_SECONDS = 0.4                     # the page must hold still this long before the splash lifts
 # A fingerprint of the page: while it changes (components still mounting, text still reflowing) it isn't settled.
 SETTLED_JS = """(() => {
   if (!document.getElementById('venato-ready') || !document.fonts || document.fonts.status !== 'loaded') return '';
@@ -189,10 +189,10 @@ def main():
 
     def show_app(splash):
         """
-        Runs once the splash is up. The app loads in a second, hidden window, so
-        none of its loading shows: once the page has fully drawn (its
-        #venato-ready marker) and the splash has had SPLASH_SECONDS, the app
-        window appears and the splash closes.
+        Runs once the splash is up. The app window opens maximised straight away, behind the
+        splash (which stays on top), so the whole page loads and lays out under the cover.
+        Once it has settled and the splash has had SPLASH_SECONDS, the splash fades out
+        to reveal the finished app, and closes.
         """
         shown_at = time.time()
         try:
@@ -200,10 +200,10 @@ def main():
         except RuntimeError:
             return show_error(splash)
 
-        # Maximised from the start (not after it shows), so the page lays out once, at its final size.
+        # Maximised and visible from the start: it loads behind the splash, so it lays out once, at full size.
         app = webview.create_window(
             "Venato", f"http://127.0.0.1:{port}", width=1200, height=850, maximized=True,
-            hidden=True, background_color=_window_colour(),
+            background_color=_window_colour(),
         )
         app.events.closed += stop_server
         state["app"] = app
@@ -226,10 +226,9 @@ def main():
             time.sleep(0.1)
 
         time.sleep(max(0.0, SPLASH_SECONDS - (time.time() - shown_at)))
-        splash.evaluate_js("document.body.classList.add('out')")    # fade the splash
+        state["swapped"] = True                                     # closing the splash now is fine: the app stays
+        splash.evaluate_js("document.body.classList.add('out')")    # fade the splash, revealing the app
         time.sleep(0.45)
-        app.show()
-        state["swapped"] = True
         splash.destroy()
 
     def show_error(splash):
@@ -251,6 +250,7 @@ def main():
         splash = webview.create_window(
             "Venato", html=splash_html(), width=1200, height=850,
             maximized=True, background_color="#FFFFFF",
+            on_top=True,                                 # stays in front while the app loads behind it
         )
         splash.events.closed += splash_closed
         set_dock_icon()
