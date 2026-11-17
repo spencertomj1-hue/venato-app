@@ -140,6 +140,15 @@ button, input, select { font: inherit; }
   overscroll-behavior-x: contain;   /* sideways swipes change week, not browser history */
 }
 .tt-wrap { position: relative; }
+.tt-card { position: relative; }
+/* A change that couldn't be saved (taken back): a dark note over the top of the grid, like the Undo bar. */
+.tt-error {
+  position: absolute; top: 48px; left: 50%; transform: translateX(-50%); z-index: 6;
+  max-width: min(520px, 90%); padding: 8px 14px; border-radius: 10px;
+  background: #26272f; color: #f4f4f6; font-size: 0.85rem; line-height: 1.35;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); pointer-events: none;
+}
+.tt-error[hidden] { display: none; }
 
 table.tt {
   width: 100%;

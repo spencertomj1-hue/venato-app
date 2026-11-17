@@ -27,8 +27,18 @@ def _date_axis(stats):
 
 def page_stats():
     st.header("Review", anchor=False)
+    _charts()
+    for extra in EXTRAS:
+        extra()
+    st.divider()
+    review_ui.history()                        # weekly reviews, newest first (at the bottom of Stats)
+
+
+@st.fragment
+def _charts():
+    """The period's averages and charts: a fragment, so picking another period redraws just these."""
     periods = {"Last 7 days": 7, "Last 30 days": 30, "Last 90 days": 90, "All time": None}
-    period = st.radio("Period", list(periods), index=1, horizontal=True)
+    period = st.radio("Period", list(periods), index=1, horizontal=True, key="stats_period")
 
     # Same numbers the assistant's get_stats tool reports.
     stats = get_stats(periods[period])
@@ -94,8 +104,3 @@ def page_stats():
                                labels=".1f", palette={"Planned": kit.muted(), "Done": review_ui.regional_accent()}))
     st.caption(f"Timetable time is counted from the {stats['days_confirmed']} of {stats['days']} days you've "
                "confirmed. Confirm a day on the Timetable, or from Home's end-of-day prompt.")
-
-    for extra in EXTRAS:
-        extra()
-    st.divider()
-    review_ui.history()                        # weekly reviews, newest first (at the bottom of Stats)

@@ -77,6 +77,9 @@ def page_home():
     """Agenda + today's Plan / Actual on the left (if the timetable is on); on the right the
     end-of-day prompt, the Ask box, then every switched-on block's widget in priority order, then search."""
     from venato import blocks
+    # How many times Home has been drawn in full. Busy widgets are fragments that redraw on their own, so the
+    # tests use this to check that ticking a to-do didn't redraw the whole page.
+    st.session_state["home_draws"] = st.session_state.get("home_draws", 0) + 1
     widgets = [b.home for b in blocks.enabled() if b.home]
     if blocks.is_on("timetable"):
         left, right = st.columns([1, 2], gap="large")

@@ -133,8 +133,10 @@ def maybe_show():
         _dialog(week)
 
 
+@st.fragment
 def history():
-    """Stats page: pick a week to look at its review again (or this week so far)."""
+    """Stats page: pick a week to look at its review again (or this week so far). A fragment: picking a week
+    or saving a reflection redraws just this."""
     st.subheader("Weekly reviews", anchor=False)
     this_week = store.week_start_of(store.local_today())
     weeks = [store._as_date(r["week_start"]) for r in store.reviews()]

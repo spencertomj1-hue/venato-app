@@ -16,6 +16,7 @@ import streamlit as st
 from venato import regional
 from venato import store
 from venato import undo
+from venato.ui import kit
 
 HERE = Path(__file__).parent
 
@@ -79,6 +80,14 @@ PAGE = "Daily Log"      # sidebar label (also what Home's habits "Manage" switch
 
 def page_daily_log():
     st.header("Daily Log", anchor=False)
+    _day_card()
+    _past_entries()
+
+
+@st.fragment
+def _day_card():
+    """The month calendar, the selected day's card, its habits and the form to save it: a fragment, so picking
+    a day or a month redraws just this. Saving reruns the app (Past entries below shows the journal)."""
     today = store.local_today()
     selected = st.session_state.setdefault("log_day", today)
     month = st.session_state.setdefault("log_month", today.replace(day=1))
@@ -150,8 +159,6 @@ def page_daily_log():
     if entry:
         st.caption("An entry already exists for this day — saving will update it.")
 
-    _past_entries()
-
 
 def _open_day(day):
     st.session_state["log_day"] = day
@@ -180,10 +187,13 @@ def _past_entries():
 # Habits
 # ---------------------------------------------------------------------------
 
-def _toggle_habit(habit_id, day, key):
-    """Checkbox callback: save the new tick state straight away."""
+def _toggle_habit(habit_id, day, key, home=False):
+    """Checkbox callback: save the new tick state straight away. The ticks are a fragment, so only they
+    rerun; on Home the whole app reruns when a goal counts this habit (its bar is outside the fragment)."""
     with store.db() as conn:
         store.set_habit_done(conn, habit_id, day, st.session_state[key])
+    if home:
+        kit.rerun_app_if({f"habit:{habit_id}"})
 
 
 def _open_habits():
@@ -192,8 +202,6 @@ def _open_habits():
 
 def render_home_habits():
     """Home: today's habits to tick, each with the last 7 days and its current streak."""
-    today = store.local_today()
-    days = [today - timedelta(days=i) for i in range(6, -1, -1)]
     accent = st.get_option("theme.primaryColor") or "#ff4b4b"
     head = st.container(horizontal=True, vertical_alignment="center")
     head.markdown("**Habits**", width="stretch")
@@ -203,6 +211,15 @@ def render_home_habits():
     if not habits:
         st.caption("No habits yet. Add some on the Daily Log page.")
         return
+    _home_habit_rows(accent)
+
+
+@st.fragment
+def _home_habit_rows(accent):
+    """Home's habit ticks (a fragment: ticking one reruns just these rows)."""
+    today = store.local_today()
+    days = [today - timedelta(days=i) for i in range(6, -1, -1)]
+    habits = store.get_habits()
     st.html(f"""<style>
       .hb-week {{ display: flex; gap: 4px; justify-content: flex-end; }}
       .hb-week i {{ width: 11px; height: 11px; border-radius: 3px; background: rgba(128, 128, 128, 0.18); }}
@@ -217,7 +234,7 @@ def render_home_habits():
         _, current, per_week = store.habit_progress(habit_id, done, today)
         key = f"home_habit_{habit_id}_{d}"
         tick, week, streak = box.columns([5, 3, 2], vertical_alignment="center")
-        tick.checkbox(name, value=d in done, key=key, on_change=_toggle_habit, args=(habit_id, d, key))
+        tick.checkbox(name, value=d in done, key=key, on_change=_toggle_habit, args=(habit_id, d, key, True))
         cells = "".join(
             f'<i class="{"on" if x.isoformat() in done else ""}{" today" if x == today else ""}" '
             f'title="{x:%a} {x.day} {x:%b}"></i>' for x in days)
@@ -229,18 +246,12 @@ def render_home_habits():
             streak.caption(f":material/local_fire_department: {current}" if current else "–")   # current streak
 
 
-# "How often" choices: index 0 is every day, index n is n times a week.
-OFTEN = ["Every day"] + [f"{n} time{'s' * (n > 1)} a week" for n in range(1, 8)]
-
-
-def _habits_for(day, today):
-    """The selected day's habits to tick (not for future days), with streaks, and adding/removing habits."""
-    st.subheader("Habits", anchor=False)
+@st.fragment
+def _habit_ticks(day, today):
+    """The selected day's habit ticks with their progress (a fragment: ticking one reruns just these; nothing
+    else on the Daily Log shows habits)."""
     d = day.isoformat()
-    habits = store.get_habits()
-    if not habits:
-        st.caption("No habits yet. Add one below.")
-    for habit_id, name in habits:
+    for habit_id, name in store.get_habits():
         done_dates = store.get_habit_dates(habit_id)
         progress, _, _ = store.habit_progress(habit_id, done_dates, min(day, today))
         key = f"habit_{habit_id}_{d}"
@@ -248,6 +259,20 @@ def _habits_for(day, today):
         left.checkbox(name, value=d in done_dates, key=key, disabled=day > today,
                       on_change=_toggle_habit, args=(habit_id, d, key))
         right.caption(progress)
+
+
+# "How often" choices: index 0 is every day, index n is n times a week.
+OFTEN = ["Every day"] + [f"{n} time{'s' * (n > 1)} a week" for n in range(1, 8)]
+
+
+def _habits_for(day, today):
+    """The selected day's habits to tick (not for future days), with streaks, and adding/removing habits."""
+    st.subheader("Habits", anchor=False)
+    habits = store.get_habits()
+    if not habits:
+        st.caption("No habits yet. Add one below.")
+    else:
+        _habit_ticks(day, today)
 
     with st.expander("Manage habits"):
         with st.form("add_habit", clear_on_submit=True):
