@@ -7,8 +7,8 @@
 <h1 align="center">Venato</h1>
 
 <p align="center">
-  <strong>A private, offline life tracker for your Mac or PC: plan your week, log what actually happened, and see the gap.</strong><br>
-  For students and anyone who wants their timetable, to-dos, deadlines, goals and grades in one app, on their own computer.
+  <strong>A private, offline planner for your Mac or PC: plan your week, log what actually happened, and see the gap.</strong><br>
+  For university students who want their timetable, deadlines, goals, focus and grades in one place, offline.
 </p>
 
 <p align="center">
@@ -38,7 +38,7 @@
 
 ## Features
 
-**Pick your blocks.** Venato is built from blocks. The core ones are always on: Timetable, Goals, Focus, Grades and Review (the weekly review and stats). The optional ones you switch on in the setup wizard or Settings → Blocks. Each brings its own page, Home widget and assistant skills, and Home orders the widgets by the priorities you set.
+**Core and optional blocks.** Venato is built from blocks. The core ones are always on: Timetable, Goals (to-dos and deadlines too), Focus, Grades and Review. The optional ones you switch on in the setup wizard or Settings → Blocks. Each brings its own page, Home widget and assistant skills, and Home orders the widgets by the priorities you set.
 
 | Block | What it does |
 |---|---|
@@ -46,13 +46,13 @@
 | **Goals** | Goals with deadlines and a pace, to-dos and deadlines. Always on. |
 | **Focus** | Pomodoro or stopwatch with auto breaks; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". Always on. |
 | **Grades** | Modules and weighted assessments, mark needed for your target, UK classification or US GPA, year weightings. "got 68 in acp coursework". Always on. |
-| **Review** | Weekly review, charts and history. Always on. |
+| **Review** | Weekly review, time planned vs done, charts and history. Always on. |
 | **Daily Log** | Mood, sleep, energy and water by day, a journal, and habits with streaks. Optional. |
 | **Money** | Spending and income by category, monthly budgets, savings goals, subscriptions (logged when they renew) and bank CSV import. "spent £12 on lunch". Optional. |
 | **Workouts** | Sets, reps, weight, distance; 1RM, personal bests, progress charts, weekly volume, saved plans; kg/lb, km/mi. "bench 3x8 at 60". Optional. |
 
 **Planning**
-- **Weekly timetable** in 30-minute slots with a **Plan / Actual** switch. A day's Plan is locked when the day starts and copied into its Actual; after that you change the Actual as the day goes, and confirm it at the end (Confirm under the day, "Confirm week", or Home's "Is the timetable right for today?"). Stats and goals count confirmed days only and say how many. Drag to add blocks; point at a block to select it (a thin red outline), click for its details, drag it to move it or drag its top or bottom edge to stretch or shrink it; ⌘/Ctrl+C and ⌘/Ctrl+V copy and paste, Backspace deletes; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
+- **Weekly timetable** in 30-minute slots with a **Plan / Actual** switch. A day's Plan is locked when the day starts and copied into its Actual; after that you change the Actual as the day goes, and confirm it at the end (Confirm under the day, "Confirm week", or Home's "Is the timetable right for today?"). Review and goals count confirmed days only and say how many. Drag to add blocks; point at a block to select it (a thin red outline), click for its details, drag it to move it or drag its top or bottom edge to stretch or shrink it; ⌘/Ctrl+C and ⌘/Ctrl+V copy and paste, Backspace deletes; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
 - **Colour-coded categories** in groups ("Life", "Work"), with activities that pick their category automatically ("Lunch" goes to Meals).
 - **Fit time:** say what, how many hours and which days; Venato finds free gaps around your blocks and calendar events and previews the sittings before adding them.
 - **To-dos** for today, this week and this month, in the style of Apple Reminders: drag to reorder, notes, repeating to-dos.
@@ -68,7 +68,7 @@
 - **Daily log (optional):** a month calendar of mood, sleep, energy and water. Click a day to tick habits and write notes.
 - **Habits (optional):** daily or with a weekly target ("Gym 3 times a week"), with current and best streaks.
 - **Journal (optional):** each day's notes, with a daily prompt and a searchable list of past entries.
-- **Review:** charts of mood, energy, sleep and water, plus habit completion rates.
+- **Review:** time planned vs done, goal pace and past weekly reviews; with Daily Log on, charts of mood, energy, sleep and water and habit completion rates.
 - **Weekly review:** pops up after 7pm on Sunday with plan followed, time per category, mood/sleep/energy/water vs last week, habits, to-dos, deadlines and two questions to reflect on.
 
 **Everything else**
@@ -160,7 +160,7 @@ Nothing else is sent anywhere.
 ## Tech stack
 
 - **Python 3.13** with **[Streamlit](https://streamlit.io)** for the UI, plus custom JS/CSS components (timetable, to-dos, chat)
-- **SQLite** for storage, **Plotly** and **pandas** for stats
+- **SQLite** for storage, **Altair** (comes with Streamlit) and **pandas** for charts
 - **[pywebview](https://pywebview.flowrl.com)** for the native desktop window
 - **[Claude Agent SDK](https://docs.claude.com/en/docs/claude-code/sdk)** for the optional assistant
 - **[faster-whisper](https://github.com/SYSTRAN/faster-whisper)** for on-device speech to text

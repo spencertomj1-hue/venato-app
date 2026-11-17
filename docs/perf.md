@@ -74,9 +74,53 @@ the code just before Task 9 (whole-app reruns), after = with the fragments.
 
 ## After
 
-(to be filled in by re-running the script at the end of the plan)
+Same script, same machine, `--runs 9`, run at the end of the speed work (data-version cache, fragments,
+Altair instead of Plotly). Pages that were removed (Cut down, Food, Applications, Involvement, Network,
+Health data) have no row; Stats is now called Review.
 
-## Bundle size: leaving out unused parts of pyarrow
+| page | before (median ms) | after (median ms) | p90 after | change |
+|---|---:|---:|---:|---|
+| Home | 412 | 97 | 114 | cached reads |
+| Timetable | 254 | 136 | 154 | cached reads |
+| Goals | 430 | 118 | 152 | cached pace and goal reads |
+| Focus | 28 | 25 | 30 | none needed |
+| Grades | 15 | 13 | 17 | none needed |
+| Review (was Stats) | 286 | 174 | 223 | cached reads, Altair charts |
+| Daily Log | 36 | 39 | 43 | within noise |
+| Money | 45 | 44 | 68 | within noise |
+| Workouts | 24 | 27 | 34 | within noise |
+| Settings | 60 | 59 | 65 | within noise |
+
+Whole-page numbers are server-side script time for one full rerun. A rerun of a busy page is now cheap enough
+that the three slowest pages went from 430 / 412 / 286 ms to 118 / 97 / 174 ms.
+
+| interaction | before (full rerun) | after (just the fragment) |
+|---|---:|---:|
+| Home: tick a to-do | 454 | 9 |
+| Home: tick a habit (no goal counts it) | 445 | 18 |
+| Home: tick a habit a goal counts | 445 | 152 (the app reruns: the goal's bar moves) |
+| Focus: start (Home) | 507 | 17 |
+| Focus: stop (Home) | 459 | 15 |
+| Review: change period | n/a | 129 (209 before the fragment) |
+| Daily Log: tick a habit | 42 | 12 |
+| Daily Log: pick a day | n/a | 24 |
+| Timetable: move a block | n/a | 201 (whole page: the planner panel shows every change; the grid itself is local-first, so the block moves at once in the browser) |
+| Timetable: Plan / Actual switch | n/a | n/a (runs in the browser) |
+
+"Before" in the first column is the first table above (every interaction cost one whole-app rerun, timed by
+saving in the store and rerunning). The fragment numbers use the browser-like method described under
+"Fragments (Task 9)", so the before and after in that section are the like-for-like pair.
+
+Not measured here: the browser's own paint time, and the Outlook sync.
+
+## Bundle size
+
+Linux PyInstaller bundle (`dist/Venato`), from the measurements below: **1014.5 MB before, 959.3 MB after** the
+pyarrow excludes (plotly was already gone). The speech model and the assistant SDK are still inside the bundle:
+Whisper is about 380 MB and the assistant SDK about 280 MB, so they are the next big wins. Moving Whisper out of
+the installers (Task 6) is parked until the assistant work.
+
+### Leaving out unused parts of pyarrow
 
 Measured with a real Linux PyInstaller build (`pyinstaller packaging/venato.spec`, Python 3.13, pyarrow 26.0.1,
 PyInstaller 6.x; plotly already gone), before and after the excludes in `packaging/venato.spec`.
