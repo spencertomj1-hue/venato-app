@@ -98,6 +98,7 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
   - `review(first, last)` -> `{"title", "lines"}`: lines for the weekly review (`blocks.review_sections`); no lines = no section.
   - `status`: `{word in a tool's name: text}`: what the chat shows while one of the block's tools runs.
   - Plus the older ones: `page`, `home`, `tools`, `prompt`, `context`, `quick`, `schema`, `migrate`.
+- **Daily Log's content is gated.** Habit and Journal search kinds (and icons / routing) are the `log` block's `search*` hooks, so they vanish with it. `review.summary` returns no log numbers, habits or journal, and `ui/review.py` / `ui/stats.py` skip those tiles and charts, when `blocks.is_on("log")` is false. `chosen_keys()` puts core blocks missing from a saved list after it (an upgrade doesn't reorder Home).
 - **Adding a block** = adding a file in `venato/blocks/` with a `BLOCK`; set `search*` / `review` / `status` there rather than in `store.py`, `review.py` or `chat.py`.
 
 ## 4. Data model (`store.py`)

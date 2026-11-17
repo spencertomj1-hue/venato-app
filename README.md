@@ -69,7 +69,7 @@
 - **Habits (optional):** daily or with a weekly target ("Gym 3 times a week"), with current and best streaks.
 - **Journal (optional):** each day's notes, with a daily prompt and a searchable list of past entries.
 - **Review:** time planned vs done, goal pace and past weekly reviews; with Daily Log on, charts of mood, energy, sleep and water and habit completion rates.
-- **Weekly review:** pops up after 7pm on Sunday with plan followed, time per category, mood/sleep/energy/water vs last week, habits, to-dos, deadlines and two questions to reflect on.
+- **Weekly review:** pops up after 7pm on Sunday with plan followed, time per category, goal pace, to-dos, deadlines and two questions to reflect on; with Daily Log on it adds mood/sleep/energy/water vs last week, habits and the journal.
 
 **Everything else**
 - **Search** across to-dos, goals, deadlines, habits, journal, timetable, calendar events and past reviews.

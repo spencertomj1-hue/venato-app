@@ -1,13 +1,13 @@
 """
-The Stats page: averages and charts of mood, energy, productivity, sleep and water, habit completion,
-then anything blocks add (EXTRAS), then past weekly reviews.
+The Review page: time planned vs done, then (with Daily Log on) averages and charts of mood, energy,
+productivity, sleep and water and habit completion, then anything blocks add (EXTRAS), then past weekly reviews.
 """
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
-from venato import regional
+from venato import blocks, regional
 from venato.store import entries_between, get_stats
 from venato.ui import kit
 from venato.ui import review as review_ui
@@ -42,6 +42,19 @@ def _charts():
 
     # Same numbers the assistant's get_stats tool reports.
     stats = get_stats(periods[period])
+    # --- Timetable: planned vs done, on confirmed days only ---
+    hours = stats["timetable_hours"]
+    rows = [{"Category": cat, "Hours": h, "Track": label}
+            for track, label in (("plan", "Planned"), ("actual", "Done")) for cat, h in hours[track].items()]
+    if rows:
+        kit.show(kit.bar_chart(pd.DataFrame(rows), "Category", "Hours", color="Track", title="Time: planned vs done",
+                               labels=".1f", palette={"Planned": kit.muted(), "Done": review_ui.regional_accent()}))
+    st.caption(f"Timetable time is counted from the {stats['days_confirmed']} of {stats['days']} days you've "
+               "confirmed. Confirm a day on the Timetable, or from Home's end-of-day prompt.")
+
+    if not blocks.is_on("log"):             # mood, sleep, water and habits are Daily Log's
+        return
+
     entries = entries_between(stats["start"], stats["end"])
     entries["date"] = pd.to_datetime(entries["date"])
     for col in ("mood", "sleep", "energy", "productivity", "water"):
@@ -72,7 +85,7 @@ def _charts():
         kit.show(chart)
 
         # Whole hours from 0, so a few nights of similar sleep don't zoom into 7.1, 7.2...
-        top = max(10, int(entries["sleep"].max() or 0) + 2)
+        top = max(10, int(entries["sleep"].max() if entries["sleep"].notna().any() else 0) + 2)
         chart = kit.line_chart(entries, "date", "sleep", title="Sleep", x_axis=axis, x_scale=xscale, y_scale=alt.Scale(domain=[0, top]),
                                y_axis=alt.Axis(values=list(range(0, top + 1, 1 if top <= 12 else 2)), format="d",
                                                title="Hours"))
@@ -94,13 +107,3 @@ def _charts():
                                labels=".0f", y_scale=alt.Scale(domain=[0, 100]),
                                y_axis=alt.Axis(values=list(range(0, 101, 20)), labelExpr="datum.value + '%'",
                                                title="% of days")))
-
-    # --- Timetable: planned vs done, on confirmed days only ---
-    hours = stats["timetable_hours"]
-    rows = [{"Category": cat, "Hours": h, "Track": label}
-            for track, label in (("plan", "Planned"), ("actual", "Done")) for cat, h in hours[track].items()]
-    if rows:
-        kit.show(kit.bar_chart(pd.DataFrame(rows), "Category", "Hours", color="Track", title="Time: planned vs done",
-                               labels=".1f", palette={"Planned": kit.muted(), "Done": review_ui.regional_accent()}))
-    st.caption(f"Timetable time is counted from the {stats['days_confirmed']} of {stats['days']} days you've "
-               "confirmed. Confirm a day on the Timetable, or from Home's end-of-day prompt.")
