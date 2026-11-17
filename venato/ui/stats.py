@@ -3,29 +3,26 @@ The Stats page: averages and charts of mood, energy, productivity, sleep and wat
 then anything blocks add (EXTRAS), then past weekly reviews.
 """
 
+import altair as alt
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from venato import regional
 from venato.store import entries_between, get_stats
+from venato.ui import kit
 from venato.ui import review as review_ui
 
 EXTRAS = []     # more sections, as functions drawing them (a block can add one: the private copy's Uni stats)
 
 
-DAY_MS = 24 * 60 * 60 * 1000   # Plotly measures date steps in milliseconds
-
-
-def _date_axis(fig, stats):
-    """Show the whole period with plain '26 Oct' dates, a tick per day / week / month."""
+def _date_axis(stats):
+    """(axis, scale) showing the whole period with plain '26 Oct' dates, a tick per day / week / month."""
     days = stats["days"]
-    step = DAY_MS if days <= 14 else 7 * DAY_MS if days <= 90 else "M1"
+    step = "day" if days <= 14 else "week" if days <= 90 else "month"
     start, end = pd.Timestamp(stats["start"]), pd.Timestamp(stats["end"])
-    fig.update_xaxes(
-        title=None, tickformat="%-d %b", dtick=step, tick0=start, hoverformat="%a %-d %b",
-        range=[start - pd.Timedelta(hours=12), end + pd.Timedelta(hours=12)],
-    )
+    axis = alt.Axis(format=kit.DAY_FORMAT, tickCount=step, labelOverlap=True, grid=False, labelAngle=0)
+    scale = alt.Scale(domain=[(start - pd.Timedelta(hours=12)).isoformat(), (end + pd.Timedelta(hours=12)).isoformat()])
+    return axis, scale
 
 
 def page_stats():
@@ -55,52 +52,46 @@ def page_stats():
     if entries.empty:
         st.info("No entries in this period yet.")
     else:
+        axis, xscale = _date_axis(stats)
+
         # Mood, energy and productivity share a 1-10 scale, so they go on the same chart.
-        fig = px.line(
-            entries, x="date", y=["mood", "energy", "productivity"], markers=True,
-            title="Mood, energy & productivity", labels={"value": "Score (1-10)", "variable": ""},
-        )
-        fig.update_yaxes(range=[0.5, 10.5], dtick=1, tickformat="d")
-        _date_axis(fig, stats)
-        st.plotly_chart(fig, width="stretch")
+        chart = kit.line_chart(entries, "date", ["mood", "energy", "productivity"], y_title="Score (1-10)",
+                               title="Mood, energy & productivity", x_axis=axis, x_scale=xscale,
+                               y_scale=alt.Scale(domain=[0.5, 10.5]), y_axis=alt.Axis(values=list(range(1, 11)),
+                                                                                       format="d", title="Score (1-10)", labelOverlap=False))
+        kit.show(chart)
 
         # Whole hours from 0, so a few nights of similar sleep don't zoom into 7.1, 7.2...
         top = max(10, int(entries["sleep"].max() or 0) + 2)
-        fig = px.line(entries, x="date", y="sleep", markers=True, title="Sleep",
-                      labels={"sleep": "Hours"})
-        fig.update_yaxes(range=[0, top], dtick=1 if top <= 12 else 2, tickformat="d")
-        _date_axis(fig, stats)
-        st.plotly_chart(fig, width="stretch")
+        chart = kit.line_chart(entries, "date", "sleep", title="Sleep", x_axis=axis, x_scale=xscale, y_scale=alt.Scale(domain=[0, top]),
+                               y_axis=alt.Axis(values=list(range(0, top + 1, 1 if top <= 12 else 2)), format="d",
+                                               title="Hours"))
+        kit.show(chart)
 
         water = entries.dropna(subset=["water"]).assign(water=lambda df: df["water"].map(regional.water_out))
         if not water.empty:
-            fig = px.bar(water, x="date", y="water", title="Water", labels={"water": regional.water_unit().capitalize()},
-                         color_discrete_sequence=["#3E8EF7"])
-            fig.update_yaxes(rangemode="tozero")
-            _date_axis(fig, stats)
-            st.plotly_chart(fig, width="stretch")
+            chart = kit.bar_chart(water, "date", "water", title="Water", x_axis=axis, x_scale=xscale,
+                                  y_axis=alt.Axis(title=regional.water_unit().capitalize()), colour=kit.water(),
+                                  size=max(4, min(24, 620 // max(stats["days"], 1))))
+            kit.show(chart)
 
     # --- Habit completion % ---
     if stats["habit_completion_pct"]:
         completion = pd.DataFrame(
             {"habit": list(stats["habit_completion_pct"]), "percent": list(stats["habit_completion_pct"].values())}
         )
-        fig = px.bar(completion, x="habit", y="percent", text_auto=".0f",
-                     title=f"Habit completion ({stats['days']} days)",
-                     labels={"percent": "% of days", "habit": ""})
-        fig.update_yaxes(range=[0, 100], dtick=20, ticksuffix="%")
-        st.plotly_chart(fig, width="stretch")
+        kit.show(kit.bar_chart(completion, "habit", "percent", title=f"Habit completion ({stats['days']} days)",
+                               labels=".0f", y_scale=alt.Scale(domain=[0, 100]),
+                               y_axis=alt.Axis(values=list(range(0, 101, 20)), labelExpr="datum.value + '%'",
+                                               title="% of days")))
 
     # --- Timetable: planned vs done, on confirmed days only ---
     hours = stats["timetable_hours"]
     rows = [{"Category": cat, "Hours": h, "Track": label}
             for track, label in (("plan", "Planned"), ("actual", "Done")) for cat, h in hours[track].items()]
     if rows:
-        fig = px.bar(pd.DataFrame(rows), x="Category", y="Hours", color="Track", barmode="group", text_auto=".1f",
-                     title="Time: planned vs done", color_discrete_map={"Planned": "#9AA0AE", "Done": review_ui.regional_accent()})
-        fig.update_xaxes(title=None)
-        fig.update_layout(legend_title_text="")
-        st.plotly_chart(fig, width="stretch")
+        kit.show(kit.bar_chart(pd.DataFrame(rows), "Category", "Hours", color="Track", title="Time: planned vs done",
+                               labels=".1f", palette={"Planned": kit.muted(), "Done": review_ui.regional_accent()}))
     st.caption(f"Timetable time is counted from the {stats['days_confirmed']} of {stats['days']} days you've "
                "confirmed. Confirm a day on the Timetable, or from Home's end-of-day prompt.")
 

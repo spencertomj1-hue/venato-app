@@ -3,12 +3,13 @@ Shared look for the block pages: cards, stat tiles, charts, tables, progress rin
 so Money, Workouts and Grades all read as one app.
 
 Everything is built from Streamlit's own pieces (bordered containers, st.metric, st.dataframe,
-Plotly) plus a little HTML for rings and pills, and works in light and dark mode.
+Altair) plus a little HTML for rings and pills, and works in light and dark mode.
 """
 
 from contextlib import contextmanager
 from html import escape
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -18,13 +19,33 @@ from venato.ui import appearance
 # "over" / "bad" here. Distinct, and readable on light and dark backgrounds.
 PALETTE = ["#4E79A7", "#F28E2B", "#59A14F", "#8CD17D", "#76B7B2", "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F",
            "#BAB0AC"]
+# The same ten on the paper-coloured light background, darkened so each is 3:1 or more against it (WCAG
+# non-text contrast); the dark-mode set above is already well over that on the dark background.
+PALETTE_LIGHT = ["#4E79A7", "#C96A00", "#3F8A3B", "#5F9C16", "#2A9A92", "#A88400", "#B07AA1", "#D9607A", "#8B6B4F",
+                 "#7C8590"]
+DAY_FORMAT = "%-d %b"      # '5 Nov' for chart dates: a d3 format drawn in the browser, fine on Windows too
 GRID = "rgba(128,128,128,0.15)"
 TRACK = "rgba(128,128,128,0.18)"
 
 
 def colours(names):
     """{name: colour}, stable for a given order of names."""
-    return {n: PALETTE[i % len(PALETTE)] for i, n in enumerate(names)}
+    palette = PALETTE if appearance.is_dark() else PALETTE_LIGHT
+    return {n: palette[i % len(palette)] for i, n in enumerate(names)}
+
+
+def muted():
+    """A quiet grey for 'planned' / 'last week' series, readable on the current background."""
+    return "#9AA0AE" if appearance.is_dark() else "#6F7685"
+
+
+def water():
+    return "#3E8EF7" if appearance.is_dark() else "#1F6FD6"
+
+
+def ink():
+    """Text colour for chart labels drawn as marks (Streamlit's theme only colours axes and legends)."""
+    return "#E8E8EC" if appearance.is_dark() else "#262730"
 
 
 def good_bad():
@@ -77,16 +98,95 @@ def empty(text, icon=":material/inbox:"):
     st.caption(f"{icon} {text}")
 
 
-# --- Charts ---
+# --- Charts (Altair, which ships with Streamlit) ---
 
-def chart(fig, key, height=280, legend=False):
-    """Draw a Plotly figure in the app's chart style: transparent, tight, quiet gridlines, no toolbar."""
-    fig.update_layout(height=height, margin=dict(l=0, r=0, t=8, b=0), paper_bgcolor="rgba(0,0,0,0)",
-                      plot_bgcolor="rgba(0,0,0,0)", showlegend=legend, hoverlabel=dict(namelength=-1),
-                      legend=dict(orientation="h", y=-0.15, x=0, title=None), bargap=0.25)
-    fig.update_xaxes(showgrid=False, title=None)
-    fig.update_yaxes(gridcolor=GRID, zeroline=False, title=None)
-    st.plotly_chart(fig, width="stretch", key=key, config={"displayModeBar": False})
+def colour_scale(names, palette=None):
+    """An Altair colour scale, one app colour per category. palette: {name: colour}, else kit.colours order."""
+    names = list(dict.fromkeys(names))
+    cmap = palette or colours(names)
+    return alt.Scale(domain=names, range=[cmap.get(n, PALETTE[-1]) for n in names])
+
+
+def _long(df, x, y):
+    """Wide to long when y is a list of columns: (df, y column, series column)."""
+    if isinstance(y, (list, tuple)):
+        return df.melt(id_vars=[x], value_vars=list(y), var_name="Series", value_name="Value"), "Value", "Series"
+    return df, y, None
+
+
+def _kind(df, col):
+    return "temporal" if pd.api.types.is_datetime64_any_dtype(df[col]) else \
+        "quantitative" if pd.api.types.is_numeric_dtype(df[col]) else "nominal"
+
+
+def style(chart, height, legend, legend_columns=4):
+    """The app's chart style: tight, quiet gridlines, no frame, legend underneath only when asked for."""
+    return (chart.properties(height=height, padding={"left": 0, "right": 8, "top": 8, "bottom": 4})
+            .configure_view(stroke=None)
+            .configure_axis(gridColor=GRID, domain=False, ticks=False, title=None, labelPadding=6)
+            .configure_legend(orient="bottom", title=None, disable=not legend, labelLimit=240, columns=legend_columns, symbolType="circle")
+            .configure_title(anchor="start", fontSize=14))
+
+
+def line_chart(df, x, y, color=None, y_title=None, height=260, *, palette=None, points=True, x_axis=None,
+               x_scale=None, y_scale=None, y_axis=None, title=None, colour=None):
+    """Lines over time. y: a column, or a list of columns drawn as one line each (named by the columns).
+    color: a column that splits the lines. palette: {series: colour}. x_axis / x_scale / y_scale / y_axis:
+    alt.Axis / alt.Scale overrides. Returns an Altair chart; draw it with show()."""
+    df, y, series = _long(df, x, y)
+    color = color or series
+    enc = dict(x=alt.X(x, type=_kind(df, x), scale=x_scale or alt.Scale(),
+                       axis=x_axis or alt.Axis(labelOverlap=True)),
+               y=alt.Y(y, type="quantitative", scale=y_scale or alt.Scale(zero=False),
+                       axis=y_axis or alt.Axis(title=y_title)))
+    if color:
+        enc["color"] = alt.Color(color, type="nominal", scale=colour_scale(df[color], palette))
+        enc["tooltip"] = [x, color, y]
+    else:
+        enc["tooltip"] = [x, y]
+    base = alt.Chart(df, title=title or "")
+    line = base.mark_line(point=alt.OverlayMarkDef(filled=True, size=45) if points else False,
+                          strokeWidth=2.5).encode(**enc)
+    if not color:
+        line = line.encode(color=alt.value(colour or colours([0])[0]))
+    return style(line, height, legend=bool(color))
+
+
+def bar_chart(df, x, y, color=None, stack=False, horizontal=False, height=260, *, palette=None, x_axis=None,
+              x_scale=None, y_scale=None, y_axis=None, title=None, labels=None, size=None, colour=None):
+    """Bars. color: a column that splits the bars, stacked when stack=True, side by side otherwise.
+    horizontal swaps the axes (x stays the category, y the value). labels: a number format ('.1f') to print
+    values on the bars. Returns an Altair chart; draw it with show()."""
+    cat_kind = _kind(df, x)
+    cat = alt.X(x, type=cat_kind, scale=x_scale or alt.Scale(),
+                axis=x_axis or alt.Axis(labelAngle=0, labelLimit=110, grid=False))
+    val = alt.Y(y, type="quantitative", scale=y_scale or alt.Scale(zero=True), axis=y_axis or alt.Axis())
+    enc = dict(x=cat, y=val, tooltip=[x, y] if not color else [x, color, y])
+    if horizontal:
+        enc["x"], enc["y"] = alt.X(y, type="quantitative", scale=y_scale or alt.Scale(zero=True),
+                                   axis=y_axis or alt.Axis()), alt.Y(x, type=cat_kind, axis=x_axis or alt.Axis(),
+                                                                     sort=None)
+    if color:
+        enc["color"] = alt.Color(color, type="nominal", scale=colour_scale(df[color], palette))
+        if not stack and not horizontal:
+            enc["xOffset"] = alt.XOffset(color, type="nominal")
+        if not stack and horizontal:
+            enc["yOffset"] = alt.YOffset(color, type="nominal")
+    else:
+        enc["color"] = alt.value(colour or colours([0])[0])
+    mark = alt.Chart(df, title=title or "").mark_bar(**({"size": size} if size else {}))
+    chart = mark.encode(**enc)
+    if labels:
+        text = alt.Chart(df).mark_text(dy=-6 if not horizontal else 0, dx=12 if horizontal else 0, fontSize=11,
+                                           color=ink())
+        t_enc = {k: v for k, v in enc.items() if k in ("x", "y", "xOffset", "yOffset")}
+        chart = chart + text.encode(text=alt.Text(y, type="quantitative", format=labels), **t_enc)
+    return style(chart, height, legend=bool(color))
+
+
+def show(chart, key=None):
+    """Draw an Altair chart with Streamlit's own theme (light or dark, fonts, text colours)."""
+    st.altair_chart(chart, width="stretch", theme="streamlit", key=key)
 
 
 # --- Tables ---

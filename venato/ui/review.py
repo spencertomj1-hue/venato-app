@@ -7,12 +7,12 @@ The numbers come from venato/review.py.
 from datetime import timedelta
 
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from venato import regional
 from venato import review
 from venato import store
+from venato.ui import kit
 
 
 def _week_title(first):
@@ -62,12 +62,9 @@ def render(first, key):
     if s["time"]:
         rows = [{"Category": x["category"], "Hours": x[track], "Track": label}
                 for x in s["time"] for track, label in (("plan", "Planned"), ("actual", "Done"))]
-        fig = px.bar(pd.DataFrame(rows), x="Category", y="Hours", color="Track", barmode="group",
-                     title="Time: planned vs done", text_auto=".1f",
-                     color_discrete_map={"Planned": "#9AA0AE", "Done": regional_accent()})
-        fig.update_xaxes(title=None)
-        fig.update_layout(legend_title_text="")
-        st.plotly_chart(fig, width="stretch", key=f"{key}_time")
+        kit.show(kit.bar_chart(pd.DataFrame(rows), "Category", "Hours", color="Track", title="Time: planned vs done",
+                               labels=".1f", palette={"Planned": kit.muted(), "Done": regional_accent()}),
+                 key=f"{key}_time")
 
     left, right = st.columns(2)
     with left:

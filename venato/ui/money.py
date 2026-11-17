@@ -3,8 +3,8 @@ bank CSV import) and its Home widget. The data is in venato/blocks/money.py."""
 
 from datetime import timedelta
 
+import altair as alt
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from venato import store
@@ -40,10 +40,6 @@ def _apply_tx(key, rows, cats):
 
 _colours = kit.colours
 _good_bad = kit.good_bad
-
-
-def _chart(fig, key, height=280):
-    kit.chart(fig, key, height, legend=bool(fig.layout.showlegend))
 
 
 def _table(rows, money=(), progress=(), dates=None):
@@ -82,14 +78,19 @@ def _where_it_went(s, colours):
         if not cats:
             st.caption("No spending this month yet.")
             return
-        fig = go.Figure(go.Pie(labels=[x["name"] for x in cats], values=[x["spent"] for x in cats], hole=0.64,
-                               sort=False, direction="clockwise", textinfo="none",
-                               marker=dict(colors=[colours[x["name"]] for x in cats]),
-                               hovertemplate="%{label}: " + mn.currency() + "%{value:,.2f} (%{percent})<extra></extra>"))
-        fig.update_layout(showlegend=True, legend=dict(orientation="h", y=-0.05, x=0.5, xanchor="center"),
-                          annotations=[dict(text=f"<b>{mn.fmt(s['spent'])}</b><br>spent", showarrow=False,
-                                            font=dict(size=18), x=0.5, y=0.5)])
-        _chart(fig, "mn_dash_donut", 320)
+        df = pd.DataFrame({"Category": [x["name"] for x in cats], "Spent": [x["spent"] for x in cats]})
+        df["Share"] = df["Spent"] / df["Spent"].sum()
+        scale = kit.colour_scale(df["Category"], colours)
+        arcs = alt.Chart(df).mark_arc(innerRadius=62, outerRadius=96, stroke="rgba(0,0,0,0)").encode(
+            theta=alt.Theta("Spent", type="quantitative", stack=True),
+            color=alt.Color("Category", type="nominal", scale=scale, sort=None),
+            order=alt.value(0),
+            tooltip=["Category", alt.Tooltip("Spent", format=",.2f", title=f"Spent ({mn.currency()})"),
+                     alt.Tooltip("Share", format=".0%")])
+        middle = alt.Chart(pd.DataFrame({"t": [mn.fmt(s["spent"])]})).mark_text(fontSize=20, fontWeight="bold",
+                                                                            dy=-6, color=kit.ink()).encode(text="t:N")
+        sub = alt.Chart(pd.DataFrame({"t": ["spent"]})).mark_text(fontSize=12, dy=14, opacity=0.8, color=kit.ink()).encode(text="t:N")
+        kit.show(kit.style(arcs + middle + sub, 320, legend=True, legend_columns=2), key="mn_dash_donut")
 
 
 def _budget_vs_actual(s, colours):
@@ -104,19 +105,22 @@ def _budget_vs_actual(s, colours):
         names = [x["name"] for x in cats]
         used = [x["spent"] / x["budget"] for x in cats]
         _, bad = _good_bad()
-        fig = go.Figure()
-        fig.add_bar(y=names, x=[1] * len(cats), orientation="h", marker=dict(color="rgba(128,128,128,0.18)"),
-                    hoverinfo="skip")
-        fig.add_bar(y=names, x=[min(u, 1.25) for u in used], orientation="h", width=0.5,
-                    marker=dict(color=[bad if u > 1 else colours[n] for n, u in zip(names, used)]),
-                    text=[f"{mn.fmt(x['spent'])} / {mn.fmt(x['budget'])}" for x in cats], textposition="none",
-                    customdata=[u for u in used],
-                    hovertemplate="%{y}: %{text} (%{customdata:.0%})<extra></extra>")
-        fig.add_vline(x=1, line=dict(color="rgba(128,128,128,0.6)", dash="dot", width=1))
-        fig.update_layout(barmode="overlay", showlegend=False, bargap=0.3)
-        fig.update_xaxes(tickformat=".0%", range=[0, max(1.05, min(max(used), 1.25) + 0.05)],
-                         gridcolor="rgba(128,128,128,0.15)")
-        _chart(fig, "mn_dash_bva", 320)
+        df = pd.DataFrame({"Category": names, "Used": [min(u, 1.25) for u in used], "Share": used,
+                           "Detail": [f"{mn.fmt(x['spent'])} / {mn.fmt(x['budget'])}" for x in cats]})
+        df["Colour"] = [bad if u > 1 else colours[n] for n, u in zip(names, used)]
+        top = max(1.05, min(max(used), 1.25) + 0.05)
+        x_enc = alt.X("Used", type="quantitative", scale=alt.Scale(domain=[0, top], nice=False),
+                      axis=alt.Axis(format=".0%", title=None))
+        y_enc = alt.Y("Category", type="nominal", sort=names[::-1], axis=alt.Axis(grid=False, title=None, labelLimit=160))
+        track = alt.Chart(df).mark_bar(color=kit.TRACK, size=22).encode(
+            x=alt.X("one:Q", scale=alt.Scale(domain=[0, top], nice=False), axis=alt.Axis(format=".0%", title=None)),
+            y=y_enc).transform_calculate(one="1")
+        bars = alt.Chart(df).mark_bar(size=12).encode(
+            x=x_enc, y=y_enc, color=alt.Color("Colour", type="nominal", scale=None),
+            tooltip=["Category", "Detail", alt.Tooltip("Share", format=".0%", title="Of budget")])
+        goal = alt.Chart(pd.DataFrame({"x": [1]})).mark_rule(strokeDash=[3, 3], color="rgba(128,128,128,0.8)").encode(
+            x=alt.X("x:Q", scale=alt.Scale(domain=[0, top], nice=False)))
+        kit.show(kit.style(track + bars + goal, 320, legend=False), key="mn_dash_bva")
         over = [x["name"] for x in cats if x["spent"] > x["budget"]]
         if over:
             st.caption(f":red[Over budget on {', '.join(over)}]")
@@ -137,22 +141,24 @@ def _pace(s):
             total += s["by_day"].get(d, 0)
             running.append(total)
         good, bad = _good_bad()
-        fig = go.Figure()
-        if s["budget"]:
-            n = (last - first).days + 1
-            fig.add_scatter(x=[first, last], y=[s["budget"] / n, s["budget"]], mode="lines", name="Even pace",
-                            line=dict(color="rgba(128,128,128,0.6)", dash="dot"),
-                            hovertemplate="Even pace<extra></extra>")
         over = bool(s["budget"]) and running[-1] > s["budget"] * len(days) / ((last - first).days + 1)
         colour = bad if over else good
-        r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
-        fig.add_scatter(x=days, y=running, mode="lines", name="Spent", line=dict(color=colour, width=3, shape="hv"),
-                        fill="tozeroy", fillcolor=f"rgba({r},{g},{b},0.12)",
-                        hovertemplate="%{x|%-d %b}: " + mn.currency() + "%{y:,.2f}<extra></extra>")
-        fig.update_layout(showlegend=False)
-        fig.update_xaxes(range=[first, last], tickformat="%-d %b", showgrid=False)
-        fig.update_yaxes(tickprefix=mn.currency(), gridcolor="rgba(128,128,128,0.15)", rangemode="tozero")
-        _chart(fig, "mn_dash_pace", 280)
+        x_enc = alt.X("Day", type="temporal", scale=alt.Scale(domain=[pd.Timestamp(first).isoformat(),
+                                                                       pd.Timestamp(last).isoformat()], nice=False),
+                      axis=alt.Axis(format=kit.DAY_FORMAT, grid=False, labelOverlap=True, labelAngle=0, title=None))
+        y_enc = alt.Y("Spent", type="quantitative", scale=alt.Scale(zero=True),
+                      axis=alt.Axis(labelExpr=f"'{mn.currency()}' + format(datum.value, ',.0f')", title=None))
+        df = pd.DataFrame({"Day": pd.to_datetime(days), "Spent": running})
+        area = alt.Chart(df).mark_area(interpolate="step-after", color=colour, opacity=0.12).encode(x=x_enc, y=y_enc)
+        line = alt.Chart(df).mark_line(interpolate="step-after", color=colour, strokeWidth=3).encode(
+            x=x_enc, y=y_enc, tooltip=[alt.Tooltip("Day", format=kit.DAY_FORMAT), alt.Tooltip("Spent", format=",.2f")])
+        layers = area + line
+        if s["budget"]:
+            n = (last - first).days + 1
+            pace = pd.DataFrame({"Day": pd.to_datetime([first, last]), "Spent": [s["budget"] / n, s["budget"]]})
+            layers = alt.Chart(pace).mark_line(color="rgba(128,128,128,0.8)", strokeDash=[4, 4]).encode(
+                x=x_enc, y=y_enc, tooltip=alt.value("Even pace")) + layers
+        kit.show(kit.style(layers, 280, legend=False), key="mn_dash_pace")
         if s["budget"]:
             st.caption("Ahead of an even pace for your budget." if over else "On track for your budget.")
 

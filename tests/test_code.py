@@ -28,3 +28,10 @@ def test_no_undefined_names():
     for path in [ROOT / "app.py", ROOT / "desktop.py", *sorted((ROOT / "venato").rglob("*.py"))]:
         api.checkPath(str(path), out)
     assert out.found == []
+
+
+def test_no_plotly():
+    """Charts are Altair (it ships with Streamlit); plotly is ~61 MB in the installer."""
+    found = [str(p.relative_to(ROOT)) for p in [ROOT / "app.py", ROOT / "desktop.py", *(ROOT / "venato").rglob("*.py")]
+             if "plotly" in p.read_text(encoding="utf-8")]
+    assert found == []
