@@ -132,3 +132,32 @@ def test_old_csv_scores_doubled(store):
                                        "notes": None}]))
     e = store.get_entry("2026-02-02")
     assert (e["mood"], e["energy"], e["productivity"]) == (4, 5, 6)
+
+
+# --- data version: the cache key that changes whenever the database does ---
+
+def test_version_bumps_on_write(store):
+    before = store.data_version()
+    store.add_habit("Gym")
+    assert store.data_version() > before
+
+
+def test_version_unchanged_on_read(store):
+    store.add_habit("Gym")
+    before = store.data_version()
+    store.get_habits()
+    store.load_categories()
+    store.get_stats(7)
+    assert store.data_version() == before
+
+
+def test_version_bumps_on_undo_restore(store):
+    import importlib
+    from venato import undo
+    undo = importlib.reload(undo)
+    store.add_habit("Gym")
+    undo.checkpoint("Removed the habit 'Gym'")
+    store.delete_habit(store.find_habit("Gym")[0])
+    before = store.data_version()
+    assert undo.restore()
+    assert store.data_version() > before

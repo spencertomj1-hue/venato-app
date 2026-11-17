@@ -506,7 +506,7 @@ def offers(ctx=None):
     if _confirm_box():
         return
     gone = pace.dismissed_offers()
-    for g in store.goals_active(ctx.today):
+    for g in pace.goals_active(ctx.today):
         if g["id"] in gone:
             continue
         n = pace.negotiation(g, ctx)
