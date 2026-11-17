@@ -13,6 +13,7 @@ from pathlib import Path
 import streamlit as st
 
 from venato import store
+from venato.ui import kit
 
 HERE = Path(__file__).parent
 
@@ -58,8 +59,14 @@ def apply_op(op):
         store.reorder_todos(op["ids"])
 
 
+def _changed(op):
+    """kit.rerun_app_if tags for an op: a delete also saves an Undo point (the Undo bar is the app's)."""
+    return {f"todo:{op.get('id') or op.get('goal', {}).get('id')}"} | ({"undo"} if op["kind"] == "delete" else set())
+
+
 def _on_ops():
-    """Save new ops and remember them as acknowledged."""
+    """Save new ops and remember them as acknowledged. Only the to-do list reruns, unless the app shows
+    something that changed (kit.rerun_app_if)."""
     ops = st.session_state["home_todos"]["ops"] or []
     acked = st.session_state.setdefault("todo_acked", [])
     new_ops = [op for op in ops if op["opId"] not in acked]
@@ -67,8 +74,10 @@ def _on_ops():
         apply_op(op)
     # Keep the list short; a list only ever has a few ops in flight.
     st.session_state["todo_acked"] = (acked + [op["opId"] for op in new_ops])[-500:]
+    kit.rerun_app_if(set().union(*(_changed(op) for op in new_ops)))
 
 
+@st.fragment
 def render_home():
     """Today's, this week's and this month's to-dos, side by side (stacked when narrow)."""
     store.roll_todos()

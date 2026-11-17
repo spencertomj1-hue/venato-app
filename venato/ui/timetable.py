@@ -10,6 +10,7 @@ What gets saved is computed by store.plan_paint, the same rules the Claude
 assistant's add_block tool uses.
 """
 
+import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from venato import regional
 from venato import store
 
 HERE = Path(__file__).parent
+log = logging.getLogger(__name__)
 SYNC_EVERY = timedelta(minutes=15)
 
 # The grid component, built once from the JS/CSS files next to this module.
@@ -76,6 +78,9 @@ def _checkpoint(op):
         undo.checkpoint(f"Changed {what}'s times" if resized else f"Moved {what}", quiet=True)      # an edge dragged, or the whole block
 
 
+LOCKED = "That day has started, so its Plan is locked: change its Actual instead."
+
+
 def apply_grid_op(op):
     """
     Save one op from the grid:
@@ -97,12 +102,13 @@ def apply_grid_op(op):
     Painting over an Outlook event detaches it first (store.paint), so it's trimmed like any block.
     Every day an op touches is locked first if it has started, and a started day's Plan is never changed:
     such an op (from a grid drawn before the day started) is dropped; the redraw shows the Actual.
+    Returns why an op wasn't saved (the grid then takes it back and shows this), or None.
     """
     days = _op_days(op)
     if days:
         store.lock_started(min(days), max(days))
     if _touches_locked_plan(op):
-        return
+        return LOCKED
     if op["kind"] == "batch":
         from venato import undo
         undo.checkpoint(op.get("label") or "Changed several blocks", quiet=True)    # no bar; Cmd/Ctrl+Z undoes
@@ -198,14 +204,23 @@ def _apply(op):
 
 
 def _on_ops(key):
-    """Component callback: save new ops and remember them as acknowledged."""
+    """Component callback: save new ops and remember them as acknowledged. An op that can't be saved is
+    acknowledged too, with the reason in `tt_rejected`: the grid then takes it back and shows the reason."""
     ops = st.session_state[key]["ops"] or []
     acked = st.session_state.setdefault("tt_acked", [])
+    rejected = st.session_state.setdefault("tt_rejected", {})
     new_ops = [op for op in ops if op["opId"] not in acked]
     for op in new_ops:
-        apply_grid_op(op)
-    # Keep the list short; the grid only ever has a few ops in flight.
+        try:
+            why = apply_grid_op(op)
+        except Exception as e:                   # never leave the grid resending an op that can't be saved
+            log.exception("Couldn't save a timetable change: %s", op.get("kind"))
+            why = f"Couldn't save that change: {e}"
+        if why:
+            rejected[op["opId"]] = why
+    # Keep the lists short; the grid only ever has a few ops in flight.
     st.session_state["tt_acked"] = (acked + [op["opId"] for op in new_ops])[-500:]
+    st.session_state["tt_rejected"] = dict(list(rejected.items())[-50:])
 
 
 def _shift_week(weeks):
@@ -381,6 +396,7 @@ def render_grid(days, key="timetable", single=False, readonly=False, suggestions
         ],
         "labelMap": dict(zip(label_map["label"], label_map["category_id"])),
         "acked": st.session_state.get("tt_acked", []),
+        "rejected": st.session_state.get("tt_rejected", {}),     # opId -> why it wasn't saved
         "single": single,
         # The Plan / Actual switch lives in the browser (no rerun); Python only forces it once (Home's Review).
         "mode": "actual" if readonly else st.session_state.pop("tt_force_mode", None),

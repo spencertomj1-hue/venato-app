@@ -52,6 +52,26 @@ Pages: **Goals (430)**, **Home (412)**, **Stats (286)**. Timetable (254) is clos
 Interactions: every Home-page interaction (focus start 507, to-do 454, habit 445, focus stop 459) costs about
 one full Home rerun (about 410-500), so Home is the target. A tick on the Daily Log page costs only 42.
 
+### Fragments (Task 9)
+
+From Task 9 the script runs interactions the way the browser does (`tests/fragment_run.py`): a widget inside
+an `st.fragment` reruns just that fragment (plus the whole app when `kit.rerun_app_if` asks), and the
+components' triggers (to-do list, Focus timer, calendar, timetable grid) are fired as their JS would, instead
+of saving in the store and timing a full rerun. Both columns below use that method (`--runs 5`): before =
+the code just before Task 9 (whole-app reruns), after = with the fragments.
+
+| interaction | before | after |
+|---|---:|---:|
+| Home: tick a to-do | 173 | 9 |
+| Home: tick a habit (no goal) | 141 | 16 |
+| Home: tick a habit a goal counts | 138 | 162 (the app reruns: the goal's bar moves) |
+| Focus: start (Home) | 227 | 18 |
+| Focus: stop (Home, under 15 min: not in the timetable) | 151 | 16 |
+| Review: change period | 209 | 124 |
+| Daily Log: tick a habit | 57 | 12 |
+| Daily Log: pick a day | 37 | 26 |
+| Timetable: move a block | 203 | 195 (whole page: the planner panel shows every change; the grid is local-first) |
+
 ## After
 
 (to be filled in by re-running the script at the end of the plan)

@@ -5,7 +5,9 @@
 // sent to Python as "ops": {opId, kind: "paint", date, track, start, end, block, newId}
 // for drags, {opId, kind: "upsert", entry} / {opId, kind: "delete", id} for edits.
 // Ops stay pending until Python lists their opId in `acked`, so a slow rerun
-// never makes the grid flicker back to old data.
+// never makes the grid flicker back to old data. An op Python couldn't save is acked
+// with a reason in `rejected` ({opId: why}): it's dropped (the grid shows what was saved,
+// so the block goes back) and the reason shows in a note over the grid.
 // Swiping sideways on the grid sends a "nav" trigger (-1 / +1 week).
 //
 // Plan and Actual (switched with the Plan / Actual buttons, in the browser only: no rerun, remembered in
@@ -254,7 +256,9 @@ class Timetable {
 
     // Server entries, then re-apply anything Python hasn't saved yet.
     const acked = new Set(data.acked);
-    this.pending = this.pending.filter((op) => !acked.has(op.opId));
+    const rejected = data.rejected || {};
+    const refused = this.pending.filter((op) => rejected[op.opId]);   // not saved: drop it and say why
+    this.pending = this.pending.filter((op) => !acked.has(op.opId) && !rejected[op.opId]);
     this.entries = new Map(data.entries.map((e) => [e.id, { ...e }]));
     this.outlook = (data.outlook || []).slice();   // Python already leaves out removed ones
     this.hidden = new Set();                       // removed / detached here, not yet saved
@@ -269,6 +273,7 @@ class Timetable {
     }
     this.refreshDatalist();
     this.showOutlookStatus();
+    if (refused.length) this.showError(rejected[refused[refused.length - 1].opId]);
     this.fitToWindow();
     this.paint();
     // Re-measure once the page around the grid (agenda, fonts) has settled.
@@ -493,6 +498,7 @@ class Timetable {
           <div class="tt-blocks" aria-hidden="true"></div>
           <div class="tt-lines" aria-hidden="true"></div>
         </div>
+        <div class="tt-error" role="alert" hidden></div>
       </div>
       <div class="tt-a11y" role="region" aria-label="Timetable blocks (press Enter on one for details)"></div>`;
 
@@ -511,6 +517,16 @@ class Timetable {
 
     this.bindEvents();
     this.showBrush();
+  }
+
+  // A change Python couldn't save: it has already been taken back; say why for a few seconds.
+  showError(text) {
+    const el = this.root.querySelector(".tt-error");
+    if (!el) return;
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(this.errorTimer);
+    this.errorTimer = setTimeout(() => { el.hidden = true; }, 6000);
   }
 
   showOutlookStatus() {

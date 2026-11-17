@@ -162,3 +162,22 @@ def test_past_week_scorecard(store, monkeypatch):
     assert "done 2 of" in short and "short so far" in short and "missed" not in short    # unconfirmed days: not "missed"
     assert "✕ missed by" in goal_time._score(w, all_confirmed=True)
     assert "✓ hit" in goal_time._score({**w, "need": 2}, all_confirmed=True)
+
+
+def test_linked_habit_updates_goal(store):
+    """Ticking a habit on Home that a goal counts: the goal's bar moves in the same run (the habit
+    fragment reruns the whole app), as it does on the browser."""
+    import fragment_run
+    today = store.local_today()
+    store.add_habit("Gym")
+    hid = store.find_habit("gym")[0]
+    store.add_goal("Gym", "monthly", today, 12, "sessions", habit_id=hid)
+    html = lambda at: " ".join(h.proto.body for h in at.get("html"))
+    with fragment_run.recording():
+        at = app()
+        assert "0 / 12 sessions" in html(at)
+        draws = at.session_state["home_draws"]
+        fragment_run.click(at, at.checkbox(key=f"home_habit_{hid}_{today}").check())
+    assert not at.exception
+    assert at.session_state["home_draws"] == draws + 1
+    assert "1 / 12 sessions" in html(at)

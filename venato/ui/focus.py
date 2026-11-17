@@ -26,11 +26,16 @@ _timer = st.components.v2.component(
 
 
 LENGTHS = [15, 25, 45, 60, 90]
+HOME_KEY = "home_focus_timer"
 
 
 def _on_action(key):
+    """The timer's buttons. The timer is a fragment, so only it reruns; the whole app reruns when a logged
+    session shows elsewhere: on Home, in today's Actual; on the Focus page, in the totals and the list."""
     act = (st.session_state.get(key) or {}).get("action") or {}
     name = act.get("name")
+    home = key == HOME_KEY
+    changed = set()
     if name == "start":                      # the idle dial was pressed: start with the controls' choices
         _start_from_controls()
     elif name == "pause":
@@ -44,8 +49,22 @@ def _on_action(key):
         session, note = focus.stop()
         if session and session["kind"] != "break":
             st.session_state["focus_msg"] = f"Logged {session['label']}: {session['minutes']:.0f} min. {note}".strip()
+        if session:
+            changed = _logged(home, bool(focus.get(session["id"])["in_timetable"]))
     elif name == "done":
+        r = focus.running()
         st.session_state["focus_msg"] = focus.finish_if_due()
+        if r and st.session_state["focus_msg"]:          # it ran out and was logged (maybe into the Actual)
+            changed = _logged(home, r["kind"] != "break")
+    kit.rerun_app_if(changed)
+
+
+def _logged(home, into_actual):
+    """kit.rerun_app_if tags for a logged session. On Home only today's Actual (the timetable, goal hours) is
+    outside the timer; on the Focus page the totals and today's list are."""
+    if not home:
+        return {"page"}
+    return {"actual"} if into_actual else set()
 
 
 def _draw_timer(key, compact=False):
@@ -122,22 +141,19 @@ def _start_form(prefix):
     s = focus.settings()
     last = st.session_state.get("focus_last_label", "")
     a, b = st.columns([3, 2], vertical_alignment="bottom")
-    label = a.text_input("What are you focusing on?", value=last, key=f"{prefix}_label", placeholder="e.g. Essay")
-    if b.button(f"Focus {s['focus_minutes']} min", key=f"{prefix}_go", type="primary", width="stretch",
-                icon=":material/play_arrow:"):
-        _start(label, s["focus_minutes"], "focus", None)
+    a.text_input("What are you focusing on?", value=last, key=f"{prefix}_label", placeholder="e.g. Essay")
+    b.button(f"Focus {s['focus_minutes']} min", key=f"{prefix}_go", type="primary", width="stretch",
+             icon=":material/play_arrow:", on_click=_start_quick, args=(prefix, s["focus_minutes"]))
 
 
-def _start(label, minutes, kind, cid):
-    label = (label or "").strip() or "Focus"
+def _start_quick(prefix, minutes):
+    """Home's Focus button (a callback, so the fragment's own rerun draws the running timer)."""
+    label = (st.session_state.get(f"{prefix}_label") or "").strip() or "Focus"
     st.session_state["focus_last_label"] = label
-    cid = cid or store.resolve_category(label=label)
     try:
-        focus.start(label, minutes, kind, cid)
+        focus.start(label, minutes, "focus", store.resolve_category(label=label))
     except focus.FocusError as e:
-        st.error(str(e))
-        return
-    st.rerun()
+        st.session_state["focus_msg"] = str(e)
 
 
 def _summary():
@@ -155,18 +171,10 @@ def _summary():
 
 def render_page():
     st.title("Focus")
-    _message()
     focus.finish_if_due()                         # a timer that ran out while away
-    r = focus.running()
     _, mid, _ = st.columns([1, 1.6, 1])
     with mid:
-        if not r:
-            with st.container(horizontal_alignment="center"):
-                st.segmented_control("Mode", ["Stopwatch", "Timer"], default="Stopwatch", key="focus_mode",
-                                     label_visibility="collapsed", required=True)
-        _draw_timer("focus_timer")
-        if not r:
-            _controls()
+        _page_timer()
     st.write("")
     today = _summary()
 
@@ -235,11 +243,29 @@ def render_page():
             focus.save_settings(**new)
 
 
+@st.fragment
+def _page_timer():
+    """The Focus page's dial and its controls: a fragment, so starting, pausing or changing the length
+    redraws just this (stopping reruns the page, whose totals change)."""
+    _message()
+    r = focus.running()
+    if not r:
+        with st.container(horizontal_alignment="center"):
+            st.segmented_control("Mode", ["Stopwatch", "Timer"], default="Stopwatch", key="focus_mode",
+                                 label_visibility="collapsed", required=True)
+    _draw_timer("focus_timer")
+    if not r:
+        _controls()
+
+
+@st.fragment
 def render_home():
+    """Home's Focus widget: a fragment, so only it reruns, unless a session goes into today's Actual."""
     st.markdown("**Focus**")
     _message()
-    focus.finish_if_due()
-    r = _draw_timer("home_focus_timer", compact=True)
+    if focus.finish_if_due():                    # ran out while away: it may be in today's Actual now
+        kit.rerun_app_if({"actual"})
+    r = _draw_timer(HOME_KEY, compact=True)
     if not r:
         _start_form("home_focus")
     today = store.local_today()

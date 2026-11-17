@@ -38,6 +38,9 @@ sys.path.insert(0, str(ROOT))
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
+sys.path.insert(0, str(ROOT / "tests"))
+import fragment_run  # noqa: E402
+
 logging.disable(logging.WARNING)     # "missing ScriptRunContext" noise from bare runs
 
 from venato import blocks, store  # noqa: E402
@@ -77,7 +80,10 @@ def time_page(name, runs):
     return samples, None
 
 
-# --- interactions: each returns (setup(at), action(at)); the action is what's timed ---
+# --- interactions: each returns (at, action[, prep]); the action is what's timed ---
+# They're run the way the browser runs them (tests/fragment_run.py): a widget inside an st.fragment reruns
+# just its fragment (plus the whole app if it asks to), and the browser components' triggers are fired
+# as their JS would.
 
 def _fresh(page):
     at = new_app()
@@ -87,36 +93,35 @@ def _fresh(page):
 
 
 def todo_tick(page="Home"):
-    """The to-do list is a browser component, so AppTest can't click it: save the tick as the
-    component's callback would (store), then time the rerun that follows."""
+    """Tick / untick a to-do through the to-do list component."""
     today = store.local_today()
     for i in range(3):                              # the demo data has none for today
         store.add_todo(f"Profile task {i}", "daily", today)
     at = _fresh(page)
     todo = store.todos_for("daily", today)[0]
-    state = {"done": bool(todo["done"])}
+    state = {"done": bool(todo["done"]), "n": 0}
 
     def act():
-        state["done"] = not state["done"]
-        store.set_todo_done(todo["id"], state["done"])
-        at.run()
+        state["done"], state["n"] = not state["done"], state["n"] + 1
+        fragment_run.trigger(at, "home_todos", "ops",
+                             [{"opId": f"p{state['n']}", "kind": "toggle", "id": todo["id"], "done": state["done"]}])
     return at, act
 
 
-def habit_tick(page, prefix):
+def habit_tick(page, prefix, name=None):
+    """Tick / untick a habit (the first, or the one called `name`). The demo's Exercise is counted by a goal."""
     at = _fresh(page)
-    boxes = [c for c in at.checkbox if c.key and c.key.startswith(prefix)]
-    box = boxes[0]
-    state = {"v": box.value}
+    key = [c for c in at.checkbox if c.key and c.key.startswith(prefix) and name in (None, c.label)][0].key
+    state = {"v": at.checkbox(key=key).value}
 
     def act():
         state["v"] = not state["v"]
-        box.set_value(state["v"]).run()
+        fragment_run.click(at, at.checkbox(key=key).set_value(state["v"]))
     return at, act
 
 
 def focus_start(page="Home"):
-    """Start from Home's quick-focus button (a real widget). The timer is stopped (untimed) before each go."""
+    """Start from Home's quick-focus button. The timer is stopped (untimed) before each go."""
     from venato.blocks import focus
     at = _fresh(page)
 
@@ -126,32 +131,77 @@ def focus_start(page="Home"):
             at.run()
 
     def act():
-        at.button(key="home_focus_go").click().run()
+        fragment_run.click(at, at.button(key="home_focus_go").click())
     return at, act, prep
 
 
 def focus_stop(page="Home"):
-    """Stopping is a browser-component action AppTest can't send, so stop in the store (untimed start
-    first) and time the rerun that follows."""
+    """Stop Home's timer (its Stop button), after an untimed start."""
     from venato.blocks import focus
     at = _fresh(page)
 
     def prep():
         if not focus.running():
-            at.button(key="home_focus_go").click().run()
+            focus.start("Profile", 25, "focus")
+            at.run()
 
     def act():
-        focus.stop()
-        at.run()
+        fragment_run.trigger(at, "home_focus_timer", "action", {"name": "stop", "at": time.time()})
     return at, act, prep
+
+
+def review_period():
+    """Review: switch the period (Last 30 days / Last 7 days)."""
+    at = _fresh("Review")
+    state = {"i": 0}
+
+    def act():
+        state["i"] += 1
+        radio = next(r for r in at.radio if r.label == "Period")
+        fragment_run.click(at, radio.set_value(radio.options[state["i"] % 2]))
+    return at, act
+
+
+def log_pick_day():
+    """Daily Log: click a day on the month calendar."""
+    at = _fresh("Daily Log")
+    today = store.local_today()
+    state = {"i": 0}
+
+    def act():
+        state["i"] += 1
+        day = today.replace(day=1 + state["i"] % 2)
+        fragment_run.trigger(at, "log_calendar", "select", {"date": day.isoformat(), "nonce": state["i"]})
+    return at, act
+
+
+def timetable_move():
+    """Timetable: drag a block to another time and back (an op from the grid)."""
+    today = store.local_today()
+    day = (today + __import__("datetime").timedelta(days=1)).isoformat()     # tomorrow: its Plan is editable
+    store.paint(day, "plan", store.slot_of("09:00"), store.slot_of("10:00"),
+                {"label": "Profile", "category_id": "study"}, new_id="profile-move")
+    at = _fresh("Timetable")
+    state = {"i": 0}
+
+    def act():
+        state["i"] += 1
+        start, end = ("11:00", "12:00") if state["i"] % 2 else ("09:00", "10:00")
+        fragment_run.trigger(at, "timetable", "ops", [{"opId": f"m{state['i']}", "kind": "move", "id": "profile-move",
+                                                       "date": day, "track": "plan", "start": start, "end": end}])
+    return at, act
 
 
 INTERACTIONS = [
     ("Home: tick a to-do", lambda: todo_tick("Home")),
     ("Daily Log: tick a habit", lambda: habit_tick("Daily Log", "habit_")),
-    ("Home: tick a habit", lambda: habit_tick("Home", "home_habit_")),
+    ("Home: tick a habit (no goal)", lambda: habit_tick("Home", "home_habit_", "Meditate")),
+    ("Home: tick a habit a goal counts", lambda: habit_tick("Home", "home_habit_", "Exercise")),
     ("Focus: start (Home)", focus_start),
-    ("Focus: stop (rerun after)", focus_stop),
+    ("Focus: stop (Home)", focus_stop),
+    ("Review: change period", review_period),
+    ("Daily Log: pick a day", log_pick_day),
+    ("Timetable: move a block", timetable_move),
 ]
 NA = [
     ("Timetable: Plan / Actual switch", "n/a: the switch lives in the browser and never reruns Python"),
@@ -187,22 +237,27 @@ def main():
         print(f"\n{'interaction':<34}{'median_ms':>10}{'p90_ms':>10}")
         for name, build in INTERACTIONS:
             try:
-                at, act, *rest = build()
-                prep = rest[0] if rest else (lambda: None)
-                samples = []
-                for i in range(args.runs + 1):
-                    prep()
-                    ms = timed(act)
-                    if at.exception:
-                        raise RuntimeError(at.exception[0].value[:60])
-                    if i:
-                        samples.append(ms)
-                med, p90 = stats(samples)
+                with fragment_run.recording():
+                    med, p90 = time_interaction(build, args.runs)
                 print(f"{name:<34}{med:>10.0f}{p90:>10.0f}")
             except Exception as e:            # one failing interaction mustn't hide the rest
                 print(f"{name:<34}{'n/a':>10}  {type(e).__name__}: {e}")
         for name, why in NA:
             print(f"{name:<34}{'n/a':>10}  {why}")
+
+
+def time_interaction(build, runs):
+    at, act, *rest = build()
+    prep = rest[0] if rest else (lambda: None)
+    samples = []
+    for i in range(runs + 1):
+        prep()
+        ms = timed(act)
+        if at.exception:
+            raise RuntimeError(at.exception[0].value[:60])
+        if i:                                     # the first one is cold
+            samples.append(ms)
+    return stats(samples)
 
 
 def blocks_pages():

@@ -87,7 +87,7 @@ scripts/
   seed_demo.py                 Demo data folder (never touches real data)
   make_icon.py                 Builds assets/icon.png, Venato.icns and splash.png from assets/Logo.jpg
   install-hooks.sh             gitleaks pre-commit hook
-tests/                         pytest + AppTest; tests/fixtures/sample.ics is a fake calendar
+tests/                         pytest + AppTest; tests/fixtures/sample.ics is a fake calendar; tests/fragment_run.py runs interactions as the browser does (§8)
 ```
 
 ## 4. Data model (`store.py`)
@@ -125,6 +125,7 @@ Notes on the schema:
 - **Grid ↔ Python protocol:**
   - The component sends ops with an `opId`: `paint`, `upsert`, `delete`, `hide_outlook` and `detach_outlook`.
   - Python applies them in `timetable.apply_grid_op` and acknowledges them in `data.acked`. The JS replays unacknowledged ops on top of incoming data, so a slow rerun never makes the grid flicker.
+  - An op Python can't save (a started day's locked Plan, or an error while saving) is acknowledged too, with the reason in `data.rejected` (`{opId: why}`, session state `tt_rejected`). The JS drops it, so the grid shows what was saved (the block goes back), and shows the reason in a note over the grid (`.tt-error`) for a few seconds.
   - A paint carries the new block's id (`newId`), so both sides agree on it.
 - **Views:** `render_page` is the week (editable, with the Plan / Actual switch, §5f). `render_today` is Home's single day: view only, its Actual, with rows sized to fit the window (`fitToWindow`) and the key wrapped underneath. (The old `timetable_view` setting is gone; a leftover key in settings.json is ignored.)
 - **Clicking a block** grows it and opens a details card (title, time, category, location, description), with Edit and Delete/Remove buttons except on Home. A drag paints, and a click with the eraser erases.
@@ -236,6 +237,11 @@ Two different things:
 - **Marker placement:** the marker comes before the Outlook autosync, so the network never delays startup.
 - **Global CSS first:** `app.py` sends all global CSS as its first element (top padding, sidebar nav, no stale-element dimming, and hiding the marker's gap). Pages must not inject their own top padding.
 - **Toolbar:** `.streamlit/config.toml` sets `client.toolbarMode = "minimal"`, along with `server.address = 127.0.0.1`, XSRF protection and no usage statistics.
+
+- **Fragments:** busy widgets are `@st.fragment`s, so a click reruns just that widget: Home's to-dos (`todos.render_home`), habit ticks (`daily_log._home_habit_rows`, `_habit_ticks`), the Daily Log's day card (`_day_card`: calendar, card, habits, form), the Focus timer (`focus.render_home`, `_page_timer`), Review's charts (`stats._charts`) and weekly reviews (`review.history`).
+  - After saving, a fragment's callback calls `kit.rerun_app_if(changed)` with tags (`habit:<id>`, `todo:<id>`, `actual`, `undo`, `page`); it reruns the whole app only if something outside the fragment shows the change (a goal counting that habit, today's Actual, the Undo bar, the Focus page's totals). Call it last: `st.rerun` stops the callback. Add a tag (and a rule in `kit.app_depends_on`) when a new fragment's writes show elsewhere.
+  - A fragment can only draw into its own container, and its arguments are reused on its own reruns: read anything that changes (today, settings) inside it. A button inside a fragment that changes the page (`page`) needs an app rerun; keep such buttons outside (Home's habits "Manage").
+  - Tests: AppTest's `.run()` always reruns the whole app; `tests/fragment_run.py` runs an interaction as the browser does (just its fragment) and fires component triggers. `st.session_state["home_draws"]` counts full Home draws.
 
 ## 8b. Installers (`packaging/`, `.github/workflows/release.yml`)
 

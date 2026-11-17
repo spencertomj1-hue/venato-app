@@ -90,3 +90,38 @@ def test_page_renders(focus, store):
     focus.start("Essay", 25, "focus")
     at.run()
     assert not at.exception
+
+
+def test_focus_stop_updates_actual(focus, store, monkeypatch):
+    """Stopping Home's timer puts the session in today's Actual, and Home's timetable (outside the
+    focus fragment) shows it in the same run."""
+    from datetime import datetime, time as clock
+    import fragment_run
+    today = store.local_today()
+    at_ = lambda hh, mm: datetime.combine(today, clock(hh, mm), tzinfo=store.tz()).timestamp()
+    monkeypatch.setattr(focus, "_now", lambda: at_(10, 30))
+    focus.start("Essay", None, "track", category_id="study", now=at_(10, 0))
+    with fragment_run.recording():
+        at = AppTest.from_file(APP, default_timeout=60).run()
+        assert not at.exception
+        draws = at.session_state["home_draws"]
+        fragment_run.trigger(at, "home_focus_timer", "action", {"name": "stop", "at": 1})
+    assert not at.exception
+    assert focus.running() is None
+    blocks = store.blocks_between(today.isoformat(), today.isoformat(), "actual")
+    assert [(b["start"], b["end"], b["label"]) for b in blocks] == [("10:00", "10:30", "Essay")]
+    assert at.session_state["home_draws"] == draws + 1
+    grid = fragment_run.component_data(at, "timetable_today")
+    assert [(e["start"], e["label"]) for e in grid["entries"] if e["track"] == "actual"] == [("10:00", "Essay")]
+
+
+def test_focus_pause_reruns_fragment_only(focus, store):
+    focus.start("Essay", 25, "focus", category_id="study")
+    import fragment_run
+    with fragment_run.recording():
+        at = AppTest.from_file(APP, default_timeout=60).run()
+        draws = at.session_state["home_draws"]
+        fragment_run.trigger(at, "home_focus_timer", "action", {"name": "pause", "at": 1})
+    assert not at.exception
+    assert focus.running()["paused_at"]
+    assert at.session_state["home_draws"] == draws

@@ -1941,6 +1941,13 @@ def goals_open(day=None):
     return _goals_where("due >= ?", (_as_date(day or local_today()).isoformat(),))
 
 
+def habit_has_goal(habit_id, day=None):
+    """Does a goal not past its deadline count this habit's ticks? (Ticking it then moves that goal.)"""
+    with db() as conn:
+        return conn.execute("SELECT 1 FROM goals WHERE habit_id = ? AND due >= ? LIMIT 1",
+                            (habit_id, _as_date(day or local_today()).isoformat())).fetchone() is not None
+
+
 def goals_past(day=None):
     """Goals whose deadline was before `day` (default today), the latest deadline first."""
     return _goals_where("due < ?", (_as_date(day or local_today()).isoformat(),), order="due DESC, ord, created_at")

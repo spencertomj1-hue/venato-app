@@ -13,6 +13,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from venato import store
 from venato.cache import cached  # noqa: F401  (re-exported: kit.cached)
 from venato.ui import appearance
 
@@ -307,3 +308,35 @@ def html(markup):
     _css()
     st.html(markup)
 
+
+
+# --- Fragments ---
+# Busy widgets (to-dos, habit ticks, the focus timer...) are drawn by @st.fragment functions, so a click
+# reruns just that widget. After saving, the widget calls rerun_app_if(changed) with tags for what it
+# changed; the whole app reruns only if something drawn outside the fragment shows it.
+#   "habit:<id>"  a habit ticked: goals can count a habit's ticks (Home's goal bars, "Needs you")
+#   "todo:<id>"   a to-do changed: nothing outside the to-do list shows to-dos
+#   "actual"      the Actual timetable changed: Home's timetable, goal hours
+#   "undo"        an Undo point was saved: the Undo bar is drawn by the app
+#   "page"        the caller knows something else on its page shows it
+
+ALWAYS_APP = {"actual", "undo", "page"}
+
+
+def app_depends_on(changed):
+    """Does anything outside the fragment show what these tags say changed?"""
+    for tag in changed:
+        kind, _, ref = tag.partition(":")
+        if kind in ALWAYS_APP:
+            return True
+        if kind == "habit" and ref and store.habit_has_goal(int(ref)):
+            return True
+    return False
+
+
+def rerun_app_if(changed):
+    """Call after a fragment (or its widget's callback) saves: reruns the whole app if anything outside the
+    fragment depends on the change, else does nothing (only the fragment reruns). Call it last: st.rerun stops
+    the code that called it."""
+    if app_depends_on(changed):
+        st.rerun(scope="app")
