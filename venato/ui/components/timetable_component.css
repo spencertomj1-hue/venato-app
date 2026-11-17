@@ -416,18 +416,16 @@ th.day .dstate .confirm:hover { background: color-mix(in srgb, var(--accent) 12%
 
 /* ---------- The Plan as a blueprint; the Actual solid ---------- */
 
-/* Graph paper under any column showing the Plan. */
+/* A faint tint under any column showing the Plan. */
 td.s.bp { --tile: color-mix(in srgb, var(--bp) 7%, transparent); }
-td.s.bp::before { background-image: linear-gradient(to right, color-mix(in srgb, var(--bp) 13%, transparent) 1px, transparent 1px);
-                  background-size: 12px 100%; }
 td.s.bp.today { --tile: color-mix(in srgb, var(--bp) 10%, transparent); }
 td.s.bp:hover:not(.filled) { --tile: color-mix(in srgb, var(--bp) 16%, transparent); }
 td.s.bp.frozen { --tile: color-mix(in srgb, var(--bp) 5%, rgba(128, 128, 128, 0.06)); }
 th.day.bp::before { background: color-mix(in srgb, var(--bp) 11%, var(--head-bg)); }
 
-/* Plan blocks: a pale fill and a solid outline in the category colour. */
-.blk.plan { background: color-mix(in srgb, var(--fill) 18%, var(--bg)); border: 1.5px solid var(--fill); color: var(--text); }
-.blk.plan.frozen { background: color-mix(in srgb, var(--fill) 11%, var(--bg)); border-color: color-mix(in srgb, var(--fill) 70%, var(--bg)); }
+/* Plan blocks: an outline in the category colour, filled with a lighter version of it. */
+.blk.plan { background: color-mix(in srgb, var(--fill) 38%, var(--bg)); border: 1.5px solid var(--fill); color: var(--text); }
+.blk.plan.frozen { background: color-mix(in srgb, var(--fill) 30%, var(--bg)); border-color: var(--fill); }
 .blk.plan span { opacity: 0.75; }
 
 /* Actual view: the Plan behind a day that went differently, as a faint outline. */
