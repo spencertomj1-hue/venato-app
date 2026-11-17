@@ -416,4 +416,4 @@ def _home():
 BLOCK = Block("food", "Food", ":material/restaurant:",
               "A food diary with calories and macros against your targets, and a weekly meal planner.",
               group="Food", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=34)
+              quick=[_quick], schema=SCHEMA, order=110)
