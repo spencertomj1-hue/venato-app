@@ -419,4 +419,4 @@ def _home():
 BLOCK = Block("recipes", "Recipes", ":material/menu_book:",
               "Your recipes, scaled to any number of servings, and a shopping list by aisle (filled from your meal plan).",
               group="Food", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=35, page_name="Food")
+              quick=[_quick], schema=SCHEMA, order=111, page_name="Food")

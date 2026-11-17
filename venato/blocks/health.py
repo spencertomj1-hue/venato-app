@@ -466,4 +466,4 @@ def _home():
 BLOCK = Block("health", "Health data", ":material/monitor_heart:",
               "Import Apple Health, Google Fit, Strava and Whoop exports: steps, sleep, heart rate, recovery, workouts.",
               group="Connections", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              schema=SCHEMA, order=85)
+              schema=SCHEMA, order=130)

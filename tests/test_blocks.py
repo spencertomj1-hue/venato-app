@@ -1,6 +1,7 @@
 """Blocks: finding them, switching them on and off, their order, and what they bring."""
 
 import importlib
+import json
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
@@ -28,6 +29,13 @@ def test_switch_order_and_pages(store):
     assert b.chosen_keys() == ["goals", "focus", "grades", "stats", "timetable", "money"]   # core first if left out
     assert list(b.pages()) == ["Timetable", "Goals", "Focus", "Grades", "Review", "Money"]   # the sidebar keeps its own order
     assert b.is_on("stats") and not b.is_on("workouts")
+
+
+def test_leftover_blocks_come_after_optional(store):
+    b = _blocks()
+    b.save(["health", "food", "workouts", "money", "log"])
+    assert list(b.pages()) == ["Timetable", "Goals", "Focus", "Grades", "Review", "Daily Log", "Money", "Workouts",
+                               "Food", "Health data"]
 
 
 def test_app_follows_the_choice(store):
@@ -79,7 +87,7 @@ def test_existing_install_keeps_log(store):
     b = _blocks()
     settings = store.load_settings()
     settings.pop("blocks", None)
-    (store.DATA_DIR / "settings.json").write_text(__import__("json").dumps(settings))
+    (store.DATA_DIR / "settings.json").write_text(json.dumps(settings))
     assert b.is_on("log") and all(k in b.chosen_keys() for k in CORE)
     assert not b.is_on("money") and not b.is_on("workouts")
 

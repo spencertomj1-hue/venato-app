@@ -406,4 +406,4 @@ def _home():
 BLOCK = Block("cutdown", "Cut down", ":material/smoke_free:",
               "Track caffeine, alcohol, smoking, screen time (or anything) against limits, or quit, with streaks.",
               group="Health & body", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=33)
+              quick=[_quick], schema=SCHEMA, order=100)

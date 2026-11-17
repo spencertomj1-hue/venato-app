@@ -500,4 +500,4 @@ def _home():
 BLOCK = Block("involvement", "Involvement", ":material/diversity_3:",
               "Societies, clubs, faith, volunteering and charities: your roles, goals, hours, donations and events.",
               group="People & life", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=75)
+              quick=[_quick], schema=SCHEMA, order=120)
