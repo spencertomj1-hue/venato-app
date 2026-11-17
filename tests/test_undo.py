@@ -1,6 +1,7 @@
 """Undo: a snapshot before deletes / overwrites, restored by Undo while nothing else has changed."""
 
 import importlib
+from datetime import datetime
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
@@ -48,7 +49,8 @@ def test_undo_bar_on_the_page(store):
     assert not any("Deleted the goal" in m.value for m in at.markdown)
 
 
-def test_grid_ops_checkpoint(store):
+def test_grid_ops_checkpoint(store, monkeypatch):
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 1, 8, 0))   # before those days: Plans not locked
     from venato import tools, undo
     importlib.reload(tools)
     from venato.ui import timetable
@@ -63,7 +65,8 @@ def test_grid_ops_checkpoint(store):
     assert [b["label"] for b in store.blocks_between("2026-10-29", "2026-10-29")] == ["Lecture", "Gym"]
 
 
-def test_grid_move_and_resize(store):
+def test_grid_move_and_resize(store, monkeypatch):
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 1, 8, 0))   # before those days: Plans not locked
     from venato import tools, undo
     importlib.reload(tools)
     from venato.ui import timetable
@@ -85,7 +88,8 @@ def test_grid_move_and_resize(store):
     assert not [e for e in store.outlook_between("2026-10-29", "2026-10-29")]                 # no duplicate left behind
 
 
-def test_batch_ops_are_one_undo(store):
+def test_batch_ops_are_one_undo(store, monkeypatch):
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 1, 8, 0))   # before those days: Plans not locked
     from venato import tools, undo
     importlib.reload(tools)
     from venato.ui import timetable
@@ -105,7 +109,8 @@ def test_batch_ops_are_one_undo(store):
         [("2026-10-26", "10:00"), ("2026-10-27", "10:00")]               # one Undo puts both back
 
 
-def test_paste_is_quietly_undoable(store):
+def test_paste_is_quietly_undoable(store, monkeypatch):
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 1, 8, 0))   # before those days: Plans not locked
     from venato import undo
     from venato.ui import timetable
     timetable.apply_grid_op({"kind": "paint", "quiet": True, "label": "Pasted Gym", "date": "2026-10-29",

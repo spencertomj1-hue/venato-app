@@ -121,9 +121,12 @@ def test_pace_states(store, pace):
     assert p["state"] == "on_track" and p["week"]["covered"] == 12
     # planned earlier this week: assumed done until the day is confirmed...
     block(store, "2026-11-10", "09:00", "11:00", "Revision", "study")
+    store.paint("2026-11-10", "actual", store.slot_of("09:00"), store.slot_of("11:00"),
+                {"label": "Revision", "category_id": "study"})          # (as locking the day copies it)
     p = pace.goal_pace(store.get_goal(g["id"]), pace.Ctx(NOW))
     assert p["state"] == "on_track" and p["week"]["assumed"] == 2 and p["week"]["done"] == 0
     # ...confirmed with the Actual missing: slipping
+    store.paint("2026-11-10", "actual", store.slot_of("09:00"), store.slot_of("11:00"), None)   # it didn't happen
     store.mark_confirmed("2026-11-10")
     p = pace.goal_pace(store.get_goal(g["id"]), pace.Ctx(NOW))
     assert p["state"] == "slipping" and p["week"]["confirmed_days"] == 1
@@ -188,7 +191,9 @@ def test_follow_through_is_clamped(store, pace):
         block(store, date(2026, 11, 9) - timedelta(weeks=i), "09:00", "13:00", "Revision", "study")
     assert pace.follow_through(g, pace.Ctx(NOW)) is None             # unconfirmed days: nothing to go on
     for i in range(1, 4):
-        store.mark_confirmed(date(2026, 11, 9) - timedelta(weeks=i))
+        day = (date(2026, 11, 9) - timedelta(weeks=i)).isoformat()
+        store.paint(day, "actual", store.slot_of("09:00"), store.slot_of("13:00"), None)   # the locked copy: didn't happen
+        store.mark_confirmed(day)
     assert pace.follow_through(g, pace.Ctx(NOW)) == 0.3
 
 

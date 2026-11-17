@@ -88,11 +88,12 @@ def suggestions_for(first, ctx=None):
 
 
 def add_suggestion(date, start, end, block, new_id=None):
-    """One suggested sitting clicked in the grid: painted into the Plan only if those slots are still free."""
+    """One suggested sitting clicked in the grid: painted in only if those slots are still free (into the
+    Plan, or today's Actual once the day has started and its Plan is locked)."""
     s, e = store.slot_of(start), store.slot_of(end)
     if not any(a <= s and e <= b for a, b in store.free_runs(date, s, e)):
         return False                                  # something's there now: never overwrite it
-    store.paint(date, "plan", s, e, block, new_id=new_id)
+    store.paint(date, store.live_track(date), s, e, block, new_id=new_id)
     return True
 
 

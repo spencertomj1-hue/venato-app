@@ -25,13 +25,15 @@ def test_when_its_due(review, store):
     assert review.due_week(datetime(2026, 11, 1, 20)) == date(2026, 10, 25)  # Sun 25 - Sat 31 Oct
 
 
-def test_summary_numbers(review, store):
+def test_summary_numbers(review, store, monkeypatch):
     from venato import tools
     tools = importlib.reload(tools)
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 26, 12, 0))         # Monday: planning Tuesday
     tools.add_block("2026-10-27", "plan", "09:00", "11:00", "Revision", category="Study")
-    tools.add_block("2026-10-27", "actual", "09:00", "10:00", "Revision", category="Study")
-    # The day was materialised by the first correction, so this one overwrites "Revision as planned": confirm it.
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 27, 20, 0))         # Tuesday: Plan locked
+    # The Plan was copied into the Actual when the day started, so this overwrites "Revision": confirm it.
     tools.add_block("2026-10-27", "actual", "10:00", "11:00", "Scrolling", category="Distracted").pending.run()
+    store.confirm_day("2026-10-27")
     with store.db() as conn:
         store.save_entry(conn, "2026-10-27", 4, 7.0, 3, "Good day", 2.0)
         store.save_entry(conn, "2026-10-20", 2, 6.0, 2, None)    # the week before
@@ -71,9 +73,10 @@ def test_future_plans_dont_count(review, store, monkeypatch):
     from datetime import datetime
     from venato import tools
     tools = importlib.reload(tools)
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 26, 12, 0))
     tools.add_block("2026-10-27", "plan", "09:00", "10:00", "Revision", category="Study")
-    tools.add_block("2026-10-27", "actual", "09:00", "10:00", "Revision", category="Study")
     tools.add_block("2026-10-30", "plan", "09:00", "11:00", "Revision", category="Study")    # Friday: later on
     monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 28, 12, 0))         # it's Wednesday
+    store.confirm_day("2026-10-27")                                                          # it went as planned
     s = review.summary(date(2026, 10, 26))
     assert (s["planned_hours"], s["followed_pct"]) == (1.0, 100)

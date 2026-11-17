@@ -135,9 +135,10 @@ def test_ago(outlook):
     assert outlook.ago(None) == "never"
 
 
-def test_outlook_events_can_be_removed_and_adjusted(outlook, store):
+def test_outlook_events_can_be_removed_and_adjusted(outlook, store, monkeypatch):
     from venato import tools
     tools = importlib.reload(tools)
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 28, 12, 0))     # the day before: Plan not locked
     outlook.sync(TODAY, fetcher=lambda url: FIXTURE)
     listed = tools.query_blocks("2026-10-29", "2026-10-29").text
     acp_id = next(l for l in listed.splitlines() if "Tutorial" in l).split()[2].rstrip(":")

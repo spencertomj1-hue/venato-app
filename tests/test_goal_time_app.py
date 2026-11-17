@@ -125,7 +125,7 @@ def test_suggested_sittings_are_free_time_from_now_on(store, monkeypatch):
           "block": {"label": x["label"], "categoryId": x["categoryId"]}, "newId": "s1"}
     timetable.apply_grid_op(op)
     timetable.apply_grid_op({**op, "newId": "s2", "block": {"label": "Other", "categoryId": "work"}})
-    got = [b for b in store.blocks_between(x["date"], x["date"], "plan") if b["start"] == x["start"]]
+    got = [b for b in store.blocks_between(x["date"], x["date"], store.live_track(x["date"])) if b["start"] == x["start"]]
     assert [(b["id"], b["label"]) for b in got] == [("s1", "Revision")]
     # "Add all to Plan" (plan_goals) adds the same sittings that are left.
     left = goal_time.suggestions_for(store.week_start_of(now.date()), pace.Ctx(now))
