@@ -1098,8 +1098,6 @@ class Timetable {
     this.syncResizePreview();
     this.selected.forEach((td) => td.classList.remove("sel", "box"));
     this.selected = [];
-    // Fade the blocks while dragging so the selection shows through.
-    this.wrapEl.classList.toggle("dragging", !!this.drag || !!this.blockDrag || !!this.groupDrag);
     if (this.marquee) {
       const m = this.marquee, c0 = col(m.di0), c1 = col(m.di1);
       for (let c = Math.min(c0, c1); c <= Math.max(c0, c1); c++)

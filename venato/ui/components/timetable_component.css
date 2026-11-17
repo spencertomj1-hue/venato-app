@@ -254,7 +254,6 @@ td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
 .blk b { font-size: 0.7rem; font-weight: 600; }
 .blk span { font-size: 0.62rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
 .blk:not(.tall) { justify-content: center; padding-top: 0; padding-bottom: 0; }
-.dragging .blk { opacity: 0.35; }
 /* Hovering a block (editable grid): a ring, and grab bars at the top and bottom edges for resizing. */
 .blk.hover::before, .blk.hover::after {      /* resize bars, on the very edge (next to the selection ring) */
   content: ""; position: absolute; left: 50%; width: 22px; height: 3px; margin-left: -11px;
@@ -266,7 +265,6 @@ td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
 .blk.hover, .blk.picked { box-shadow: 0 0 0 1px var(--bg), 0 0 0 2px var(--sel); z-index: 2; }   /* hovered = selected: a thin red ring */
 .blk.frozen.hover::before, .blk.frozen.hover::after { display: none; }    /* a locked Plan: no resizing */
 .tt-root:not(.readonly) td.s.frozen:hover:not(.filled) { --tile: rgba(128, 128, 128, 0.075); }
-.dragging .blk.picked { opacity: 0.55; }
 td.s.sel.box { --tile: color-mix(in srgb, var(--accent) 16%, transparent); }
 
 /* ---------- Right-click editor ---------- */

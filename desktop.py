@@ -28,6 +28,15 @@ ICON = APP_DIR / "assets" / "icon.png"   # built by scripts/make_icon.py
 SPLASH_LOGO = APP_DIR / "assets" / "splash.png"   # also built by scripts/make_icon.py
 SPLASH_SECONDS = 2.0                     # minimum time the loading screen shows
 READY_TIMEOUT = 45                       # give up waiting for the page after this (it shows anyway)
+SETTLE_SECONDS = 0.8                     # the page must hold still this long before the splash lifts
+# A fingerprint of the page: while it changes (components still mounting, text still reflowing) it isn't settled.
+SETTLED_JS = """(() => {
+  if (!document.getElementById('venato-ready') || !document.fonts || document.fonts.status !== 'loaded') return '';
+  const b = document.body;
+  return [b.scrollHeight, b.getBoundingClientRect().width, document.querySelectorAll('*').length,
+          document.querySelectorAll('[data-stale="true"]').length, document.querySelectorAll('.blk').length,
+          document.querySelectorAll('.tt-root').length].join(',');
+})()"""
 
 
 def _data_dir():
@@ -191,28 +200,35 @@ def main():
         except RuntimeError:
             return show_error(splash)
 
+        # Maximised from the start (not after it shows), so the page lays out once, at its final size.
         app = webview.create_window(
-            "Venato", f"http://127.0.0.1:{port}", width=1200, height=850,
+            "Venato", f"http://127.0.0.1:{port}", width=1200, height=850, maximized=True,
             hidden=True, background_color=_window_colour(),
         )
         app.events.closed += stop_server
         state["app"] = app
 
+        # Wait until the page has drawn everything and stopped moving (its ready marker is in, the
+        # fonts are loaded, and its layout has been the same for a moment), then fade the splash.
         deadline = time.time() + READY_TIMEOUT
+        last, still_since = None, time.time()
         while time.time() < deadline:
             try:
-                if app.evaluate_js("!!document.getElementById('venato-ready')"):
+                ready = app.evaluate_js(SETTLED_JS)
+                if ready and ready != last:
+                    last, still_since = ready, time.time()
+                if ready and time.time() - still_since >= SETTLE_SECONDS:
                     break
+                if not ready:
+                    last, still_since = None, time.time()
             except Exception:
                 pass            # page not loaded yet
-            time.sleep(0.15)
-        time.sleep(0.3)         # let the last components finish painting
+            time.sleep(0.1)
 
         time.sleep(max(0.0, SPLASH_SECONDS - (time.time() - shown_at)))
         splash.evaluate_js("document.body.classList.add('out')")    # fade the splash
-        time.sleep(0.35)
+        time.sleep(0.45)
         app.show()
-        app.maximize()          # the timetable's week view wants the room
         state["swapped"] = True
         splash.destroy()
 
