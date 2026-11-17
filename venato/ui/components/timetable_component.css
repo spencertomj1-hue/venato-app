@@ -486,3 +486,17 @@ th.day .dstate .ptag { color: var(--bp); font-weight: 700; font-size: 0.66rem; l
 .tt-help-key .k-miss { border: 1px dashed rgba(0, 176, 80, 0.55);
   background: repeating-linear-gradient(135deg, rgba(0, 176, 80, 0.22) 0 3px, transparent 3px 7px); }
 .tt-help-key .k-plan { border: 1.5px solid #00b050; background: color-mix(in srgb, #00b050 18%, var(--bg)); }
+
+/* Resizing a block: a preview of it at its new length, in its own colour, with its new times. */
+.tt-preview {
+  position: absolute; box-sizing: border-box; pointer-events: none; z-index: 4;
+  display: flex; flex-direction: column; justify-content: center; padding: 2px 6px; overflow: hidden;
+  border-radius: var(--tile-radius); line-height: 1.2; color: var(--text);
+  background: color-mix(in srgb, var(--fill) 45%, var(--bg));
+  border: 2px solid var(--fill);
+  box-shadow: 0 0 0 1px var(--bg), 0 4px 14px rgba(0, 0, 0, 0.18);
+  transition: top 0.06s linear, height 0.06s linear;
+}
+.tt-preview b, .tt-preview span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-preview b { font-size: 0.7rem; font-weight: 600; }
+.tt-preview span { font-size: 0.62rem; opacity: 0.8; font-variant-numeric: tabular-nums; }

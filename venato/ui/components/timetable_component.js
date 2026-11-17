@@ -857,6 +857,7 @@ class Timetable {
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
       .join("");
+    this.syncResizePreview();              // keep the preview on its cells if the grid moved
   }
 
   // ---------- Brush ----------
@@ -1088,6 +1089,7 @@ class Timetable {
   }
 
   highlight() {
+    this.syncResizePreview();
     this.selected.forEach((td) => td.classList.remove("sel", "box"));
     this.selected = [];
     // Fade the blocks while dragging so the selection shows through.
@@ -1308,6 +1310,29 @@ class Timetable {
     const t = bd.target;
     bd.moved = t.di !== bd.di || t.track !== bd.track || t.s !== bd.s0 || t.e !== bd.e0;
     this.highlight();
+  }
+
+  // Resizing a block: a preview of it at its new length (its colour, its new times) over the grid,
+  // so you can see where the edge is going before you let go. Gone when the drag ends.
+  syncResizePreview() {
+    const bd = this.blockDrag;
+    const el = this.wrapEl && this.wrapEl.querySelector(".tt-preview");
+    if (!bd || bd.zone === "move" || !bd.moved || !this.wrapEl) { if (el) el.remove(); return; }
+    const { di, track, s, e } = bd.target;
+    const item = bd.hit.outlook ? bd.hit.ev : bd.hit.entry;
+    const cat = this.cats.get(item.categoryId);
+    let box = el;
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "tt-preview";
+      box.setAttribute("aria-hidden", "true");
+      this.wrapEl.appendChild(box);
+    }
+    const origin = this.wrapEl.getBoundingClientRect();
+    const a = this.cells[di][track][s], b = this.cells[di][track][e - 1];
+    box.style.cssText = this.boxStyle(a, b, origin) + `--fill:${esc((cat && cat.colour) || "#9e9e9e")};`;
+    box.innerHTML = `<b>${esc(bd.hit.outlook ? item.title : item.label)}</b>` +
+      `<span>${esc(fmtRange(slotTime(s), slotTime(e)))}</span>`;
   }
 
   endBlockDrag() {
