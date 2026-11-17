@@ -140,30 +140,24 @@ def _goal_form(key, goal=None):
     return values
 
 
-EARLIER_UNITS = {"weeks": 7, "months": None, "days": 1}
-
-
 def _earlier(key, values, goal=None):
-    """Folded away under the form: progress made before today. "Count from N weeks / months / days ago"
+    """Folded away under the form: progress made before today. "Count from" (a day you pick)
     moves the goal's start back (a habit's ticks or timetable hours from then count by themselves);
     a goal kept by hand also takes how much was done in that time. Returns (new start or None, amount)."""
     today = store.local_today()
     since = date.fromisoformat(goal["period_start"]) if goal else today
+    picked = st.session_state.get(f"{key}_since")
     with st.expander("Already made progress?", icon=":material/history:",
-                     expanded=bool(st.session_state.get(f"{key}_ago_n"))):          # (stays open once filled in)
-        if goal:
-            st.caption(f"Counting from {store._short(since, since.year != today.year)}.")
-        a, b = st.columns([1, 1.4])
-        n = a.number_input("Count from", min_value=0, step=1, value=0, key=f"{key}_ago_n",
-                           help="Move the goal's start back so what you did then counts")
-        unit = b.selectbox("ago", list(EARLIER_UNITS), key=f"{key}_ago_unit")
-        if not n:
+                     expanded=picked is not None and picked != since):          # (stays open once changed)
+        start = st.date_input("Count from", value=since, max_value=max(since, today), key=f"{key}_since",
+                              format=regional.input_format(),
+                              help="Move the goal's start back so what you did since then counts")
+        if not start or start == since:
             return None, 0.0
-        start = _months_on(today, -n) if unit == "months" else today - timedelta(days=n * EARLIER_UNITS[unit])
         auto = store.counted_between(start, today, values["habit_id"], values["category_id"], values["label"])
         if auto is not None:
             what = f"{_num(auto)} {values['unit'] or ''}".strip()
-            st.caption(f"From {store._short(start, start.year != today.year)}: {what} so far, counted automatically.")
+            st.caption(f"Since {regional.short_date(start, today)}: {what} so far, counted automatically.")
             return start, 0.0
         done = st.number_input("Done in that time", min_value=0.0, step=1.0, value=0.0, format="%g",
                                key=f"{key}_ago_done")
@@ -215,7 +209,7 @@ def _edit_goal(g, ids=None):
             first = start or date.fromisoformat(g["period_start"])
             values["due"] = max(values["due"], first)                     # (never before the day it counts from)
             store.update_goal(g["id"], **values, **({"start": start} if start else {}))
-            for k in ("due", "ago_n", "ago_done"):
+            for k in ("due", "since", "ago_done"):
                 st.session_state.pop(f"{key}_{k}", None)
             if g["kind"] == "count" and values["habit_id"] is None and values["category_id"] is None:
                 store.set_goal_progress(g["id"], progress + earlier)
@@ -278,7 +272,7 @@ def due_line(g, today=None):
     left = (due - today).days
     when = store.goal_title_due(due, today)
     if start > today:
-        return f"from {store._short(start, start.year != today.year)}, {when}"
+        return f"from {regional.short_date(start, today)}, {when}"
     if left < 0:
         return f"{when} · ended"
     return f"{when} · " + ("due today" if left == 0 else "1 day left" if left == 1 else f"{left} days left")

@@ -108,3 +108,12 @@ def test_home_habits_tick_today(store):
     assert date.today().isoformat() in store.get_habit_dates(hid)
     at.button(key="home_habits_manage").click().run()
     assert at.sidebar.radio[0].value == "Daily Log"
+
+
+def test_deadlines_read_as_numbers(store):
+    from datetime import date
+    from venato import regional
+    today = date(2026, 11, 17)
+    assert regional.short_date(date(2026, 12, 31), today) == "31/12"
+    assert regional.short_date(date(2027, 1, 4), today) == "04/01/27"
+    assert store.goal_title_due("2027-01-04", today) == "by 04/01/27"

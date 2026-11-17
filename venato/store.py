@@ -1904,9 +1904,10 @@ def _period_for(start, due):
 
 
 def goal_title_due(due, today=None):
-    """A deadline for people: "by 31 Dec", "by 4 Jan 2028" (the year when it isn't this one)."""
-    due, today = _as_date(due), today or local_today()
-    return f"by {_short(due, year=due.year != today.year)}"
+    """A deadline for people, in numbers: "by 31/12", "by 04/01/28" (the year when it isn't this one;
+    order as set in Settings → Region)."""
+    from venato import regional
+    return f"by {regional.short_date(due, today)}"
 
 
 def _num(x):

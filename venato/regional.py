@@ -98,6 +98,15 @@ def numeric_date(d, year=True):
     return f"{a:02d}/{b:02d}" + (f"/{d.year}" if year else "")
 
 
+def short_date(d, today=None):
+    """A date in numbers only, the year (two digits) only when it isn't this year: "31/12", "31/12/27"
+    (or "12/31", "12/31/27"; "12-31", "2027-12-31")."""
+    d, today = store._as_date(d), store._as_date(today or store.local_today())
+    if date_format() == "YYYY-MM-DD":
+        return numeric_date(d, year=d.year != today.year)
+    return numeric_date(d, year=False) + (f"/{d.year % 100:02d}" if d.year != today.year else "")
+
+
 def input_format():
     """The `format` for st.date_input."""
     return date_format()
