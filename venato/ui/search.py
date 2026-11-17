@@ -17,10 +17,19 @@ ICONS = {"To-do": "check_circle", "Goal": "flag", "Deadline": "event", "Applicat
          "Met": "forum", "Review": "insights"}
 
 
+def _icon(kind):
+    from venato import blocks
+    return ICONS.get(kind) or next((b.search_icons[kind] for b in blocks.enabled() if kind in b.search_icons), "search")
+
+
 def _open(r):
     """Go to where a result lives."""
     kind, ss = r["kind"], st.session_state
-    if kind in ("Goal", "Deadline"):
+    from venato import blocks
+    owner = blocks.search_block(kind)
+    if owner and owner.search_open:
+        owner.search_open(r, ss)
+    elif kind in ("Goal", "Deadline"):
         ss["page"] = "Goals"
         if kind == "Goal":
             ss[f"goals_start_{r['extra']}"] = store._as_date(r["date"])
@@ -95,7 +104,7 @@ def render_home():
         left.html(
             f'<div style="font-size:0.88rem;line-height:1.35">'
             f'<span aria-hidden="true" style="font-family:\'Material Symbols Rounded\';font-size:1rem;vertical-align:-3px;opacity:.8">'
-            f'{ICONS.get(r["kind"], "search")}</span> '
+            f'{_icon(r["kind"])}</span> '
             f'<span style="opacity:.8">{escape(r["kind"])}{" · " + escape(_when(r)) if _when(r) else ""}'
             f'{" · " + escape(detail) if detail and r["kind"] in ("Met", "Review") else ""}</span><br>'
             f'{_snippet(text, words)}'

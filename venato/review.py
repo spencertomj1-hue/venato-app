@@ -9,7 +9,7 @@ Sunday, that's the week that ended the day before. No Streamlit here.
 
 from datetime import timedelta
 
-from venato import store
+from venato import blocks, store
 
 REVIEW_WEEKDAY = 6          # Sunday
 REVIEW_HOUR = 19            # 7pm
@@ -131,6 +131,7 @@ def summary(first):
                       "upcoming": upcoming},
         "journal": journal, "people": people, "goals": goals,
         "review": store.get_review(first),
+        "sections": blocks.review_sections(first, last),
     }
 
 
@@ -160,6 +161,8 @@ def as_text(s):
         lines.append("Saw: " + "; ".join(f"{p['person']} ({p['note']})" for p in s["people"]))
     if s["journal"]:
         lines.append(f"Journal entries: {len(s['journal'])}")
+    for sec in s.get("sections", []):
+        lines.append(f"{sec['title']}: " + "; ".join(sec["lines"]))
     r = s["review"]
     if r.get("went_well") or r.get("to_change"):
         lines.append(f"Their reflections: went well: {r.get('went_well') or '-'}; to change: {r.get('to_change') or '-'}")
