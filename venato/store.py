@@ -212,7 +212,8 @@ def init_db():
                 week_start TEXT PRIMARY KEY,               -- YYYY-MM-DD
                 seen_at    TEXT,
                 went_well  TEXT,
-                to_change  TEXT
+                to_change  TEXT,
+                kept       TEXT                       -- last week's "to change": yes / partly / no
             );
 
             -- Deadlines: something due on a date (an assignment, an application, a bill)
@@ -242,6 +243,7 @@ def init_db():
         # Goals that count timetable hours: Actual time in a category (and optionally one activity label).
         _add_column(conn, "goals", "category_id", "TEXT REFERENCES tt_categories(id) ON DELETE SET NULL")
         _add_column(conn, "goals", "label", "TEXT")
+        _add_column(conn, "weekly_reviews", "kept", "TEXT")       # did they do last week's "to change"? yes/partly/no
         _goals_get_deadlines(conn)
         conn.executescript(
             """
@@ -2185,33 +2187,37 @@ def save_goals(df, replace=False):
 
 # --- Weekly reviews ---
 
+_REVIEW_COLS = ("week_start", "seen_at", "went_well", "to_change", "kept")
+
+
 def get_review(week_start):
     """The saved review row for a week ({} if none)."""
     with db() as conn:
-        row = conn.execute("SELECT week_start, seen_at, went_well, to_change FROM weekly_reviews WHERE week_start = ?",
+        row = conn.execute(f"SELECT {', '.join(_REVIEW_COLS)} FROM weekly_reviews WHERE week_start = ?",
                            (_as_date(week_start).isoformat(),)).fetchone()
-    return dict(zip(("week_start", "seen_at", "went_well", "to_change"), row)) if row else {}
+    return dict(zip(_REVIEW_COLS, row)) if row else {}
 
 
-def save_review(week_start, went_well=KEEP, to_change=KEEP, seen=False):
-    """Create or update a week's review: mark it seen and/or save the reflections."""
+def save_review(week_start, went_well=KEEP, to_change=KEEP, kept=KEEP, seen=False):
+    """Create or update a week's review: mark it seen and/or save the reflections.
+    kept: did they do what they said they'd change the week before ('yes' / 'partly' / 'no' / None)."""
     week = _as_date(week_start).isoformat()
     with db() as conn:
         conn.execute("INSERT OR IGNORE INTO weekly_reviews (week_start) VALUES (?)", (week,))
         if seen:
             conn.execute("UPDATE weekly_reviews SET seen_at = COALESCE(seen_at, ?) WHERE week_start = ?", (stamp(), week))
-        for col, value in (("went_well", went_well), ("to_change", to_change)):
+        for col, value in (("went_well", went_well), ("to_change", to_change), ("kept", kept)):
             if value is not KEEP:
                 conn.execute(f"UPDATE weekly_reviews SET {col} = ? WHERE week_start = ?",
                              ((value or "").strip() or None, week))
 
 
 def reviews():
-    """Weeks that have a review, newest first: [{week_start, seen_at, went_well, to_change}]."""
+    """Weeks that have a review, newest first: [{week_start, seen_at, went_well, to_change, kept}]."""
     with db() as conn:
-        rows = conn.execute("SELECT week_start, seen_at, went_well, to_change FROM weekly_reviews "
+        rows = conn.execute(f"SELECT {', '.join(_REVIEW_COLS)} FROM weekly_reviews "
                             "ORDER BY week_start DESC").fetchall()
-    return [dict(zip(("week_start", "seen_at", "went_well", "to_change"), r)) for r in rows]
+    return [dict(zip(_REVIEW_COLS, r)) for r in rows]
 
 
 # ---------------------------------------------------------------------------

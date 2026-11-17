@@ -6,6 +6,7 @@ The numbers come from venato/review.py.
 
 from datetime import timedelta
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -26,25 +27,125 @@ def _delta(now, before, unit="", fmt="{:g}"):
     return fmt.format(now) + unit, (None if before is None else round(now - before, 1))
 
 
+POPUP = "review_popup"
+KEPT = {"yes": "Yes", "partly": "Partly", "no": "No"}
+
+
+def _save_kept(first, key):
+    pick = st.session_state.get(key)
+    store.save_review(first, kept=next((k for k, v in KEPT.items() if v == pick), None))
+
+
+def _whole_app(key):
+    """After a callback that changes something outside the review (the chat, the timetable, the page):
+    on Review the review is a fragment, so rerun the whole app (the pop-up's rerun already is)."""
+    if key != POPUP:
+        st.rerun(scope="app")
+
+
+def _ask_claude(s, key):
+    from venato.ui import chat
+    chat.ask(f"Review my week of {_week_title(s['first'])} (weekly_review with date {s['first'].isoformat()}). "
+             "Give me an honest verdict in a few lines: what went well, what slipped and why, "
+             "and one concrete thing to change next week.")
+    _whole_app(key)
+
+
+def _confirm_days(days, key):
+    for d in days:
+        store.confirm_day(d)
+    st.toast(f"Confirmed {len(days)} day{'s' if len(days) != 1 else ''}", icon=":material/task_alt:")
+    _whole_app(key)
+
+
+def _open_day(day, key):
+    from venato.ui import timetable
+    timetable._review(store._as_date(day))
+    _whole_app(key)
+
+
+def _promise(s, key):
+    """Last week's "what will you do differently?", and did they."""
+    with st.container(border=True):
+        st.markdown(f":material/flag: **Last week you said:** {s['promise']}")
+        kept = s["review"].get("kept")
+        k = f"{key}_kept"
+        st.segmented_control("Did you?", list(KEPT.values()), default=KEPT.get(kept), key=k,
+                             on_change=_save_kept, args=(s["first"], k))
+
+
+def _unconfirmed(s, key):
+    days = s["unconfirmed"]
+    n = len(days)
+    with st.container(border=True):
+        names = ", ".join(regional.day_month(store._as_date(d)) for d in days)
+        st.markdown(f":orange[:material/warning:] **{n} day{'s' if n != 1 else ''} not confirmed** ({names}): "
+                    "their time isn't counted above.")
+        row = st.container(horizontal=True, gap="small")
+        row.button("Confirm as is", key=f"{key}_confirm", type="primary", icon=":material/task_alt:",
+                   on_click=_confirm_days, args=(days, key), help="Their Actual on the Timetable is what you did")
+        row.button("Check on the Timetable", key=f"{key}_open", icon=":material/edit_calendar:",
+                   on_click=_open_day, args=(days[0], key), help=f"Open {regional.day_month(store._as_date(days[0]))}")
+
+
+def _trends(first, key):
+    rows = review.trend(first)
+    if sum(r["followed_pct"] is not None or r["actual_hours"] > 0 for r in rows) < 2:
+        return                                    # nothing to draw a line through yet
+    df = pd.DataFrame(rows)
+    df["Week"] = df["week"].map(lambda w: regional.day_month(w, weekday=False))
+    charts = [("Plan followed (%)", "followed_pct"), ("Hours logged", "actual_hours")]
+    if blocks.is_on("log"):
+        charts += [("Avg mood", "mood"), ("Avg sleep (h)", "sleep")]
+    charts = [(t, c) for t, c in charts if df[c].notna().sum() >= 2]
+    if not charts:
+        return
+    with st.expander(f"Last {len(rows)} weeks", icon=":material/show_chart:"):
+        cols = st.columns(len(charts))
+        for col, (title, c) in zip(cols, charts):
+            with col:
+                d = df[["Week", c]].dropna().rename(columns={c: title})
+                kit.show(kit.line_chart(d, "Week", title, height=120, title=title,
+                                        x_axis=alt.Axis(labels=False, title=None)), key=f"{key}_trend_{c}")
+
+
 def render(first, key):
     """The review of the week starting `first`. `key` keeps widget keys apart (dialog vs Stats)."""
     s = review.summary(first)
     if not s["complete"]:
         st.caption("This week isn't over yet: these are the numbers so far.")
 
-    # --- The headline numbers ---
+    # --- The verdict, and last week's promise ---
+    head = st.container(horizontal=True, vertical_alignment="center", gap="small")
+    head.markdown(f"**{s['headline']}**", width="stretch")
+    if store.ai_enabled():
+        head.button("Ask Claude", key=f"{key}_ask", icon=":material/auto_awesome:", on_click=_ask_claude, args=(s, key),
+                    help="Claude reads this week's numbers and gives you its take in the chat")
+    if s["unconfirmed"]:
+        _unconfirmed(s, key)
+    if s["promise"]:
+        _promise(s, key)
+
+    # --- The headline numbers, with the change from the week before ---
     log_on = blocks.is_on("log")                 # habits, mood and the journal are Daily Log's
     habits_hit = sum(h["hit"] for h in s["habits"])
-    t = s["todos"]
+    t, b4 = s["todos"], s["before"]
     a, b, *rest = st.columns(4 if log_on else 3)
     habits_col, todos_col = (rest[0], rest[1]) if log_on else (None, rest[0])
-    a.metric("Plan followed", f"{s['followed_pct']}%" if s["followed_pct"] is not None else "–",
-             help="The share of your planned time where you did what you planned (same category).")
-    b.metric("Hours logged", f"{s['actual_hours']:g} h", help=f"{s['planned_hours']:g} h were planned.")
+    pct = s["followed_pct"]
+    a.metric("Plan followed", f"{pct}%" if pct is not None else "–",
+             delta=None if pct is None or b4["followed_pct"] is None else f"{pct - b4['followed_pct']:+d} pts",
+             help="The share of your planned time where you did what you planned (same category). "
+                  "Change from the week before.")
+    b.metric("Hours logged", f"{s['actual_hours']:g} h",
+             delta=None if not b4["actual_hours"] or not s["complete"] else f"{s['actual_hours'] - b4['actual_hours']:+g} h",
+             delta_color="off", help=f"{s['planned_hours']:g} h were planned. Change from the week before.")
     if log_on:
         habits_col.metric("Habits on target", f"{habits_hit}/{len(s['habits'])}" if s["habits"] else "–")
-    todos_col.metric("To-dos done", f"{t['weekly_done'] + t['daily_done']}/{t['weekly'] + t['daily']}"
-                     if t["weekly"] + t["daily"] else "–")
+    done, total = t["weekly_done"] + t["daily_done"], t["weekly"] + t["daily"]
+    todos_col.metric("To-dos done", f"{done}/{total}" if total else "–",
+                     delta=None if not total or not b4["todos"] or not s["complete"] else f"{done - b4['todos_done']:+d}",
+                     help="Change in to-dos done from the week before.")
     if log_on:
         log = s["log"]
         a, b, c, p, d = st.columns(5)
@@ -69,6 +170,11 @@ def render(first, key):
         kit.show(kit.bar_chart(pd.DataFrame(rows), "Category", "Hours", color="Track", title="Time: planned vs done",
                                labels=".1f", palette={"Planned": kit.muted(), "Done": regional_accent()}),
                  key=f"{key}_time")
+        short = review.gaps(s["time"])
+        if short:
+            st.caption("Biggest gaps: " + "; ".join(
+                f"planned {g['plan']:g} h of {g['category']}, did {g['actual']:g} h" for g in short) + ".")
+    _trends(s["first"], key)
 
     left, right = st.columns(2)
     with left:
@@ -111,7 +217,7 @@ def render(first, key):
         went = st.text_area("What went well?", saved.get("went_well") or "", height=90)
         change = st.text_area("What will you do differently next week?", saved.get("to_change") or "", height=90)
         if st.form_submit_button("Save", type="primary", icon=":material/save:"):
-            store.save_review(first, went_well=went, to_change=change)
+            store.save_review(first, went_well=went, to_change=change, seen=True)
             st.toast("Saved", icon=":material/check_circle:")
 
 
@@ -123,17 +229,21 @@ def regional_accent():
 @st.dialog("Your week", width="large")
 def _dialog(first):
     st.subheader(_week_title(first), anchor=False)
-    render(first, key="review_popup")
+    render(first, key=POPUP)
+    if st.button("Done", key="review_popup_done", type="primary", icon=":material/check:",
+                 help="Close the review; it won't pop up again (it's on the Review page any time)"):
+        store.save_review(first, seen=True)
+        st.rerun()
 
 
 def maybe_show():
-    """Once per session: the week's review, if it's due (after 7pm Sunday) and not seen yet."""
+    """Once per session: the week's review, if it's due (after 7pm Sunday) and not finished with yet.
+    It only counts as seen once it's saved or Done is pressed: closed by accident, it comes back next time."""
     if st.session_state.get("review_checked"):
         return
     st.session_state["review_checked"] = True
     week = review.should_show()
     if week:
-        store.save_review(week, seen=True)            # shown once, even if it's closed straight away
         _dialog(week)
 
 
