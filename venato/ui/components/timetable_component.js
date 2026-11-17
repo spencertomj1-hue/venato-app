@@ -58,7 +58,7 @@ function dropFocus() {
 function helpHtml(single) {
   const key = (k) => `<kbd>${k}</kbd>`;
   const items = [
-    ["Plan and Actual", "The <b>Plan</b> / <b>Actual</b> switch at the top shows what you planned or what you did. Days that haven't started show their Plan either way."],
+    ["Plan and Actual", "The <b>Plan</b> / <b>Actual</b> switch at the top shows what you planned or what you did. The Plan is drawn as a blueprint (pale, outlined, on graph paper); what you did is solid. Days that haven't started show their Plan either way. In Actual, where a day didn't go to plan, the Plan shows as a faint outline behind it."],
     ["Locked at the start of the day", "When a day starts its Plan is locked in (that's what Plan vs Actual compares against) and copied into its Actual. From then on, change the Actual: move, stretch, delete or add blocks as the day really goes."],
     ["Confirm", "<b>Confirm</b> under a day's name (or Home's end-of-day prompt) says that day's Actual is what you really did. Only confirmed days count in stats and goals; <b>Undo</b> takes it back."],
     ["Add a block", "Pick a category from the key, then drag down a column. The block takes the category's name; rename it in its details."],
@@ -74,7 +74,12 @@ function helpHtml(single) {
     ["Categories", "<b>Adjust categories</b> (above) adds, renames and recolours categories, and sets which category an activity uses."],
   ];
   if (!single) items.push(["Change week", "‹ Today › at the top, the date box, or swipe sideways on a trackpad."]);
-  return `<div class="tt-help-h">How the timetable works</div><dl>` +
+  const legend =
+    `<div class="tt-help-key" aria-label="Key">` +
+    `<span><i class="k-did"></i>What you did</span>` +
+    `<span><i class="k-planned"></i>What you planned (behind a day that went differently)</span>` +
+    `<span><i class="k-plan"></i>Plan (blueprint: days that haven't started, and the Plan view)</span></div>`;
+  return `<div class="tt-help-h">How the timetable works</div>${legend}<dl>` +
     items.map(([t, d]) => `<dt>${t}</dt><dd>${d}</dd>`).join("") + "</dl>";
 }
 
@@ -537,6 +542,7 @@ class Timetable {
     this.occupant = days.map(() => ({ plan: [], actual: [] }));
     this.outlookAt = days.map(() => []);
     this.blocks = [];
+    this.outlines = [];                           // Actual view: the Plan, faintly, where the day went differently
     const evs = this.visibleOutlook();
     days.forEach((date, di) => {
       const track = this.trackFor(di), frozen = this.frozen(di);
@@ -545,6 +551,7 @@ class Timetable {
         td.title = "";
         td.classList.remove("filled");
         td.classList.toggle("frozen", frozen && !this.data.readonly);
+        td.classList.toggle("bp", track === "plan");          // blueprint: the Plan
       }
       for (const en of this.entriesFor(date, track)) {
         const s = Math.max(0, slotOf(en.start)), e = Math.min(slotOf(en.end), SLOTS);
@@ -555,9 +562,9 @@ class Timetable {
           td.classList.add("filled");
           this.occupant[di][track][i] = en.id;
         }
-        this.blocks.push({ en, di, s, e, frozen });
+        this.blocks.push({ en, di, s, e, frozen, plan: track === "plan" });
       }
-      if (track !== "plan") return;               // calendar events are part of the Plan (copied into the Actual)
+      if (track !== "plan") { this.addPlanOutlines(date, di); return; }   // (events are copied into a locked day's Actual)
       for (const ev of evs.filter((x) => x.date === date)) {
         const s = Math.max(0, slotOf(ev.start)), e = Math.min(slotOf(ev.end), SLOTS);
         if (e <= s) continue;
@@ -567,7 +574,7 @@ class Timetable {
           td.classList.add("filled");
           this.outlookAt[di][i] = ev;
         }
-        this.blocks.push({ en: { ...ev, label: ev.title, track: "plan" }, di, s, e, outlook: true, frozen });
+        this.blocks.push({ en: { ...ev, label: ev.title, track: "plan" }, di, s, e, outlook: true, frozen, plan: true });
       }
     });
 
@@ -585,16 +592,37 @@ class Timetable {
         : this.mode === "plan" ? (st.locked ? `<span class="lock" title="Locked when the day started: this is what you planned. Change the Actual instead.">${LOCK_ICON}Locked</span>` : "")
         : st.confirmed ? `<span class="ok">✓ Confirmed</span> <button class="unconfirm" tabindex="-1" data-unconfirm="${esc(date)}" title="Undo: not confirmed">Undo</button>`
         : st.locked ? `<button class="confirm" tabindex="-1" data-confirm="${esc(date)}" title="This is what I actually did: confirm the day">Confirm</button>`
-        : "";
+        : `<span class="ptag" title="Hasn't started: this is still the Plan">Plan</span>`;
     });
     this.root.querySelectorAll("[data-mode]").forEach((b) => {
       b.classList.toggle("on", b.dataset.mode === this.mode);
       b.setAttribute("aria-pressed", String(b.dataset.mode === this.mode));
     });
     this.root.classList.toggle("plan-mode", this.mode === "plan");
+    this.root.querySelectorAll("th.day").forEach((th, di) => th.classList.toggle("bp", this.trackFor(di) === "plan"));
     this.addGhosts();
     this.layoutBlocks();
     this.renderBlockList();
+  }
+
+  // Actual view of a locked day: where its Plan (blocks and calendar events) differs from the Actual, a faint
+  // outline of the Plan behind it, "Planned: Gym 18:00–19:00". Where they match, nothing (no noise).
+  addPlanOutlines(date, di) {
+    const planAt = [], actAt = [];
+    const fill = (arr, item, a, b) => { for (let i = Math.max(0, a); i < Math.min(b, SLOTS); i++) arr[i] = item; };
+    for (const en of this.entriesFor(date, "plan")) fill(planAt, en, slotOf(en.start), slotOf(en.end));
+    for (const ev of this.visibleOutlook().filter((x) => x.date === date))
+      fill(planAt, { id: `ol:${ev.id}`, label: ev.title, categoryId: ev.categoryId }, slotOf(ev.start), slotOf(ev.end));
+    for (const en of this.entriesFor(date, "actual")) fill(actAt, en, slotOf(en.start), slotOf(en.end));
+    const differs = (i) => planAt[i] && !(actAt[i] && actAt[i].label === planAt[i].label && actAt[i].categoryId === planAt[i].categoryId);
+    let i = 0;
+    while (i < SLOTS) {
+      if (!differs(i)) { i++; continue; }
+      let j = i;
+      while (j < SLOTS && differs(j) && planAt[j] === planAt[i]) j++;
+      this.outlines.push({ en: { ...planAt[i], track: "actual" }, di, s: i, e: j });
+      i = j;
+    }
   }
 
   // Suggested sittings: only on days you can change (not a locked Plan), where the column is still free.
@@ -731,8 +759,16 @@ class Timetable {
     this.drawLines();
     if (!this.blocks) return;
     const origin = this.wrapEl.getBoundingClientRect();
-    this.blocksEl.innerHTML = this.blocks
-      .map(({ en, di, s, e, outlook, ghost, frozen }) => {
+    const outlines = (this.outlines || []).map(({ en, di, s, e }) => {
+      const firstTd = this.cells[di].plan[s], lastTd = this.cells[di].plan[e - 1];
+      const cat = this.cats.get(en.categoryId);
+      const tall = lastTd.getBoundingClientRect().bottom - firstTd.getBoundingClientRect().top >= 30;
+      return `<div class="pghost" style="${this.boxStyle(firstTd, lastTd, origin)}--fill:${esc(cat ? cat.colour : "#9e9e9e")}" ` +
+        `title="Planned: ${esc(en.label)} ${esc(fmtRange(slotTime(s), slotTime(e)))}">` +
+        `${tall ? `<span>Planned: ${esc(en.label)} ${esc(fmtRange(slotTime(s), slotTime(e)))}</span>` : ""}</div>`;
+    }).join("");
+    this.blocksEl.innerHTML = outlines + this.blocks
+      .map(({ en, di, s, e, outlook, ghost, frozen, plan }) => {
         const firstTd = this.cells[di][en.track][s], lastTd = this.cells[di][en.track][e - 1];
         const first = firstTd.getBoundingClientRect(), last = lastTd.getBoundingClientRect();
         const cat = this.cats.get(en.categoryId);
@@ -745,12 +781,12 @@ class Timetable {
             `<b>+ ${esc(en.label)} ${h} h</b>${tall ? `<span>Suggested · click to add</span>` : ""}</div>`;
         }
         if (outlook) {
-          return `<div class="blk outlook ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
-            `background:${esc(bg)};color:${fg}">` +
+          return `<div class="blk outlook plan ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+            `--fill:${esc(bg)}">` +
             `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div class="blk ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${en.track === "actual" ? "act" : ""} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
-          `background:${esc(bg)};color:${fg}">` +
+        return `<div class="blk ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${plan ? "plan" : "act"} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+          (plan ? `--fill:${esc(bg)}">` : `background:${esc(bg)};color:${fg}">`) +
           `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
       .join("");

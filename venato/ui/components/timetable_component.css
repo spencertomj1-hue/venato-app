@@ -15,6 +15,7 @@
   --muted: color-mix(in srgb, var(--text) 72%, var(--bg));   /* 4.5:1+ on the background in light and dark */
   --accent: var(--st-primary-color, #ff4b4b);
   --sel: #e5484d;                           /* the hover / selection ring */
+  --bp: #3a6fb0;                            /* the Plan's blueprint blue */
   --radius: var(--st-base-radius, 0.5rem);
   font: inherit;
   color: var(--text);
@@ -411,3 +412,44 @@ th.day .dstate .confirm:hover { background: color-mix(in srgb, var(--accent) 12%
   z-index: 0;
 }
 .blk.ghost span { opacity: 1; color: var(--text); }
+
+/* ---------- The Plan as a blueprint; the Actual solid ---------- */
+
+/* Graph paper under any column showing the Plan. */
+td.s.bp { --tile: color-mix(in srgb, var(--bp) 7%, transparent); }
+td.s.bp::before { background-image: linear-gradient(to right, color-mix(in srgb, var(--bp) 13%, transparent) 1px, transparent 1px);
+                  background-size: 12px 100%; }
+td.s.bp.today { --tile: color-mix(in srgb, var(--bp) 10%, transparent); }
+td.s.bp:hover:not(.filled) { --tile: color-mix(in srgb, var(--bp) 16%, transparent); }
+td.s.bp.frozen { --tile: color-mix(in srgb, var(--bp) 5%, rgba(128, 128, 128, 0.06)); }
+th.day.bp::before { background: color-mix(in srgb, var(--bp) 11%, var(--head-bg)); }
+
+/* Plan blocks: a pale fill and a solid outline in the category colour. */
+.blk.plan { background: color-mix(in srgb, var(--fill) 18%, var(--bg)); border: 1.5px solid var(--fill); color: var(--text); }
+.blk.plan.frozen { background: color-mix(in srgb, var(--fill) 11%, var(--bg)); border-color: color-mix(in srgb, var(--fill) 70%, var(--bg)); }
+.blk.plan span { opacity: 0.75; }
+
+/* Actual view: the Plan behind a day that went differently, as a faint outline. */
+.pghost {
+  position: absolute; box-sizing: border-box; pointer-events: none;
+  border: 1.5px solid color-mix(in srgb, var(--fill) 70%, transparent); border-radius: var(--tile-radius);
+  background: color-mix(in srgb, var(--fill) 6%, transparent);
+}
+.pghost span {
+  position: absolute; right: 5px; bottom: 2px; padding: 0 3px; border-radius: 3px; background: var(--bg);
+  font-size: 0.6rem; font-weight: 600; color: var(--muted); white-space: nowrap; max-width: calc(100% - 10px);
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* "Plan" under a day that hasn't started (Actual view), and the switch turns blue in Plan view. */
+th.day .dstate .ptag { color: var(--bp); font-weight: 700; font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.tt-root.plan-mode .tt-mode { border-color: color-mix(in srgb, var(--bp) 55%, transparent); }
+.tt-root.plan-mode .tt-mode button.on { background: var(--bp); color: #fff; }
+
+/* The key, in the (?) panel. */
+.tt-help-key { display: grid; gap: 6px; margin: 4px 0 6px; padding: 8px 10px; border-radius: 8px; background: var(--head-bg); }
+.tt-help-key span { display: flex; align-items: center; gap: 8px; }
+.tt-help-key i { flex: none; width: 22px; height: 12px; border-radius: 3px; box-sizing: border-box; }
+.tt-help-key .k-did { background: #00b050; }
+.tt-help-key .k-planned { border: 1.5px solid rgba(0, 176, 80, 0.6); background: rgba(0, 176, 80, 0.06); }
+.tt-help-key .k-plan { border: 1.5px solid #00b050; background: color-mix(in srgb, #00b050 18%, var(--bg)); }
