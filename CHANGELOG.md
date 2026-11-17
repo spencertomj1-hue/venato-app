@@ -34,6 +34,9 @@ Venato was called **Arete** up to 1.1.1.
 - Weekly review: a goal pace section. One mid-week notification per goal when what's planned can't cover it.
 - Assistant: `goal_pace`, `week_budget` and `plan_goals` tools, goals can count timetable hours (`category`, `label`), and a goals line in its snapshot of today.
 
+### Fixed
+- Timetable (one timeline): a block no longer gets chopped where time has passed. The part of a block that's already happened and the rest of it are drawn as one block, and runs of the same activity (e.g. Sleep that overran its plan) stay one block. Today shows no "?", Confirm or "Not confirmed" until the day is over.
+
 ## [1.3.0] - 2026-11-07
 
 ### Added
