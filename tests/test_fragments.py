@@ -106,7 +106,7 @@ def test_timetable_rejected_ops_are_acked_with_a_reason(store, monkeypatch):
     grid = fragment_run.component_data(at, "timetable")
     assert {"o1", "o2", "o3"} <= set(grid["acked"])
     assert "locked" in grid["rejected"]["o1"]
-    assert "disk full" in grid["rejected"]["o2"] and "o3" not in grid["rejected"]
+    assert grid["rejected"]["o2"] == "Couldn't save that change. It's been put back." and "disk full" not in grid["rejected"]["o2"] and "o3" not in grid["rejected"]
     today = store.local_today().isoformat()
     assert [(b["start"], b["label"]) for b in store.blocks_between(today, today, "actual")] == [
         ("09:00", "Gym"), ("14:00", "Read")]                       # the move didn't save; the paint after it did

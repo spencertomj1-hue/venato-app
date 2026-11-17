@@ -213,9 +213,9 @@ def _on_ops(key):
     for op in new_ops:
         try:
             why = apply_grid_op(op)
-        except Exception as e:                   # never leave the grid resending an op that can't be saved
+        except Exception:                        # never leave the grid resending an op that can't be saved
             log.exception("Couldn't save a timetable change: %s", op.get("kind"))
-            why = f"Couldn't save that change: {e}"
+            why = "Couldn't save that change. It's been put back."
         if why:
             rejected[op["opId"]] = why
     # Keep the lists short; the grid only ever has a few ops in flight.
