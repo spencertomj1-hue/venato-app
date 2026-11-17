@@ -33,7 +33,7 @@ def _search(store, at, q):
     return at
 
 
-def test_core_only_install(store, monkeypatch):
+def test_starter_only_install(store, monkeypatch):
     week, review = _seed(store)
     store.save_settings(blocks=[])
     monkeypatch.setattr(review, "due_week", lambda now=None: week)

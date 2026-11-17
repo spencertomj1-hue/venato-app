@@ -132,7 +132,7 @@ def test_wizard_shows_on_a_fresh_data_folder_and_finishes(store, monkeypatch):
     assert not at.exception
     assert setup_checks.load_settings()["wizard_done"] is True
     assert at.sidebar.radio[0].value == "Home"                   # the app
-    assert setup_checks.load_settings()["blocks"] == []          # core only; optional blocks are chosen later
+    assert setup_checks.load_settings()["blocks"] == ["timetable", "goals", "focus", "grades", "stats"]   # the starter set
 
     # Reopening the app later doesn't show it again.
     assert AppTest.from_file(APP, default_timeout=60).run().sidebar.radio
@@ -191,7 +191,7 @@ def test_wizard_has_no_blocks_step(store):
         assert not any("Choose your blocks" in h.value for h in at.header)
 
 
-def test_wizard_saves_core_only(store):
+def test_wizard_saves_the_starter_blocks(store):
     from venato import blocks, setup_checks
     os.remove(store.DATA_DIR / "settings.json")
     at = AppTest.from_file(APP, default_timeout=60).run()
@@ -199,7 +199,7 @@ def test_wizard_saves_core_only(store):
     at.button(key="wiz_skip").click().run()
     at.button(key="wiz_skip").click().run()
     at.button(key="wiz_finish").click().run()
-    assert not at.exception and setup_checks.load_settings()["blocks"] == []
+    assert not at.exception and setup_checks.load_settings()["blocks"] == blocks.STARTER
     assert not blocks.is_on("log") and blocks.is_on("stats")
 
 

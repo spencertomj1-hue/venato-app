@@ -44,11 +44,8 @@ def picker(prefix):
             with cols[i % COLUMNS].container(border=True):
                 st.html(f'<div class="bk-name">{b.name}</div><div class="bk-blurb">{b.blurb}</div>')
                 widget = f"{prefix}_block_{b.key}"
-                if b.core:
-                    st.caption("Always on")
-                else:
-                    st.toggle(f"{b.icon} Use {b.name}", value=b.key in on, key=widget,
-                              on_change=_toggle, args=(b.key, widget), label_visibility="visible")
+                st.toggle(f"{b.icon} Use {b.name}", value=b.key in on, key=widget,
+                          on_change=_toggle, args=(b.key, widget), label_visibility="visible")
 
 
 def priorities(prefix):
@@ -68,7 +65,7 @@ def priorities(prefix):
 
 
 def section(prefix):
-    st.markdown("Timetable, Goals, Focus, Grades and Review are always on. Switch on any others you want: "
+    st.markdown("Switch on the blocks you want and off the ones you don't: "
                 "each adds a page (and a widget on Home).")
     picker(prefix)
     st.subheader("Your priorities", anchor=False)

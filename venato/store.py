@@ -2297,6 +2297,9 @@ _SEARCH = {
                "week_start, NULL FROM weekly_reviews", "COALESCE(went_well, '') || ' ' || COALESCE(to_change, '')"),
 }
 
+_SEARCH_OWNER = {"To-do": "goals", "Goal": "goals", "Deadline": "goals",
+                 "Timetable": "timetable", "Outlook": "timetable", "Review": "stats"}
+
 
 def search(query, per_kind=8):
     """Everything matching all the words in `query` (any case), as
@@ -2307,7 +2310,9 @@ def search(query, per_kind=8):
     from venato import blocks
     out = []
     with db() as conn:
-        for kind, (select, haystack, *order) in {**_SEARCH, **blocks.search_kinds()}.items():
+        on = set(blocks.chosen_keys())
+        built_in = {k: v for k, v in _SEARCH.items() if _SEARCH_OWNER[k] in on}   # only the switched-on blocks' kinds
+        for kind, (select, haystack, *order) in {**built_in, **blocks.search_kinds()}.items():
             where = " AND ".join(f"{haystack} LIKE ? ESCAPE '\\'" for _ in words)
             params = ["%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for w in words]
             order = " ORDER BY 2" if order == ["name"] else " ORDER BY 4 DESC"

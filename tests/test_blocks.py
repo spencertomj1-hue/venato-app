@@ -19,23 +19,29 @@ def test_registry_and_defaults(store):
     keys = [x.key for x in b.all_blocks()]
     assert {"timetable", "goals", "log", "focus", "grades", "money", "workouts", "stats"} <= set(keys)
     assert len(keys) == len(set(keys))
-    assert b.chosen_keys()[:2] == ["timetable", "goals"]          # never chose: core plus the defaults
-    assert all(b.get(k).core or b.get(k).default for k in b.chosen_keys())
+    settings = store.load_settings()
+    settings.pop("blocks", None)
+    (store.DATA_DIR / "settings.json").write_text(json.dumps(settings))
+    assert b.chosen_keys()[:2] == ["timetable", "goals"]          # never chose: the defaults
+    assert all(b.get(k).default for k in b.chosen_keys())
 
 
 def test_switch_order_and_pages(store):
     b = _blocks()
     b.save(["stats", "timetable", "nonsense", "stats", "money"])   # unknown keys and repeats are dropped
-    assert b.chosen_keys() == ["stats", "timetable", "money", "goals", "focus", "grades"]   # core left out goes after the saved order
-    assert list(b.pages()) == ["Timetable", "Goals", "Focus", "Grades", "Review", "Money"]   # the sidebar keeps its own order
-    assert b.is_on("stats") and not b.is_on("workouts")
+    assert b.chosen_keys() == ["stats", "timetable", "money"]
+    assert list(b.pages()) == ["Timetable", "Review", "Money"]       # the sidebar keeps its own order
+    assert b.is_on("stats") and not b.is_on("workouts") and not b.is_on("goals")
 
 
-def test_sidebar_is_core_then_optional_and_unknown_keys_are_ignored(store):
+def test_every_block_can_be_switched_off(store):
     b = _blocks()
-    b.save(["gone", "no_such_block", "workouts", "money", "log"])      # keys of no block: dropped
-    assert b.chosen_keys() == ["workouts", "money", "log", "timetable", "goals", "focus", "grades", "stats"]
-    assert list(b.pages()) == ["Timetable", "Goals", "Focus", "Grades", "Review", "Daily Log", "Money", "Workouts"]
+    b.save([])
+    assert b.chosen_keys() == [] and b.pages() == {}
+    store.search("anything")                                        # no built-in kinds without their blocks
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.exception
+    assert list(at.sidebar.radio[0].options) == ["Home", "Settings"]
 
 
 def test_app_follows_the_choice(store):
@@ -43,11 +49,12 @@ def test_app_follows_the_choice(store):
     b.save(["money"])
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    assert list(at.sidebar.radio[0].options) == ["Home", "Timetable", "Goals", "Focus", "Grades", "Review", "Money", "Settings"]
+    assert list(at.sidebar.radio[0].options) == ["Home", "Money", "Settings"]
 
 
 def test_settings_tab_switches_blocks(store):
     b = _blocks()
+    b.save(b.STARTER)
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.sidebar.radio[0].set_value("Settings").run()
     at.toggle(key="set_block_money").set_value(True).run()
@@ -56,29 +63,29 @@ def test_settings_tab_switches_blocks(store):
     at.toggle(key="set_block_money").set_value(False).run()
     assert not at.exception and not b.is_on("money")
     assert "Money" not in at.sidebar.radio[0].options
-    assert not [t for t in at.toggle if t.key in ("set_block_timetable", "set_block_stats")]   # core: always on
-    assert any(c.value == "Always on" for c in at.caption)
-    at.button(key="set_down_timetable").click().run()                # priority order
-    assert b.chosen_keys()[:2] == ["goals", "timetable"]
+    at.toggle(key="set_block_timetable").set_value(False).run()       # nothing is always on
+    assert not at.exception and not b.is_on("timetable")
+    assert "Timetable" not in at.sidebar.radio[0].options
+    assert not any(c.value == "Always on" for c in at.caption)
+    at.button(key="set_down_goals").click().run()                    # priority order
+    assert b.chosen_keys()[:2] == ["focus", "goals"]
 
 
-CORE = ["timetable", "goals", "focus", "grades", "stats"]
-
-
-def test_core_always_on(store):
+def test_saved_before_blocks_were_optional_keeps_the_starter(store):
     b = _blocks()
-    store.save_settings(blocks=[])
-    assert b.chosen_keys() == CORE
-    assert [x.key for x in b.all_blocks() if x.core] == CORE
+    store.save_settings(blocks=["money"])                             # an older install's list, no blocks_optional
+    assert b.chosen_keys() == ["money", *b.STARTER]
     assert b.get("stats").name == "Review"
+    b.save(["money"])                                                 # once saved now, it's exactly the list
+    assert b.chosen_keys() == ["money"]
 
 
 def test_unknown_saved_keys_ignored(store):
     b = _blocks()
-    store.save_settings(blocks=["gone", "no_such_block", "money"])    # e.g. blocks a later version removed
-    assert b.chosen_keys() == ["money", *CORE]
+    b.save(["gone", "no_such_block", "money"])                        # e.g. blocks a later version removed
+    assert b.chosen_keys() == ["money"]
     store.save_settings(blocks=["gone", "money"])
-    assert b.chosen_keys() == ["money", *CORE]
+    assert b.chosen_keys() == ["money"]
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
 
@@ -88,7 +95,7 @@ def test_existing_install_keeps_log(store):
     settings = store.load_settings()
     settings.pop("blocks", None)
     (store.DATA_DIR / "settings.json").write_text(json.dumps(settings))
-    assert b.is_on("log") and all(k in b.chosen_keys() for k in CORE)
+    assert b.is_on("log") and all(k in b.chosen_keys() for k in b.STARTER)
     assert not b.is_on("money") and not b.is_on("workouts")
 
 
@@ -136,10 +143,8 @@ def test_review_sections_from_block(store, monkeypatch):
     assert all(x["key"] != "fake" for x in review.summary(date(2026, 10, 26))["sections"])
 
 
-def test_new_core_blocks_go_after_a_saved_order(store):
-    """An upgrade that adds core blocks: the user's saved order stays first, the new ones follow."""
+def test_old_saved_order_keeps_its_order(store):
+    """A list saved before blocks were optional: its order stays first, the once always-on ones follow."""
     b = _blocks()
     store.save_settings(blocks=["timetable", "goals", "stats", "log", "money"])    # saved before Focus and Grades existed
     assert b.chosen_keys() == ["timetable", "goals", "stats", "log", "money", "focus", "grades"]
-    store.save_settings(blocks=[])                                              # new install: core, in sidebar order
-    assert b.chosen_keys() == CORE

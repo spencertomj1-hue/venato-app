@@ -34,7 +34,6 @@ class Block:
     migrate: Callable | None = None  # conn -> None: later changes to its tables
     order: int = 100                 # where its page goes in the sidebar
     default: bool = False            # on for someone who never chose (existing installs: the original pages)
-    core: bool = False               # always on
     page_name: str = ""              # the sidebar page it shares, when not its own name (two blocks can share one page)
     search: dict = field(default_factory=dict)      # Home search: kind -> (select, haystack[, order]), as in store._SEARCH
     search_icons: dict = field(default_factory=dict)  # kind -> Material icon name for its search results
@@ -44,6 +43,9 @@ class Block:
 
 
 GROUPS = ["Plan", "Health & body", "Study & work", "Money", "Other"]
+
+# The blocks a new setup starts with. They used to be always on; every block can be switched off now.
+STARTER = ["timetable", "goals", "focus", "grades", "stats"]
 
 _all = None
 
@@ -71,14 +73,15 @@ def get(key):
 def chosen_keys():
     """The keys switched on, in priority order (the user's own order; Home follows it)."""
     from venato import store
-    saved = store.load_settings().get("blocks")
+    settings = store.load_settings()
+    saved = settings.get("blocks")
     known = {b.key for b in all_blocks()}
-    missing = lambda keys: [b.key for b in all_blocks() if b.core and b.key not in keys]
-    if saved is None:                      # never chose: the core blocks, then the defaults
-        keys = [b.key for b in all_blocks() if b.default]
-        return missing(keys) + keys
+    if saved is None:                      # never chose: the defaults
+        return [b.key for b in all_blocks() if b.default]
     keys = [k for k in saved if k in known]
-    return keys + missing(keys)            # core blocks the list lacks (added since it was saved) go after it
+    if not settings.get("blocks_optional"):    # saved before every block could be switched off: the
+        keys += [k for k in STARTER if k not in keys and k in known]   # once always-on ones stay on
+    return keys
 
 
 def enabled():
@@ -94,7 +97,7 @@ def save(keys):
     """Switch on exactly these blocks, in this priority order."""
     from venato import store
     known = {b.key for b in all_blocks()}
-    store.save_settings(blocks=[k for k in dict.fromkeys(keys) if k in known])
+    store.save_settings(blocks=[k for k in dict.fromkeys(keys) if k in known], blocks_optional=True)
 
 
 def pages():
@@ -117,7 +120,7 @@ def search_kinds():
 
 
 def search_block(kind):
-    """The switched-on block that owns this search kind, or None (a core kind)."""
+    """The switched-on block that owns this search kind, or None (a built-in kind)."""
     return next((b for b in enabled() if kind in b.search), None)
 
 

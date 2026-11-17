@@ -363,4 +363,4 @@ def _home():
 BLOCK = Block("grades", "Grades", ":material/grade:",
               "Modules and weighted marks: averages, what you need to hit your target, and your classification or GPA.",
               group="Study & work", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=40, core=True)
+              quick=[_quick], schema=SCHEMA, order=40, default=True)

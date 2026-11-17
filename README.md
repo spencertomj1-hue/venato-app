@@ -38,15 +38,15 @@
 
 ## Features
 
-**Core and optional blocks.** Venato is built from blocks. The core ones are always on: Timetable, Goals (to-dos and deadlines too), Focus, Grades and Review. The optional ones you switch on in Settings → Blocks (setup doesn't ask). Each brings its own page, Home widget and assistant skills, and Home orders the widgets by the priorities you set.
+**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Grades and Review; setup doesn't ask. Each brings its own page, Home widget and assistant skills, and Home orders the widgets by the priorities you set.
 
 | Block | What it does |
 |---|---|
-| **Timetable** | Weekly plan in 30-minute slots with a Plan / Actual switch, calendar events, and fit-time planning. Always on. |
-| **Goals** | Goals with deadlines and a pace, to-dos and deadlines. Always on. |
-| **Focus** | Pomodoro or stopwatch with auto breaks; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". Always on. |
-| **Grades** | Modules and weighted assessments, mark needed for your target, UK classification or US GPA, year weightings. "got 68 in acp coursework". Always on. |
-| **Review** | Weekly review, time planned vs done, charts and history. Always on. |
+| **Timetable** | Weekly plan in 30-minute slots with a Plan / Actual switch, calendar events, and fit-time planning. |
+| **Goals** | Goals with deadlines and a pace, to-dos and deadlines. |
+| **Focus** | Pomodoro or stopwatch with auto breaks; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". |
+| **Grades** | Modules and weighted assessments, mark needed for your target, UK classification or US GPA, year weightings. "got 68 in acp coursework". |
+| **Review** | Weekly review, time planned vs done, charts and history. |
 | **Daily Log** | Mood, sleep, energy and water by day, a journal, and habits with streaks. Optional. |
 | **Money** | Spending and income by category, monthly budgets, savings goals, subscriptions (logged when they renew) and bank CSV import. "spent £12 on lunch". Optional. |
 | **Workouts** | Sets, reps, weight, distance; 1RM, personal bests, progress charts, weekly volume, saved plans; kg/lb, km/mi. "bench 3x8 at 60". Optional. |

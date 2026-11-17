@@ -259,7 +259,8 @@ def _finish():
         setup_checks.save_settings(ai_enabled=False)  # skipped the question: the assistant stays off
     done = setup_checks.load_settings()
     if not done.get("wizard_done") and "blocks" not in done:
-        setup_checks.save_settings(blocks=[])         # first setup: the core pages only, the rest are added in Settings
+        from venato import blocks
+        blocks.save(blocks.STARTER)                   # first setup: the starter blocks; change them in Settings
     setup_checks.save_settings(wizard_done=True)
     st.session_state["wizard_open"] = False
     st.session_state["wizard_step"] = 0
