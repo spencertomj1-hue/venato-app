@@ -247,13 +247,6 @@ def _on_sync(key):
     sync_outlook(force=True)
 
 
-def _on_mode(key):
-    """Component callback: the Plan / Actual switch."""
-    value = st.session_state[key]["mode"] or {}
-    if value.get("mode") in ("plan", "actual"):
-        st.session_state["tt_mode"] = value["mode"]
-
-
 def _on_outlook_toggle(key):
     value = st.session_state[key]["outlook"] or {}
     st.session_state["tt_show_outlook"] = bool(value.get("show"))
@@ -328,7 +321,7 @@ def _confirm_all(day):
 
 def _review(day):
     st.session_state["tt_day"] = day
-    st.session_state["tt_mode"] = "actual"
+    st.session_state["tt_force_mode"] = "actual"      # once: the grid opens on the Actual
     st.session_state["page"] = "Timetable"         # the sidebar radio's key; callbacks run before it's drawn
 
 
@@ -389,7 +382,8 @@ def render_grid(days, key="timetable", single=False, readonly=False, suggestions
         "labelMap": dict(zip(label_map["label"], label_map["category_id"])),
         "acked": st.session_state.get("tt_acked", []),
         "single": single,
-        "mode": "actual" if readonly else st.session_state.setdefault("tt_mode", "actual"),
+        # The Plan / Actual switch lives in the browser (no rerun); Python only forces it once (Home's Review).
+        "mode": "actual" if readonly else st.session_state.pop("tt_force_mode", None),
         "readonly": readonly,
         # Suggested sittings for hours goals that are short (dashed, in free time; click one to add it).
         "suggestions": list(suggestions),
@@ -416,7 +410,6 @@ def render_grid(days, key="timetable", single=False, readonly=False, suggestions
     }
     _timetable_component(data=data, key=key,
                          on_ops_change=lambda: _on_ops(key), on_nav_change=lambda: _on_nav(key),
-                         on_sync_change=lambda: _on_sync(key), on_outlook_change=lambda: _on_outlook_toggle(key),
-                         on_mode_change=lambda: _on_mode(key))
+                         on_sync_change=lambda: _on_sync(key), on_outlook_change=lambda: _on_outlook_toggle(key))
     return categories, label_map
 
