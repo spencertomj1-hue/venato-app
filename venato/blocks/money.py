@@ -237,8 +237,18 @@ def month_summary(day=None):
         if s or c["budget"]:
             cats.append({**c, "spent": s, "left": None if c["budget"] is None else c["budget"] - s})
     budget = sum(c["budget"] or 0 for c in categories("spend"))
+    earned = {}
+    for r in rows:
+        if r["kind"] == "income":
+            earned[r["category"] or "Other income"] = earned.get(r["category"] or "Other income", 0) + r["amount"]
+    by_day = {}
+    for r in rows:
+        if r["kind"] == "spend":
+            d = store._as_date(r["date"])
+            by_day[d] = by_day.get(d, 0) + r["amount"]
     return {"first": first, "last": last, "spent": spent, "income": income, "net": income - spent,
-            "categories": cats, "budget": budget or None}
+            "categories": cats, "budget": budget or None,
+            "income_categories": sorted(earned.items(), key=lambda x: -x[1]), "by_day": by_day}
 
 
 # --- Savings goals ---

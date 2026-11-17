@@ -1,12 +1,16 @@
 """The Money page (this month vs budgets, transactions, budgets, savings goals, subscriptions,
 bank CSV import) and its Home widget. The data is in venato/blocks/money.py."""
 
+from datetime import timedelta
+
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from venato import store
 from venato import undo
 from venato.blocks import money as mn
+from venato.ui import kit
 
 
 TX_FIELD = {"Date": "date", "Amount": "amount", "Note": "note"}
@@ -34,23 +38,229 @@ def _apply_tx(key, rows, cats):
         st.toast(str(e), icon=":material/error:")
 
 
+_colours = kit.colours
+_good_bad = kit.good_bad
+
+
+def _chart(fig, key, height=280):
+    kit.chart(fig, key, height, legend=bool(fig.layout.showlegend))
+
+
+def _table(rows, money=(), progress=(), dates=None):
+    kit.table(rows, money=money, fmt=mn.fmt, progress=progress, dates=dates)
+
+
+def _delta(now, before):
+    """'+£12.00 vs last month', or None when there's nothing last month to compare with."""
+    if not before:
+        return None
+    d = now - before
+    return f"{'+' if d >= 0 else '-'}{mn.fmt(abs(d))} vs last month"
+
+
+def _kpis(s, prev):
+    budgeted_spent = sum(x["spent"] for x in s["categories"] if x["budget"])
+    a, b, c, d = st.columns(4)
+    if s["budget"]:
+        left = s["budget"] - budgeted_spent
+        a.metric("Left to spend", mn.fmt(left), border=True,
+                 delta=f"{100 * budgeted_spent / s['budget']:.0f}% of {mn.fmt(s['budget'])} used",
+                 delta_color="normal" if left >= 0 else "inverse", delta_arrow="off",
+                 help="Your monthly budgets minus what's been spent in budgeted categories")
+    else:
+        a.metric("Left to spend", "No budget", border=True, help="Set monthly budgets in the Budgets tab")
+    b.metric("Spent", mn.fmt(s["spent"]), _delta(s["spent"], prev["spent"]), "inverse", border=True)
+    c.metric("Income", mn.fmt(s["income"]), _delta(s["income"], prev["income"]), border=True)
+    d.metric("Net", mn.fmt(s["net"]), _delta(s["net"], prev["net"]) if prev["spent"] or prev["income"] else None,
+             border=True, help="Income minus spending")
+
+
+def _where_it_went(s, colours):
+    with st.container(border=True, height="stretch"):
+        st.markdown("**Where it went**")
+        cats = sorted([x for x in s["categories"] if x["spent"]], key=lambda x: -x["spent"])
+        if not cats:
+            st.caption("No spending this month yet.")
+            return
+        fig = go.Figure(go.Pie(labels=[x["name"] for x in cats], values=[x["spent"] for x in cats], hole=0.64,
+                               sort=False, direction="clockwise", textinfo="none",
+                               marker=dict(colors=[colours[x["name"]] for x in cats]),
+                               hovertemplate="%{label}: " + mn.currency() + "%{value:,.2f} (%{percent})<extra></extra>"))
+        fig.update_layout(showlegend=True, legend=dict(orientation="h", y=-0.05, x=0.5, xanchor="center"),
+                          annotations=[dict(text=f"<b>{mn.fmt(s['spent'])}</b><br>spent", showarrow=False,
+                                            font=dict(size=18), x=0.5, y=0.5)])
+        _chart(fig, "mn_dash_donut", 320)
+
+
+def _budget_vs_actual(s, colours):
+    with st.container(border=True, height="stretch"):
+        st.markdown("**Budget vs actual**")
+        cats = [x for x in s["categories"] if x["budget"]]
+        if not cats:
+            st.caption("No budgets set yet. Add them in the Budgets tab.")
+            return
+        # As a share of each budget, so a big rent budget doesn't squash the small ones.
+        cats = sorted(cats, key=lambda x: x["spent"] / x["budget"])
+        names = [x["name"] for x in cats]
+        used = [x["spent"] / x["budget"] for x in cats]
+        _, bad = _good_bad()
+        fig = go.Figure()
+        fig.add_bar(y=names, x=[1] * len(cats), orientation="h", marker=dict(color="rgba(128,128,128,0.18)"),
+                    hoverinfo="skip")
+        fig.add_bar(y=names, x=[min(u, 1.25) for u in used], orientation="h", width=0.5,
+                    marker=dict(color=[bad if u > 1 else colours[n] for n, u in zip(names, used)]),
+                    text=[f"{mn.fmt(x['spent'])} / {mn.fmt(x['budget'])}" for x in cats], textposition="none",
+                    customdata=[u for u in used],
+                    hovertemplate="%{y}: %{text} (%{customdata:.0%})<extra></extra>")
+        fig.add_vline(x=1, line=dict(color="rgba(128,128,128,0.6)", dash="dot", width=1))
+        fig.update_layout(barmode="overlay", showlegend=False, bargap=0.3)
+        fig.update_xaxes(tickformat=".0%", range=[0, max(1.05, min(max(used), 1.25) + 0.05)],
+                         gridcolor="rgba(128,128,128,0.15)")
+        _chart(fig, "mn_dash_bva", 320)
+        over = [x["name"] for x in cats if x["spent"] > x["budget"]]
+        if over:
+            st.caption(f":red[Over budget on {', '.join(over)}]")
+
+
+def _pace(s):
+    with st.container(border=True, height="stretch"):
+        st.markdown("**Spending through the month**")
+        first, last = s["first"], s["last"]
+        today = store.local_today()
+        end = min(last, today) if first <= today else last
+        days = [first + timedelta(days=i) for i in range((end - first).days + 1)]
+        if not s["by_day"]:
+            st.caption("No spending this month yet.")
+            return
+        total, running = 0, []
+        for d in days:
+            total += s["by_day"].get(d, 0)
+            running.append(total)
+        good, bad = _good_bad()
+        fig = go.Figure()
+        if s["budget"]:
+            n = (last - first).days + 1
+            fig.add_scatter(x=[first, last], y=[s["budget"] / n, s["budget"]], mode="lines", name="Even pace",
+                            line=dict(color="rgba(128,128,128,0.6)", dash="dot"),
+                            hovertemplate="Even pace<extra></extra>")
+        over = bool(s["budget"]) and running[-1] > s["budget"] * len(days) / ((last - first).days + 1)
+        colour = bad if over else good
+        r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+        fig.add_scatter(x=days, y=running, mode="lines", name="Spent", line=dict(color=colour, width=3, shape="hv"),
+                        fill="tozeroy", fillcolor=f"rgba({r},{g},{b},0.12)",
+                        hovertemplate="%{x|%-d %b}: " + mn.currency() + "%{y:,.2f}<extra></extra>")
+        fig.update_layout(showlegend=False)
+        fig.update_xaxes(range=[first, last], tickformat="%-d %b", showgrid=False)
+        fig.update_yaxes(tickprefix=mn.currency(), gridcolor="rgba(128,128,128,0.15)", rangemode="tozero")
+        _chart(fig, "mn_dash_pace", 280)
+        if s["budget"]:
+            st.caption("Ahead of an even pace for your budget." if over else "On track for your budget.")
+
+
+def _budget_table(s):
+    with st.container(border=True, height="stretch"):
+        st.markdown("**Budgets**")
+        cats = sorted([x for x in s["categories"] if x["budget"]], key=lambda x: -x["spent"] / x["budget"])
+        if not cats:
+            st.caption("No budgets set yet.")
+            return
+        _table([{"Category": x["name"], "Spent": x["spent"], "Left": x["left"],
+                 "Used": min(1.0, x["spent"] / x["budget"])} for x in cats], money=("Spent", "Left"),
+               progress=("Used",))
+
+
+def _cash_flow(s, subs):
+    with st.container(border=True, height="stretch"):
+        st.markdown("**Cash flow**")
+        rows = [{"": "Income", "Amount": s["income"]}, {"": "Spending", "Amount": -s["spent"]}]
+        rows += [{"": f"    {x['name']}", "Amount": -x["spent"]}
+                 for x in sorted(s["categories"], key=lambda x: -x["spent"]) if x["spent"]]
+        rows.append({"": "Net", "Amount": s["net"]})
+        _table(rows, money=("Amount",))
+        if subs:
+            st.caption(f"Subscriptions: {mn.fmt(sum(mn.monthly_cost(x) for x in subs))} a month")
+
+
+def _income(s, colours):
+    with st.container(border=True, height="stretch"):
+        st.markdown("**Income**")
+        if not s["income_categories"]:
+            st.caption("No income logged this month.")
+            return
+        _table([{"Source": n, "Amount": v, "Share": v / s["income"]} for n, v in s["income_categories"]],
+               money=("Amount",), progress=("Share",))
+        if s["income"]:
+            rate = s["net"] / s["income"]
+            st.caption(f"You kept {rate:.0%} of what came in." if rate >= 0
+                       else f"You spent {-rate:.0%} more than came in.")
+
+
+def _goals_card():
+    with st.container(border=True, height="stretch"):
+        st.markdown("**Savings goals**")
+        goals = mn.savings()
+        if not goals:
+            st.caption("No savings goals yet. Add one in the Savings tab.")
+            return
+        st.caption(f"{mn.fmt(sum(g['saved'] for g in goals))} saved of {mn.fmt(sum(g['target'] for g in goals))}")
+        for g in goals:
+            gs = mn.goal_status(g)
+            extra = f" · {mn.fmt(gs['per_month'])}/month" if gs.get("per_month") else ""
+            st.progress(gs["pct"] / 100, text=f"{g['name']}: {mn.fmt(g['saved'])} of {mn.fmt(g['target'])}{extra}")
+
+
+def _subs_card(subs):
+    with st.container(border=True, height="stretch"):
+        st.markdown("**Coming up**")
+        if not subs:
+            st.caption("No active subscriptions.")
+            return
+        st.caption(f"{mn.fmt(sum(mn.monthly_cost(x) for x in subs))} a month · "
+                   f"{mn.fmt(12 * sum(mn.monthly_cost(x) for x in subs))} a year")
+        nxt = sorted(subs, key=lambda x: x["next_date"])[:6]
+        _table([{"Subscription": x["name"], "Amount": x["amount"], "Next": store._as_date(x["next_date"])}
+                for x in nxt], money=("Amount",), dates={"Next": "ddd D MMM"})
+
+
+def _recent(s):
+    with st.container(border=True):
+        st.markdown("**Latest transactions**")
+        rows = mn.transactions(s["first"], s["last"])[:8]
+        if not rows:
+            st.caption("Nothing logged this month yet.")
+            return
+        _table([{"Date": store._as_date(r["date"]), "Amount": r["amount"] if r["kind"] == "income" else -r["amount"],
+                 "Category": r["category"] or "", "Note": r["note"] or ""} for r in rows],
+               money=("Amount",), dates={"Date": "ddd D MMM"})
+
+
 def _overview(day):
     s = mn.month_summary(day)
-    a, b, c, d = st.columns(4)
-    a.metric("Spent", mn.fmt(s["spent"]))
-    b.metric("Income", mn.fmt(s["income"]))
-    c.metric("Net", mn.fmt(s["net"]))
-    if s["budget"]:
-        d.metric("Budget left", mn.fmt(s["budget"] - sum(x["spent"] for x in s["categories"] if x["budget"])))
-    for x in sorted(s["categories"], key=lambda x: -x["spent"]):
-        if x["budget"]:
-            over = x["spent"] > x["budget"]
-            st.progress(min(1.0, x["spent"] / x["budget"]),
-                        text=f"{x['name']}: {mn.fmt(x['spent'])} of {mn.fmt(x['budget'])}" + (" · **over**" if over else ""))
-        else:
-            st.caption(f"{x['name']}: {mn.fmt(x['spent'])}")
-    if not s["categories"]:
-        st.caption("Nothing logged this month yet.")
+    prev = mn.month_summary(s["first"] - timedelta(days=1))
+    subs = mn.subscriptions(active_only=True)
+    colours = _colours([c["name"] for c in mn.categories("spend")])
+    st.subheader(f"{s['first']:%B %Y}", divider="gray")
+    _kpis(s, prev)
+    a, b, c = st.columns(3)
+    with a:
+        _where_it_went(s, colours)
+    with b:
+        _budget_vs_actual(s, colours)
+    with c:
+        _pace(s)
+    a, b, c = st.columns(3)
+    with a:
+        _cash_flow(s, subs)
+    with b:
+        _budget_table(s)
+    with c:
+        _income(s, colours)
+    a, b = st.columns(2)
+    with a:
+        _goals_card()
+    with b:
+        _subs_card(subs)
+    _recent(s)
 
 
 def _add_form(cats):
@@ -116,70 +326,92 @@ def _budgets():
 
 
 def _savings():
-    for g in mn.savings():
-        s = mn.goal_status(g)
-        with st.container(border=True):
-            x, y = st.columns([3, 2])
-            x.markdown(f"**{g['name']}**" + (f" · by {store.fmt_day(store._as_date(g['deadline']), '%-d %b %Y')}" if g["deadline"] else ""))
-            x.progress(s["pct"] / 100, text=f"{mn.fmt(g['saved'])} of {mn.fmt(g['target'])} ({s['pct']:.0f}%)"
-                       + (f" · {mn.fmt(s['per_month'])}/month to make it" if s.get("per_month") else ""))
-            with y.form(f"mn_g_{g['id']}", clear_on_submit=True, border=False):
+    goals = mn.savings()
+    good, _ = kit.good_bad()
+    cols = st.columns(3)
+    for i, g in enumerate(goals):
+        gs = mn.goal_status(g)
+        colour = good if gs["pct"] >= 100 else kit.PALETTE[i % len(kit.PALETTE)]
+        with cols[i % 3], st.container(border=True, height="stretch"):
+            st.markdown(f"**{g['name']}**")
+            st.caption(f"by {store.fmt_day(store._as_date(g['deadline']), '%-d %b %Y')}" if g["deadline"] else "No deadline")
+            kit.rings([{"frac": gs["pct"] / 100, "colour": colour, "size": 120, "centre": f"{gs['pct']:.0f}%",
+                        "centre_sub": "saved", "title": f"{mn.fmt(g['saved'])} of {mn.fmt(g['target'])}",
+                        "sub": f"{mn.fmt(gs['per_month'])}/month to make it" if gs.get("per_month") else ""}])
+            with st.form(f"mn_g_{g['id']}", clear_on_submit=True, border=False):
                 a, b = st.columns([2, 1], vertical_alignment="bottom")
                 amt = a.number_input("Add (negative takes out)", -1_000_000.0, 1_000_000.0, None, 10.0)
-                if b.form_submit_button("Save") and amt:
+                if b.form_submit_button("Save", width="stretch") and amt:
                     mn.contribute(g["id"], amt)
                     st.rerun()
-            if y.button("Delete", key=f"mn_gd_{g['id']}", icon=":material/delete:"):
-                undo.checkpoint(f"Deleted the savings goal {g['name']}")
-                mn.delete_goal(g["id"])
-                st.rerun()
-    with st.form("mn_goal", clear_on_submit=True, border=False):
-        a, b, c, d = st.columns([3, 2, 2, 2], vertical_alignment="bottom")
-        name = a.text_input("New savings goal", placeholder="e.g. Interrailing")
-        target = b.number_input(f"Target ({mn.currency()})", 0.0, 10_000_000.0, None, 50.0)
-        saved = c.number_input("Saved so far", 0.0, 10_000_000.0, 0.0, 50.0)
-        deadline = d.date_input("By", None)
-        if st.form_submit_button("Add goal"):
-            try:
-                mn.add_goal(name, target, deadline, saved)
-                st.rerun()
-            except mn.MoneyError as e:
-                st.error(str(e))
+            with st.popover("Delete", icon=":material/delete:"):
+                st.warning(f"Delete the savings goal {g['name']}?")
+                if st.button("Delete", key=f"mn_gd_{g['id']}", type="primary"):
+                    undo.checkpoint(f"Deleted the savings goal {g['name']}")
+                    mn.delete_goal(g["id"])
+                    st.rerun()
+    if not goals:
+        kit.empty("No savings goals yet.", ":material/savings:")
+    with kit.card("New savings goal", stretch=False):
+        with st.form("mn_goal", clear_on_submit=True, border=False):
+            a, b, c, d = st.columns([3, 2, 2, 2], vertical_alignment="bottom")
+            name = a.text_input("Name", placeholder="e.g. Interrailing")
+            target = b.number_input(f"Target ({mn.currency()})", 0.0, 10_000_000.0, None, 50.0)
+            saved = c.number_input("Saved so far", 0.0, 10_000_000.0, 0.0, 50.0)
+            deadline = d.date_input("By", None)
+            if st.form_submit_button("Add goal", type="primary", icon=":material/add:"):
+                try:
+                    mn.add_goal(name, target, deadline, saved)
+                    st.rerun()
+                except mn.MoneyError as e:
+                    st.error(str(e))
 
 
 def _subscriptions():
     subs = mn.subscriptions()
     active = [s for s in subs if s["active"]]
     if active:
-        st.metric("Subscriptions a month", mn.fmt(sum(mn.monthly_cost(s) for s in active)),
-                  help=f"{mn.fmt(12 * sum(mn.monthly_cost(s) for s in active))} a year")
-    for s in subs:
-        with st.container(border=True):
-            a, b, c, d = st.columns([3, 2, 2, 1], vertical_alignment="center")
-            a.markdown(f"**{s['name']}** · {mn.fmt(s['amount'])} {s['period']}")
-            b.caption(f"Next: {store.fmt_day(store._as_date(s['next_date']), '%-d %b %Y')}")
-            on = c.toggle("Active", bool(s["active"]), key=f"mn_sa_{s['id']}")
+        month = sum(mn.monthly_cost(s) for s in active)
+        kit.stats([{"label": "Subscriptions a month", "value": mn.fmt(month)},
+                   {"label": "A year", "value": mn.fmt(12 * month)},
+                   {"label": "Active", "value": f"{len(active)} of {len(subs)}"}])
+    cols = st.columns(3)
+    today = store.local_today()
+    for i, s in enumerate(subs):
+        nxt = store._as_date(s["next_date"])
+        with cols[i % 3], st.container(border=True, height="stretch"):
+            kit.html(f"<div style='display:flex;gap:12px;align-items:center'>{kit.date_badge(nxt)}<div>"
+                     f"<b>{s['name']}</b><br><span style='opacity:.7;font-size:.85rem'>{mn.fmt(s['amount'])} "
+                     f"{s['period']} · {'today' if nxt == today else f'in {(nxt - today).days} days' if nxt > today else 'due'}"
+                     f"</span></div></div>")
+            a, b = st.columns([3, 1], vertical_alignment="center")
+            on = a.toggle("Active", bool(s["active"]), key=f"mn_sa_{s['id']}")
             if on != bool(s["active"]):
                 mn.update_subscription(s["id"], active=int(on))
                 st.rerun()
-            if d.button("", icon=":material/delete:", key=f"mn_sd_{s['id']}", help="Delete"):
-                undo.checkpoint(f"Deleted the subscription {s['name']}")
-                mn.delete_subscription(s["id"])
-                st.rerun()
-    with st.form("mn_sub", clear_on_submit=True, border=False):
-        a, b, c, d = st.columns([3, 2, 2, 2], vertical_alignment="bottom")
-        name = a.text_input("New subscription", placeholder="e.g. Spotify")
-        amount = b.number_input(f"Amount ({mn.currency()})", 0.0, 100_000.0, None, 1.0)
-        period = c.selectbox("Every", list(mn.PERIODS), index=1)
-        nxt = d.date_input("Next payment", store.local_today())
-        log = st.checkbox("Log each payment as spending", True)
-        if st.form_submit_button("Add subscription"):
-            try:
-                mn.add_subscription(name, amount, period, nxt, None, log)
-                mn.log_renewals()
-                st.rerun()
-            except mn.MoneyError as e:
-                st.error(str(e))
+            with b.popover("", icon=":material/delete:", help="Delete"):
+                st.warning(f"Delete {s['name']}?")
+                if st.button("Delete", key=f"mn_sd_{s['id']}", type="primary"):
+                    undo.checkpoint(f"Deleted the subscription {s['name']}")
+                    mn.delete_subscription(s["id"])
+                    st.rerun()
+    if not subs:
+        kit.empty("No subscriptions yet.", ":material/autorenew:")
+    with kit.card("New subscription", stretch=False):
+        with st.form("mn_sub", clear_on_submit=True, border=False):
+            a, b, c, d = st.columns([3, 2, 2, 2], vertical_alignment="bottom")
+            name = a.text_input("Name", placeholder="e.g. Spotify")
+            amount = b.number_input(f"Amount ({mn.currency()})", 0.0, 100_000.0, None, 1.0)
+            period = c.selectbox("Every", list(mn.PERIODS), index=1)
+            nxt = d.date_input("Next payment", store.local_today())
+            log = st.checkbox("Log each payment as spending", True)
+            if st.form_submit_button("Add subscription", type="primary", icon=":material/add:"):
+                try:
+                    mn.add_subscription(name, amount, period, nxt, None, log)
+                    mn.log_renewals()
+                    st.rerun()
+                except mn.MoneyError as e:
+                    st.error(str(e))
 
 
 def _import():
@@ -234,7 +466,7 @@ def render_page():
     if cur.strip() and cur.strip() != mn.currency():
         mn.set_currency(cur)
         st.rerun()
-    tabs = st.tabs(["This month", "Transactions", "Budgets", "Savings", "Subscriptions", "Import"])
+    tabs = st.tabs(["Dashboard", "Transactions", "Budgets", "Savings", "Subscriptions", "Import"])
     with tabs[0]:
         _overview(day)
     with tabs[1]:

@@ -28,6 +28,8 @@ def test_add_guess_and_summary(mn, store):
     mn.set_budget(mn.find_category("Eating out")["id"], 10)
     s = mn.month_summary()
     assert s["spent"] == pytest.approx(55.5) and s["income"] == 1500 and s["net"] == pytest.approx(1444.5)
+    assert s["income_categories"] == [("Pay", 1500)]
+    assert sum(s["by_day"].values()) == pytest.approx(55.5) and set(s["by_day"]) == {today}
     eo = next(c for c in s["categories"] if c["name"] == "Eating out")
     assert eo["spent"] == pytest.approx(15.5) and eo["left"] == pytest.approx(-5.5)
     rows = mn.transactions(*mn.month_bounds())

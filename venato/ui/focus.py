@@ -24,10 +24,15 @@ _timer = st.components.v2.component(
 )
 
 
+LENGTHS = [15, 25, 45, 60, 90]
+
+
 def _on_action(key):
     act = (st.session_state.get(key) or {}).get("action") or {}
     name = act.get("name")
-    if name == "pause":
+    if name == "start":                      # the idle dial was pressed: start with the controls' choices
+        _start_from_controls()
+    elif name == "pause":
         focus.pause()
     elif name == "resume":
         focus.resume()
@@ -45,6 +50,10 @@ def _on_action(key):
 def _draw_timer(key, compact=False):
     r = focus.running()
     data = {"state": "idle", "compact": compact}
+    if not r and not compact:
+        minutes = _chosen_minutes()
+        data.update(kind="track" if minutes is None else "focus",
+                    planned=None if minutes is None else minutes * 60, elapsed=0)
     if r:
         data.update(state="paused" if r["paused_at"] else "running", kind=r["kind"], label=r["label"],
                     planned=None if r["planned"] is None else r["planned"] * 60,
@@ -69,30 +78,53 @@ def _category_options():
     return ["(from the activity)"] + list(cats["name"])
 
 
-def _start_form(prefix, compact=False):
+def _chosen_minutes():
+    """The idle dial's length: None for the stopwatch, else the timer's minutes."""
+    if st.session_state.get("focus_mode", "Stopwatch") == "Stopwatch":
+        return None
+    return int(st.session_state.get("focus_len") or focus.settings()["focus_minutes"])
+
+
+def _start_from_controls():
+    label = (st.session_state.get("focus_label") or "").strip() or "Focus"
+    category = st.session_state.get("focus_cat", "(from the activity)")
+    cid = None if category == "(from the activity)" else store.resolve_category(category=category)
+    minutes = _chosen_minutes()
+    st.session_state["focus_last_label"] = label
+    try:
+        focus.start(label, minutes, "track" if minutes is None else "focus",
+                    cid or store.resolve_category(label=label))
+    except focus.FocusError as e:
+        st.session_state["focus_msg"] = str(e)
+
+
+def _controls():
+    """Under the idle dial: what you're working on, stopwatch or timer, and how long."""
+    s = focus.settings()
+    lengths = sorted(set(LENGTHS) | {int(s["focus_minutes"])})
+    if "focus_label" not in st.session_state:
+        st.session_state["focus_label"] = st.session_state.get("focus_last_label", "")
+    st.text_input("What are you working on?", key="focus_label", placeholder="e.g. Essay",
+                  label_visibility="collapsed")
+    if st.session_state.get("focus_mode", "Stopwatch") == "Timer":
+        with st.container(horizontal_alignment="center"):
+            st.pills("Length", lengths, default=int(s["focus_minutes"]), key="focus_len",
+                     format_func=lambda m: f"{m} min", label_visibility="collapsed")
+    with st.container(horizontal_alignment="center"):
+        with st.popover("Timetable category", icon=":material/palette:", type="tertiary"):
+            st.selectbox("Timetable category", _category_options(), key="focus_cat",
+                         help="Which category its block in the Actual column gets")
+
+
+def _start_form(prefix):
+    """Home: a quick timer."""
     s = focus.settings()
     last = st.session_state.get("focus_last_label", "")
-    if compact:
-        a, b = st.columns([3, 2], vertical_alignment="bottom")
-        label = a.text_input("What are you focusing on?", value=last, key=f"{prefix}_label",
-                             placeholder="e.g. Essay")
-        if b.button(f"Focus {s['focus_minutes']} min", key=f"{prefix}_go", type="primary", width="stretch",
-                    icon=":material/play_arrow:"):
-            _start(label, s["focus_minutes"], "focus", None)
-        return
-    label = st.text_input("What are you working on?", value=last, key=f"{prefix}_label", placeholder="e.g. Essay")
-    a, b, c = st.columns([2, 2, 2], vertical_alignment="bottom")
-    mode = a.segmented_control("Mode", ["Pomodoro", "Stopwatch"], default="Pomodoro", key=f"{prefix}_mode")
-    minutes = b.number_input("Minutes", 1, 240, int(s["focus_minutes"]), key=f"{prefix}_minutes",
-                             disabled=mode == "Stopwatch")
-    category = c.selectbox("Timetable category", _category_options(), key=f"{prefix}_cat",
-                           help="Which category its block in the Actual column gets")
-    if st.button("Start", key=f"{prefix}_go", type="primary", icon=":material/play_arrow:"):
-        cid = None if category == "(from the activity)" else store.resolve_category(category=category)
-        if mode == "Stopwatch":
-            _start(label, None, "track", cid)
-        else:
-            _start(label, minutes, "focus", cid)
+    a, b = st.columns([3, 2], vertical_alignment="bottom")
+    label = a.text_input("What are you focusing on?", value=last, key=f"{prefix}_label", placeholder="e.g. Essay")
+    if b.button(f"Focus {s['focus_minutes']} min", key=f"{prefix}_go", type="primary", width="stretch",
+                icon=":material/play_arrow:"):
+        _start(label, s["focus_minutes"], "focus", None)
 
 
 def _start(label, minutes, kind, cid):
@@ -113,10 +145,10 @@ def _summary():
     by_label_today, by_day = focus.totals(today, today)
     by_label_week, _ = focus.totals(week0, today)
     a, b, c = st.columns(3)
-    a.metric("Today", duration(by_day.get(today.isoformat(), 0)))
-    b.metric("This week", duration(sum(by_label_week.values())))
+    a.metric("Today", duration(by_day.get(today.isoformat(), 0)), border=True)
+    b.metric("This week", duration(sum(by_label_week.values())), border=True)
     n = focus.streak(today)
-    c.metric("Streak", f"{n} day{'s' * (n != 1)}")
+    c.metric("Streak", f"{n} day{'s' * (n != 1)}", border=True)
     return today
 
 
@@ -124,10 +156,17 @@ def render_page():
     st.title("Focus")
     _message()
     focus.finish_if_due()                         # a timer that ran out while away
-    r = _draw_timer("focus_timer")
-    if not r:
-        _start_form("focus")
-    st.divider()
+    r = focus.running()
+    _, mid, _ = st.columns([1, 1.6, 1])
+    with mid:
+        if not r:
+            with st.container(horizontal_alignment="center"):
+                st.segmented_control("Mode", ["Stopwatch", "Timer"], default="Stopwatch", key="focus_mode",
+                                     label_visibility="collapsed", required=True)
+        _draw_timer("focus_timer")
+        if not r:
+            _controls()
+    st.write("")
     today = _summary()
 
     tab_today, tab_week, tab_settings = st.tabs(["Today", "Last 4 weeks", "Settings"])
@@ -202,7 +241,7 @@ def render_home():
     focus.finish_if_due()
     r = _draw_timer("home_focus_timer", compact=True)
     if not r:
-        _start_form("home_focus", compact=True)
+        _start_form("home_focus")
     today = store.local_today()
     _, by_day = focus.totals(today, today)
     mins = by_day.get(today.isoformat(), 0)
