@@ -27,6 +27,7 @@ const SWIPE_THRESHOLD = 120;      // px of sideways scroll that flips a week
 const RAIL = 4;                   // px: the Plan's strip down the left of a locked day's Actual column
 const SWAP_MS = 380;              // ms: the Plan / Actual cross-fade
 const SHOW_MISSED = true;         // also hatch Plan time where nothing was done (set false to drop it)
+const PREVIEW_EASE = 0.35;        // share of the gap the resize preview closes each frame (it glides, lagging a few ms)
 
 // ---------- Small helpers ----------
 
@@ -802,6 +803,11 @@ class Timetable {
   // Where a block goes: exactly over the tiles it covers (the same gaps and rounded corners),
   // so blocks and empty tiles line up. The gaps come from the CSS (--gap, --day-gap).
   boxStyle(first, last, origin, inset = 0) {
+    const r = this.boxRect(first, last, origin, inset);
+    return `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;`;
+  }
+
+  boxRect(first, last, origin, inset = 0) {
     const css = getComputedStyle(this.root);
     const gap = parseFloat(css.getPropertyValue("--gap")) || 2.5;
     const dayGap = parseFloat(css.getPropertyValue("--day-gap")) || 7;
@@ -811,7 +817,7 @@ class Timetable {
     const top = a.top - origin.top + gap;
     const right = a.right - origin.left - gap;
     const bottom = b.bottom - origin.top - border - gap;
-    return `left:${left}px;top:${top}px;width:${right - left}px;height:${bottom - top}px;`;
+    return { left, top, width: right - left, height: bottom - top };
   }
 
   layoutBlocks() {
@@ -1312,27 +1318,66 @@ class Timetable {
     this.highlight();
   }
 
-  // Resizing a block: a preview of it at its new length (its colour, its new times) over the grid,
-  // so you can see where the edge is going before you let go. Gone when the drag ends.
+  // Resizing a block: a preview of it at its new length (its colour, its new times) over the grid.
+  // It eases toward the edge being dragged, so the steps between half hours glide rather than jump.
+  // Its title and times sit at its top, as a tall block's do, so they move with the top edge and stay
+  // put when the bottom edge moves. Gone when the drag ends.
   syncResizePreview() {
     const bd = this.blockDrag;
-    const el = this.wrapEl && this.wrapEl.querySelector(".tt-preview");
-    if (!bd || bd.zone === "move" || !bd.moved || !this.wrapEl) { if (el) el.remove(); return; }
+    const show = bd && bd.zone !== "move" && bd.moved && this.wrapEl;
+    if (!show) { this.removePreview(); return; }
     const { di, track, s, e } = bd.target;
     const item = bd.hit.outlook ? bd.hit.ev : bd.hit.entry;
     const cat = this.cats.get(item.categoryId);
-    let box = el;
-    if (!box) {
-      box = document.createElement("div");
-      box.className = "tt-preview";
-      box.setAttribute("aria-hidden", "true");
-      this.wrapEl.appendChild(box);
-    }
     const origin = this.wrapEl.getBoundingClientRect();
-    const a = this.cells[di][track][s], b = this.cells[di][track][e - 1];
-    box.style.cssText = this.boxStyle(a, b, origin) + `--fill:${esc((cat && cat.colour) || "#9e9e9e")};`;
-    box.innerHTML = `<b>${esc(bd.hit.outlook ? item.title : item.label)}</b>` +
-      `<span>${esc(fmtRange(slotTime(s), slotTime(e)))}</span>`;
+    const target = this.boxRect(this.cells[di][track][s], this.cells[di][track][e - 1], origin);
+    const label = bd.hit.outlook ? item.title : item.label;
+    const text = `${label}|${fmtRange(slotTime(s), slotTime(e))}`;
+    let p = this.preview;
+    if (!p) {
+      const el = document.createElement("div");
+      el.className = "tt-preview";
+      el.setAttribute("aria-hidden", "true");
+      this.wrapEl.appendChild(el);
+      p = this.preview = { el, cur: { ...target }, target, text: "" };
+    }
+    p.target = target;
+    p.el.style.setProperty("--fill", (cat && cat.colour) || "#9e9e9e");
+    if (p.text !== text) {                          // only when it changes, so the text isn't redrawn each move
+      p.text = text;
+      p.el.innerHTML = `<b>${esc(label)}</b><span>${esc(fmtRange(slotTime(s), slotTime(e)))}</span>`;
+    }
+    this.placePreview();
+  }
+
+  placePreview() {
+    const p = this.preview;
+    if (!p) return;
+    p.el.style.left = `${p.cur.left}px`; p.el.style.top = `${p.cur.top}px`;
+    p.el.style.width = `${p.cur.width}px`; p.el.style.height = `${p.cur.height}px`;
+    if (this.previewRaf) return;                    // already easing
+    const step = () => {
+      this.previewRaf = null;
+      const q = this.preview;
+      if (!q) return;
+      let moving = false;
+      for (const k of ["left", "top", "width", "height"]) {
+        const d = q.target[k] - q.cur[k];
+        if (Math.abs(d) < 0.3) q.cur[k] = q.target[k];
+        else { q.cur[k] += d * PREVIEW_EASE; moving = true; }
+      }
+      q.el.style.left = `${q.cur.left}px`; q.el.style.top = `${q.cur.top}px`;
+      q.el.style.width = `${q.cur.width}px`; q.el.style.height = `${q.cur.height}px`;
+      if (moving) this.previewRaf = requestAnimationFrame(step);
+    };
+    this.previewRaf = requestAnimationFrame(step);
+  }
+
+  removePreview() {
+    if (this.previewRaf) cancelAnimationFrame(this.previewRaf);
+    this.previewRaf = null;
+    if (this.preview) this.preview.el.remove();
+    this.preview = null;
   }
 
   endBlockDrag() {
