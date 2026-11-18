@@ -68,6 +68,18 @@ def _on_send():
     st.session_state["chat_error"] = None
 
 
+def ask(text):
+    """Send `text` to Claude as if typed in the bar (e.g. a page's "Ask Claude" button). Use as a callback,
+    or call before the chat bar is drawn."""
+    _init()
+    if st.session_state["chat_busy"]:
+        return
+    _say("user", text)
+    st.session_state["chat_queue"] = text
+    st.session_state["chat_busy"] = "thinking"
+    st.session_state["chat_error"] = None
+
+
 def _on_mic():
     action = (st.session_state["chat"]["mic"] or {}).get("action")
     sess = st.session_state

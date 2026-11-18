@@ -1,11 +1,13 @@
 """Weekly review: when it's due, what it adds up, the pop-up, and the history on Stats."""
 
 import importlib
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+
+import fragment_run
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -53,20 +55,79 @@ def test_summary_numbers(review, store, monkeypatch):
     assert "50% of the Plan followed" in text and "Average mood: 4.0 (week before 2.0)" in text
 
 
-def test_popup_once_and_history(store, monkeypatch):
+def test_popup_until_done_and_history(store, monkeypatch):
     from venato import review, tools
     importlib.reload(tools)
     week = store.week_start_of(store.local_today())
     tools.add_block(week.isoformat(), "actual", "09:00", "10:00", "Gym", category="Exercise")
     monkeypatch.setattr(review, "due_week", lambda now=None: week)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    assert not at.exception and store.get_review(week).get("seen_at")          # shown, and remembered
-    assert any(m.label == "Hours logged" for m in at.metric)
-    assert review.should_show() is None
+    assert not at.exception and any(m.label == "Hours logged" for m in at.metric)
+    assert not store.get_review(week).get("seen_at")                           # closed by accident: not done with
+    with fragment_run.recording():                                             # the dialog is a fragment
+        at = AppTest.from_file(APP, default_timeout=60).run()                  # so it comes back next time
+        assert any(m.label == "Hours logged" for m in at.metric)
+        fragment_run.click(at, at.button(key="review_popup_done").click())
+    assert not at.exception and store.get_review(week).get("seen_at") and review.should_show() is None
     at = AppTest.from_file(APP, default_timeout=60).run()                      # opened again: not shown again
     assert not any(m.label == "Hours logged" for m in at.metric)
     at.sidebar.radio[0].set_value("Review").run()
     assert not at.exception and any("Weekly reviews" in s.value for s in at.subheader)
+
+
+def test_last_week_promise_deltas_and_gaps(review, store, monkeypatch):
+    from venato import tools
+    tools = importlib.reload(tools)
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 19, 8, 0))
+    for day in ("2026-10-20", "2026-10-27"):                                  # Tuesdays, a week apart
+        tools.add_block(day, "plan", "09:00", "13:00", "Revision", category="Study")
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 11, 2, 20, 0))
+    store.confirm_day("2026-10-20")                                           # the week before: all 4 h done
+    tools.add_block("2026-10-27", "actual", "10:00", "13:00", "Scrolling", category="Distracted").pending.run()
+    store.confirm_day("2026-10-27")                                           # this week: 1 h of 4
+    store.save_review(date(2026, 10, 19), to_change="Phone in the other room")
+    s = review.summary(date(2026, 10, 26))
+    assert (s["followed_pct"], s["before"]["followed_pct"], s["before"]["actual_hours"]) == (25, 100, 4.0)
+    assert [g["category"] for g in review.gaps(s["time"])] == ["Study"]
+    assert s["headline"].startswith("Rough week: 25% of the plan followed, down from 100%")
+    assert "Study fell short (1 of 4 h)" in s["headline"]
+    assert s["promise"] == "Phone in the other room"
+    store.save_review(date(2026, 10, 26), kept="partly")
+    text = review.as_text(review.summary(date(2026, 10, 26)))
+    assert "they'd do differently: Phone in the other room (did they? partly)" in text
+    trend = review.trend(date(2026, 10, 26), weeks=2)
+    assert [(t["followed_pct"], t["actual_hours"]) for t in trend] == [(100, 4.0), (25, 4.0)]
+
+
+def test_unconfirmed_days(review, store, monkeypatch):
+    from venato import tools
+    tools = importlib.reload(tools)
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 26, 8, 0))
+    tools.add_block("2026-10-27", "plan", "09:00", "10:00", "Revision", category="Study")
+    tools.add_block("2026-10-28", "plan", "09:00", "10:00", "Revision", category="Study")
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 28, 9, 30))   # Wednesday's isn't over
+    s = review.summary(date(2026, 10, 26))
+    assert s["unconfirmed"] == ["2026-10-27"] and s["followed_pct"] is None
+    assert "No days confirmed" in s["headline"]
+
+
+def test_review_page_draws_everything(store, monkeypatch):
+    from venato import review, tools
+    importlib.reload(tools)
+    today = store.local_today()
+    week = store.week_start_of(today)
+    for w in (week - timedelta(days=14), week - timedelta(days=7)):
+        day = (w + timedelta(days=1)).isoformat()
+        tools.add_block(day, "actual", "09:00", "10:00", "Gym", category="Exercise")
+        store.confirm_day(day)
+    store.save_review(week - timedelta(days=7), to_change="Sleep earlier")
+    monkeypatch.setattr(review, "should_show", lambda now=None: None)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.sidebar.radio[0].set_value("Review").run()
+    assert not at.exception
+    assert any("Sleep earlier" in m.value for m in at.markdown)
+    at.selectbox(key="review_week").set_value(week - timedelta(days=7)).run()
+    assert not at.exception and any(e.label.startswith("Last 8 weeks") for e in at.expander)
 
 
 def test_future_plans_dont_count(review, store, monkeypatch):

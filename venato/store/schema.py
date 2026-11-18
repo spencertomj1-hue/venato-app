@@ -126,7 +126,8 @@ def init_db():
                 week_start TEXT PRIMARY KEY,               -- YYYY-MM-DD
                 seen_at    TEXT,
                 went_well  TEXT,
-                to_change  TEXT
+                to_change  TEXT,
+                kept       TEXT                       -- last week's "to change": yes / partly / no
             );
 
             -- Deadlines: something due on a date (an assignment, an application, a bill)
@@ -156,6 +157,7 @@ def init_db():
         # Goals that count timetable hours: Actual time in a category (and optionally one activity label).
         _add_column(conn, "goals", "category_id", "TEXT REFERENCES tt_categories(id) ON DELETE SET NULL")
         _add_column(conn, "goals", "label", "TEXT")
+        _add_column(conn, "weekly_reviews", "kept", "TEXT")       # did they do last week's "to change"? yes/partly/no
         _goals_get_deadlines(conn)
         conn.executescript(
             """
