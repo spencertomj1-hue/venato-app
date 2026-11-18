@@ -8,6 +8,7 @@ there (or $VENATO_DB). Backups, settings.json and the Outlook cache live there
 too. Nothing user-specific is kept in the project folder.
 """
 
+import functools
 import json
 import os
 import sqlite3
@@ -20,19 +21,43 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from venato import system
+from venato import facade, system
 
-DATA_DIR = system.data_dir()          # (copies an old Arete data folder across the first time)
-DB_PATH = Path(system.env("DB") or DATA_DIR / "life.db")
+
+def data_dir():
+    """The data folder (system.data_dir), worked out once per $VENATO_DATA_DIR value."""
+    return _data_dir(system.env("DATA_DIR"))
+
+
+@functools.cache
+def _data_dir(_chosen):
+    return system.data_dir()          # (copies an old Arete data folder across the first time)
+
+
+_db_override = None
+
+
+def db_path():
+    """The database file: $VENATO_DB, else life.db in the data folder (unless use_db_path chose another)."""
+    return _db_override or _default_db_path()
+
+
+def _default_db_path():
+    return Path(system.env("DB") or data_dir() / "life.db")
+
+
+def use_db_path(path):
+    """Use another database file (tests do, by setting store.DB_PATH); None goes back to the usual one."""
+    global _db_override
+    _db_override = Path(path) if path is not None else None
+
 
 # Habits appear as extra columns in the History table and CSV, named "habit: <name>".
 HABIT_PREFIX = "habit: "
 
 # Timetable: half-hour slots from day_start to day_end (default 07:00 to 01:00 the next day,
-# 36 slots). Set in Settings -> Region; _apply_day_hours() keeps SLOTS and FIRST_MIN in step.
+# 36 slots). Set in Settings -> Region; slot_count() and first_min() follow them.
 DAY_START, DAY_END = 7, 1           # defaults (hours); an end at or before the start is the next morning
-SLOTS = 36
-FIRST_MIN = 7 * 60
 TRACKS = ("plan", "actual")
 
 # The categories a new install starts with: generic, and editable by asking Claude.
@@ -88,7 +113,7 @@ def bump_version():
 @contextmanager
 def db():
     """Open a connection, commit on success, and always close it."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(db_path())
     conn.execute("PRAGMA foreign_keys = ON")  # needed for ON DELETE CASCADE
     try:
         yield conn
@@ -101,7 +126,7 @@ def db():
 
 def init_db():
     """Create tables if they don't exist yet, and seed the timetable key."""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    db_path().parent.mkdir(parents=True, exist_ok=True)
     with db() as conn:
         _goals_became_todos(conn)
         conn.executescript(
@@ -277,7 +302,7 @@ def init_db():
 # ---------------------------------------------------------------------------
 
 def settings_path():
-    return DATA_DIR / "settings.json"
+    return data_dir() / "settings.json"
 
 
 def load_settings():
@@ -370,13 +395,21 @@ def save_settings(**changes):
     settings_path().parent.mkdir(parents=True, exist_ok=True)
     settings_path().write_text(json.dumps(settings, indent=2), encoding="utf-8")
     bump_version()
-    if {"day_start", "day_end"} & set(changes):
-        _apply_day_hours()
     return settings
 
 
 def day_hours():
     """(start hour, end hour) of a timetable day; an end at or before the start is the next morning."""
+    version = data_version()           # (slot_of asks on every call, so settings.json is re-read only after a write)
+    if _hours[0] != version:
+        _hours[:] = [version, _read_day_hours()]
+    return _hours[1]
+
+
+_hours = [None, None]                  # [data_version() when read, (start, end)]
+
+
+def _read_day_hours():
     s = load_settings()
     start, end = s.get("day_start", DAY_START), s.get("day_end", DAY_END)
     ok = lambda h: isinstance(h, int) and 0 <= h <= 23
@@ -391,10 +424,15 @@ def day_length(start, end):
     return (end - start) % 24 or 24
 
 
-def _apply_day_hours():
-    global SLOTS, FIRST_MIN
+def slot_count():
+    """Half-hour slots in a timetable day (36 for 07:00 to 01:00)."""
     start, end = day_hours()
-    FIRST_MIN, SLOTS = start * 60, 2 * day_length(start, end)
+    return 2 * day_length(start, end)
+
+
+def first_min():
+    """Minutes after midnight of the first slot (420 for 07:00)."""
+    return day_hours()[0] * 60
 
 
 def _goals_became_todos(conn):
@@ -406,7 +444,7 @@ def _goals_became_todos(conn):
     columns = {row[1] for row in conn.execute("PRAGMA table_info(goals)")}
     if "done" not in columns:
         return
-    backups = DATA_DIR / "backups"
+    backups = data_dir() / "backups"
     backups.mkdir(parents=True, exist_ok=True)
     copy = sqlite3.connect(backups / f"life-{datetime.now():%Y-%m-%d-%H%M%S}-before-todos.db")
     conn.backup(copy)
@@ -433,7 +471,7 @@ def _day_status_table(conn):
                confirmed_at TEXT,               -- when the user confirmed it (NULL = not yet)
                upto         TEXT                -- Actual is the truth for this day's slots before this time
            )""")
-    full = slot_time(SLOTS)
+    full = slot_time(slot_count())
     conn.execute("INSERT INTO tt_day_status SELECT DISTINCT date, ?, ? FROM tt_entries "
                  "WHERE track = 'actual' AND date < ?", (stamp(), full, local_today().isoformat()))
 
@@ -965,7 +1003,7 @@ def resolve_category(label=None, category=None):
 
 def slot_time(i):
     """Slot index (0..SLOTS) -> "HH:mm". Slot SLOTS is the end of the last slot (01:00 by default)."""
-    m = (FIRST_MIN + 30 * i) % 1440
+    m = (first_min() + 30 * i) % 1440
     return f"{m // 60:02d}:{m % 60:02d}"
 
 
@@ -973,9 +1011,9 @@ def slot_of(t):
     """"HH:mm" -> slot index. Times before the day's start (07:00 by default) are after midnight."""
     h, m = map(int, t.split(":"))
     mins = h * 60 + m
-    if mins < FIRST_MIN:
+    if mins < first_min():
         mins += 1440
-    return round((mins - FIRST_MIN) / 30)
+    return round((mins - first_min()) / 30)
 
 
 def plan_paint(existing, day, track, s, e, block, new_id=None):
@@ -1108,7 +1146,7 @@ def move_block(block_id, day, track, s, e):
         conn.row_factory = sqlite3.Row
         row = conn.execute(f"SELECT {BLOCK_COLS} FROM tt_entries WHERE id = ?", (block_id,)).fetchone()
         conn.row_factory = None
-        if not row or not 0 <= s < e <= SLOTS:
+        if not row or not 0 <= s < e <= slot_count():
             return None
         conn.execute("DELETE FROM tt_entries WHERE id = ?", (block_id,))
         paint(day, track, s, e, {"label": row["label"], "category_id": row["category_id"], "details": row["details"]},
@@ -1170,7 +1208,7 @@ OUTLOOK_COLS = 'uid, date, start, "end", title, location, all_day, exact, descri
 
 def _visible_outlook(conn, day, s=0, e=None):
     """Visible timed Outlook events on a timetable day overlapping slots s..e-1 (e: the day's end)."""
-    e = SLOTS if e is None else e
+    e = slot_count() if e is None else e
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         f"SELECT {OUTLOOK_COLS} FROM tt_outlook WHERE date = ? AND all_day = 0 "
@@ -1255,15 +1293,15 @@ def free_runs(day, first=0, last=None, now=None):
     (no block of the user's and no visible, timed Outlook event), or once the day has started (its
     Plan locked), in its Actual, where the Plan and its events were copied.
     """
-    last = SLOTS if last is None else last
-    busy = [False] * SLOTS
+    last = slot_count() if last is None else last
+    busy = [False] * slot_count()
     track = live_track(day, now)
     for b in blocks_between(day, day, track):
-        for i in range(slot_of(b["start"]), min(slot_of(b["end"]), SLOTS)):
+        for i in range(slot_of(b["start"]), min(slot_of(b["end"]), slot_count())):
             busy[i] = True
     for ev in outlook_between(day, day) if track == "plan" else ():
         if not ev["all_day"]:
-            for i in range(slot_of(ev["start"]), min(slot_of(ev["end"]), SLOTS)):
+            for i in range(slot_of(ev["start"]), min(slot_of(ev["end"]), slot_count())):
                 busy[i] = True
     runs, start = [], None
     for i in range(first, last + 1):
@@ -1304,13 +1342,13 @@ def outlook_overlaps(day, s, e):
 def slots_gone(day, now=None):
     """How many of a timetable day's slots have ended by `now` (all of them for a past day, 0 for a future one)."""
     now = now or local_now()
-    start = datetime.combine(_as_date(day), datetime.min.time()) + timedelta(minutes=FIRST_MIN)
-    return max(0, min(SLOTS, int((now - start).total_seconds() // 1800)))
+    start = datetime.combine(_as_date(day), datetime.min.time()) + timedelta(minutes=first_min())
+    return max(0, min(slot_count(), int((now - start).total_seconds() // 1800)))
 
 
 def day_started(day, now=None):
     """Has the timetable day begun (its first slot, day_start, reached)? Then its Plan is locked."""
-    start = datetime.combine(_as_date(day), datetime.min.time()) + timedelta(minutes=FIRST_MIN)
+    start = datetime.combine(_as_date(day), datetime.min.time()) + timedelta(minutes=first_min())
     return (now or local_now()) >= start
 
 
@@ -1324,7 +1362,7 @@ def day_status(first, last):
     with db() as conn:
         rows = conn.execute("SELECT date, confirmed_at, upto FROM tt_day_status WHERE date BETWEEN ? AND ?",
                             (_as_date(first).isoformat(), _as_date(last).isoformat())).fetchall()
-    return {d: {"confirmed": bool(c), "upto": min(SLOTS, slot_of(u)) if u else 0} for d, c, u in rows}
+    return {d: {"confirmed": bool(c), "upto": min(slot_count(), slot_of(u)) if u else 0} for d, c, u in rows}
 
 
 def confirmed_days(first, last):
@@ -1334,7 +1372,7 @@ def confirmed_days(first, last):
 
 def _upto(conn, day):
     row = conn.execute("SELECT upto FROM tt_day_status WHERE date = ?", (day,)).fetchone()
-    return min(SLOTS, slot_of(row[0])) if row and row[0] else 0
+    return min(slot_count(), slot_of(row[0])) if row and row[0] else 0
 
 
 def _plan_items(conn, day):
@@ -1349,14 +1387,14 @@ def materialise_ops(day, plan, actual, done, upto):
     calendar event) copied into the runs of those slots where the Actual is empty. Ids are "m:<day>:<slot>"
     so the grid's JS (which mirrors this) and Python agree on them. Returns [("upsert", block)].
     """
-    taken = [False] * SLOTS
+    taken = [False] * slot_count()
     ids = {b["id"] for b in actual}
     for b in actual:
-        for i in range(max(0, slot_of(b["start"])), min(slot_of(b["end"]), SLOTS)):
+        for i in range(max(0, slot_of(b["start"])), min(slot_of(b["end"]), slot_count())):
             taken[i] = True
     ops = []
     for p in plan:
-        s, e = max(slot_of(p["start"]), done), min(slot_of(p["end"]), upto, SLOTS)
+        s, e = max(slot_of(p["start"]), done), min(slot_of(p["end"]), upto, slot_count())
         i = s
         while i < e:
             if taken[i]:
@@ -1390,14 +1428,14 @@ def lock_day(day, conn=None, now=None, confirm=False):
             return lock_day(day, conn, now, confirm)
     day = _as_date(day).isoformat()
     done = _upto(conn, day)
-    if not day_started(day, now) or (done >= SLOTS and not confirm):   # not started (the Plan is still the Plan), or done
+    if not day_started(day, now) or (done >= slot_count() and not confirm):   # not started (the Plan is still the Plan), or done
         return []
-    ops = materialise_ops(day, _plan_items(conn, day), blocks_for(conn, day, "actual"), done, SLOTS) if done < SLOTS else []
+    ops = materialise_ops(day, _plan_items(conn, day), blocks_for(conn, day, "actual"), done, slot_count()) if done < slot_count() else []
     apply_block_ops(conn, ops)
     conn.execute(
         "INSERT INTO tt_day_status (date, confirmed_at, upto) VALUES (?, ?, ?) ON CONFLICT(date) DO UPDATE SET "
         "upto = excluded.upto, confirmed_at = COALESCE(confirmed_at, excluded.confirmed_at)",
-        (day, stamp() if confirm else None, slot_time(SLOTS)))
+        (day, stamp() if confirm else None, slot_time(slot_count())))
     return [b for _, b in ops]
 
 
@@ -1429,7 +1467,7 @@ def mark_confirmed(day):
     with db() as conn:
         conn.execute("INSERT INTO tt_day_status (date, confirmed_at, upto) VALUES (?, ?, ?) ON CONFLICT(date) DO UPDATE "
                      "SET confirmed_at = COALESCE(confirmed_at, excluded.confirmed_at), upto = excluded.upto",
-                     (_as_date(day).isoformat(), stamp(), slot_time(SLOTS)))
+                     (_as_date(day).isoformat(), stamp(), slot_time(slot_count())))
 
 
 def unconfirmed_days(first, last, now=None):
@@ -1438,7 +1476,7 @@ def unconfirmed_days(first, last, now=None):
     out, d = [], _as_date(first)
     while d <= _as_date(last):
         iso = d.isoformat()
-        if slots_gone(iso, now) >= SLOTS and not status.get(iso, {}).get("confirmed"):
+        if slots_gone(iso, now) >= slot_count() and not status.get(iso, {}).get("confirmed"):
             out.append(iso)
         d += timedelta(days=1)
     return out
@@ -1456,7 +1494,7 @@ def unconfirmed_days_with_blocks(now=None):
     if not days:
         return []
     status = day_status(days[0], days[-1])
-    return [d for d in days if slots_gone(d, now) >= SLOTS and not status.get(d, {}).get("confirmed")]
+    return [d for d in days if slots_gone(d, now) >= slot_count() and not status.get(d, {}).get("confirmed")]
 
 
 def correct(day, s, e, block, new_id=None, now=None):
@@ -1482,7 +1520,7 @@ def day_ended(day, now=None):
     """Has the day's last Plan block (or calendar event) ended? (Days with no Plan: once the day is over.)"""
     with db() as conn:
         items = _plan_items(conn, _as_date(day).isoformat())
-    last = max((min(slot_of(b["end"]), SLOTS) for b in items), default=SLOTS)
+    last = max((min(slot_of(b["end"]), slot_count()) for b in items), default=slot_count())
     return slots_gone(day, now) >= last
 
 
@@ -1851,8 +1889,8 @@ def goal_hours(goal, first, last, track, data=None, window=None):
         confirmed = None
 
     def slots(day, s, e):
-        lo, hi = window(day) if window else (0, SLOTS)
-        return max(0, min(e, hi, SLOTS) - max(s, lo, 0))
+        lo, hi = window(day) if window else (0, slot_count())
+        return max(0, min(e, hi, slot_count()) - max(s, lo, 0))
 
     total = 0
     for b in data["blocks"]:
@@ -2321,4 +2359,10 @@ def search(query, per_kind=8):
     return out
 
 
-_apply_day_hours()      # SLOTS / FIRST_MIN from settings.json (re-run when they change)
+# store.SLOTS / FIRST_MIN / DATA_DIR / DB_PATH: read fresh on every access (see venato/facade.py).
+facade.install(__name__, live={
+    "DATA_DIR": (data_dir, None),
+    "DB_PATH": (db_path, use_db_path),
+    "SLOTS": (slot_count, None),
+    "FIRST_MIN": (first_min, None),
+})
