@@ -9,6 +9,16 @@ Venato was called **Arete** up to 1.1.1.
 
 ## [Unreleased]
 
+### Changed
+- Review has a new one-screen weekly layout (fits a 1440×900 window without scrolling):
+  - A ‹ week › stepper and a Week | Trends switch at the top; Trends holds the charts over a period and the last 8 weeks.
+  - Left: the week's verdict, a nudge for days not confirmed (Confirm / Check), and Looking back: last week's promise ("Did you?"), your two reflections and the week's journal behind a link.
+  - Middle: Goal pace, and a new **Next week** card: deadlines, how much is planned so far, goals that still need time booked, and a Plan next week button that opens the Timetable on next week.
+  - Right: time planned vs done per category, with a tick at the target, the shortfall hatched and anything over it in green.
+  - The Sunday pop-up shows the same three columns.
+- The weekly review opens with a one-line verdict, shows what you said you'd do differently last week and asks whether you did, names the biggest planned-vs-done gaps and flags days that are over but not confirmed. An **Ask Claude** button gets Claude's take in the chat.
+- The Sunday pop-up only counts as seen once you press Done or save your answers. Closed by accident, it comes back next time.
+
 ### Removed
 - Food, Recipes, Cut down, Health data, Involvement, Applications and Network are gone from the public app, so Venato can focus on student life. Your data in them stays in your database, untouched: nothing is deleted or dropped, it just isn't shown or searched any more, and new installs don't create those tables.
 - The defusedxml dependency (it was only used to read Apple Health exports).

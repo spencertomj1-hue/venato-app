@@ -17,10 +17,12 @@ def _seed(store):
 
 
 def _texts(at):
-    return [*(m.label for m in at.metric), *(c.value for c in at.caption), *(i.value for i in at.info)]
+    return [*(m.label for m in at.metric), *(c.value for c in at.caption), *(i.value for i in at.info),
+            *(p.proto.popover.label for p in at.get("popover"))]
 
 
-def _review_page(at):
+def _review_page(at, view="Trends"):
+    at.session_state["rv_view"] = view
     at.sidebar.radio[0].set_value("Review").run()
     assert not at.exception
     return _texts(at)
@@ -40,7 +42,8 @@ def test_starter_only_install(store, monkeypatch):
     at = AppTest.from_file(APP, default_timeout=60).run()      # the Sunday pop-up draws the week's review
     assert not at.exception
     popup = _texts(at)
-    assert not any(t in LOG_TILES for t in popup) and not any("Daily log filled in" in t for t in popup)
+    assert not any(t in LOG_TILES for t in popup) and not any("journal entr" in t for t in popup)
+    assert not any("journal entr" in t for t in _review_page(at, "Week"))
     page = _review_page(at)
     assert not any(t in LOG_TILES for t in page) and "No entries in this period yet." not in page
     assert not any("Daily log filled in" in t for t in page)
@@ -62,7 +65,8 @@ def test_log_on_shows_it(store, monkeypatch):
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
     popup = _texts(at)
-    assert "Avg mood" in popup and "Habits on target" in popup and any("Daily log filled in" in t for t in popup)
+    assert "1 journal entry ›" in popup                       # the week's journal, behind a link
+    assert "1 journal entry ›" in _review_page(at, "Week")
     page = _review_page(at)
     assert "Avg mood" in page
     assert sorted(r["kind"] for r in store.search("stretch")) == ["Habit", "Journal"]

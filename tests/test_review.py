@@ -61,18 +61,20 @@ def test_popup_until_done_and_history(store, monkeypatch):
     week = store.week_start_of(store.local_today())
     tools.add_block(week.isoformat(), "actual", "09:00", "10:00", "Gym", category="Exercise")
     monkeypatch.setattr(review, "due_week", lambda now=None: week)
+    def shown(at):
+        return any(b.key == "review_popup_plan" for b in at.button)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    assert not at.exception and any(m.label == "Hours logged" for m in at.metric)
+    assert not at.exception and shown(at)
     assert not store.get_review(week).get("seen_at")                           # closed by accident: not done with
     with fragment_run.recording():                                             # the dialog is a fragment
         at = AppTest.from_file(APP, default_timeout=60).run()                  # so it comes back next time
-        assert any(m.label == "Hours logged" for m in at.metric)
+        assert shown(at)
         fragment_run.click(at, at.button(key="review_popup_done").click())
     assert not at.exception and store.get_review(week).get("seen_at") and review.should_show() is None
     at = AppTest.from_file(APP, default_timeout=60).run()                      # opened again: not shown again
-    assert not any(m.label == "Hours logged" for m in at.metric)
+    assert not shown(at)
     at.sidebar.radio[0].set_value("Review").run()
-    assert not at.exception and any("Weekly reviews" in s.value for s in at.subheader)
+    assert not at.exception and any(b.key == f"review_{week.isoformat()}_plan" for b in at.button)
 
 
 def test_last_week_promise_deltas_and_gaps(review, store, monkeypatch):
@@ -126,8 +128,19 @@ def test_review_page_draws_everything(store, monkeypatch):
     at.sidebar.radio[0].set_value("Review").run()
     assert not at.exception
     assert any("Sleep earlier" in m.value for m in at.markdown)
-    at.selectbox(key="review_week").set_value(week - timedelta(days=7)).run()
-    assert not at.exception and any(e.label.startswith("Last 8 weeks") for e in at.expander)
+    assert at.button(key="rv_next").disabled                                   # can't go past this week
+    at.button(key="rv_prev").click().run()                                     # the week before
+    assert not at.exception and at.session_state["rv_week"] == week - timedelta(days=7)
+    assert any(b.key == f"review_{(week - timedelta(days=7)).isoformat()}_plan" for b in at.button)
+    at.button(key=f"review_{(week - timedelta(days=7)).isoformat()}_plan").click().run()   # Plan next week
+    assert not at.exception and at.session_state["page"] == "Timetable" and at.session_state["tt_day"] == week
+    at.sidebar.radio[0].set_value("Review").run()
+    assert at.session_state["rv_week"] == week - timedelta(days=7)            # still that week
+    at.segmented_control(key="rv_view_w").set_value("Trends").run()
+    assert not at.exception and any(s.value.startswith("Last 8 weeks") for s in at.subheader)
+    at.sidebar.radio[0].set_value("Home").run()
+    at.sidebar.radio[0].set_value("Review").run()
+    assert at.session_state["rv_view"] == "Trends"                            # the choice is remembered
 
 
 def test_future_plans_dont_count(review, store, monkeypatch):
@@ -141,3 +154,32 @@ def test_future_plans_dont_count(review, store, monkeypatch):
     store.confirm_day("2026-10-27")                                                          # it went as planned
     s = review.summary(date(2026, 10, 26))
     assert (s["planned_hours"], s["followed_pct"]) == (1.0, 100)
+
+
+def test_next_week_numbers(review):
+    goals = [{"title": "Study", "state": "behind", "need": 12.0, "booked": 8.0},
+             {"title": "Gym", "state": "on_track", "need": 3.0, "booked": 3.0},          # booked: not listed
+             {"title": "Essay", "state": "on_track", "need": 2.0, "booked": 1.9},        # within tolerance
+             {"title": "Spanish", "state": "unreachable", "need": 41.0, "booked": 2.0},
+             {"title": "Old", "state": "done", "need": 5.0, "booked": 0.0}]
+    n = review.next_week_numbers(48.0, 32.0, goals)
+    assert (n["planned"], n["this_planned"], round(n["frac"], 3)) == (32.0, 48.0, 0.667)
+    assert [g["title"] for g in n["short"]] == ["Spanish", "Study"]
+    assert n["short"][0]["text"] == "can't be reached · move the date?"
+    assert n["short"][1]["text"] == "needs 12 h · 8 h booked"
+    assert review.next_week_numbers(0, 5.0, [])["frac"] is None
+    assert review.next_week_numbers(2.0, 5.0, [])["frac"] == 1.0
+
+
+def test_next_week_from_the_timetable(review, store, monkeypatch):
+    from venato import tools
+    tools = importlib.reload(tools)
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 26, 8, 0))          # planned on Monday
+    tools.add_block("2026-10-27", "plan", "09:00", "13:00", "Revision", category="Study")   # this week: 4 h
+    tools.add_block("2026-11-03", "plan", "09:00", "10:00", "Revision", category="Study")   # next week: 1 h
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 11, 1, 20, 0))          # Sunday evening
+    store.add_goal("Study", "monthly", "2026-11-01", 20, "h", category_id="study")
+    n = review.next_week(date(2026, 10, 26))
+    assert (n["planned"], n["this_planned"]) == (1.0, 4.0)
+    [g] = n["short"]
+    assert g["title"] == "Study" and g["booked"] == 1.0 and g["need"] > 1.0

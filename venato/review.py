@@ -136,6 +136,49 @@ def headline(s):
     return ". ".join(parts) + "."
 
 
+def planned_hours(days):
+    """Hours on the Plan track (blocks and Outlook events) over `days` (ISO dates), confirmed or not."""
+    return sum(len(_slot_maps(d)[0]) for d in days) / 2
+
+
+def next_week_numbers(this_planned, next_planned, goals, tolerance=0.25):
+    """
+    The Next week card's numbers, from plain inputs (no store). this_planned / next_planned: hours on the
+    Plan this week and next. goals: [{"title", "state", "need", "booked"}] for next week (need and booked in
+    hours). Returns {"planned", "this_planned", "frac" (next / this, 0..1, None with nothing this week),
+    "short": the goals that need time booked, most short first, each with "text"}.
+    """
+    short = []
+    for g in goals:
+        if g["state"] == "unreachable":
+            short.append({**g, "gap": float("inf"), "text": "can't be reached · move the date?"})
+        elif g["state"] not in ("done", "ended") and g["need"] - g["booked"] > tolerance:
+            short.append({**g, "gap": g["need"] - g["booked"],
+                          "text": f"needs {g['need']:g} h · {g['booked']:g} h booked"})
+    short.sort(key=lambda g: -g["gap"])
+    frac = None if not this_planned else min(1.0, next_planned / this_planned)
+    return {"planned": next_planned, "this_planned": this_planned, "frac": frac, "short": short}
+
+
+def next_week(first):
+    """The week after the one starting `first`: deadlines aside, what's planned and what goals still need."""
+    from venato import pace
+    first = store._as_date(first)
+    nxt = first + timedelta(days=7)
+    ctx = pace.Ctx()
+    rows = []
+    for g in pace.priority(pace.goals_overlapping(nxt, nxt + timedelta(days=6))):
+        state = pace.goal_pace(g, ctx)["state"]
+        if g["kind"] != "hours" and state != "unreachable":
+            continue                                   # only hours goals can be booked on the timetable
+        start, end = pace.bounds(g)
+        a, b = max(nxt, start), min(nxt + timedelta(days=6), end)
+        need = pace.half_up(pace.week_need(g, nxt, ctx)[0]) if g["kind"] == "hours" else 0.0
+        booked = ctx.hours(g, a, b, "plan") if g["kind"] == "hours" and a <= b else 0.0
+        rows.append({"title": g["title"], "state": state, "need": need, "booked": round(booked * 2) / 2})
+    return next_week_numbers(planned_hours(_days(first)), planned_hours(_days(nxt)), rows)
+
+
 def trend(first, weeks=8):
     """The last `weeks` weeks up to the one starting `first`, oldest first: [{week, followed_pct,
     actual_hours, mood, sleep}] (mood and sleep None when Daily Log is off or nothing was logged)."""
