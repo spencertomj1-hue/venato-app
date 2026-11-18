@@ -27,6 +27,7 @@ from .todos import (_find_todo, add_todo, complete_todo, delete_todo, describe_t
 from .goals import (_amount, _find_goal, add_goal, delete_goal, describe_goal, edit_goal, list_goals,
     log_goal_progress, set_goal_progress)
 from .journal import (read_journal, write_journal)
+from .review import (save_review_answers, weekly_review)
 
 
 # ---------------------------------------------------------------------------
@@ -144,32 +145,6 @@ def resolve_goal(goal, offer, confirmed=False):
         other = store.get_goal(chosen["other"])
         store.update_goal(other["id"], target=float(other["target"]) - chosen["hours"])
     return Result(f"Done: {g['title']}: {chosen['text']}.", changed=True)
-
-
-# ---------------------------------------------------------------------------
-# Weekly review
-# ---------------------------------------------------------------------------
-
-def weekly_review(date=None):
-    """The main numbers for the week containing `date` (default: the latest review week)."""
-    from venato import review
-    first = store.week_start_of(_day(date)) if date else review.due_week()
-    return Result(review.as_text(review.summary(first)))
-
-
-def save_review_answers(went_well=None, to_change=None, date=None, confirmed=False):
-    """Write the weekly review's two reflections (what went well / what to change) for a week."""
-    from venato import review
-    first = store.week_start_of(_day(date)) if date else review.due_week()
-    old = next((r for r in store.reviews() if r["week_start"] == first.isoformat()), {})
-    overwrite = [k for k, v in (("went_well", went_well), ("to_change", to_change)) if v is not None and old.get(k)]
-    label = f"the week of {nice_day(first.isoformat())}"
-    if overwrite and not confirmed:
-        return Result("", pending=Pending(f"Replace your review answers for {label}",
-                                          lambda: save_review_answers(went_well, to_change, first.isoformat(), True)))
-    store.save_review(first, went_well=went_well if went_well is not None else store.KEEP,
-                      to_change=to_change if to_change is not None else store.KEEP)
-    return Result(f"Saved your review for {label}.", changed=True)
 
 
 # `tools._now = fake` (tests) reaches the submodules that use it (see venato/facade.py).
