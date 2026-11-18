@@ -353,6 +353,262 @@ def delete_plan(pid):
         conn.execute("DELETE FROM wk_plans WHERE id = ?", (pid,))
 
 
+def save_plan(name, items, notes=None):
+    """Save (or replace) a plan from [{exercise, sets, reps, weight (kg)}]; unknown exercises are added."""
+    name = str(name or "").strip()
+    if not name:
+        raise WorkoutError("The plan needs a name.")
+    if not items:
+        raise WorkoutError(f"The plan {name} has no exercises.")
+    rows = [(exercise_or_new(it["exercise"], it.get("kind"))["id"], max(1, int(it.get("sets") or 1)),
+             it.get("reps"), it.get("weight")) for it in items]
+    with store.db() as conn:
+        old = conn.execute("SELECT id FROM wk_plans WHERE name = ? COLLATE NOCASE", (name,)).fetchone()
+        if old:
+            pid = old[0]
+            conn.execute("DELETE FROM wk_plan_items WHERE plan_id = ?", (pid,))
+            conn.execute("UPDATE wk_plans SET notes = ? WHERE id = ?", (notes, pid))
+        else:
+            pid = _id()
+            conn.execute("INSERT INTO wk_plans (id, name, notes) VALUES (?, ?, ?)", (pid, name, notes))
+        conn.executemany("INSERT INTO wk_plan_items VALUES (?, ?, ?, ?, ?, ?)",
+                         [(pid, i, *r) for i, r in enumerate(rows)])
+    return pid
+
+
+# --- Uploading a plan (text or CSV) and fitting it into the timetable ---
+
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_NUM = r"\d+(?:\.\d+)?"
+_WEIGHT = rf"(?:\s*(?:@|at)\s*(?P<w>{_NUM})\s*(?P<wu>kgs?|lbs?)?|\s+(?P<w2>{_NUM})\s*(?P<wu2>kgs?|lbs?)?)"
+_SETS = (r"(?P<sets>\d{1,2})\s*(?:[x×]|sets?\s*(?:of|x)?)\s*(?P<reps>\d{1,3})(?:\s*[-–]\s*\d{1,3})?"
+         r"(?P<secs>\s*(?:s|secs?|seconds)\b)?(?:\s*reps?\b)?")
+_ITEM = re.compile(rf"(?P<name>[^\d].*?)\s*[:\-–,]?\s*{_SETS}{_WEIGHT}?\s*(?:\((?P<note>[^)]*)\))?\.?", re.I)
+_CARDIO = re.compile(rf"(?P<name>[^\d].*?)\s*[:\-–,]?\s*(?:for\s+)?(?P<num>{_NUM})\s*"
+                     r"(?P<unit>km|k|kms|mi|miles?|mins?|minutes?|hrs?|hours?)\b.*", re.I)
+_BULLET = re.compile(r"^\s*(?:[-*•·]|\d{1,2}[.)])\s+")
+
+
+def _weekday(text):
+    """'Monday', 'mon', 'Tues:' at the start of a heading -> (0..6, the rest), else (None, text)."""
+    m = re.match(r"\s*([A-Za-z]+)\.?\s*[:\-–—]?\s*(.*)", text)
+    if m:
+        word = m.group(1).lower()
+        word = {"weds": "wed", "thur": "thu", "thurs": "thu"}.get(word, word)
+        for i, name in enumerate(WEEKDAYS):
+            if len(word) >= 3 and name.startswith(word):
+                return i, m.group(2).strip()
+    return None, text.strip()
+
+
+def _heading(text):
+    """A day heading -> {name, weekday}: 'Monday - Push' -> Push on Mondays, 'Day 2: Legs' -> Legs."""
+    text = text.strip().strip(":").strip()
+    day, rest = _weekday(text)
+    rest = re.sub(r"^(?:day|workout|session)\s*\d+\s*[:\-–—]?\s*", "", rest, flags=re.I).strip() or rest
+    name = rest or (WEEKDAYS[day].title() if day is not None else text)
+    return {"name": name[:60], "weekday": day, "items": []}
+
+
+def _item(text):
+    """One exercise line -> {exercise, sets, reps, weight (kg), kind, text}, or None if it isn't one."""
+    m = _ITEM.fullmatch(text)
+    if m:
+        w, wu = m.group("w") or m.group("w2"), (m.group("wu") or m.group("wu2") or "").lower()
+        kg = None if w is None else float(w) * LB if wu.startswith("lb") else float(w) if wu else kg_in(float(w))
+        timed = bool(m.group("secs"))
+        return {"exercise": m.group("name").strip(" -–:,").strip(), "sets": int(m.group("sets")),
+                "reps": None if timed else int(m.group("reps")), "weight": kg,
+                "kind": "timed" if timed else None, "text": text}
+    m = _CARDIO.fullmatch(text)
+    if m:
+        unit = m.group("unit").lower()
+        kind = "cardio" if unit[0] in "km" and not unit.startswith("min") else "timed"
+        return {"exercise": m.group("name").strip(" -–:,").strip(), "sets": 1, "reps": None, "weight": None,
+                "kind": kind, "text": text}
+    known = find_exercise(text)
+    if known and known["name"].lower() == text.lower().strip():
+        return {"exercise": known["name"], "sets": 1, "reps": None, "weight": None, "kind": None, "text": text}
+    return None
+
+
+def _parse_csv(text):
+    import csv
+    import io
+    rows = list(csv.DictReader(io.StringIO(text)))
+    days, skipped = {}, []
+    for r in rows:
+        r = {str(k or "").strip().lower(): str(v or "").strip() for k, v in r.items()}
+        ex = r.get("exercise") or r.get("name")
+        if not ex:
+            continue
+        head = r.get("day") or r.get("workout") or r.get("session") or "Workout"
+        day = days.setdefault(head.lower(), _heading(head))
+        try:
+            sets = int(float(r.get("sets") or 1))
+            reps = int(float(r["reps"])) if r.get("reps") else None
+            w = r.get("weight") or ""
+            num = re.match(rf"\s*({_NUM})\s*(kgs?|lbs?)?", w, re.I)
+            kg = None
+            if num:
+                kg = float(num.group(1)) * LB if (num.group(2) or "").lower().startswith("lb") \
+                    else float(num.group(1)) if num.group(2) else kg_in(float(num.group(1)))
+        except ValueError:
+            skipped.append(", ".join(v for v in r.values() if v))
+            continue
+        day["items"].append({"exercise": ex, "sets": sets, "reps": reps, "weight": kg, "kind": None,
+                             "text": f"{ex} {sets}×{reps or '-'}" + (f" @ {weight_text(kg)}" if kg else "")})
+    return list(days.values()), skipped
+
+
+def parse_plan(text, default_name="Workout"):
+    """
+    Read a workout plan from text: day headings ('Monday - Push', 'Day 2: Legs', 'Upper') each followed
+    by exercise lines ('Bench press 3x8 @ 60', 'Squat 5 sets of 5 100kg', 'Plank 3x45s', 'Run 5 km'),
+    or one line per day ('Mon: Bench 3x8 @60, Squat 5x5'). A CSV with an Exercise column (and Day,
+    Sets, Reps, Weight) works too. Weights without a unit are in the user's unit.
+    Returns (days, skipped lines): days are [{name, weekday (0-6 or None), items}].
+    """
+    text = (text or "").replace("\r\n", "\n").lstrip("﻿")
+    first = next((ln for ln in text.split("\n") if ln.strip()), "")
+    if "," in first and re.search(r"\b(exercise|name)\b", first, re.I):
+        days, skipped = _parse_csv(text)
+    else:
+        days, skipped, current = [], [], None
+        for raw in text.split("\n"):
+            line = _BULLET.sub("", raw).strip()
+            if not line or line.startswith("#") and not line.lstrip("#").strip():
+                continue
+            line = line.lstrip("#").strip()
+            head, sep, rest = line.partition(":")
+            parts = [p.strip() for p in re.split(r"[,;]", rest) if p.strip()] if sep else []
+            inline = [_item(p) for p in parts]
+            if parts and all(inline):                # 'Mon: Bench 3x8 @60, Squat 5x5': a whole day
+                current = _heading(head)
+                current["items"] = inline
+                days.append(current)
+                continue
+            item = _item(line)
+            if item:
+                if current is None:
+                    current = {"name": default_name, "weekday": None, "items": []}
+                    days.append(current)
+                current["items"].append(item)
+            elif len(line) <= 60 and (line.endswith(":") or _weekday(line)[0] is not None or (
+                    len(line.split()) <= 6 and re.fullmatch(r"(?:(?:day|week|workout|session)\s*\d+\b)?\D*", line, re.I))):
+                current = _heading(line)
+                days.append(current)
+            else:
+                skipped.append(line)
+    days = [d for d in days if d["items"]]
+    seen = {}
+    for d in days:                                   # plan names are unique: "Upper", "Upper 2"
+        n = seen[d["name"].lower()] = seen.get(d["name"].lower(), 0) + 1
+        if n > 1:
+            d["name"] = f"{d['name']} {n}"
+    return days, skipped
+
+
+def _fit_day(day, need, lo, hi, now):
+    """The first free stretch of `need` slots on a day between slots lo..hi (none in the past), or None."""
+    from venato import tools
+    start = max(lo, tools._first_future_slot(day.isoformat()))
+    for s, e in store.free_runs(day.isoformat(), start, hi, now=now):
+        if e - s >= need:
+            return s, s + need
+    return None
+
+
+def fit_plan(days, start, weeks=4, minutes=60, earliest="07:00", latest="21:00"):
+    """
+    Pick a time for each plan day in each week (7 days from `start`): on its weekday if it has one,
+    else spread through the week (3 days -> 1st, 3rd, 5th day), moving to the nearest free day when
+    the Plan is full. Returns ([(date, start slot, end slot, day)], [(week start, day name)] that didn't fit).
+    """
+    from venato import tools
+    if not days:
+        raise WorkoutError("There are no workouts in that plan.")
+    if len(days) > 7:
+        raise WorkoutError("That plan has more than 7 workouts a week; split it into weeks.")
+    start = store._as_date(start)
+    need = max(1, -(-int(minutes) // 30))
+    lo, hi = tools._window(earliest, latest)
+    if hi - lo < need:
+        raise WorkoutError("The window between those times is shorter than one workout.")
+    now = tools._now()
+    k = len(days)
+    placed, missed = [], []
+    for w in range(max(1, int(weeks))):
+        week = [start + timedelta(days=7 * w + i) for i in range(7)]
+        used = set()
+        fixed = [d for d in days if d["weekday"] is not None]
+        order = fixed + [d for d in days if d["weekday"] is None]
+        targets = [i * 7 // k for i in range(k)]         # evenly spread days of the week
+        for d in fixed:                                  # a fixed day takes the nearest spread day
+            pos = next(i for i, x in enumerate(week) if x.weekday() == d["weekday"])
+            targets.remove(min(targets, key=lambda t: abs(t - pos)))
+        free_targets = iter(targets)
+        for d in order:
+            if d["weekday"] is not None:
+                target = next(i for i, x in enumerate(week) if x.weekday() == d["weekday"])
+            else:
+                target = next(free_targets)
+            got = None
+            for step in range(7):
+                for i in ((target + step, target - step) if step else (target,)):
+                    if 0 <= i < 7 and i not in used and (got := _fit_day(week[i], need, lo, hi, now)):
+                        used.add(i)
+                        placed.append((week[i], got[0], got[1], d))
+                        break
+                if got:
+                    break
+            if not got:
+                missed.append((week[0], d["name"]))
+    placed.sort(key=lambda p: (p[0], p[1]))
+    return placed, missed
+
+
+def _plan_details(day):
+    return "\n".join(f"- {it['text']}" for it in day["items"])
+
+
+def schedule_plan(days, start, weeks=4, minutes=60, earliest="07:00", latest="21:00", category=None,
+                  confirmed=False):
+    """Save the uploaded days as plans and put each one into the timetable's Plan; previewed first."""
+    from venato import tools
+    try:
+        placed, missed = fit_plan(days, start, weeks, minutes, earliest, latest)
+    except WorkoutError as e:
+        raise tools.ToolError(str(e))
+    cid = store.resolve_category(category=category) if category else None
+    if cid is None:
+        cid = store.resolve_category(category="Exercise") or store.resolve_category(label="Gym")
+    if cid is None:
+        raise tools.ToolError("Pick a category for the workouts.")
+    if not placed:
+        raise tools.ToolError(f"There's no free {minutes}-minute gap between {earliest} and {latest} "
+                              "on those days. Try a wider time window or shorter workouts.")
+    names = ", ".join(d["name"] for d in days)
+    lines = "\n".join(f"- {tools.nice_day(d.isoformat())} {store.slot_time(s)}–{store.slot_time(e)} {day['name']}"
+                      for d, s, e, day in placed)
+    short = ""
+    if missed:
+        short = f"\n\n{len(missed)} didn't fit: " + "; ".join(
+            f"{n} (week of {tools.nice_day(w.isoformat())})" for w, n in missed)
+    summary = (f"Save the plans {names} and add {len(placed)} workouts to your Plan "
+               f"({tools._cat_names().get(cid, 'Exercise')}):\n\n{lines}{short}")
+    if not confirmed:
+        return tools.Result("", pending=tools.Pending(summary, lambda: schedule_plan(
+            days, start, weeks, minutes, earliest, latest, category, True)))
+    for d in days:
+        save_plan(d["name"], d["items"])
+    now = tools._now()
+    for d, s, e, day in placed:
+        store.paint(d.isoformat(), store.live_track(d.isoformat(), now), s, e,
+                    {"label": day["name"], "category_id": cid, "details": _plan_details(day)})
+    return tools.Result(f"Saved {len(days)} plan(s) and added {len(placed)} workouts to your Plan.", changed=True)
+
+
 # --- Numbers: 1RM, PBs, volume ---
 
 def one_rep_max(weight, reps):

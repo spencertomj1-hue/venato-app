@@ -7,13 +7,30 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from venato import regional
 from venato import store
+from venato import tools
 from venato import undo
 from venato.blocks import workouts as wk
 from venato.ui import kit
 
 NEW_EX = "+ New exercise"
 CURRENT = "wk_current"
+UPLOAD_PENDING = "wk_upload_pending"      # a tools.Pending preview of an uploaded plan, waiting for Confirm
+EXAMPLE = """Monday - Push
+Bench press 3x8 @ 60
+Overhead press 3x10 @ 40
+Tricep pushdown 3x12
+
+Legs
+Squat 5x5 @ 100
+Romanian deadlift 3x8 @ 80
+Plank 3x45s
+
+Pull
+Pull-up 3x8
+Barbell row 4x8 @ 50
+Run 5 km"""
 
 
 def _metrics(today):
@@ -315,10 +332,96 @@ def _progress_tab(today):
         kit.table(table, numbers={f"Heaviest ({w_unit})": "%.1f", f"Est. 1RM ({w_unit})": "%.1f"})
 
 
+def _upload_confirm():
+    """A waiting preview of an uploaded plan with Confirm / Cancel; True while one is waiting."""
+    pending = st.session_state.get(UPLOAD_PENDING)
+    if not pending:
+        return False
+    st.info(pending.summary, icon=":material/preview:")
+    a, b, _ = st.columns([1, 1, 3])
+    if a.button("Add to Plan", type="primary", key="wk_up_yes", icon=":material/event_available:"):
+        undo.checkpoint("Uploaded a workout plan")
+        r = pending.run()
+        st.session_state.pop(UPLOAD_PENDING, None)
+        st.toast(r.text, icon=":material/check_circle:")
+        st.rerun()
+    if b.button("Cancel", key="wk_up_no"):
+        st.session_state.pop(UPLOAD_PENDING, None)
+        st.rerun()
+    return True
+
+
+def _upload_plan():
+    with st.expander("Upload a plan and fit it into your week", icon=":material/upload_file:",
+                     expanded=not wk.plans() or UPLOAD_PENDING in st.session_state):
+        if _upload_confirm():
+            return
+        st.caption("A .txt or .csv file, or paste it below. Each workout starts with a line naming it "
+                   "(\"Push\", \"Monday - Legs\", \"Day 2: Upper\"), then one exercise per line, like "
+                   "\"Bench press 3x8 @ 60\", \"Plank 3x45s\" or \"Run 5 km\". A day in the name "
+                   "(Monday) keeps it on that day; the rest are spread through the week around your timetable.")
+        f = st.file_uploader("Plan file", type=["txt", "csv", "md"], key="wk_up_file")
+        text = st.text_area("Or paste the plan", key="wk_up_text", height=180, placeholder=EXAMPLE)
+        if f is not None:
+            text = f.getvalue().decode("utf-8", errors="replace")
+        if not text.strip():
+            return
+        name = f.name.rsplit(".", 1)[0] if f is not None else "Workout"
+        days, skipped = wk.parse_plan(text, default_name=name)
+        if not days:
+            st.warning("No exercises found. Write them like \"Bench press 3x8 @ 60\", one per line.",
+                       icon=":material/warning:")
+            return
+        st.markdown(f"**Found {len(days)} workout{'s' if len(days) != 1 else ''} a week**")
+        cols = st.columns(min(len(days), 4))
+        for i, d in enumerate(days):
+            with cols[i % len(cols)], st.container(border=True):
+                when = f" · {wk.WEEKDAYS[d['weekday']].title()}s" if d["weekday"] is not None else ""
+                st.markdown(f"**{d['name']}**{when}")
+                st.markdown("\n".join(f"- {it['text']}" for it in d["items"]))
+        if skipped:
+            st.caption("Couldn't read: " + "; ".join(f"“{x}”" for x in skipped[:8]))
+        today = store.local_today()
+        cats = list(store.load_categories()["name"])
+        starts = [store.slot_time(i) for i in range(store.SLOTS)]
+        ends = [store.slot_time(i) for i in range(1, store.SLOTS + 1)]
+        with st.form("wk_up_form", border=False):
+            a, b, c = st.columns(3)
+            first = a.date_input("Starting", value=today, format=regional.input_format())
+            weeks = b.number_input("Weeks", 1, 12, 4)
+            minutes = c.selectbox("Each workout", [30, 45, 60, 75, 90, 120], index=2,
+                                  format_func=lambda m: f"{m // 60} h {m % 60} min".replace(" 0 min", "")
+                                  .replace("0 h ", ""))
+            a, b, c = st.columns(3)
+            earliest = a.selectbox("Not before", starts, index=starts.index("07:00") if "07:00" in starts else 0,
+                                   format_func=regional.time)
+            latest = b.selectbox("Not after", ends, index=ends.index("21:00") if "21:00" in ends else len(ends) - 1,
+                                 format_func=regional.time)
+            category = c.selectbox("Category", cats, index=cats.index("Exercise") if "Exercise" in cats else 0)
+            a, b, _ = st.columns([1, 1, 2])
+            go = a.form_submit_button("Find times", type="primary", icon=":material/event_available:")
+            save_only = b.form_submit_button("Just save the plans")
+        if go:
+            try:
+                r = wk.schedule_plan(days, first, weeks, minutes, earliest, latest, category)
+            except tools.ToolError as e:
+                st.error(str(e), icon=":material/error:")
+                return
+            st.session_state[UPLOAD_PENDING] = r.pending
+            st.rerun()
+        if save_only:
+            undo.checkpoint("Saved uploaded workout plans")
+            for d in days:
+                wk.save_plan(d["name"], d["items"])
+            st.toast(f"Saved {len(days)} plan(s).", icon=":material/check_circle:")
+            st.rerun()
+
+
 def _plans_tab():
+    _upload_plan()
     ps = wk.plans()
     if not ps:
-        kit.empty("No plans yet. Log a workout, then \"Save as plan\" to reuse it.", ":material/list_alt:")
+        kit.empty("No plans yet. Upload one above, or log a workout and \"Save as plan\".", ":material/list_alt:")
         return
     cols = st.columns(3)
     for i, p in enumerate(ps):

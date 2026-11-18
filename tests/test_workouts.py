@@ -77,3 +77,84 @@ def test_page(wk, store):
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.sidebar.radio[0].set_value("Workouts").run()
     assert not at.exception
+
+
+PLAN_TEXT = """\
+Monday - Push
+- Bench press 3x8 @ 60
+- Overhead press 3 sets of 10 40kg
+- Tricep pushdown 3x12-15
+
+Day 2: Legs
+1. Squat 5x5 @ 100
+2. Plank 3x45s
+3. Run 5 km
+
+Wed: Pull-up 3x8, Barbell row 4x8 @ 50
+Some line we can't read 12/3
+"""
+
+
+def test_parse_plan_text_and_csv(wk, store):
+    days, skipped = wk.parse_plan(PLAN_TEXT)
+    assert [(d["name"], d["weekday"]) for d in days] == [("Push", 0), ("Legs", None), ("Wednesday", 2)]
+    push, legs, pull = days
+    assert [(i["exercise"], i["sets"], i["reps"], i["weight"]) for i in push["items"]] == [
+        ("Bench press", 3, 8, 60), ("Overhead press", 3, 10, 40), ("Tricep pushdown", 3, 12, None)]
+    assert [(i["exercise"], i["sets"], i["reps"], i["kind"]) for i in legs["items"]] == [
+        ("Squat", 5, 5, None), ("Plank", 3, None, "timed"), ("Run", 1, None, "cardio")]
+    assert (pull["name"], pull["weekday"]) == ("Wednesday", 2)
+    assert [i["exercise"] for i in pull["items"]] == ["Pull-up", "Barbell row"]
+    assert skipped == ["Some line we can't read 12/3"]
+
+    wk.save_units("lb", "mi")
+    days, _ = wk.parse_plan("Upper\nBench 3x5 135\nUpper\nRow 3x8 @ 60kg")
+    assert [d["name"] for d in days] == ["Upper", "Upper 2"]
+    assert days[0]["items"][0]["weight"] == pytest.approx(135 * wk.LB)
+    assert days[1]["items"][0]["weight"] == 60
+
+    days, _ = wk.parse_plan("Day,Exercise,Sets,Reps,Weight\nPush,Bench press,3,8,60 lb\nLegs,Squat,5,5,")
+    assert [(d["name"], d["items"][0]["exercise"], d["items"][0]["reps"]) for d in days] == [
+        ("Push", "Bench press", 8), ("Legs", "Squat", 5)]
+    assert days[0]["items"][0]["weight"] == pytest.approx(60 * wk.LB)
+
+
+def test_schedule_plan_fits_around_the_week(wk, store):
+    from datetime import datetime
+    from venato import tools
+    tools._now = lambda: datetime(2026, 11, 22, 20, 0)               # Sunday evening
+    start = date(2026, 11, 23)                                       # Monday
+    store.paint(start.isoformat(), "plan", store.slot_of("07:00"), store.slot_of("12:00"),
+                {"label": "Lecture", "category_id": store.resolve_category(label="Lecture"), "details": None})
+    days, _ = wk.parse_plan("Monday: Bench 3x8\nLegs\nSquat 5x5\nPull\nPull-up 3x8")
+    placed, missed = wk.fit_plan(days, start, weeks=2, minutes=60, earliest="07:00", latest="21:00")
+    assert not missed and len(placed) == 6
+    first_week = [(d.isoformat(), store.slot_time(s), day["name"]) for d, s, e, day in placed[:3]]
+    assert first_week == [("2026-11-23", "12:00", "Monday"), ("2026-11-25", "07:00", "Legs"),
+                          ("2026-11-27", "07:00", "Pull")]
+    r = wk.schedule_plan(days, start, weeks=1)
+    assert r.pending and "Monday" in r.pending.summary and not wk.plans()
+    done = r.pending.run()
+    assert done.changed and {p["name"] for p in wk.plans()} == {"Monday", "Legs", "Pull"}
+    blocks = store.blocks_between("2026-11-23", "2026-11-29", "plan")
+    gym = [b for b in blocks if b["label"] in ("Monday", "Legs", "Pull")]
+    assert len(gym) == 3 and all(b["category_id"] == "exercise" for b in gym)
+    assert next(b for b in gym if b["label"] == "Legs")["details"] == "- Squat 5x5"
+    with pytest.raises(tools.ToolError):
+        wk.schedule_plan(days, start, minutes=60, earliest="07:00", latest="07:30")
+
+
+def test_upload_plan_page(wk, store):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.sidebar.radio[0].set_value("Workouts").run()
+    area = next(t for t in at.text_area if t.key == "wk_up_text")
+    area.set_value(PLAN_TEXT).run()
+    assert not at.exception
+    assert any("Found 3 workouts a week" in m.value for m in at.markdown)
+    next(b for b in at.button if b.label == "Find times").click().run()
+    assert not at.exception
+    yes = next(b for b in at.button if b.key == "wk_up_yes")
+    assert any("add" in i.value and "workouts to your Plan" in i.value for i in at.info)
+    yes.click().run()
+    assert not at.exception
+    assert {p["name"] for p in wk.plans()} == {"Push", "Legs", "Wednesday"}
