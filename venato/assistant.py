@@ -364,7 +364,7 @@ def with_context(text, now=None):
 
 
 # ---------------------------------------------------------------------------
-# Tools (thin wrappers around tools.py)
+# Tools (thin wrappers around venato/tools)
 # ---------------------------------------------------------------------------
 
 DATE = {"type": "string", "description": "YYYY-MM-DD"}

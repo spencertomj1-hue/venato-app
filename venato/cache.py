@@ -1,5 +1,5 @@
 """
-Reads remembered until the data changes. No UI: pace.py, tools.py and the notify thread use it too.
+Reads remembered until the data changes. No UI: pace.py, the tools and the notify thread use it too.
 
 `cached(fn)` wraps fn in st.cache_data (works with or without a running Streamlit app). Its hidden key is
 the database file, store.data_version() (up on every write made through store.db(), save_settings and

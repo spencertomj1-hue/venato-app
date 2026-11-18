@@ -10,7 +10,7 @@ Goals meet the timetable, on screen (the numbers come from venato/pace.py):
   offers()          Goals page: what to do about goals that can't be finished in the time left
   suggestions()     Goals page: "5 h/week of Guitar. Make it a goal?"
 
-Everything works without the assistant: the buttons call the same tools.py functions as Claude.
+Everything works without the assistant: the buttons call the same tools functions as Claude.
 """
 
 from datetime import timedelta

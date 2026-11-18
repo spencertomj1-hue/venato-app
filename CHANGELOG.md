@@ -14,6 +14,7 @@ Venato was called **Arete** up to 1.1.1.
 - The defusedxml dependency (it was only used to read Apple Health exports).
 
 ### Changed
+- Code layout: the data layer (`venato/store/`) and Claude's tools (`venato/tools/`) are now packages with one module per area, instead of two files of 2,300 and 1,300 lines. Nothing changes in how Venato works or in your data.
 - Faster: Home goes from about 410 ms to about 100 ms per rerun, Goals from 430 to 120 ms, the Timetable from 250 to 140 ms and Review (was Stats) from 290 to 170 ms (demo data, server-side time; see `docs/perf.md`). Reads are remembered until your data changes. Ticking a to-do or a habit that no goal counts (a habit a goal counts reruns the page, as the goal's bar moves), starting or stopping Focus, changing a day in the Daily Log and changing Review's period now redraw just that part of the page (a to-do tick went from about 450 ms to 9 ms, a Focus start from 507 to 17 ms). The timetable grid already moved blocks at once; if a change can't be saved (a started day's locked Plan, or an error) the block now goes back and says why.
 - Charts are drawn with Altair, which comes with Streamlit, instead of Plotly. Plotly is no longer a dependency.
 - Smaller app: the installers leave out parts of pyarrow that Streamlit never loads (Linux bundle 1014.5 MB to 959.3 MB). The speech model and assistant packages are still bundled.

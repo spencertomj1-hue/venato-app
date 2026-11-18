@@ -4,7 +4,7 @@ compact cards. This is the Python side of the to-do list component
 (todos_component.js/.css).
 
 The component draws Apple Reminders-style lists and applies edits straight
-away; the ops it sends are saved here with store.py and acknowledged in
+away; the ops it sends are saved here with the store and acknowledged in
 `acked`, the same pattern as the timetable grid.
 """
 

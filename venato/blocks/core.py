@@ -1,5 +1,5 @@
 """The blocks Venato started with: timetable, goals, stats (the Review page) and the daily log.
-Their pages and tools live where they always have (venato/ui/*, tools.py); this just
+Their pages and tools live where they always have (venato/ui/*, venato/tools/); this just
 describes them as blocks. All of them can be switched off; they're on for installs that never chose."""
 
 from venato.blocks import Block

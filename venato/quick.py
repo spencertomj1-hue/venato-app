@@ -2,7 +2,7 @@
 Quick commands: short, everyday logging handled straight away, without asking Claude.
 
 "drank 500ml", "2 glasses of water", "tick gym", "did gym yesterday", "mood 7", "productivity 8",
-"slept 7.5h", "done finish essay". Each one calls the same tools.py action Claude
+"slept 7.5h", "done finish essay". Each one calls the same tools action Claude
 would, so the rules are the same (Confirm before overwriting, Undo, and so on).
 
 Anything that isn't a clear match goes to Claude instead: handle() returns None. It

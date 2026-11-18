@@ -39,13 +39,37 @@ setup.ps1                      One-command install on Windows (venv, packages, S
 venato/                         The app's code, as a package (imported as `from venato import store`, ...)
   regional.py                Week start, clock, date format, water units (display only; data stays HH:mm / ISO / litres): use its time() / day_month() / long_date() / water_text()
   system.py                    Everything that differs by OS: data folder, opening a folder, words for the UI
-  store.py                     ALL SQL; timetable painting rules; settings.json; stats. No Streamlit. `data_version()` goes up on every committed write.
+  store/                       ALL SQL; timetable painting rules; settings.json; stats. No Streamlit. Used as one module (`store.x`):
+                               __init__.py re-exports every submodule. `data_version()` goes up on every committed write.
                                Rule: anything that writes the live database outside `store.db()` must call `store.bump_version()` (undo.restore does);
                                writes by another process aren't seen by the cache.
+    database.py                The data folder, `db()` (the connection), `data_version()` / `bump_version()`
+    settings.py                settings.json (`load_settings` / `save_settings`) and the day's hours
+    dates.py                   Time zone, `local_now` / `local_today`, week start, period maths
+    grid.py                    Slots (`slot_count`, `first_min`, `slot_of`, `slot_time`), `plan_paint`, raw block rows
+    categories.py              Categories, activity defaults, the category Outlook events get
+    outlook.py                 Imported calendar events on the timetable (hide, detach)
+    timetable.py               The user's blocks: `paint`, `move_block`, `blocks_between`, ...
+    days.py                    Plan locked / Actual adjusted / confirmed (§5f), `free_runs`
+    journal.py                 Daily entries and the journal
+    habits.py                  Habits, weekly targets, streaks
+    history.py                 The whole log as one table (History, CSV import / export)
+    deadline.py                Deadlines (not deadlines.py: `store.deadlines` is the function)
+    todos.py                   To-dos
+    goals.py                   Goals, the week's goal hours, away days
+    review.py                  Weekly reviews (not reviews.py: `store.reviews` is the function)
+    stats.py                   The Review page's numbers
+    find.py                    Search (not search.py: `store.search` is the function)
+    schema.py                  `init_db`: tables, seed categories, migrations
+                               Each module imports only from the ones above it.
+  facade.py                    Makes the store and tools packages behave like the single files they were: `store.x = y` (monkeypatch)
+                               reaches every submodule, a reload puts it back, and `store.SLOTS` / `FIRST_MIN` / `DB_PATH` / `DATA_DIR` are read fresh
   cache.py                     `cached(fn)`: reads remembered (st.cache_data) until the data changes; key = database, `data_version()`, settings.json mtime, today. No UI; `ui/kit.py` re-exports it
-  tools.py                     What Claude can do: plain functions over store.py, previews for destructive changes
+  tools/                       What Claude can do: plain functions over the store, previews for destructive changes. Used as one module
+                               (`tools.x`): common.py (Result, Pending, ToolError, input helpers), then one module per domain:
+                               daily_log, timetable, deadlines, todos, goals, journal, review, goal_time (pace and planning goal time)
   assistant.py                 Claude via claude-agent-sdk: finds the CLI, system prompt, in-process "venato" MCP server
-  quick.py                     Quick commands ("drank 500ml", "tick gym"): handled without Claude via the same tools.py actions
+  quick.py                     Quick commands ("drank 500ml", "tick gym"): handled without Claude via the same tools actions
   pace.py                      Goals meet the timetable: capacity, budget, pace, debt, follow-through, negotiation, suggestions (§5e). No SQL, no Streamlit UI (it uses `venato.cache` for cached reads)
   blocks/                      Blocks. Core (always on): timetable, goals, focus, grades, stats (shown as "Review"). Optional:
                                log ("Daily Log"), money, workouts. Each has its own tables, migrations, tools, prompt, context,
@@ -60,7 +84,7 @@ venato/                         The app's code, as a package (imported as `from 
   ui/                          One module per page or section (imported as `from venato.ui import goals`, ...)
     search.py                  Home's search box: store.search (every word, any case, per kind) and Open (sets page + day)
     timetable.py               Timetable page and the week/day grid's Python side
-    timetable_tools.py         Buttons above the grid: Add block, Fit time, Categories (dialogs calling the same tools.py functions as Claude)
+    timetable_tools.py         Buttons above the grid: Add block, Fit time, Categories (dialogs calling the same tools functions as Claude)
     daily_log.py               Daily Log page (month calendar, day card, the day's habits, entry form with the journal box, past entries) and Home's habits
     todos.py                   Home's to-do cards
     goals.py                   Goals page (cards in two columns per section, side panel) and Home's goal bars (with the "by today" tick)
@@ -99,9 +123,9 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
   - `status`: `{word in a tool's name: text}`: what the chat shows while one of the block's tools runs.
   - Plus the older ones: `page`, `home`, `tools`, `prompt`, `context`, `quick`, `schema`, `migrate`.
 - **Daily Log's content is gated.** Habit and Journal search kinds (and icons / routing) are the `log` block's `search*` hooks, so they vanish with it. `review.summary` returns no log numbers, habits or journal, and `ui/review.py` / `ui/stats.py` skip those tiles and charts, when `blocks.is_on("log")` is false. `chosen_keys()` puts core blocks missing from a saved list after it (an upgrade doesn't reorder Home).
-- **Adding a block** = adding a file in `venato/blocks/` with a `BLOCK`; set `search*` / `review` / `status` there rather than in `store.py`, `review.py` or `chat.py`.
+- **Adding a block** = adding a file in `venato/blocks/` with a `BLOCK`; set `search*` / `review` / `status` there rather than in the store, `review.py` or `chat.py`.
 
-## 4. Data model (`store.py`)
+## 4. Data model (`venato/store/`)
 
 | Table | Contents |
 |---|---|
@@ -148,7 +172,7 @@ Two different things:
 - **To-dos** are tick-off lists for a day, a week or a month, shown only on Home.
 - **Goals** are measurable targets with a deadline (`period_start` .. `due`), with progress bars, on the Goals page and on Home.
 
-**Periods (shared):** all period maths is in `store.py` (`start_of_period`, `shift_period`, `end_of_period`, `period_title`), on dates in the user's time zone (`local_today()`). Weeks run Monday to Sunday, like the timetable.
+**Periods (shared):** all period maths is in `store/dates.py` (`start_of_period`, `shift_period`, `end_of_period`, `period_title`), on dates in the user's time zone (`local_today()`). Weeks run Monday to Sunday, like the timetable.
 
 **To-dos:**
 - **Repeats:** `roll_todos()` runs whenever Home or a to-do tool loads. Once per period (remembered in `todo_rollover`), each title whose latest earlier copy has repeat on gets an unticked copy, unless the title is already there. A copy the user deletes therefore stays deleted, and turning repeat off on the latest copy stops it.
@@ -214,9 +238,9 @@ Two different things:
   - **Reruns:** the app reruns only if `store.outlook_signature()` changed.
 - **Category:** set by `store.outlook_category()`, from settings, defaulting to "classes". Claude's `set_outlook_category` tool changes it.
 
-## 7. Claude chat (`assistant.py`, `tools.py`, `chat.py`)
+## 7. Claude chat (`assistant.py`, `tools/`, `chat.py`)
 
-- **Optional:** everything must work by hand. With `ai_enabled` off there's no chat bar, no Home ask box, no Voice tab, and hints don't mention Venato/Claude. Anything Claude can change needs a UI too: when adding a tool, add (or reuse) a button/dialog, ideally calling the same `tools.py` function so rules and Confirm previews match (see `ui/timetable_tools.py`).
+- **Optional:** everything must work by hand. With `ai_enabled` off there's no chat bar, no Home ask box, no Voice tab, and hints don't mention Venato/Claude. Anything Claude can change needs a UI too: when adding a tool, add (or reuse) a button/dialog, ideally calling the same `tools` function so rules and Confirm previews match (see `ui/timetable_tools.py`).
 
 - **The agent:** a persistent `claude_agent_sdk.ClaudeSDKClient` per conversation (kept open between messages, replies streamed with `include_partial_messages`) drives the `claude` CLI: the user's installed Claude Code if `find_claude()` finds one, otherwise the copy bundled inside the SDK (`bundled_claude()`).
 - **Signing in:** an Anthropic API key (pasted in the wizard/Settings, checked with Anthropic's free `GET /v1/models`, stored with `keyring` as service `Venato`, account `anthropic-api-key`; or `$ANTHROPIC_API_KEY`) is passed to the CLI as `ANTHROPIC_API_KEY`, which it prefers over a login. Otherwise the user's Claude Code login is used. `setup_checks.claude_status()` reports which.
@@ -272,7 +296,7 @@ Two different things:
 ## 9. Gotchas
 
 - **Undo:** call `undo.checkpoint("Deleted X")` just before any delete or overwrite (UI or a confirmed Claude change); `ui/undo_bar.py` then offers Undo for 2 minutes. It restores a whole-database snapshot, so it's only offered while SQLite's change counter shows nothing else was saved since.
-- **Timetable hours:** `store.SLOTS` / `FIRST_MIN` come from settings.json `day_start` / `day_end` (`_apply_day_hours`, re-run by `save_settings`); never hard-code 36 or 07:00, and don't use them as default arguments (they'd be frozen at import). Blocks outside the hours stay in the database, hidden.
+- **Timetable hours:** `store.SLOTS` / `FIRST_MIN` come from settings.json `day_start` / `day_end`: they're read through `slot_count()` / `first_min()` on every access (re-read from the file after any write, via `data_version()`); never hard-code 36 or 07:00, and don't use them as default arguments (they'd be frozen at import). Blocks outside the hours stay in the database, hidden.
 - **Week start:** weekly to-dos are stored under the week's first day, so `store.set_week_start` moves them (±1 day) when it changes. Use `store.week_start_of(day)`, never `day.weekday()`, for week maths.
 - **Time zone:** never use `date.today()` / `datetime.now()` for the user's day: use `store.local_today()` / `store.local_now()` / `store.stamp()`. The zone is settings.json "timezone" (Settings → Region) or the computer's (`tzlocal`). The tests pin Europe/London in conftest.
 - **Keyboard:** every page is checked by tabbing through it: each stop must show focus (Streamlit's controls draw their own; `appearance.apply_text_colours()` adds rings for the scrollable main area, links and `[tabindex]`; components have their own `:focus-visible`). Streamlit's "Skip to main content" link is the first stop. Headings use `anchor=False` (otherwise each adds an invisible "link to heading" stop). Dialogs close with Esc; the sidebar menu is one radio group (arrow keys).

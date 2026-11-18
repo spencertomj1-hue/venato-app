@@ -1,6 +1,6 @@
 """
 Goals meet the timetable: how much free time a week has, what each goal needs, whether
-it's on pace, and what to plan. No Streamlit and no SQL (store.py does both of those).
+it's on pace, and what to plan. No Streamlit and no SQL (the store does the SQL).
 
 The core rule: a week's capacity is the timetable's hours minus fixed time. Fixed time is
 every visible timed calendar event and every Plan block that doesn't serve an hours goal

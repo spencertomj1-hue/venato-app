@@ -1,7 +1,7 @@
 """
 Everything that differs between macOS, Windows and Linux, in one place:
 where the data folder is, how to open a folder, and what things are called.
-No Streamlit, so store.py and the scripts can use it.
+No Streamlit, so the store and the scripts can use it.
 """
 
 import os
