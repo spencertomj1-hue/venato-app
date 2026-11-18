@@ -25,7 +25,7 @@ which re-runs the same tool with confirmed=True (so it re-checks the data).
 
 from venato import facade
 
-from .common import FILLER_WORDS, PERIOD_NAMES, Pending, Result, ToolError, _now, nice_day
+from .common import FILLER_WORDS, PERIOD_NAMES, Pending, Result, ToolError, _best_match, _day, _now, nice_day
 from .daily_log import (add_habit, delete_habit, get_stats, list_habits, log_day, query_entries,
     rename_habit, set_habit, set_habit_target)
 from .timetable import (OUTLOOK_PREFIX, add_block, confirm_all, confirm_day, delete_block, describe_block,

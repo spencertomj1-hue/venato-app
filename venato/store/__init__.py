@@ -66,7 +66,7 @@ from .goals import (GOAL_COLS, GOAL_PERIODS, _goal_matches, _num, add_goal, add_
 from .review import get_review, reviews, save_review
 from .stats import get_stats, period_start
 from .find import _SEARCH, search
-from .schema import init_db
+from .schema import _add_column, init_db
 
 
 # store.SLOTS / FIRST_MIN / DATA_DIR / DB_PATH: read fresh on every access (see venato/facade.py).
