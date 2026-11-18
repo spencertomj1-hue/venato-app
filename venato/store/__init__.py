@@ -2,18 +2,34 @@
 Data layer for Venato: every SQL query lives here. No Streamlit code, so the
 pages, the Claude tools and the tests all share the same logic.
 
-All user data lives in the data folder (system.default_data_dir(): ~/Library/Application Support/Venato
-on a Mac, %APPDATA%/Venato on Windows, ~/.local/share/Venato on Linux), or $VENATO_DATA_DIR, used for tests and the demo). The database is life.db
-there (or $VENATO_DB). Backups, settings.json and the Outlook cache live there
-too. Nothing user-specific is kept in the project folder.
+Callers use it as one module (`from venato import store`; `store.add_todo(...)`): this file
+re-exports every submodule's public names. Each module only imports from the ones above it:
+
+    database     the data folder, the SQLite connection (db) and the data version
+    settings     settings.json, and the timetable day's hours
+    dates        time zone, now / today, weeks, and day / week / month periods
+    grid         the timetable's half-hour slots, painting rules and raw block rows
+    categories   timetable categories and activity -> category defaults
+    outlook      imported calendar events on the timetable
+    timetable    the user's blocks: paint, move, relabel, read
+    days         a day's Plan locked, its Actual adjusted, then confirmed
+    journal      the daily log (mood, sleep, ...) and the journal
+    habits       habits, weekly targets and streaks
+    history      the whole log as one table (History, CSV import / export)
+    deadline     deadlines
+    todos        to-dos per day / week / month
+    goals        goals, the week's goal hours, away days
+    review       weekly reviews
+    stats        the Review page's numbers
+    find         search across everything
+    schema       creates the tables and migrates older databases
+
+All user data lives in the data folder (see database.py).
 """
-
-
-import pandas as pd
 
 from venato import facade
 
-from .database import (KEEP, _read, bump_version, data_dir, data_version, db, db_path, use_db_path)
+from .database import KEEP, bump_version, data_dir, data_version, db, db_path, use_db_path
 from .settings import (DAY_END, DAY_START, MIN_DAY_HOURS, ai_enabled, day_hours, day_length, load_settings,
     save_settings, settings_path)
 from .dates import (WEEK_START, _as_date, computer_zone_name, end_of_period, fmt_day, local_now, local_today,
@@ -24,8 +40,8 @@ from .grid import (BLOCK_COLS, TRACKS, apply_block_ops, blocks_for, first_min, g
 from .categories import (DEFAULT_CATEGORIES, DEFAULT_LABEL_MAP, DEFAULT_OUTLOOK_CATEGORY, groups,
     load_categories, load_label_map, outlook_category, remove_label_default, resolve_category, save_category,
     set_label_default)
-from .outlook import (OUTLOOK_COLS, _as_block, _detach, _visible_outlook, detach_outlook, get_outlook,
-    hide_outlook, outlook_between, outlook_details, outlook_overlaps, outlook_signature, replace_outlook)
+from .outlook import (OUTLOOK_COLS, _as_block, detach_outlook, get_outlook, hide_outlook, outlook_between,
+    outlook_details, outlook_overlaps, outlook_signature, replace_outlook)
 from .timetable import (blocks_between, delete_block, get_block, move_block, paint, preview_paint,
     set_block_label, upsert_blocks)
 from .days import (confirm_day, confirmed_days, correct, day_ended, day_started, day_status, free_runs,
@@ -36,7 +52,7 @@ from .journal import (append_journal, entries_between, get_entry, get_journal, j
 from .habits import (HABIT_PREFIX, add_habit, delete_habit, find_habit, get_habit_dates, get_habits,
     habit_progress, habit_targets, habit_ticks_between, rename_habit, set_habit_done, set_habit_target,
     streaks, week_ticks, weekly_streaks)
-from .history import (_clean, _is_ticked, load_all_data, save_all_data)
+from .history import load_all_data, save_all_data
 from .deadline import (DEADLINE_COLS, add_deadline, countdown, deadlines, delete_deadline, get_deadline,
     set_deadline_done, update_deadline)
 from .todos import (TODO_COLS, TODO_PERIODS, add_todo, carry_over, delete_todo, get_todo, load_todos,
@@ -47,10 +63,10 @@ from .goals import (GOAL_COLS, GOAL_PERIODS, _goal_matches, _num, add_goal, add_
     goal_week_hours, goals_active, goals_in, goals_open, goals_overlapping, goals_past, habit_has_goal,
     load_goals, reorder_goals, save_goals, set_away, set_away_day, set_goal_progress, set_goal_week_hours,
     update_goal)
-from .review import (get_review, reviews, save_review)
-from .stats import (get_stats, period_start)
-from .find import (_SEARCH, search)
-from .schema import (init_db)
+from .review import get_review, reviews, save_review
+from .stats import get_stats, period_start
+from .find import _SEARCH, search
+from .schema import init_db
 
 
 # store.SLOTS / FIRST_MIN / DATA_DIR / DB_PATH: read fresh on every access (see venato/facade.py).
