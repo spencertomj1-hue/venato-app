@@ -273,9 +273,32 @@ def _confirm_all_dialog():
         st.info(r.text, icon=":material/info:")
 
 
+# Fit time / Adjust categories: soft tinted pills with a coloured icon (blue: fills the Plan; orange: the
+# palette), not plain white buttons. !important and .stApp: Paper's button style (paper.py) is !important too.
+_TOOL_CSS = """<style>
+.stApp .st-key-tt_btn_fit [data-testid^="stBaseButton"] { --c: #2f7de1; }
+.stApp .st-key-tt_btn_cats [data-testid^="stBaseButton"] { --c: #e0782f; }
+.stApp .st-key-tt_btn_fit [data-testid^="stBaseButton"], .stApp .st-key-tt_btn_cats [data-testid^="stBaseButton"] {
+  min-height: 2rem !important; padding: 0.2rem 0.95rem !important; border-radius: 999px !important;
+  border: 1px solid color-mix(in srgb, var(--c) 35%, transparent) !important;
+  background: color-mix(in srgb, var(--c) 10%, transparent) !important;
+  font-weight: 600 !important; transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.stApp .st-key-tt_btn_fit [data-testid^="stBaseButton"]:hover, .stApp .st-key-tt_btn_cats [data-testid^="stBaseButton"]:hover {
+  background: color-mix(in srgb, var(--c) 18%, transparent) !important; border-color: var(--c) !important;
+  transform: translateY(-1px); box-shadow: 0 3px 10px color-mix(in srgb, var(--c) 25%, transparent);
+}
+.stApp .st-key-tt_btn_fit [data-testid^="stBaseButton"]:active, .stApp .st-key-tt_btn_cats [data-testid^="stBaseButton"]:active {
+  transform: none; box-shadow: none;
+}
+.st-key-tt_btn_fit [data-testid="stIconMaterial"], .st-key-tt_btn_cats [data-testid="stIconMaterial"] { color: var(--c); }
+</style>"""
+
+
 def toolbar(day, row=None):
     """Confirm week / Fit time / Adjust categories, into `row` if given (the Timetable's one toolbar line)."""
     row = row or st.container(horizontal=True, gap="small")     # sized to the text, so bigger text never truncates
+    st.html(_TOOL_CSS)
     b = c = row
     first = store.week_start_of(day)
     waiting = store.unconfirmed_days(first, min(first + timedelta(days=6), store.local_today()))

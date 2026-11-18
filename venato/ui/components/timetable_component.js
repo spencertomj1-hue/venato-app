@@ -357,8 +357,9 @@ class Timetable {
     this.closePopover();
     this.setPicked([]);
     remember("tt-mode", mode);
-    // Cross-fade: the old view, copied on top, fades out over the new one. On locked days the Plan
-    // grows out of its rail (Actual -> Plan) or shrinks back into it (Plan -> Actual).
+    // Cross-fade: the old view, copied on top, fades out over the new one. On locked days it's a
+    // revolving door: the Plan grows out of its rail (Actual -> Plan) as the Actual is pushed out the
+    // right edge, or shrinks back into it (Plan -> Actual) as the Actual sweeps back in from the right.
     const toPlan = mode === "plan";
     const railDays = toPlan ? new Set(this.railDays || []) : null;
     this.wrapEl.querySelectorAll(".tt-leaving").forEach((el) => el.remove());
@@ -376,10 +377,15 @@ class Timetable {
     this.blocksEl.after(old);
     const days = toPlan ? railDays : this.railDays || new Set();
     const rail = `inset(0 calc(100% - ${RAIL}px) 0 0 round 2px)`, full = "inset(0 0 0 0 round 0px)";
+    const gone = "inset(0 0 0 100% round 0px)";                       // squeezed out at the right edge
     const opts = { duration: SWAP_MS, easing: "cubic-bezier(.4,0,.2,1)" };
     for (const el of (toPlan ? this.blocksEl : old).querySelectorAll(".blk.plan[data-di]")) {
       if (!days.has(+el.dataset.di)) continue;
       el.animate({ clipPath: toPlan ? [rail, full] : [full, rail] }, opts);
+    }
+    for (const el of (toPlan ? old : this.blocksEl).querySelectorAll(".blk.act[data-di]")) {
+      if (!days.has(+el.dataset.di)) continue;
+      el.animate({ clipPath: toPlan ? [full, gone] : [gone, full] }, opts);
     }
     // Blocks fade in as the old ones fade out, so both views cross-fade the same way.
     this.blocksEl.animate({ opacity: [0, 1] }, { ...opts, easing: toPlan ? "ease-in" : "ease-out" });
