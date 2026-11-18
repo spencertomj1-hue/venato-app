@@ -19,20 +19,55 @@ def open_page(at, name):
     assert not at.exception, at.exception
 
 
-def test_home_shows_todos_and_goals(store):
+def test_home_shows_todos_but_no_goals_card(store):
+    """Home ("Essentials"): one To-dos card; no separate Goals card (Needs you shows the goals that need you)."""
     today = store.local_today()
-    for i in range(9):                                       # more than a card shows at first
+    for i in range(9):                                       # more than a list shows at first
         store.add_todo(f"Task {i}", "daily", today)
     store.add_goal("Gym", "monthly", today, 12, "sessions")
     at = app()
     assert not at.exception
     assert at.sidebar.radio[0].value == "Home"
-    assert at.button(key="home_goals_all").label == "See all"
+    keys = home_keys(at)
+    assert "home_todos_card" in keys and "home_todos" in keys
+    assert "home_goals_card" not in keys and "home_goals_all" not in keys
+    assert not [m for m in at.markdown if m.value == "**Goals**"]
+
+
+def home_keys(at):
+    """The keys of everything drawn on the page (blocks, widgets and components)."""
+    keys, todo = set(), [at.main]
+    while todo:
+        node = todo.pop()
+        keys.add(getattr(node, "key", None))
+        todo += list(getattr(node, "children", {}).values())
+    return keys - {None}
+
+
+def test_home_skips_empty_widgets(store):
+    """A Home widget with nothing to show isn't drawn at all: no "No habits yet", no "No marks yet",
+    no empty Focus box, no Deadlines heading with nothing under it. Once there's something, it shows."""
+    store.save_settings(blocks=["timetable", "goals", "log", "stats", "focus", "grades", "money", "workouts"])
+    at = app()
+    assert not at.exception
+    shown = [m.value for m in at.markdown]
+    for title in ("**Habits**", "**Focus**", "**Grades**", "**Money**", "**Workouts**", "**Deadlines**",
+                  "**Needs you this week**"):
+        assert title not in shown, title
+    assert not [c for c in at.caption if "No habits yet" in c.value or "No marks yet" in c.value]
+    assert "home_deadlines_all" not in home_keys(at) and "home_habits_manage" not in home_keys(at)
+    assert "home_todos_card" in home_keys(at)                     # the To-dos card stays: it's where you add them
+    store.add_habit("Gym")
+    store.add_deadline("Essay", store.local_today())
+    at.run()
+    shown = [m.value for m in at.markdown]
+    assert "**Habits**" in shown and "**Deadlines**" in shown
 
 
 def test_see_all_opens_goals_page(store):
+    store.add_deadline("Essay", store.local_today())
     at = app()
-    at.button(key="home_goals_all").click().run()
+    at.button(key="home_deadlines_all").click().run()
     assert not at.exception
     assert at.header[0].value == "Goals"
 

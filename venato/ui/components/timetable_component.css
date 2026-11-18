@@ -253,7 +253,11 @@ td.s.sel { --tile: color-mix(in srgb, var(--accent) 26%, transparent); }
 .blk b, .blk span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .blk b { font-size: 0.7rem; font-weight: 600; }
 .blk span { font-size: 0.62rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
-.blk:not(.tall) { justify-content: center; padding-top: 0; padding-bottom: 0; }
+/* A half-hour block is one row tall: its name sits in the middle on one line, and shrinks rather than be
+   cut off when the block (inside its border) is shorter than the text. The padding leaves room for
+   descenders, which overflow: hidden would otherwise clip; 100cqh is the block's inner height. */
+.blk:not(.tall) { justify-content: center; padding-top: 0; padding-bottom: 0; line-height: 1; container-type: size; }
+.blk:not(.tall) b { line-height: 1; padding: 0.12em 0; font-size: min(0.7rem, calc(100cqh / 1.24)); }
 /* Hovering a block (editable grid): a ring, and grab bars at the top and bottom edges for resizing. */
 .blk.hover::before, .blk.hover::after {      /* resize bars, on the very edge (next to the selection ring) */
   content: ""; position: absolute; left: 50%; width: 22px; height: 3px; margin-left: -11px;
@@ -363,7 +367,6 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 .tt-root.readonly .tt-title { font-size: 1.5rem; margin-right: 0; }
 .tt-root.readonly .tt-head { gap: 6px; flex-wrap: nowrap; }
 .tt-root.readonly .tt-synced:not(.warn) { display: none; }   /* Home: on one line; it's in the sync button's tooltip */
-.blk:not(.tall) b { line-height: 1; }
 
 /* Clicked block: grows slightly while its details card is open. */
 .blk { transition: transform 0.12s ease, box-shadow 0.12s ease; transform-origin: center left; }

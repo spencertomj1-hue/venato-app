@@ -61,8 +61,9 @@
 - **Deadlines** with countdowns, reminders the day before and on the day, and "Make time" to plan hours for them.
 
 **Home**
-- Today's timetable (its Actual: the Plan as locked this morning, with your changes), the agenda, and an end-of-day prompt: "Is the timetable right for today?" with **Confirm** or **Review**.
-- **Needs you this week:** only the goals that are behind or short of time, each with its state and "N h to plan", and Plan my goals. Every goal's bar (with a "should be here by today" tick and one status line) is in the Goals card; to-dos, deadlines, habits and search as before.
+- Today's timetable (its Actual: the Plan as locked this morning, with your changes), stretched to fill the window, and an end-of-day prompt: "Is the timetable right for today?" with **Confirm** or **Review**.
+- **Needs you this week:** only the goals that are behind or short of time, each with its state, "N h to plan", its bar with a "should be here by today" tick and "8 / 25 by 04/01 · 3.5 under today's pace", and Plan my goals.
+- **To-dos** in one card with a Daily / Weekly / Monthly switch, then deadlines, habits and search. A widget with nothing to show (no habits, no marks, no deadlines…) isn't drawn.
 
 **Tracking**
 - **Daily log (optional):** a month calendar of mood, sleep, energy and water. Click a day to tick habits and write notes.

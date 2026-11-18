@@ -472,8 +472,9 @@ PILL = {"behind": "orange", "slipping": "orange", "unreachable": "red"}
 def needs_you(ctx=None):
     """
     Home: only the goals that are behind (or slipping, or can't be reached) or short of time this week,
-    each with its state pill and "N h to plan" (habit and hand-kept goals: what this week needs), and
-    Plan my goals. On-track goals stay in the Goals card only. Nothing to show: nothing drawn.
+    each with its state pill and "N h to plan" (habit and hand-kept goals: what this week needs), its
+    progress bar with the "should be here by today" tick and "8 / 25 by 04/01 · 3.5 under today's pace",
+    and Plan my goals. On-track goals are only on the Goals page. Nothing to show: nothing drawn.
     """
     ctx = ctx or _ctx()
     rows = []
@@ -485,14 +486,20 @@ def needs_you(ctx=None):
         state = p["state"] if p["state"] in PILL else "behind"
         what = (f"{pace.fmt(pace.half_up(short))} h to plan" if short >= pace.TOLERANCE
                 else f"{pace.amount(g, p['need'])} this week" if p["need"] else "")
-        rows.append((g, state, what))
+        rows.append((p, state, what))
     if not rows:
         return
+    from venato.ui import goals
     with st.container(border=True, key="home_needs_you"):
         st.markdown("**Needs you this week**")
-        st.markdown("  \n".join(f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}] **{md(g['title'])}**"
-                                 f"<span style='float:right'>{escape(what)}</span>" for g, state, what in rows),
-                    unsafe_allow_html=True)       # one block, one line per goal: as short as it can be
+        st.html(goals.goal_bar_css())
+        for p, state, what in rows:            # each goal: its pill and what it needs, then its bar
+            g = p["goal"]
+            st.markdown(f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}] **{md(g['title'])}**"
+                        f"<span style='float:right'>{escape(what)}</span>", unsafe_allow_html=True)
+            line = " · ".join(x for x in (f"{goals.amount(g)} {store.goal_title_due(g['due'], ctx.today)}",
+                                          goals.pace_detail(p)) if x)
+            st.html(goals.goal_bar(g, ctx.today, line))
         if any(p.get("week") and p["week"]["short"] >= pace.TOLERANCE and not p["week"]["over"] for p in pace.pace_all(ctx)):
             if st.button("Plan my goals", icon=":material/auto_awesome_motion:", key="home_plan_goals", width="stretch",
                          help="Fill what each goal is short into free time this week, top goal first. You'll see it first."):

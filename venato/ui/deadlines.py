@@ -27,13 +27,14 @@ def _tone(due, today):
 
 
 def render_home():
+    """Home: what's due, soonest first, with a countdown. Nothing due: nothing drawn."""
     today = store.local_today()
     rows = store.deadlines()
-    head = st.container(horizontal=True, vertical_alignment="center")
-    head.markdown("**Deadlines**" + ("" if rows else " :gray[· none yet; add them on the Goals page]"), width="stretch")
-    head.button("See all", key="home_deadlines_all", type="tertiary", on_click=_go_to_goals)
     if not rows:
         return
+    head = st.container(horizontal=True, vertical_alignment="center")
+    head.markdown("**Deadlines**", width="stretch")
+    head.button("See all", key="home_deadlines_all", type="tertiary", on_click=_go_to_goals)
     from venato.ui import appearance
     soon, over = appearance.warn_colours()
     items = "".join(

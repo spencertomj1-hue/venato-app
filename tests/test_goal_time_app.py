@@ -141,10 +141,10 @@ def test_home_needs_you_lists_only_goals_that_need_something(store):
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
     assert "Needs you this week" in text and "Revision" in text
-    needs = text[text.index("Needs you this week"):]
-    assert "Books" not in needs.split("To-dos")[0]                                 # on track: only in the Goals card
+    assert "Books" not in text                                                     # on track: only on the Goals page
     html = " ".join(h.proto.body for h in at.get("html"))
-    assert "Behind" in html and "Done" in html                                     # one status line per goal
+    assert 'class="hg-bar"' in html and "/ 200 h by " in html                      # its bar and "0 / 200 h by …"
+    assert "Books" not in html and "Agenda" not in html                            # no Goals card, no Agenda
     assert at.button(key="home_plan_goals")
     assert behind["id"]
 

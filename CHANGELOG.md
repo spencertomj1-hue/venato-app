@@ -9,6 +9,10 @@ Venato was called **Arete** up to 1.1.1.
 
 ## [Unreleased]
 
+### Changed
+- Home is simpler ("Essentials"): today's timetable on the left, now taller (it fills the window, still without scrolling); on the right Ask Venato, Needs you this week (each goal with its progress bar and how far off today's pace), To-dos and Deadlines. To-dos are one card with a Daily / Weekly / Monthly switch instead of three side-by-side lists. The Agenda list and the separate Goals card are gone (the timetable and Needs you show the same), and widgets with nothing to show (no habits, no marks, no deadlines, Focus with nothing today) aren't drawn.
+- Timetable: half-hour blocks show their name centred on one line, never cut off.
+
 ### Removed
 - Food, Recipes, Cut down, Health data, Involvement, Applications and Network are gone from the public app, so Venato can focus on student life. Your data in them stays in your database, untouched: nothing is deleted or dropped, it just isn't shown or searched any more, and new installs don't create those tables.
 - The defusedxml dependency (it was only used to read Apple Health exports).

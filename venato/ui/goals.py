@@ -359,59 +359,39 @@ STATUS_ICON = {"done": "✓", "on_track": "✓", "behind": "⚠", "slipping": "�
                "upcoming": "○"}
 
 
-def status_line(p):
-    """One short line for Home: the state (icon + word, never colour alone) and how far off today's pace."""
+def pace_detail(p):
+    """How far off today's pace, in words ("3.5 h under today's pace"), or "" when there's nothing to add."""
     from venato import pace
     g, state = p["goal"], p["state"]
-    text = pace.STATES[state]
     if state == "behind" and p["expected"] - p["value"] >= 0.05:
-        text += f": {pace.amount(g, p['expected'] - p['value'])} under today's pace"
-    elif state == "behind" and p.get("late"):
-        text += f": {p['late']} days late at this rate"
-    elif state == "slipping":
-        text += ": done is trailing the Plan this week"
-    elif state == "unreachable":
-        text += ": not enough time left"
-    return f"{STATUS_ICON[state]} {text}"
+        return f"{pace.amount(g, p['expected'] - p['value'])} under today's pace"
+    if state == "behind" and p.get("late"):
+        return f"{p['late']} days late at this rate"
+    if state == "slipping":
+        return "done is trailing the Plan this week"
+    if state == "unreachable":
+        return "not enough time left"
+    return ""
 
 
-def render_home(ctx=None):
-    """Home's Goals card (Home A): each current goal's bar with the "should be here by today" tick and one status line."""
+def status_line(p):
+    """One short line: the state (icon + word, never colour alone) and how far off today's pace."""
     from venato import pace
-    from venato.ui import appearance
-    today = store.local_today()
-    ctx = ctx or pace.Ctx()
-    accent = _accent()
-    warn, ok = ("#FBBF24", "#4ADE80") if appearance.is_dark() else ("#B45309", "#146C2E")
-    tone = {"done": ok, "on_track": ok, "behind": warn, "slipping": warn, "unreachable": warn}
-    rows = []
-    for g in pace.goals_active(today):
-        pct = 100 * fraction(g)
-        when = store.goal_title_due(g["due"], today)
-        p = pace.goal_pace(g, ctx)
-        rows.append(
-            f'<div class="hg-row{" done" if pct >= 100 else ""}">'
-            f'<div class="hg-top"><span class="hg-title">{escape(g["title"])}</span>'
-            f'<span class="hg-when">{when}</span>'
-            f'<span class="hg-amount">{"✓ " if pct >= 100 else ""}{escape(amount(g))}</span></div>'
-            f'<div class="hg-track"><div class="hg-bar">{_fill(g)}</div>{_marker(g, today)}</div>'
-            f'<div class="hg-status" style="color:{tone.get(p["state"], "inherit")}">{escape(status_line(p))}</div></div>'
-        )
-    with st.container(border=True, key="home_goals_card"):
-        head = st.container(horizontal=True, vertical_alignment="center")
-        head.markdown("**Goals**", width="stretch")
-        head.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
-        body = "".join(rows) or '<div class="hg-empty">No goals yet.</div>'
-        st.html(f"""<style>
-          .hg {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 28px; }}  /* two-up when wide */
-          .hg-top {{ display: flex; align-items: baseline; gap: 8px; font-size: 0.88rem; margin-bottom: 4px; }}
-          .hg-title {{ font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-          .hg-when {{ font-size: 0.72rem; opacity: 0.78; white-space: nowrap; }}
-          .hg-amount {{ margin-left: auto; opacity: 0.8; font-variant-numeric: tabular-nums; white-space: nowrap; }}
-          .hg-row.done .hg-amount {{ color: {accent}; opacity: 1; font-weight: 600; }}
-          .hg-status {{ font-size: 0.8rem; margin-top: 3px; }}
-          .hg-empty {{ opacity: 0.78; font-size: 0.86rem; }}
-          .hg-track {{ position: relative; }}
-          .hg-mark {{ position: absolute; top: -4px; width: 2px; height: 15px; margin-left: -1px; border-radius: 1px;
-                      background: currentColor; opacity: 0.85; }}
-        </style><div class="hg">{body}</div>""" + BAR_CSS.replace("ACCENT", accent))
+    detail = pace_detail(p)
+    return f"{STATUS_ICON[p['state']]} {pace.STATES[p['state']]}" + (f": {detail}" if detail else "")
+
+
+def goal_bar(g, today, line=""):
+    """A goal's progress bar with the "should be here by today" tick, and a line under it."""
+    return (f'<div class="hg-track"><div class="hg-bar">{_fill(g)}</div>{_marker(g, today)}</div>'
+            + (f'<div class="hg-line">{escape(line)}</div>' if line else ""))
+
+
+def goal_bar_css():
+    """The styles goal_bar needs (the bar in the theme's accent)."""
+    return ("""<style>
+      .hg-track { position: relative; }
+      .hg-mark { position: absolute; top: -4px; width: 2px; height: 15px; margin-left: -1px; border-radius: 1px;
+                 background: currentColor; opacity: 0.85; }
+      .hg-line { font-size: 0.8rem; opacity: 0.8; margin-top: 3px; font-variant-numeric: tabular-nums; }
+    </style>""" + BAR_CSS.replace("ACCENT", _accent()))

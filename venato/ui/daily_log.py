@@ -201,16 +201,13 @@ def _open_habits():
 
 
 def render_home_habits():
-    """Home: today's habits to tick, each with the last 7 days and its current streak."""
+    """Home: today's habits to tick, each with the last 7 days and its current streak. No habits: nothing drawn."""
+    if not store.get_habits():
+        return
     accent = st.get_option("theme.primaryColor") or "#ff4b4b"
     head = st.container(horizontal=True, vertical_alignment="center")
     head.markdown("**Habits**", width="stretch")
     head.button("Manage", key="home_habits_manage", type="tertiary", on_click=_open_habits)
-
-    habits = store.get_habits()
-    if not habits:
-        st.caption("No habits yet. Add some on the Daily Log page.")
-        return
     _home_habit_rows(accent)
 
 

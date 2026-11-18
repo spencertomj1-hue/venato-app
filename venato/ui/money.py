@@ -488,16 +488,19 @@ def render_page():
 
 
 def render_home():
-    st.markdown("**Money**")
+    """Home: this month's spending, budgets and the first savings goal. Nothing of those yet: nothing drawn."""
     mn.log_renewals()
     s = mn.month_summary()
+    goals = mn.savings()
+    if not s["spent"] and not s["budget"] and not goals:
+        return
+    st.markdown("**Money**")
     text = f"Spent {mn.fmt(s['spent'])} this month"
     if s["budget"]:
         text += f" of {mn.fmt(s['budget'])} budgeted"
     over = [c["name"] for c in s["categories"] if c["budget"] and c["left"] < 0]
     if over:
         text += f" · over on {', '.join(over)}"
-    goals = mn.savings()
     if goals:
         g = goals[0]
         text += f" · {g['name']} {mn.goal_status(g)['pct']:.0f}%"

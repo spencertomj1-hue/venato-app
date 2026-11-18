@@ -260,16 +260,19 @@ def _page_timer():
 
 @st.fragment
 def render_home():
-    """Home's Focus widget: a fragment, so only it reruns, unless a session goes into today's Actual."""
-    st.markdown("**Focus**")
+    """Home's Focus widget: a fragment, so only it reruns, unless a session goes into today's Actual.
+    No session running and nothing focused today: nothing drawn (start one on the Focus page)."""
     _message()
     if focus.finish_if_due():                    # ran out while away: it may be in today's Actual now
         kit.rerun_app_if({"actual"})
-    r = _draw_timer(HOME_KEY, compact=True)
-    if not r:
-        _start_form("home_focus")
     today = store.local_today()
     _, by_day = focus.totals(today, today)
     mins = by_day.get(today.isoformat(), 0)
+    if not focus.running() and not mins:
+        return
+    st.markdown("**Focus**")
+    r = _draw_timer(HOME_KEY, compact=True)
+    if not r:
+        _start_form("home_focus")
     if mins:
         st.caption(f"{duration(mins)} focused today")

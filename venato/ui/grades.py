@@ -271,11 +271,11 @@ def render_page():
 
 
 def render_home():
-    st.markdown("**Grades**")
+    """Home: the degree so far and the next assessment due. No marks yet: nothing drawn."""
     o = gr.overall()
     if o["degree"] is None:
-        st.caption("No marks yet.")
         return
+    st.markdown("**Grades**")
     text = gr.describe(o["degree"], o["gpa"])
     due = sorted((a["due"], a["name"], m["name"]) for m in gr.modules() for a in gr.assessments(m["id"])
                  if a["due"] and a["mark"] is None and a["due"] >= store.local_today().isoformat())

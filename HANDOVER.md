@@ -92,7 +92,7 @@ venato/                         The app's code, as a package (imported as `from 
     goal_time.py               Timetable: the "Plan this week" panel (free hours per day, goal bars with Fit N h, Plan all goals, I'm away) and suggested sittings; Share hours; the Goals page's pace lines, offers and suggestions
     deadlines.py               Deadlines section (Goals page) and Home's list, with "Make time"
     review.py                  Weekly review pop-up and Review's history
-    home.py, stats.py          Home (agenda, widgets) and Review (stats.py) pages
+    home.py, stats.py          Home (timetable, widgets; empty widgets draw nothing) and Review (stats.py) pages
     blocks_ui.py               Settings → Blocks; one page module per block (focus.py, money.py, ...)
     undo_bar.py, page_fade.py  The Undo bar; the fade between pages
     chat.py                    The chat bar / Home ask box, and its flow (send → transcribe → Claude → rerun)
@@ -138,7 +138,7 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
 | `tt_outlook_hidden` | Outlook occurrences the user removed or detached (kept across syncs) |
 | `todos` | `id`, `title`, `notes`, `period` (daily/weekly/monthly), `period_start` (the day, its Monday or the 1st), `done`, `done_at`, `"repeat"`, `ord`, `created_at` |
 | `todo_rollover` | Per period kind, the last period repeating to-dos were copied into (see §5b) |
-| `deadlines` | `id`, `title`, `due` (date), `notes`, `done`, `done_at`, `created_at`. UI in `ui/deadlines.py` (Goals page section, Home list); chips on the timetable header (`outlookAllDay` with `deadline: true`) and agenda; `notify.due_deadlines` announces today/tomorrow once a day from 9 am |
+| `deadlines` | `id`, `title`, `due` (date), `notes`, `done`, `done_at`, `created_at`. UI in `ui/deadlines.py` (Goals page section, Home list); chips on the timetable header (`outlookAllDay` with `deadline: true`); `notify.due_deadlines` announces today/tomorrow once a day from 9 am |
 | `goals` | `id`, `title`, `period` (legacy tag: monthly if due by the end of its first month, else yearly), `period_start` (the day it was set), `due` (the deadline; older goals got their month's or year's last day), `target`, `unit`, `progress` (kept by hand), `habit_id` (NULL = by hand; `ON DELETE SET NULL`), `ord` (also its priority), `created_at`, `category_id` (counts timetable hours; `ON DELETE SET NULL`; never together with `habit_id`), `label` (optional: only that activity) |
 | `goal_week` | The user's split of a week between hours goals: `goal_id` (cascade), `week_start`, `hours`. None = automatic |
 | `tt_outlook_away` | All-day calendar events marked "I'm away" (that day has no free time for goals); kept across syncs |
@@ -177,7 +177,7 @@ Two different things:
 **To-dos:**
 - **Repeats:** `roll_todos()` runs whenever Home or a to-do tool loads. Once per period (remembered in `todo_rollover`), each title whose latest earlier copy has repeat on gets an unticked copy, unless the title is already there. A copy the user deletes therefore stays deleted, and turning repeat off on the latest copy stops it.
 - **Carry over:** `carry_over(period, start)` copies unticked to-dos into the next period. It's in the store, but not currently in the UI.
-- **Component (`todos_component.*`, key `home_todos`):** three compact cards with up to 6 to-dos each, then "N more", which expands in place. A container query stacks the cards when the column is under 480px.
+- **Component (`todos_component.*`, key `home_todos`):** one card with a Daily / Weekly / Monthly switch in its header (each tab shows done/all, e.g. "Monthly 2/5"); it starts on the first list with open to-dos and shows up to 6, then "N more", which expands in place.
 - **Protocol:** the same as the timetable grid. The ops are `add`, `toggle`, `edit`, `repeat`, `move`, `delete` and `reorder`, each with an `opId`. `todos.apply_op` saves them, and they're acknowledged in `data.acked` (`todo_acked` in session state). An `add` carries the new to-do's id, so a resent op adds nothing. The JS calls them "goals" internally (`op.goal`, `section.goals`) from before the split.
 - **Tick animation:** a ticked to-do stays in place for 650 ms (circle fills, title fades and strikes through), then folds into "Completed (n)", collapsed by default.
 - **Editors:** the new-to-do, title and notes boxes are redrawn with their text, caret and focus after every rerun (`restoreEditor`), so typing is never lost.

@@ -739,13 +739,12 @@ class Timetable {
     list.innerHTML = groups || `<button disabled>Nothing in the timetable this ${this.data.single ? "day" : "week"}</button>`;
   }
 
-  // Draw each entry as one rounded block laid over its slot cells.
-  // Home (view only): shrink the rows so the whole day fits in the window, no scrolling.
-  // Shrink (or grow) the rows so the whole day fits in the window without scrolling:
-  // Home down to 9px rows, the Timetable page down to 10px (still big enough to drag in).
+  // Shrink (or grow) the rows so the whole day fits in the window without scrolling (runs again on
+  // every window resize). Home (view only): 9px to 40px rows, so the day fills the column's height;
+  // the Timetable page: 10px (still big enough to drag in) to 18px.
   fitToWindow() {
     if (!this.wrapEl || !this.cells || !this.cells[0]) return;
-    const min = this.data.readonly ? 9 : 10, max = 18;
+    const [min, max] = this.data.readonly ? [9, 40] : [10, 18];
     const main = document.querySelector(".stMainBlockContainer");
     const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24;
     const bottom = () => Math.max(...[".tt-card", ".tt-legend"].map((sel) => {

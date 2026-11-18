@@ -1,5 +1,5 @@
-// To-do lists in the style of Apple Reminders: the Home page's three compact
-// cards (today, this week, this month).
+// To-do lists in the style of Apple Reminders: the Home page's To-dos card, with a
+// Daily / Weekly / Monthly switch in its header showing one list at a time.
 //
 // Python passes { today, sections: [{period, start, title, goals, limit}], acked },
 // where goals are the to-do rows of that section's period.
@@ -73,13 +73,6 @@ function moveTarget(goal, period, today) {
   return periodStart(period, inside ? today : goal.period_start);
 }
 
-function ring(done, total) {
-  const r = 7, c = 2 * Math.PI * r, frac = total ? done / total : 0;
-  return `<svg class="gl-ring${total && done === total ? " full" : ""}" viewBox="0 0 18 18">
-    <circle cx="9" cy="9" r="${r}" class="track"/>
-    ${done ? `<circle cx="9" cy="9" r="${r}" class="fill" stroke-dasharray="${(frac * c).toFixed(2)} ${c.toFixed(2)}"/>` : ""}</svg>`;
-}
-
 // ---------- Entry point ----------
 
 const instances = new WeakMap();
@@ -106,6 +99,7 @@ class GoalLists {
     this.editing = null;         // {kind: "add", period} | {kind: "title" | "notes", id}, plus value
     this.openDone = new Set(recall("gl-open-done") || []);
     this.expanded = new Set();   // sections showing all their to-dos, not just the first few
+    this.tab = null;             // the list shown; first draw: the first with open to-dos
     this.drag = null;
     this.onOutside = (e) => { if (this.menu && !e.composedPath().includes(this.menu)) this.closeMenu(); };
     this.onKey = (e) => {
@@ -208,22 +202,51 @@ class GoalLists {
 
   render() {
     const { sections } = this.data;
+    if (!this.section(this.tab)) {
+      const open = sections.find((s) => this.split(s).active.length);
+      this.tab = (open || sections[0]).period;
+    }
     // Redrawing replaces every row, so note which to-do (and which part of it) has
     // keyboard focus, and put it back afterwards: keyboard users don't lose their place.
     const had = this.root.getRootNode().activeElement;
-    const row = had && this.root.contains(had) && had.closest(".gl-row");
+    const inside = had && this.root.contains(had);
+    const row = inside && had.closest(".gl-row");
     const keep = this.refocus ? { id: this.refocus, part: "[data-title]" }
       : row ? { id: row.dataset.id, part: had.matches("[data-tick]") ? "[data-tick]" : "[data-title]" } : null;
+    const onTab = inside && had.matches("[data-tab]");
     this.refocus = null;
     this.rendering = true;
-    this.root.innerHTML = `<div class="gl-grid compact">
-      ${sections.map((s) => this.sectionHtml(s)).join("")}</div>`;
+    this.root.innerHTML = `<div class="gl-one compact">
+      <header class="gl-top">
+        <span class="gl-heading">To-dos</span>
+        <div class="gl-tabs" role="tablist" aria-label="To-do lists">${sections.map((s) => this.tabHtml(s)).join("")}</div>
+      </header>
+      ${this.sectionHtml(this.section(this.tab))}</div>`;
     this.rendering = false;
     this.restoreEditor();
     if (keep && !this.editing) {
       const el = this.root.querySelector(`.gl-row[data-id="${CSS.escape(keep.id)}"] ${keep.part}`);
       if (el) el.focus();
-    }
+    } else if (onTab) this.root.querySelector(`[data-tab="${this.tab}"]`).focus();
+  }
+
+  // One button of the switch: "Monthly 2/5" (done of all), or "Daily 0" when the list is empty.
+  tabHtml(sec) {
+    const { all } = this.split(sec);
+    const finished = all.filter((g) => g.done).length;
+    const on = sec.period === this.tab;
+    return `<button class="gl-tab" role="tab" data-tab="${sec.period}" aria-selected="${on}" tabindex="${on ? 0 : -1}"
+      aria-controls="gl-panel" title="${esc(sec.title)}">${NAMES[sec.period]}
+      <span class="gl-tab-n">${all.length ? `${finished}/${all.length}` : 0}</span></button>`;
+  }
+
+  // Show another list (an open editor saves first, as clicking elsewhere does).
+  showTab(period) {
+    if (period === this.tab) return;
+    if (this.editing) { this.finishEdit(true); }
+    this.closeMenu();
+    this.tab = period;
+    this.render();
   }
 
   sectionHtml(sec) {
@@ -234,13 +257,8 @@ class GoalLists {
     const hidden = active.length - shown.length;
     const open = this.openDone.has(sec.period);
     const adding = this.editing && this.editing.kind === "add" && this.editing.period === sec.period;
-    return `<section class="gl-card" data-period="${sec.period}">
-      <header class="gl-head">
-        ${ring(finished, all.length)}
-        <span class="gl-name">${NAMES[sec.period]}</span>
-        <span class="gl-count">${finished}/${all.length}</span>
-        <span class="gl-sub">${esc(sec.title)}</span>
-      </header>
+    return `<section class="gl-card" id="gl-panel" role="tabpanel" data-period="${sec.period}"
+      aria-label="${NAMES[sec.period]} to-dos: ${finished} of ${all.length} done, ${esc(sec.title)}">
       <ul class="gl-list" data-list="${sec.period}" aria-label="${NAMES[sec.period]} to-dos">${shown.map((g) => this.rowHtml(g)).join("")}</ul>
       ${hidden > 0 ? `<button class="gl-link gl-more" data-more>${hidden} more</button>` : ""}
       ${adding ? `<div class="gl-add editing"><span class="gl-tick ghost"></span>
@@ -337,7 +355,8 @@ class GoalLists {
     const card = t.closest(".gl-card");
     const period = card && card.dataset.period;
     const row = t.closest(".gl-row");
-    if (t.dataset.tick !== undefined) this.toggle(row.dataset.id);
+    if (t.dataset.tab !== undefined) this.showTab(t.dataset.tab);
+    else if (t.dataset.tick !== undefined) this.toggle(row.dataset.id);
     else if (t.dataset.title !== undefined) this.startEdit({ kind: "title", id: row.dataset.id });
     else if (t.dataset.add !== undefined) this.startEdit({ kind: "add", period });
     else if (t.dataset.more !== undefined) {
@@ -379,6 +398,16 @@ class GoalLists {
       const at = items.indexOf(e.composedPath()[0]);
       items[(at + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
       e.preventDefault();
+      return;
+    }
+    const tab = e.target.closest && e.target.closest("[data-tab]");
+    if (tab && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {   // the switch: arrows move along it
+      const periods = this.data.sections.map((s) => s.period);
+      const at = periods.indexOf(tab.dataset.tab), n = periods.length;
+      const to = { ArrowLeft: (at + n - 1) % n, ArrowRight: (at + 1) % n, Home: 0, End: n - 1 }[e.key];
+      e.preventDefault();
+      this.showTab(periods[to]);
+      this.root.querySelector(`[data-tab="${periods[to]}"]`).focus();
       return;
     }
     const title = e.target.closest && e.target.closest("[data-title]");

@@ -395,8 +395,10 @@ def render_page():
 def render_home():
     today = store.local_today()
     week = wk.workouts(store.week_start_of(today), today)
-    st.markdown("**Workouts**")
     last = wk.workouts(today - timedelta(days=60), today)[:1]
+    if not week and not last:              # nothing logged lately: nothing drawn
+        return
+    st.markdown("**Workouts**")
     text = f"{len(week)} this week"
     if last:
         w = last[0]
