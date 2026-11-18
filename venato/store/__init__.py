@@ -8,7 +8,6 @@ there (or $VENATO_DB). Backups, settings.json and the Outlook cache live there
 too. Nothing user-specific is kept in the project folder.
 """
 
-import json
 import sqlite3
 import uuid
 from datetime import date, datetime, timedelta
@@ -19,14 +18,13 @@ import pandas as pd
 from venato import facade
 
 from .database import (KEEP, _read, bump_version, data_dir, data_version, db, db_path, use_db_path)
+from .settings import (DAY_END, DAY_START, MIN_DAY_HOURS, ai_enabled, day_hours, day_length, load_settings,
+    save_settings, settings_path)
 
 
 # Habits appear as extra columns in the History table and CSV, named "habit: <name>".
 HABIT_PREFIX = "habit: "
 
-# Timetable: half-hour slots from day_start to day_end (default 07:00 to 01:00 the next day,
-# 36 slots). Set in Settings -> Region; slot_count() and first_min() follow them.
-DAY_START, DAY_END = 7, 1           # defaults (hours); an end at or before the start is the next morning
 TRACKS = ("plan", "actual")
 
 # The categories a new install starts with: generic, and editable by asking Claude.
@@ -236,27 +234,6 @@ def init_db():
 
 
 # ---------------------------------------------------------------------------
-# Settings (settings.json in the data folder)
-# ---------------------------------------------------------------------------
-
-def settings_path():
-    return data_dir() / "settings.json"
-
-
-def load_settings():
-    try:
-        return json.loads(settings_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-
-
-def ai_enabled():
-    """Is the optional Claude assistant switched on? (Off on new installs unless chosen in setup;
-    on for installs from before the switch existed.)"""
-    return bool(load_settings().get("ai_enabled", True))
-
-
-# ---------------------------------------------------------------------------
 # Time zone: settings.json "timezone" (an IANA name like "America/New_York"),
 # else the computer's own. Every "now" and "today" in Venato goes through here.
 # ---------------------------------------------------------------------------
@@ -326,40 +303,6 @@ def local_today():
 def stamp():
     """A timestamp for created_at / done_at columns (with its UTC offset)."""
     return datetime.now(tz()).isoformat(timespec="seconds")
-
-
-def save_settings(**changes):
-    settings = {**load_settings(), **changes}
-    settings_path().parent.mkdir(parents=True, exist_ok=True)
-    settings_path().write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    bump_version()
-    return settings
-
-
-def day_hours():
-    """(start hour, end hour) of a timetable day; an end at or before the start is the next morning."""
-    version = data_version()           # (slot_of asks on every call, so settings.json is re-read only after a write)
-    if _hours[0] != version:
-        _hours[:] = [version, _read_day_hours()]
-    return _hours[1]
-
-
-_hours = [None, None]                  # [data_version() when read, (start, end)]
-
-
-def _read_day_hours():
-    s = load_settings()
-    start, end = s.get("day_start", DAY_START), s.get("day_end", DAY_END)
-    ok = lambda h: isinstance(h, int) and 0 <= h <= 23
-    return (start, end) if ok(start) and ok(end) and day_length(start, end) >= MIN_DAY_HOURS else (DAY_START, DAY_END)
-
-
-MIN_DAY_HOURS = 6
-
-
-def day_length(start, end):
-    """Hours in a timetable day from start to end (wrapping past midnight; equal = a full 24 hours)."""
-    return (end - start) % 24 or 24
 
 
 def slot_count():
