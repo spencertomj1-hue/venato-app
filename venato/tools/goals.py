@@ -1,0 +1,182 @@
+"""
+Tools for goals: measurable targets with a deadline, and their progress.
+"""
+
+from datetime import date
+
+from venato import store
+
+from .common import Pending, Result, ToolError, _best_match, _day, _period, _period_day
+
+
+def _amount(goal, n=None):
+    """"7/12 sessions" for a goal (or n of its unit)."""
+    n = goal["value"] if n is None else n
+    return f"{store._num(n)}/{goal['target']}" + (f" {goal['unit']}" if goal["unit"] else "")
+
+
+def describe_goal(g):
+    when = store.goal_title_due(g["due"])
+    how = f", counted from the habit {g['habit']}" if g["habit"] else ""
+    if g.get("category"):
+        how = f", counted from Actual hours of {g['label'] + ' (' + g['category'] + ')' if g.get('label') else g['category']}"
+    return f"'{g['title']}' ({when}: {_amount(g)}{how})"
+
+
+def _habit_id(name):
+    if not name:
+        return None
+    found = store.find_habit(str(name))
+    if not found:
+        names = ", ".join(n for _, n in store.get_habits()) or "none yet"
+        raise ToolError(f"There's no habit called '{name}'. Existing habits: {names}.")
+    return found[0]
+
+
+def _find_goal(goal, period=None, date=None):
+    """A goal by id, or by title among those not past their deadline on `date` (default today)."""
+    found = store.get_goal(str(goal).strip())
+    if found:
+        return found
+    pool = store.goals_open(_period_day(date))
+    matches = _best_match(pool, goal)
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        options = "; ".join(f"id {g['id']}: {describe_goal(g)}" for g in matches)
+        raise ToolError(f"More than one goal matches '{goal}': {options}. Ask the user which one, or pass its id.")
+    raise ToolError(f"There's no current goal matching '{goal}'. Use list_goals to find it.")
+
+
+def _goal_category(category):
+    cid = store.resolve_category(category=str(category))
+    if cid is None:
+        names = ", ".join(store.load_categories()["name"])
+        raise ToolError(f"There's no category '{category}'. Categories: {names}.")
+    return cid
+
+
+def _due(due):
+    try:
+        return date.fromisoformat(_day(due))
+    except (TypeError, ValueError):
+        raise ToolError("due must be a date, YYYY-MM-DD.")
+
+
+def add_goal(title, target, period=None, unit=None, habit=None, date=None, category=None, label=None, due=None):
+    """A measurable goal with a deadline (`due`), from today (or `date`). Without a deadline, `period`
+    "monthly" / "yearly" makes it due at the end of the month / year (default: this month). With a
+    category (and optionally an activity label) it counts the timetable's Actual hours instead of a hand-kept number."""
+    day = _period_day(date)
+    per = None
+    if due is None:                              # the month's or year's: from its first day to its last
+        per = _period(period or "monthly", store.GOAL_PERIODS)
+        due = store.end_of_period(per, store.start_of_period(per, day))
+    else:
+        due = _due(due)
+    if due < day:
+        raise ToolError("The deadline can't be before the goal starts.")
+    try:
+        target = float(target)
+    except (TypeError, ValueError):
+        raise ToolError("target must be a number, e.g. 12.")
+    if target <= 0:
+        raise ToolError("target must be more than 0.")
+    title = str(title).strip()
+    if not title:
+        raise ToolError("The goal needs a title.")
+    if any(g["title"].lower() == title.lower() and g["due"] == due.isoformat() for g in store.goals_open(day)):
+        return Result(f"There's already a goal called '{title}' {store.goal_title_due(due)}.")
+    if habit and category:
+        raise ToolError("A goal counts either a habit's ticks or timetable hours, not both.")
+    cid = _goal_category(category) if category else None
+    g = store.add_goal(title, per, day, target, (unit or "h") if cid else unit, _habit_id(habit),
+                       category_id=cid, label=label if cid else None, due=None if per else due)
+    return Result(f"Added the goal {describe_goal(g)}.", changed=True)
+
+
+def log_goal_progress(goal, amount=1, period=None, date=None):
+    """Add to a goal's progress (a negative amount takes some off)."""
+    g = _find_goal(goal, period, date)
+    if g["habit"]:
+        raise ToolError(f"{describe_goal(g)} counts the habit {g['habit']} automatically. "
+                        "Tick the habit instead (set_habit).")
+    if g["kind"] == "hours":
+        raise ToolError(f"{describe_goal(g)} counts timetable hours automatically. Add the time to the Actual "
+                        "track instead (add_block).")
+    store.add_goal_progress(g["id"], float(amount))
+    g = store.get_goal(g["id"])
+    return Result(f"Updated {describe_goal(g)}.", changed=True)
+
+
+def set_goal_progress(goal, value, period=None, date=None):
+    """Set a goal's progress to an exact number."""
+    g = _find_goal(goal, period, date)
+    if g["kind"] != "count":
+        raise ToolError(f"{describe_goal(g)} is counted automatically; it can't be set by hand.")
+    old = g["value"]
+    store.set_goal_progress(g["id"], float(value))
+    g = store.get_goal(g["id"])
+    return Result(f"Set {describe_goal(g)} (was {store._num(old)}).", changed=True)
+
+
+def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit=False, period=None, date=None,
+              category=None, label=None, unlink_category=False, due=None, start=None):
+    """Change a goal's title, target, unit, deadline, start (the day it counts from: earlier to count
+    progress already made), or what (a habit, timetable hours, or nothing) it counts."""
+    g = _find_goal(goal, period, date)
+    changes = {}
+    if start is not None:
+        changes["start"] = _due(start)
+    if due is not None:
+        changes["due"] = _due(due)
+    if (changes.get("due") or store._as_date(g["due"])) < (changes.get("start") or store._as_date(g["period_start"])):
+        raise ToolError("The deadline can't be before the day the goal counts from.")
+    if title:
+        changes["title"] = title
+    if target is not None:
+        if float(target) <= 0:
+            raise ToolError("target must be more than 0.")
+        changes["target"] = target
+    if unit is not None:
+        changes["unit"] = unit
+    if habit:
+        changes["habit_id"] = _habit_id(habit)
+    elif unlink_habit:
+        changes["habit_id"] = None
+    if habit and category:
+        raise ToolError("A goal counts either a habit's ticks or timetable hours, not both.")
+    if category:
+        changes["category_id"] = _goal_category(category)
+    elif unlink_category:
+        changes["category_id"] = None
+    if label is not None:
+        changes["label"] = label
+    if not changes:
+        raise ToolError("Say what to change: title, target, unit, due, start, habit, category, label, unlink_habit or unlink_category.")
+    store.update_goal(g["id"], **changes)
+    return Result(f"Updated: {describe_goal(store.get_goal(g['id']))}.", changed=True)
+
+
+def delete_goal(goal, period=None, date=None, confirmed=False):
+    g = _find_goal(goal, period, date)
+    summary = f"Delete the goal {describe_goal(g)}"
+    if not confirmed:
+        return Result("", pending=Pending(summary, lambda: delete_goal(g["id"], confirmed=True)))
+    store.delete_goal(g["id"])
+    return Result(f"Done: {summary}.", changed=True)
+
+
+def list_goals(period=None, date=None):
+    """Goals (with ids, progress and deadlines) not past their deadline on `date` (default today)."""
+    day = _period_day(date)
+    goals = store.goals_open(day)
+    lines = ["Goals:" + ("" if goals else " none")]
+    for g in goals:
+        if True:
+            pct = round(100 * min(g["value"] / g["target"], 1))
+            how = f"; counts habit {g['habit']}" if g["habit"] else ""
+            if g.get("category"):
+                how = f"; counts Actual hours of {g['label'] + ' (' + g['category'] + ')' if g.get('label') else g['category']}"
+            lines.append(f"- {g['title']} {store.goal_title_due(g['due'], day)}: {_amount(g)} ({pct}%) (id {g['id']}{how})")
+    return Result("\n".join(lines))
