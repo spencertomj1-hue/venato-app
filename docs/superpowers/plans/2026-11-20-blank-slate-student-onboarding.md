@@ -161,10 +161,12 @@ Every step except Welcome can be skipped. "Skip setup" leaves a truly blank app.
 ### Phase 6b: Send feedback (small, can land any time)
 
 **Form:** https://docs.google.com/forms/d/e/1FAIpQLSfKtBy2MutZ__Q5Ivkzz5urT0ABhtF8Rgu5yii2O3bQyLTmWQ/viewform
-Questions: annoying/broken, missing, optional email, Version (short answer), System (multiple choice: macOS / Windows / Linux).
+Questions: annoying/broken, missing, optional email, Version (short answer), System (multiple choice: MacOS / Windows / Linux).
 
-- [ ] Get the form's **pre-filled link** from the owner (⋮ → Get pre-filled link) to read the `entry.<id>` keys for Version and System. Don't guess them.
-- [ ] `venato/feedback.py`: `feedback_url()` builds the pre-filled link (app version; `platform.system()` mapped Darwin → macOS, Windows → Windows, Linux → Linux). The URL lives in `venato_config.json` (`feedback_url`), with the form above as the default.
+Pre-filled link: `https://docs.google.com/forms/d/e/1FAIpQLSfKtBy2MutZ__Q5Ivkzz5urT0ABhtF8Rgu5yii2O3bQyLTmWQ/viewform?usp=pp_url&entry.1914590086=VERSION&entry.1813165119=MacOS`
+(Version = `entry.1914590086`, System = `entry.1813165119`. Option text must match the form exactly: `MacOS`; check the Windows/Linux spellings on the form.)
+
+- [ ] `venato/feedback.py`: `feedback_url()` builds the pre-filled link (app version; `platform.system()` mapped Darwin → MacOS, Windows → Windows, Linux → Linux). The URL lives in `venato_config.json` (`feedback_url`), with the form above as the default.
 - [ ] A "Send feedback" link at the bottom of the sidebar and in Settings → About. It opens the browser. Nothing is sent from the app.
 - [ ] A one-time Needs you card after 14 days of use: "How's Venato treating you?" → Send feedback / Not now. Dismissal saved in `settings.json`.
 - [ ] Tests: URL has the right version and system. The card shows once and stays gone after dismissal.
