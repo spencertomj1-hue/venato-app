@@ -150,13 +150,10 @@ def needs():
         if not b.needs:
             continue
         try:
-            items = b.needs() or []
-        except Exception:                    # one broken block mustn't take Home down with it
+            items = [{"text": i} if isinstance(i, str) else dict(i) for i in b.needs() or []]
+        except Exception:                    # one broken block (or a malformed item) loses only its own items
             continue
-        for item in items:
-            item = {"text": item} if isinstance(item, str) else dict(item)
-            if item.get("text"):
-                out.append({"icon": b.icon, "page": None, **item, "block": b.key})
+        out += [{"icon": b.icon, "page": None, **i, "block": b.key} for i in items if i.get("text")]
     return out
 
 

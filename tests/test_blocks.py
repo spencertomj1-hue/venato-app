@@ -179,3 +179,13 @@ def test_block_needs_are_gathered(store, monkeypatch):
                                                                           ("Vet", "Settings", "fake")]
     monkeypatch.setattr(blocks.get("fake"), "needs", broken)
     assert blocks.needs() == []                                            # a broken block is skipped
+
+
+def test_one_blocks_bad_need_loses_only_its_own(store, monkeypatch):
+    from venato import blocks
+    real = list(blocks.all_blocks())
+    bad = blocks.Block(key="bad", name="Bad", icon=":material/star:", blurb="x", needs=lambda: ["fine", 5])
+    good = blocks.Block(key="good", name="Good", icon=":material/star:", blurb="x", needs=lambda: ["Walk"])
+    monkeypatch.setattr(blocks, "all_blocks", lambda: [*real, bad, good])
+    blocks.save(["bad", "good"])
+    assert [n["text"] for n in blocks.needs()] == ["Walk"]

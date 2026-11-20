@@ -35,6 +35,8 @@ def test_search_box_and_open(store):
     at.sidebar.radio[0].set_value("Goals").run()                       # on every page
     at.text_input(key="global_search").set_value("thesis writing").run()
     assert not at.exception
+    opens = [b for b in at.button if b.key and b.key.startswith("search_open_")]
+    assert opens and all(b.label == "Open" for b in opens)             # a name a screen reader can read
     next(b for b in at.button if b.key and "Timetable" in b.key).click().run()
     assert at.sidebar.radio[0].value == "Timetable" and str(at.session_state["tt_day"]) == "2026-10-29"
     at.text_input(key="global_search").set_value("priya").run()

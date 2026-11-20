@@ -55,6 +55,7 @@ export default function ({ data }) {
   // Spoken names for the arrange bar's icon buttons ({button key: name}).
   function label() {
     const names = (window.__venatoHome || {}).labels || {};
+    if (!doc.querySelector(SEL) && !doc.querySelector(".st-key-home_head")) return;   // not on Home: nothing to name
     for (const [k, name] of Object.entries(names)) {
       for (const b of doc.querySelectorAll(`.st-key-${CSS.escape(k)} button`))
         if (b.getAttribute("aria-label") !== name) b.setAttribute("aria-label", name);

@@ -162,7 +162,7 @@ def _header(arranging, cat, cells, labels):
         return
     picked = st.session_state.get("home_picked")
     with st.container(key="home_head", horizontal=True, vertical_alignment="center", gap="small"):
-        if picked in cat:
+        if picked in hl.keys(cells):
             st.markdown(f"**{cat[picked].name}** picked up. Tap where it goes, or tap it again to put it back.",
                         width="stretch")
         else:
@@ -173,7 +173,7 @@ def _header(arranging, cat, cells, labels):
         st.button("Done", key="home_done", type="primary", on_click=_arrange, args=(False,))
 
 
-def _bar(w, cell, order, picked, labels):
+def _bar(w, cell, cells, picked, labels):
     """A widget's slim bar in arrange mode: its name and size, Move, size − / +, ← / → and ✕."""
     k, name = w.key, w.name
     size = hl.ORDER.index(cell["size"])
@@ -190,18 +190,18 @@ def _bar(w, cell, order, picked, labels):
         labels[f"hwpick_{k}"] = say
         buttons = [("hwsm_", ":material/remove:", f"Make {name} smaller", _resize, (k, -1), size == 0),
                    ("hwbig_", ":material/add:", f"Make {name} bigger", _resize, (k, 1), size == len(hl.ORDER) - 1),
-                   ("hwl_", ":material/arrow_back:", f"Move {name} back", _step, (k, -1), order[0] == k),
-                   ("hwr_", ":material/arrow_forward:", f"Move {name} forward", _step, (k, 1), order[-1] == k),
+                   ("hwl_", ":material/arrow_back:", f"Move {name} back", _step, (k, -1), hl.step(cells, k, -1) == cells),
+                   ("hwr_", ":material/arrow_forward:", f"Move {name} forward", _step, (k, 1), hl.step(cells, k, 1) == cells),
                    ("hwx_", ":material/close:", f"Hide {name}", _hide, (k,), False)]
         for prefix, icon, tip, fn, args, off in buttons:
             st.button("", key=prefix + k, icon=icon, on_click=fn, args=args, help=tip, type="tertiary", disabled=off)
             labels[prefix + k] = tip
 
 
-def _widget(w, cell, order, arranging, picked, labels):
+def _widget(w, cell, cells, arranging, picked, labels):
     with st.container(key=f"hw_{w.key}"):            # what the glide follows (home_flip.js)
         if arranging:
-            _bar(w, cell, order, picked, labels)
+            _bar(w, cell, cells, picked, labels)
         with st.container(key=f"hwc_{w.key}"):
             try:
                 w.draw()
@@ -225,8 +225,8 @@ def page_home():
     cells = hl.normalise(store.load_settings().get("home"), _sizes(cat))
     arranging = bool(st.session_state.get("home_arranging"))
     picked = st.session_state.get("home_picked") if arranging else None
-    if picked not in cat:
-        picked = None
+    if picked not in hl.keys(cells):              # e.g. it left Home by Undo
+        picked = st.session_state["home_picked"] = None
     css = _COMPACT_CSS + ("" if arranging else _CORNER_CSS)
     if arranging:
         from venato.ui import appearance
@@ -245,12 +245,11 @@ def page_home():
             if not arranging:
                 _add_menu(cat, cells)
     else:
-        order = hl.keys(cells)
         with st.container(key="home_grid"):
             for row in hl.pack(cells):
                 for col, cell in zip(st.columns(hl.spec(row), gap="large"), row):
                     with col:
                         for k in hl.members(cell):
-                            _widget(cat[k], cell, order, arranging, picked, labels)
+                            _widget(cat[k], cell, cells, arranging, picked, labels)
     with st.sidebar:
         _flip(key="home_flip", data={"arranging": arranging, "labels": labels})

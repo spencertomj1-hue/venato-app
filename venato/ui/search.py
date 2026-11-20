@@ -95,7 +95,7 @@ def render_sidebar():
         text, detail = (r["detail"] or r["title"], r["title"]) if r["kind"] == "Review" else (r["title"], r["detail"])
         if r["kind"] == "Journal":
             text, detail = r["title"], None
-        left, right = st.columns([5, 1], vertical_alignment="center", gap="small")
+        left, right = st.columns([3, 1], vertical_alignment="center", gap="small")
         left.html(
             f'<div style="font-size:0.85rem;line-height:1.35">'
             f'<span aria-hidden="true" style="font-family:\'Material Symbols Rounded\';font-size:1rem;vertical-align:-3px;opacity:.8">'
@@ -105,5 +105,5 @@ def render_sidebar():
             f'{_snippet(text, words, 60)}'
             f'{"<br><span style=opacity:.8>" + _snippet(detail, words, 60) + "</span>" if detail and r["kind"] != "Review" else ""}'
             f'</div>')
-        right.button("", key=f"search_open_{i}_{r['kind']}_{r['id']}", on_click=_open, args=(r,),
-                     type="tertiary", icon=":material/arrow_forward:", help=f"Open this {r['kind'].lower()}")
+        right.button("Open", key=f"search_open_{i}_{r['kind']}_{r['id']}", on_click=_open, args=(r,),
+                     type="tertiary", help=f"Open this {r['kind'].lower()}")

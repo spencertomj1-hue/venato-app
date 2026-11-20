@@ -49,22 +49,21 @@ def members(cell):
 
 def normalise(layout, available):
     """The saved layout as it can be drawn now. available: {widget key: its default size} for the widgets
-    on offer (their block is on, and so on). No saved list (or nonsense) gives the default; unknown,
-    switched-off and repeated widgets are skipped; a stack keeps the widgets it still has."""
-    if not isinstance(layout, list):
-        layout = _DEFAULT
+    on offer (their block is on, and so on). No saved list, or one with nothing that reads as a cell, gives the
+    default (a deliberately empty list stays empty); unknown, switched-off and repeated widgets are skipped
+    (a repeat inside a stack too); a stack keeps the widgets it still has."""
+    cells = [c for c in layout if isinstance(c, dict) and (isinstance(c.get("stack"), list) or isinstance(c.get("w"), str))] \
+        if isinstance(layout, list) else []
+    if not cells and layout != []:
+        cells = _DEFAULT
     out, seen = [], set()
-    for cell in layout:
-        if not isinstance(cell, dict):
-            continue
-        if isinstance(cell.get("stack"), list):
-            raw = cell["stack"]
-        elif isinstance(cell.get("w"), str):
-            raw = [cell["w"]]
-        else:
-            continue
-        keys = [k for k in raw if isinstance(k, str) and k in available and k not in seen]
-        seen.update(keys)
+    for cell in cells:
+        raw = cell["stack"] if isinstance(cell.get("stack"), list) else [cell["w"]]
+        keys = []
+        for k in raw:
+            if isinstance(k, str) and k in available and k not in seen:
+                keys.append(k)
+                seen.add(k)
         c = _cell(keys, _size(cell.get("size"), available.get(keys[0]) if keys else None))
         if c:
             out.append(c)

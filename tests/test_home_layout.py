@@ -286,3 +286,60 @@ def test_existing_install_gets_first_seen_once(store):
     app()
     assert store.load_settings()["first_seen"] == "2026-01-01"
     assert json.loads((store.DATA_DIR / "settings.json").read_text())["first_seen"] == "2026-01-01"
+
+
+# --- fix round 1 ---
+
+def test_repeats_inside_a_stack_and_across_cells_are_dropped():
+    saved = [{"stack": ["ask", "ask", "todos"], "size": "s"}, {"w": "todos", "size": "m"},
+             {"stack": ["ask", "habits", "habits"], "size": "m"}]
+    assert hl.normalise(saved, ALL) == [{"stack": ["ask", "todos"], "size": "s"}, {"w": "habits", "size": "m"}]
+
+
+def test_repeated_widget_renders(store):
+    store.save_settings(home=[{"stack": ["ask", "ask", "todos"], "size": "s"}, {"w": "todos", "size": "m"}])
+    at = app()
+    assert not at.exception
+
+
+def test_junk_list_gives_the_default_but_empty_stays_empty():
+    assert hl.normalise(["junk"], ALL) == hl.default()
+    assert hl.normalise([{"nonsense": 1}, 3], ALL) == hl.default()
+    assert hl.normalise([], ALL) == []
+    assert hl.normalise([{"w": "money", "size": "m"}], ALL) == []        # well formed, just not on offer
+
+
+def test_picked_widget_gone_by_undo_isnt_still_picked(store):
+    at = app()
+    at.button(key="home_arrange").click().run()
+    at.button(key="home_add_habits").click().run()
+    at.button(key="hwpick_habits").click().run()
+    assert any("picked up" in m.value for m in at.markdown)
+    at.button(key="undo_btn").click().run()                               # Habits leaves Home
+    assert not at.exception and "hw_habits" not in keys(at)
+    assert not any("picked up" in m.value for m in at.markdown)
+
+
+def test_arrows_off_only_when_they_would_do_nothing(store):
+    at = app()
+    at.button(key="home_arrange").click().run()
+    assert at.button(key="hwl_timetable_today").disabled                  # first: nowhere to go
+    assert not at.button(key="hwr_todos").disabled                        # last, but it can leave its stack
+    at.button(key="hwr_todos").click().run()
+    assert store.load_settings()["home"][-1] == {"w": "todos", "size": "s"}
+    assert at.button(key="hwr_todos").disabled
+
+
+def test_existing_install_without_first_seen(store):
+    """An install from before this update (set up, with data, no first_seen): recorded on its first Home,
+    and the assistant card a week after that."""
+    from venato.ui import goal_time
+    store.add_todo("Old to-do", "daily", store.local_today())
+    store.save_settings(ai_enabled=False)
+    assert "first_seen" not in store.load_settings()
+    at = app()
+    today = store.local_today()
+    assert store.load_settings()["first_seen"] == today.isoformat()
+    assert not goal_time.assistant_offer_due() and not has(at, "needs_ai_yes")
+    assert goal_time.assistant_offer_due(today + timedelta(days=7))
+    assert not goal_time.assistant_offer_due(today + timedelta(days=6))
