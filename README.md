@@ -38,18 +38,16 @@
 
 ## Features
 
-**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Grades and Review; setup doesn't ask. Each brings its own page, Home widgets and assistant skills. Home is a grid of widgets you arrange yourself: press the Arrange button (top right), then move, resize, hide or add them.
+**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Review and the Daily Log, and students also get Modules. Each brings its own page, Home widgets and assistant skills. Home is a grid of widgets you arrange yourself: press the Arrange button (top right), then move, resize, hide or add them.
 
 | Block | What it does |
 |---|---|
 | **Timetable** | Weekly plan in 30-minute slots with a Plan / Actual switch, calendar events, and fit-time planning. |
 | **Goals** | Goals with deadlines and a pace, to-dos and deadlines. |
 | **Focus** | Pomodoro or stopwatch with auto breaks; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". |
-| **Grades** | Modules and weighted assessments, mark needed for your target, UK classification or US GPA, year weightings. "got 68 in acp coursework". |
+| **Modules** | One card per module, with its lectures, deadlines, assessments, study hours and its own timetable colour; a page for each module, where a deadline's **Plan** books the hours for it. Also grades: weighted assessments, the mark needed for your target, UK classification or US GPA. "got 68 in acp coursework". |
 | **Review** | Weekly review, time planned vs done, charts and history. |
 | **Daily Log** | A journal for each day, and habits with streaks. Sleep and water are optional extras (Settings → Daily Log). |
-| **Money** | Spending and income by category, monthly budgets, savings goals, subscriptions (logged when they renew) and bank CSV import. "spent £12 on lunch". Optional. |
-| **Workouts** | Sets, reps, weight, distance; 1RM, personal bests, progress charts, weekly volume, saved plans; kg/lb, km/mi. "bench 3x8 at 60". Optional. |
 
 **Planning**
 - **Weekly timetable** in 30-minute slots with a **Plan / Actual** switch. A day's Plan is locked when the day starts and copied into its Actual; after that you change the Actual as the day goes, and confirm it at the end (Confirm under the day, "Confirm week", or Home's "Is the timetable right for today?"). Review and goals count confirmed days only and say how many. Drag to add blocks; point at a block to select it (a thin red outline), click for its details, drag it to move it or drag its top or bottom edge to stretch or shrink it; ⌘/Ctrl+C and ⌘/Ctrl+V copy and paste, Backspace deletes; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
@@ -62,7 +60,8 @@
 
 **Home**
 - Today's timetable (its Actual: the Plan as locked this morning, with your changes), stretched to fill the window, and an end-of-day prompt: "Is the timetable right for today?" with **Confirm** or **Review**.
-- **Needs you this week:** only the goals that are behind or short of time, each with its state, "N h to plan", its bar with a "should be here by today" tick and "8 / 25 by 04/01 · 3.5 under today's pace", and Plan my goals.
+- **Home is yours to arrange**, like a phone's home screen: press Arrange (top right), then move, resize, hide or add widgets.
+- **Needs you:** days to confirm, goals that are behind or short of time (each with its state, "N h to plan", its bar with a "should be here by today" tick, and Plan my goals), deadlines this week with no plan, and the odd one-off card. Nothing to do: "Nothing needs you."
 - **To-dos** in one card with a Daily / Weekly / Monthly switch, then deadlines, habits and search. A widget with nothing to show (no habits, no marks, no deadlines…) isn't drawn.
 
 **Tracking**
@@ -126,6 +125,26 @@ python3.13 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 The first install downloads about 1 GB of packages; the speech model (about 470 MB) only downloads the first time you use the mic.
 
+## Getting started
+
+The first time Venato opens, a short setup starts. It adds things and never deletes any, every step except Welcome can be skipped, and **Skip setup** leaves you with a blank app. Run it again any time from Settings → About.
+
+**Everyone.** Venato starts empty: no categories, no habits, no goals. Setup asks about your goals (in 3 months, 6 months and a year), suggests what to track for each (a habit, a timetable category, sleep or water, all unticked until you pick them), lets you add your own timetable categories, and can lay out your first week.
+
+**If you're a student.** Say so on the second step and you get four more:
+1. **Uni timetable.** Paste the published calendar link from your university's Outlook. Your lectures go on the timetable and Venato finds your modules from them.
+2. **Canvas.** Paste your Canvas Calendar Feed link. Assignments become deadlines, each with its module.
+3. **Your modules.** Tick the ones to add. Each gets its own timetable colour and a card on the Modules page.
+4. **Study hours.** Say how many hours a week you want to study. Each module gets an hours goal.
+
+Both links are read only, and are kept in your system's secret store, never in a file.
+
+**After setup.**
+- **Modules** (students): a card per module; click one for its lectures, deadlines, marks and hours. On a deadline, press **Plan** to book hours for it: Venato makes an hours goal that finishes the day before it's due.
+- **Plan.** Put what you intend to do on the timetable (Plan). When the day starts the Plan is locked and copied into Actual; change the Actual as the day goes, then confirm it.
+- **Home.** Press Arrange (top right) to move, resize, hide or add widgets. Reset puts them back.
+- **Send feedback.** The link at the bottom of the sidebar (and in Settings → About) opens a short form in your browser with your version and system filled in. Nothing is sent from the app. After two weeks, Needs you asks once how it's going.
+
 ## Setting up the optional bits
 
 **Claude assistant.** Off until you switch it on (first-run setup or Settings → Assistant). It uses your own Claude access, one of:
@@ -143,7 +162,7 @@ It runs on **Claude Haiku 5.5** at low effort, kept open between messages, and r
 ## Privacy
 
 - **Stays on your computer:** all your data (in `~/Library/Application Support/Venato/` on a Mac, `%APPDATA%\Venato` on Windows, `~/.local/share/Venato` on Linux, never inside the repo), voice recordings and their transcripts, and chat history (memory only, never saved).
-- **Leaves your computer only if you turn it on:** chat messages go to Anthropic, each with a short snapshot of today (your timetable for today and tomorrow, today's log, habits, current to-dos, open deadlines, plus a line from each block you've switched on, such as this month's spending) so Claude can answer without looking things up, plus anything else Claude looks up; published calendars you add are downloaded from Microsoft, Google, Apple or wherever they're hosted (imported bank files are read on your computer and never sent anywhere); the daily update check asks GitHub for the latest version number.
+- **Leaves your computer only if you turn it on:** chat messages go to Anthropic, each with a short snapshot of today (your timetable for today and tomorrow, today's log, habits, current to-dos, open deadlines, plus a line from each block you've switched on, such as this week's modules) so Claude can answer without looking things up, plus anything else Claude looks up; published calendars you add are downloaded from Microsoft, Google, Apple or wherever they're hosted; the daily update check asks GitHub for the latest version number; Send feedback only opens a form in your browser, so nothing is sent unless you submit it.
 
 Nothing else is sent anywhere.
 
