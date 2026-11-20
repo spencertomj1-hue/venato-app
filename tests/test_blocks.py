@@ -30,7 +30,7 @@ def test_switch_order_and_pages(store):
     b = _blocks()
     b.save(["stats", "timetable", "nonsense", "stats", "grades"])   # unknown keys and repeats are dropped
     assert b.chosen_keys() == ["stats", "timetable", "grades"]
-    assert list(b.pages()) == ["Timetable", "Grades", "Review"]       # the sidebar keeps its own order
+    assert list(b.pages()) == ["Timetable", "Modules", "Review"]       # the sidebar keeps its own order
     assert b.is_on("stats") and not b.is_on("focus") and not b.is_on("goals")
 
 
@@ -49,7 +49,7 @@ def test_app_follows_the_choice(store):
     b.save(["grades"])
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    assert list(at.sidebar.radio[0].options) == ["Home", "Grades", "Settings"]
+    assert list(at.sidebar.radio[0].options) == ["Home", "Modules", "Settings"]
 
 
 def test_settings_tab_switches_blocks(store):
@@ -59,10 +59,10 @@ def test_settings_tab_switches_blocks(store):
     at.sidebar.radio[0].set_value("Settings").run()
     at.toggle(key="set_block_grades").set_value(True).run()
     assert not at.exception and b.is_on("grades")
-    assert "Grades" in at.sidebar.radio[0].options
+    assert "Modules" in at.sidebar.radio[0].options
     at.toggle(key="set_block_grades").set_value(False).run()
     assert not at.exception and not b.is_on("grades")
-    assert "Grades" not in at.sidebar.radio[0].options
+    assert "Modules" not in at.sidebar.radio[0].options
     at.toggle(key="set_block_timetable").set_value(False).run()       # nothing is always on
     assert not at.exception and not b.is_on("timetable")
     assert "Timetable" not in at.sidebar.radio[0].options

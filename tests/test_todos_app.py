@@ -66,7 +66,7 @@ def test_home_widgets_with_nothing_say_so(store):
     store.add_deadline("Essay", store.local_today())
     at.run()
     assert "No habits yet" not in " ".join(c.value for c in at.caption)
-    assert any("Essay" in h.value for h in at.get("html"))
+    assert any("Essay" in m.value for m in at.markdown)
 
 
 def test_see_all_opens_goals_page(store):

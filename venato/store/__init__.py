@@ -54,12 +54,12 @@ from .habits import (HABIT_PREFIX, add_habit, delete_habit, find_habit, get_habi
     streaks, week_ticks, weekly_streaks)
 from .history import load_all_data, save_all_data
 from .deadline import (DEADLINE_COLS, add_deadline, countdown, deadline_overdue, deadlines, delete_deadline,
-    get_deadline, import_canvas, set_deadline_done, update_deadline)
+    get_deadline, import_canvas, plan_deadline, set_deadline_done, update_deadline)
 from .todos import (TODO_COLS, TODO_PERIODS, add_todo, carry_over, delete_todo, get_todo, load_todos,
     move_target, move_todo, reorder_todos, roll_todos, save_todos, set_todo_done, todos_for, todos_progress,
     update_todo)
 from .goals import (GOAL_COLS, GOAL_PERIODS, _goal_matches, _num, add_goal, add_goal_progress, away_days,
-    away_uids, calendar_horizon, counted_between, delete_goal, get_goal, goal_hours, goal_title_due,
+    away_uids, calendar_horizon, counted_between, deadline_goal, delete_goal, get_goal, goal_hours, goal_title_due,
     goal_week_hours, goals_active, goals_in, goals_open, goals_overlapping, goals_past, habit_has_goal,
     load_goals, reorder_goals, save_goals, set_away, set_away_day, set_goal_progress, set_goal_week_hours,
     update_goal)
