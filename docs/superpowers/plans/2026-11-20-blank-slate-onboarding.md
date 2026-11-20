@@ -5,7 +5,7 @@ Generic feature, so it's built in `venato-app` first and then merged into `venat
 ## Goal
 A new user starts with **nothing preset**. Onboarding asks for their goals (3 months, 6 months, 1 year),
 then asks "what would you track to get there?", and *that* fills the app: timetable categories,
-daily-log fields, habits, blocks and the Home layout. Examples are offered as tickable suggestions, never pre-ticked.
+sleep/water tracking, habits, blocks and the Home layout. Examples are offered as tickable suggestions, never pre-ticked.
 
 ## Today (what changes)
 | Area | Now | Where |
@@ -34,8 +34,8 @@ so someone who deletes every category doesn't get them back.
 The Daily Log turns into a **journal** that can also track **sleep** and **water**. Mood, energy and productivity are removed.
 1. Sleep and water are optional: switches in Settings → Daily Log (and in onboarding), both **off** on new installs. Off = hidden everywhere.
 2. Remove mood, energy and productivity from: the form and calendar (`ui/daily_log.py`, `components/calendar_component.js`), stats and charts
-   (`store/stats.py`, `ui/stats.py`, `ui/uni_stats.py`), the weekly review (`review.py`, `ui/review.py`), the assistant (`tools/`, `assistant.py`, `quick.py`, `facade.py`),
-   CSV import/export (`store/history.py`), search (`ui/search.py`) and the block blurb (`blocks/core.py`).
+   (`store/stats.py`, `ui/stats.py`), the weekly review (`review.py`, `ui/review.py`), the assistant (`tools/daily_log.py`, `assistant.py`, `quick.py`),
+   CSV import/export (`store/history.py`), `store/journal.py`, the wizard (`ui/settings_ui.py`) and the block blurb (`blocks/core.py`).
 3. Database: leave the old `mood`/`energy`/`productivity` columns where they are, unread. No migration, so nothing can be lost, and old data stays in the
    file if it's ever wanted. New writes don't touch them.
 4. The page leads with the journal box (today's prompt). Sleep and water (if on) sit beside it as two small inputs. The calendar shows which days
