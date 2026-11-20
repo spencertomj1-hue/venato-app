@@ -24,8 +24,8 @@ Deadline plans reuse the existing hours goals. Home widgets are separate from bl
 | D4 | Search moves to the top of the sidebar. |
 | D5 | No AI in setup. Suggestions come from a keyword map. A one-time "Needs you" card after 7 days offers the assistant. |
 | D6 | Study hours default to 6 h/week per module: one slider, with a per-module override. |
-| D7 | **Core blocks**, on for new installs and removable: Timetable, Goals, Review, Focus, Daily Log, plus Modules for students. **Extras**, folded under More blocks in Settings and suggested in setup only when a goal matches: Workouts (public); Food, Network, Applications, Problem Sets (private). |
-| D8 | **Chopped:** Money (public); Cut down, Recipes, Health data, Involvement (private). Code, pages, tools and tests go. Their tables stay in the database, unread. Problem Sets and Applications stay private-only. |
+| D7 | **Core blocks**, on for new installs and removable: Timetable, Goals, Review, Focus, Daily Log, plus Modules for students. Public has no extras. Blocks the private copy adds are extras (`core=False`), folded under More blocks in Settings and never offered in setup. |
+| D8 | **Chopped:** Money and Workouts (public); Food, Cut down, Recipes, Health data, Involvement (private). Code, pages, tools and tests go. Their tables stay in the database, unread. |
 | D9 | Daily Log is a journal with optional sleep and water. Mood, energy and productivity are removed. It has no setup step of its own: habits and sleep/water get suggested in "What would you track". |
 | D10 | Home is a hidden grid. Widgets snap to set sizes and reflow, like an iPhone home screen. Moving is tap-to-move (no drag), animated so it looks smooth. |
 | D11 | Existing installs: no wizard (`wizard_done`), no data deleted. Blank-slate seeding changes affect new databases only. Chopped blocks disappear from their sidebar. |
@@ -66,15 +66,14 @@ Deadline plans reuse the existing hours goals. Home widgets are separate from bl
 
 ### Phase 1: Blank slate and chop blocks (PR 1)
 
-**Files:** `store/categories.py`, `store/schema.py:180-187`, `blocks/__init__.py`, `blocks/workouts.py:23`, delete `blocks/money.py`, `ui/money.py`, `tests/test_money.py`. Money references in `ui/kit.py`, `tests/test_setup.py`, `tests/test_todos_app.py`, `tests/test_blocks.py`.
+**Files:** `store/categories.py`, `store/schema.py:180-187`, `blocks/__init__.py`, delete `blocks/money.py`, `ui/money.py`, `tests/test_money.py`, `blocks/workouts.py`, `ui/workouts.py`, `tests/test_workouts.py`. Money and Workouts references in `ui/kit.py`, `tests/test_setup.py`, `tests/test_todos_app.py`, `tests/test_blocks.py`.
 
 - [ ] Stop seeding `DEFAULT_CATEGORIES` / `DEFAULT_LABEL_MAP` on new databases. Rename them `EXAMPLE_CATEGORIES` / `EXAMPLE_LABEL_MAP`, kept for suggestions only.
 - [ ] Zero categories must work everywhere: `outlook_category()` (no category means grey), focus `_maybe_timetable`, timetable add-block, goal-hours pickers, Review charts. Each gets an "Add a category" empty state.
-- [ ] Workouts stops auto-seeding. Its empty state offers "Add examples" next to "Add your own".
 - [ ] `Block.core: bool`. `STARTER` = the core keys (D7). Modules is added by the student branch of setup.
-- [ ] Delete the Money block (D8). Leave its tables in place, with no migration.
-- [ ] **Private follow-up (merge PR):** delete `cutdown.py`, `recipes.py`, `health.py`, `involvement.py` and their `ui/`, tools and tests. Check whether Food's meal planner calls Recipes (the shopping list is "filled from your meal plan") and cut that link cleanly.
-- [ ] Tests: a fresh database has 0 categories, 0 label defaults and 0 exercises, and every page renders. Settings that still list a chopped block load without error.
+- [ ] Delete the Money and Workouts blocks (D8). Leave their tables in place, with no migration.
+- [ ] **Private follow-up (merge PR):** delete `food.py`, `cutdown.py`, `recipes.py`, `health.py`, `involvement.py` and their `ui/`, tools and tests.
+- [ ] Tests: a fresh database has 0 categories and 0 label defaults, and every page renders. Settings that still list a chopped block load without error.
 
 ### Phase 2: Link modules, categories, deadlines and events; import the feeds (PR 2)
 
@@ -100,7 +99,7 @@ Deadline plans reuse the existing hours goals. Home widgets are separate from bl
 
 **Files:** `ui/home.py`, `blocks/__init__.py` (`Block.widgets`, `Block.needs`), `ui/goal_time.py` (`needs_you`), `venato/undo.py`, `app.py` (sidebar search), `ui/search.py`. Tests: `test_blocks.py`, `test_chat_app.py`, create `test_home_layout.py`.
 
-**Widgets:** `timetable_today`, `ask`, `needs_you`, `todos`, `deadlines`, `goals`, `habits`, `journal`, `focus`, `modules`, plus whatever extra blocks declare in `Block.widgets`, which replaces `Block.home`. `Block.needs` returns items for Needs you.
+**Widgets:** `timetable_today`, `ask`, `needs_you`, `todos`, `deadlines`, `goals`, `habits`, `journal`, `focus`, `modules`, plus whatever other blocks declare in `Block.widgets`, which replaces `Block.home`. `Block.needs` returns items for Needs you.
 
 **Grid:** a hidden 12-column grid. The layout is one ordered list, saved in `settings.json`:
 `home: [{"w": "timetable_today", "size": "l"}, {"w": "needs_you", "size": "s"}, ...]`.
@@ -135,7 +134,6 @@ default layout. Unknown or switched-off widgets are skipped.
 - [ ] Modules list: colour, next deadline, hours this week (done / planned / goal), current mark vs target.
 - [ ] One module's page: this week's lectures, upcoming deadlines (with Plan), assessments with "you need X% on the rest", hours this week and this term, its timetable blocks, and "Fit time".
 - [ ] Clicking a deadline or lecture anywhere opens its module.
-- [ ] Problem Sets (private) is left as it is. A later task can fold it into Modules.
 - [ ] **Plan** (replaces "Make time"): total hours **or** hours a week, the module (pre-filled), and a finish-by day (defaults to the day before it's due). It creates an hours goal (target, due, the module's category, labelled with the deadline's title), so pace, carry-over, sittings and "can't make it" all come for free.
 - [ ] The deadline row shows "6 / 15 h · on track". Done or deleted closes the goal. A Canvas re-date moves the goal.
 - [ ] Tests: per-week maths, a missed sitting carried over, done closes the goal.
@@ -152,18 +150,18 @@ Every step except Welcome can be skipped. "Skip setup" leaves a truly blank app.
 - [ ] **Your modules:** the detected list to tick, rename or remove. Target grade (First / 2:1 / 2:2) set once. An "Add a module" box.
 - [ ] **Study hours:** the D6 slider. Creates one weekly hours goal per module.
 - [ ] **Your goals:** 3 months / 6 months / 1 year. Free text plus an optional number target. Saved as goals with `due` = today + 3/6/12 months. Students see their module targets listed as goals they already have.
-- [ ] **What would you track?** For each goal, keyword-map suggestions (`suggest.py`): habits, categories, sleep/water switches and extra blocks (run/gym → Workouts, Exercise category, "Trained" habit; exam/degree → Study category). All **unticked**, labelled "examples: pick what you want", plus "Add your own". Ticked items link to the goal (`habit_id` / `category_id`).
+- [ ] **What would you track?** For each goal, keyword-map suggestions (`suggest.py`): habits, categories and sleep/water switches (run/gym → Exercise category, "Trained" habit; exam/degree → Study category; tired → sleep tracking). No blocks are suggested. All **unticked**, labelled "examples: pick what you want", plus "Add your own". Ticked items link to the goal (`habit_id` / `category_id`).
 - [ ] **Your day:** timetable categories. Module categories are already there; the ones implied by the last step are ticked; `EXAMPLE_CATEGORIES` show as chips; "Add your own" takes a name and colour.
 - [ ] **Your first week:** suggested sittings for the next 7 days on a mini grid (`goal_time.suggestions_for`), with **Add to my Plan** / Skip.
 - [ ] **Home:** prefilled from what they picked (e.g. Modules or Habits widgets added), with a pointer to the Arrange button.
-- [ ] `_finish`: core blocks plus the picked extras, assistant off, `wizard_done`.
+- [ ] `_finish`: core blocks, assistant off, `wizard_done`.
 - [ ] "Run setup again" in Settings only adds things, never deletes.
 - [ ] Tests: skipping everything lands on a blank Home with no errors. With the fixture feeds, a student ends up with modules, categories, deadlines, goals and planned blocks. A non-student gets no uni steps. Re-running setup deletes nothing.
 
 ### Phase 7: Docs and merge
 
 - [ ] README ("Getting started" for the new setup, Money removed), CHANGELOG, HANDOVER.
-- [ ] Full test run. Merge each PR to public main, then into `venato-private`, where the private chops from Phase 1 land and the private extras get `core=False`.
+- [ ] Full test run. Merge each PR to public main, then into `venato-private`, where the private chops from Phase 1 land and the private blocks get `core=False`.
 - [ ] Later (separate task): the weekly review asks "still on track for your 3-month goal?".
 
 ## Order
