@@ -147,3 +147,35 @@ def test_old_saved_order_keeps_its_order(store):
     b = _blocks()
     store.save_settings(blocks=["timetable", "goals", "stats", "log", "grades"])    # saved before Focus and Grades existed
     assert b.chosen_keys() == ["timetable", "goals", "stats", "log", "grades", "focus"]
+
+
+def test_core_blocks_bring_home_widgets(store):
+    b = _blocks()
+    offered = {w.key: w.size for w in b.widgets()}
+    assert {"timetable_today": "l", "todos": "s", "deadlines": "s", "goals": "m", "habits": "m", "journal": "s",
+            "focus": "s", "modules": "m"}.items() <= offered.items()
+    b.save(["goals"])
+    assert [w.key for w in b.widgets()] == ["todos", "deadlines", "goals"]      # only the switched-on blocks'
+
+
+def test_block_with_old_home_is_one_widget(store, monkeypatch):
+    """A block from another copy that still sets `home` (no widgets): one widget keyed by the block, medium."""
+    drawn = []
+    blocks, fake = _install(monkeypatch, home=lambda: drawn.append(1))
+    blocks.save(["fake"])
+    (w,) = blocks.widgets()
+    assert (w.key, w.name, w.size) == ("fake", "Fake", "m")
+    store.save_settings(home=[{"w": "fake", "size": "full"}])
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.exception and drawn
+
+
+def test_block_needs_are_gathered(store, monkeypatch):
+    def broken():
+        raise RuntimeError("no")
+    blocks, _ = _install(monkeypatch, needs=lambda: ["Feed the cat", {"text": "Vet", "page": "Settings"}, ""])
+    blocks.save(["fake"])
+    assert [(n["text"], n["page"], n["block"]) for n in blocks.needs()] == [("Feed the cat", None, "fake"),
+                                                                          ("Vet", "Settings", "fake")]
+    monkeypatch.setattr(blocks.get("fake"), "needs", broken)
+    assert blocks.needs() == []                                            # a broken block is skipped

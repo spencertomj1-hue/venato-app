@@ -82,7 +82,7 @@ venato/                         The app's code, as a package (imported as `from 
   undo.py                      Undo: whole-database snapshot before deletes / overwrites (ui/undo_bar.py offers it)
   setup_checks.py              Logic behind the wizard/Settings: Claude status, mic test, backups, Finder
   ui/                          One module per page or section (imported as `from venato.ui import goals`, ...)
-    search.py                  Home's search box: store.search (every word, any case, per kind) and Open (sets page + day)
+    search.py                  Search at the top of the sidebar: store.search (every word, any case, per kind) and Open (sets page + day)
     timetable.py               Timetable page and the week/day grid's Python side
     timetable_tools.py         Buttons above the grid: Add block, Fit time, Categories (dialogs calling the same tools functions as Claude)
     daily_log.py               Daily Log page (month calendar, day card, the day's habits, entry form with the journal box, past entries) and Home's habits
@@ -92,7 +92,7 @@ venato/                         The app's code, as a package (imported as `from 
     goal_time.py               Timetable: the "Plan this week" panel (free hours per day, goal bars with Fit N h, Plan all goals, I'm away) and suggested sittings; Share hours; the Goals page's pace lines, offers and suggestions
     deadlines.py               Deadlines section (Goals page) and Home's list, with "Make time"
     review.py                  Weekly review pop-up and Review's history
-    home.py, stats.py          Home (timetable, widgets; empty widgets draw nothing) and Review (stats.py) pages
+    home.py, stats.py          Home (a grid of widgets, arrange mode; layout logic in venato/home_layout.py, glides in components/home_flip.js) and Review (stats.py) pages
     blocks_ui.py               Settings → Blocks; one page module per block (focus.py, money.py, ...)
     undo_bar.py, page_fade.py  The Undo bar; the fade between pages
     chat.py                    The chat bar / Home ask box, and its flow (send → transcribe → Claude → rerun)
@@ -116,7 +116,7 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
 
 ## 3b. Blocks: tiers and hooks (`venato/blocks/`)
 
-- **Two tiers.** `core=True` blocks are always on (`chosen_keys()` adds them even if settings.json lacks them): Timetable, Goals (also to-dos and deadlines), Focus, Grades, Review (key `stats`, in `blocks/core.py`). Optional blocks are switched on only in Settings → Blocks (the setup wizard doesn't ask): Daily Log (key `log`: habits, journal, mood), Money, Workouts. Settings.json `blocks` lists the keys switched on, in the user's priority order, which is also the order of the Home widgets. Removed features (Food, Recipes, Cut down, Health data, Involvement, Applications, Network) have no code; their tables stay in old databases untouched and are never dropped.
+- **Two tiers.** `core=True` blocks are always on (`chosen_keys()` adds them even if settings.json lacks them): Timetable, Goals (also to-dos and deadlines), Focus, Grades, Review (key `stats`, in `blocks/core.py`). Optional blocks are switched on only in Settings → Blocks (the setup wizard doesn't ask): Daily Log (key `log`: habits, journal, mood), Money, Workouts. Settings.json `blocks` lists the keys switched on, in the user's priority order (review and search follow it). Home's own layout is settings.json `home` (venato/home_layout.py); blocks offer widgets with `widgets=[Widget(key, name, draw, size)]` (an old `home=` callable still works as one medium widget keyed by the block) and Needs you items with `needs`. Removed features (Food, Recipes, Cut down, Health data, Involvement, Applications, Network) have no code; their tables stay in old databases untouched and are never dropped.
 - **Hooks on `Block`** (all optional; the shared code asks the switched-on blocks, so a block never needs an `if` somewhere else):
   - `search`: `{kind: (select, haystack[, order])}`, merged by `blocks.search_kinds()` into Home's search; `search_icons`: `{kind: Material icon}` for its results; `search_open(result, session_state)`: routes a click on a result to the block's page (`blocks.search_block(kind)` finds the owner; core kinds have none).
   - `review(first, last)` -> `{"title", "lines"}`: lines for the weekly review (`blocks.review_sections`); no lines = no section.

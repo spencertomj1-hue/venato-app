@@ -744,6 +744,11 @@ class Timetable {
   // the Timetable page: 10px (still big enough to drag in) to 18px.
   fitToWindow() {
     if (!this.wrapEl || !this.cells || !this.cells[0]) return;
+    // On Home, while its widget is pinned or gliding to a new place (home_flip.js) the boxes measured here are
+    // transformed: wait for it to land (it sends "venato:flip-settled").
+    const SEL = '[class*="st-key-hw_"]';
+    const card = this.root.closest(SEL) || this.root.getRootNode().host?.closest(SEL);
+    if (card && (card.style.transform || card.getAnimations().some((a) => a.id === "flip"))) return;
     const [min, max] = this.data.readonly ? [9, 40] : [10, 18];
     const main = document.querySelector(".stMainBlockContainer");
     const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24;
@@ -1082,6 +1087,7 @@ class Timetable {
   attach() {
     if (this.attached) return;
     window.addEventListener("resize", this.onWindowResize);
+    window.addEventListener("venato:flip-settled", this.onWindowResize);   // Home: a widget glide has landed
     window.addEventListener("mousedown", this.onOutside);
     this.resizeObserver.observe(this.wrapEl);
     window.addEventListener("mouseup", this.onMouseUp);
@@ -1092,6 +1098,7 @@ class Timetable {
   detach() {
     clearTimeout(this.nowTimer);
     window.removeEventListener("resize", this.onWindowResize);
+    window.removeEventListener("venato:flip-settled", this.onWindowResize);
     window.removeEventListener("mousedown", this.onOutside);
     if (this.resizeObserver) this.resizeObserver.disconnect();
     window.removeEventListener("mouseup", this.onMouseUp);

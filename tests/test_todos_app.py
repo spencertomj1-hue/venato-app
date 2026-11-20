@@ -44,28 +44,34 @@ def home_keys(at):
     return keys - {None}
 
 
-def test_home_skips_empty_widgets(store):
-    """A Home widget with nothing to show isn't drawn at all: no "No habits yet", no "No marks yet",
-    no empty Focus box, no Deadlines heading with nothing under it. Once there's something, it shows."""
+def test_home_widgets_with_nothing_say_so(store):
+    """Widgets you add to Home show a short empty state when there's nothing in them yet (and none are on
+    Home until added). Once there's something, it shows."""
     store.save_settings(blocks=["timetable", "goals", "log", "stats", "focus", "grades"])
     at = app()
     assert not at.exception
     shown = [m.value for m in at.markdown]
-    for title in ("**Habits**", "**Focus**", "**Grades**", "**Deadlines**",
-                  "**Needs you this week**"):
-        assert title not in shown, title
-    assert not [c for c in at.caption if "No habits yet" in c.value or "No marks yet" in c.value]
-    assert "home_deadlines_all" not in home_keys(at) and "home_habits_manage" not in home_keys(at)
-    assert "home_todos_card" in home_keys(at)                     # the To-dos card stays: it's where you add them
+    for title in ("**Habits**", "**Focus**", "**Grades**", "**Deadlines**", "**Goals**", "**Journal**"):
+        assert title not in shown, title                          # hidden until added
+    assert "home_todos_card" in home_keys(at)
+    store.save_settings(home=[{"w": k, "size": "s"} for k in ("habits", "focus", "modules", "deadlines", "goals",
+                                                               "journal")])
+    at.run()
+    assert not at.exception
+    captions = " ".join(c.value for c in at.caption)
+    for empty in ("No habits yet", "No marks yet", "Nothing due", "No goals running", "Nothing yet today"):
+        assert empty in captions, empty
+    assert at.button(key="home_focus_go")                         # Focus: start one from Home
     store.add_habit("Gym")
     store.add_deadline("Essay", store.local_today())
     at.run()
-    shown = [m.value for m in at.markdown]
-    assert "**Habits**" in shown and "**Deadlines**" in shown
+    assert "No habits yet" not in " ".join(c.value for c in at.caption)
+    assert any("Essay" in h.value for h in at.get("html"))
 
 
 def test_see_all_opens_goals_page(store):
     store.add_deadline("Essay", store.local_today())
+    store.save_settings(home=[{"w": "deadlines", "size": "s"}])
     at = app()
     at.button(key="home_deadlines_all").click().run()
     assert not at.exception
@@ -136,6 +142,7 @@ def test_home_habits_tick_today(store):
     from datetime import date
     store.add_habit("Stretch")
     hid = store.find_habit("stretch")[0]
+    store.save_settings(home=[{"w": "habits", "size": "m"}])
     at = app()
     key = f"home_habit_{hid}_{date.today().isoformat()}"
     at.checkbox(key=key).check().run()

@@ -218,14 +218,34 @@ def _open_habits():
 
 
 def render_home_habits():
-    """Home: today's habits to tick, each with the last 7 days and its current streak. No habits: nothing drawn."""
-    if not store.get_habits():
-        return
+    """Home's Habits widget: today's habits to tick, each with the last 7 days and its current streak."""
     accent = st.get_option("theme.primaryColor") or "#ff4b4b"
     head = st.container(horizontal=True, vertical_alignment="center")
     head.markdown("**Habits**", width="stretch")
     head.button("Manage", key="home_habits_manage", type="tertiary", on_click=_open_habits)
+    if not store.get_habits():
+        st.caption("No habits yet. Add them on the Daily Log.")
+        return
     _home_habit_rows(accent)
+
+
+def _write_today():
+    st.session_state["log_day"] = store.local_today()
+    st.session_state["log_month"] = store.local_today().replace(day=1)
+    st.session_state["page"] = PAGE
+
+
+def render_home_journal():
+    """Home's Journal widget: today's entry so far (or today's prompt), and Write to open it on the Daily Log."""
+    today = store.local_today()
+    head = st.container(horizontal=True, vertical_alignment="center")
+    head.markdown("**Journal**", width="stretch")
+    head.button("Write", key="home_journal_write", type="tertiary", icon=":material/edit:", on_click=_write_today)
+    text = (store.get_journal(today.isoformat()) or "").strip()
+    if text:
+        st.caption(text if len(text) <= 280 else text[:280].rsplit(" ", 1)[0] + "…")
+    else:
+        st.caption(f"Nothing yet today. {prompt_for(today)}")
 
 
 @st.fragment

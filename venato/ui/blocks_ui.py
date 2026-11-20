@@ -49,7 +49,7 @@ def picker(prefix):
 
 
 def priorities(prefix):
-    """The switched-on blocks in order, with up / down: Home shows their widgets in this order."""
+    """The switched-on blocks in order, with up / down (the weekly review and search follow it)."""
     keys = blocks.chosen_keys()
     if not keys:
         st.caption("No blocks switched on yet.")
@@ -57,7 +57,7 @@ def priorities(prefix):
     for i, key in enumerate(keys):
         b = blocks.get(key)
         name, up, down = st.columns([6, 1, 1], vertical_alignment="center")
-        name.markdown(f"{i + 1}. {b.icon} **{b.name}**" + ("" if b.home else "  \n:gray[(no Home widget)]"))
+        name.markdown(f"{i + 1}. {b.icon} **{b.name}**" + ("" if b.home_widgets() else "  \n:gray[(no Home widget)]"))
         up.button("", icon=":material/arrow_upward:", key=f"{prefix}_up_{key}", disabled=i == 0,
                   on_click=_move, args=(key, -1), help=f"Move {b.name} up")
         down.button("", icon=":material/arrow_downward:", key=f"{prefix}_down_{key}", disabled=i == len(keys) - 1,
@@ -66,8 +66,9 @@ def priorities(prefix):
 
 def section(prefix):
     st.markdown("Switch on the blocks you want and off the ones you don't: "
-                "each adds a page (and a widget on Home).")
+                "each adds a page, and widgets you can put on Home.")
     picker(prefix)
     st.subheader("Your priorities", anchor=False)
-    st.caption("Home shows the widgets of your blocks in this order: put what matters most first.")
+    st.caption("Put what matters most first: the weekly review and search follow this order. "
+               "Home has its own layout: arrange it from Home.")
     priorities(prefix)

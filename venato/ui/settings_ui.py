@@ -480,7 +480,8 @@ def page_settings():
         pages.append(("mic", ":material/mic: Voice"))       # voice input is for the assistant
     pages += [("remind", ":material/notifications: Reminders"), ("data", ":material/database: Data"),
               ("about", ":material/info: About")]
-    tabs = dict(zip([k for k, _ in pages], st.tabs([n for _, n in pages])))
+    opened = dict(pages).get(st.session_state.pop("settings_tab", None))     # e.g. Home's "try the assistant" card
+    tabs = dict(zip([k for k, _ in pages], st.tabs([n for _, n in pages], default=opened)))
     look, region, log, cal, claude, mic, remind, data, about = (
         tabs.get(k) for k in ("look", "region", "log", "cal", "claude", "mic", "remind", "data", "about"))
     with tabs["blocks"]:

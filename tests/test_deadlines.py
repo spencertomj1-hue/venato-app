@@ -57,6 +57,7 @@ def test_deadline_reminders(store):
 def test_pages(store):
     today = store.local_today()
     store.add_deadline("Essay", today + timedelta(days=3))
+    store.save_settings(home=[{"w": "deadlines", "size": "s"}])                         # Home's Deadlines widget
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
     assert any("Essay" in h.value and "in 3 days" in h.value for h in at.get("html"))     # Home

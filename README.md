@@ -38,7 +38,7 @@
 
 ## Features
 
-**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Grades and Review; setup doesn't ask. Each brings its own page, Home widget and assistant skills, and Home orders the widgets by the priorities you set.
+**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Grades and Review; setup doesn't ask. Each brings its own page, Home widgets and assistant skills. Home is a grid of widgets you arrange yourself: press the Arrange button (top right), then move, resize, hide or add them.
 
 | Block | What it does |
 |---|---|

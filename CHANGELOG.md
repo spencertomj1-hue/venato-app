@@ -10,6 +10,9 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Changed
+- Home is a grid you arrange, like a phone's home screen. Press the Arrange button (top right), then tap a widget to pick it up and tap another to drop it there, or use each widget's bar: smaller / bigger, back / forward, hide. "Add widget" brings back hidden ones (Deadlines, Goals, Habits, Journal, Focus, Grades); Reset goes back to the start. Moves glide into place, every change saves at once and can be undone. Your Home starts as today's timetable beside Ask, Needs you and To-dos.
+- Needs you gathers everything that wants something from you: days to confirm, goals behind or short, deadlines this week with no plan yet, and (once, a week in, with the assistant off) where to switch the assistant on. Nothing to do: "Nothing needs you. Go touch grass."
+- Search moved to the top of the sidebar, on every page.
 - Home is simpler ("Essentials"): today's timetable on the left, now taller (it fills the window, still without scrolling); on the right Ask Venato, Needs you this week (each goal with its progress bar and how far off today's pace), To-dos and Deadlines. To-dos are one card with a Daily / Weekly / Monthly switch instead of three side-by-side lists. The Agenda list and the separate Goals card are gone (the timetable and Needs you show the same), and widgets with nothing to show (no habits, no marks, no deadlines, Focus with nothing today) aren't drawn.
 - Timetable: half-hour blocks show their name centred on one line, never cut off.
 - Review has a new one-screen weekly layout (fits a 1440×900 window without scrolling):

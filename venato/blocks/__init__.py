@@ -2,10 +2,10 @@
 Blocks: the parts of Venato you can switch on and off, like Lego.
 
 Each block is a module in this package with a module-level BLOCK (or BLOCKS) describing it:
-its sidebar page, its Home widget, its database tables, and what it gives the Claude
+its sidebar page, its Home widgets, what it adds to Home's "Needs you", its database tables, and what it gives the Claude
 assistant (tools, a paragraph of instructions, a line in the [Now] snapshot, quick
 commands). The setup wizard shows them as cards to tick; Settings → Blocks changes them
-later and sets their order, which is also the order of the widgets on Home.
+later and sets their order. Where their widgets go on Home is Home's own layout (home_layout.py).
 
 Adding a block = adding a file here; nothing else needs to know about it. (That's also how
 the private copy adds its own pages without touching the shared code.)
@@ -18,6 +18,16 @@ from typing import Callable
 
 
 @dataclass
+class Widget:
+    """Something a block offers for Home. Its key is saved in Home's layout (settings.json "home"), so it
+    stays the same; size is where it starts: "s" (a third), "m" (a half), "l" (two thirds) or "full"."""
+    key: str
+    name: str                        # in Home's "+ Add widget" list and its arrange bar
+    draw: Callable
+    size: str = "m"
+
+
+@dataclass
 class Block:
     key: str                         # stable id, saved in settings.json
     name: str                        # its page in the sidebar
@@ -25,7 +35,9 @@ class Block:
     blurb: str                       # one line for the card in setup / Settings
     group: str = "Other"             # how the cards are grouped
     page: Callable | None = None     # draws its page (None: no page of its own)
-    home: Callable | None = None     # draws its Home widget
+    widgets: list = field(default_factory=list)    # its Home widgets: [Widget]
+    home: Callable | None = None     # older blocks: one Home widget (keyed by the block, medium); use widgets
+    needs: Callable | None = None    # -> items for Home's "Needs you": a str, or {"text", "icon"?, "page"?}
     tools: list = field(default_factory=list)      # assistant tools, as in assistant.TOOL_SPECS
     prompt: str = ""                 # a paragraph for the assistant about this block
     context: Callable | None = None  # -> text for the assistant's [Now] snapshot
@@ -42,6 +54,12 @@ class Block:
     search_open: Callable | None = None             # (result, session_state) -> None: routes a click on a result
     review: Callable | None = None   # (first, last) -> {"title": str, "lines": [str]} for the weekly review; no lines = nothing
     status: dict = field(default_factory=dict)      # word in its tools' names -> what the chat shows while one runs
+
+    def home_widgets(self):
+        """Its Home widgets. A block that still sets `home` (and no widgets) has one, keyed by the block."""
+        if self.widgets:
+            return list(self.widgets)
+        return [Widget(self.key, self.name, self.home, "m")] if self.home else []
 
 
 GROUPS = ["Plan", "Health & body", "Study & work", "Other"]
@@ -113,6 +131,32 @@ def pages():
     for b in all_blocks():
         if b.page and b.key in on:
             out.setdefault(b.page_name or b.name, b.page)
+    return out
+
+
+def widgets():
+    """The Home widgets of the switched-on blocks, in priority order (a key offered twice: the first)."""
+    out = {}
+    for b in enabled():
+        for w in b.home_widgets():
+            out.setdefault(w.key, w)
+    return list(out.values())
+
+
+def needs():
+    """Every switched-on block's "Needs you" items, as {"text", "icon", "page", "block"}."""
+    out = []
+    for b in enabled():
+        if not b.needs:
+            continue
+        try:
+            items = b.needs() or []
+        except Exception:                    # one broken block mustn't take Home down with it
+            continue
+        for item in items:
+            item = {"text": item} if isinstance(item, str) else dict(item)
+            if item.get("text"):
+                out.append({"icon": b.icon, "page": None, **item, "block": b.key})
     return out
 
 

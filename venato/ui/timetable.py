@@ -308,7 +308,7 @@ def render_page():
 
 
 # ---------------------------------------------------------------------------
-# Home's end-of-day prompt: "Is the timetable right for today?"
+# Home's end-of-day question (in Needs you): "Is the timetable right for today?"
 # ---------------------------------------------------------------------------
 
 def prompt_days(now=None):
@@ -348,21 +348,19 @@ def _dismiss(day):
     store.save_settings(eod_dismissed=sorted(set(gone[-30:] + [day.isoformat()])))
 
 
-def end_of_day_prompt():
-    """Home: for today (once its Plan is over) and yesterday, if unconfirmed: Confirm / Review / Not now."""
-    for day in prompt_days():
-        when = "today" if day == store.local_today() else "yesterday"
-        with st.container(border=True, key=f"eod_{day.isoformat()}"):
-            row = st.container(horizontal=True, gap="small", vertical_alignment="center")   # one line: question + buttons
-            row.markdown(f"**Is the timetable right for {when}?**", width="stretch",
-                         help=f"Confirm {regional.long_date(day)}'s Actual is what you really did: only confirmed "
-                              "days count in your stats and goals.")
-            row.button("Confirm", key=f"eod_ok_{day}", type="primary", icon=":material/task_alt:",
-                       on_click=_confirm_all, args=(day,), help=f"Confirm {when}'s Actual is what you did")
-            row.button("Review", key=f"eod_review_{day}", icon=":material/edit_calendar:",
-                       on_click=_review, args=(day,), help=f"Open {when} on the Timetable to correct it")
-            row.button("Not now", key=f"eod_no_{day}", type="tertiary", on_click=_dismiss, args=(day,),
-                       help="Hide this; the day stays unconfirmed")
+def end_of_day_row(day):
+    """Home's Needs you: "Is the timetable right for today / yesterday?" with Confirm / Review / Not now."""
+    when = "today" if day == store.local_today() else "yesterday"
+    row = st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"eod_{day.isoformat()}")
+    row.markdown(f"**Is the timetable right for {when}?**", width="stretch",
+                 help=f"Confirm {regional.long_date(day)}'s Actual is what you really did: only confirmed "
+                      "days count in your stats and goals.")
+    row.button("Confirm", key=f"eod_ok_{day}", type="primary", icon=":material/task_alt:",
+               on_click=_confirm_all, args=(day,), help=f"Confirm {when}'s Actual is what you did")
+    row.button("Review", key=f"eod_review_{day}", icon=":material/edit_calendar:",
+               on_click=_review, args=(day,), help=f"Open {when} on the Timetable to correct it")
+    row.button("Not now", key=f"eod_no_{day}", type="tertiary", on_click=_dismiss, args=(day,),
+               help="Hide this; the day stays unconfirmed")
 
 
 def render_today():

@@ -86,6 +86,9 @@ if st.session_state.get("page") not in PAGES:
     st.session_state["page"] = "Home"            # its block was switched off
 
 st.sidebar.title("Venato")
+with st.sidebar:
+    from venato.ui import search                  # search everything, at the top of the sidebar
+    search.render_sidebar()
 # Keyed so Home's goals "See all" can switch to the Goals page.
 choice = st.sidebar.radio("Go to", list(PAGES), label_visibility="collapsed", key="page")
 with st.sidebar:
@@ -111,8 +114,8 @@ update_banner()
 review_ui.maybe_show()                         # Sunday from 7pm: the week's review pops up once
 PAGES[choice]()
 
-# The Claude chat bar, pinned to the bottom of every page (Home has it inline).
-if choice != "Home" and store.ai_enabled():
+# The Claude chat bar, pinned to the bottom of every page (Home has it inline, when its Ask widget is on).
+if store.ai_enabled() and not (choice == "Home" and st.session_state.get("home_ask")):
     chat.render()
 
 from venato.ui import undo_bar                # "Deleted X · Undo", after a delete or overwrite
