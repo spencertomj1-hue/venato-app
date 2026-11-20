@@ -18,9 +18,10 @@ daily-log fields, habits, blocks and the Home layout. Examples are offered as ti
 | Home | one widget per block, in block order; "goals" block draws to-dos and deadlines together | `ui/home.py`, `blocks/core.py` |
 | Onboarding | Welcome → Assistant → Calendar → Mic → Done. No goals step | `ui/settings_ui.py:224+` |
 
-## Rule for existing installs
-Only **new** databases start blank. Existing data (including the owner's) keeps its categories, fields and layout.
-The "is new" check is "the database was just created", not "the table is empty", so someone who deletes every category doesn't get them back.
+## Existing installs
+No special treatment: the blank-slate rules apply to everyone. The one exception is **data**: daily-log history gets
+migrated, never dropped, because the owner's own Mac is an existing install. Seeding happens only when a database is created,
+so someone who deletes every category doesn't get them back.
 
 ## Phase 1: no presets
 1. Remove the seeding of `DEFAULT_CATEGORIES` and `DEFAULT_LABEL_MAP` on new databases. Keep the lists, renamed `EXAMPLE_CATEGORIES`, for suggestions only.
@@ -39,15 +40,19 @@ The "is new" check is "the database was just created", not "the table is empty",
 
 ## Phase 3: Home you arrange yourself
 1. Split Home into **widgets**, separate from blocks: `timetable_today`, `ask`, `needs_you`, `todos`, `deadlines`, `goals`, `habits`, `daily_log`, `focus`, plus each other block's existing `home`. Each block declares a list of widgets (`Block.widgets`) instead of just one `home`.
-2. Save the layout in `settings.json` as `home: {"left": [...], "right": [...]}`. Missing key = today's layout, so existing installs see no change.
+2. **Fully customisable grid.** The layout is a list of rows. Each row holds 1-4 widgets, and each widget has a width
+   (¼, ⅓, ½, ⅔, ¾ or full, on a 12-column grid via `st.columns` ratios). Saved in `settings.json` as
+   `home: [[{"w": "todos", "span": 6}, {"w": "deadlines", "span": 6}], [{"w": "timetable_today", "span": 12}], ...]`.
+   Any widget can go anywhere, timetable and Ask included. Nothing is pinned. Missing key = a default layout.
 3. Arranging happens **on Home itself**: a small "Arrange" icon button (`:material/dashboard_customize:`, tertiary) in Home's top-right corner. Clicking it switches Home into arrange mode:
-   - Each widget gets a slim bar on top: ↑ / ↓ (order), ← / → (column), and 👁 (hide).
-   - A "+ Add widget" chip row at the bottom lists hidden widgets, plus any from switched-on blocks that aren't placed yet.
+   - Each widget gets a slim bar on top: ↑ / ↓ (move to the row above or below), ← / → (swap within the row), width − / +, and ✕ (hide).
+   - "+ Add widget" opens a picker of hidden or unplaced widgets. A new widget goes in a new row, or into a chosen row if it fits.
    - "Done" and "Reset" buttons replace the Arrange button. Changes save straight to `settings.json` (with undo via `venato/undo.py`).
-   - Widgets keep showing their real content while you arrange (no placeholder boxes), so you can see what you're moving.
+   - Widgets keep showing their real content while you arrange, so you can see what you're moving.
+   - No drag-and-drop: Streamlit can't drag its own native widgets around. A JS grid would mean rebuilding every widget in JS. Buttons get the same result.
    - There's no Settings → Home page. Arranging lives on Home only.
 4. `ui/home.py` draws from the layout, keeping the per-widget try/except and the fragment behaviour.
-5. Tests: a custom layout renders in that order. An unknown or disabled widget gets skipped. The default layout matches the current Home exactly.
+5. Tests: a custom grid renders the right rows and widths. An unknown or disabled widget gets skipped. A row whose spans add up to more than 12 gets clamped.
 
 ## Phase 4: goal-led onboarding
 New wizard: **Welcome → Your goals → What would you track? → Your day (categories) → Daily log & habits → Home → Assistant / Calendar / Mic → Done**
@@ -70,6 +75,4 @@ Phase 1 (small) → Phase 3 (medium) → Phase 2 (largest: schema migration) →
 Each phase is its own PR on `venato-app`, then gets merged into `venato-private`.
 
 ## Open decisions
-1. Existing installs stay as they are (proposed above). OK?
-2. Daily log custom fields: full migration to `log_fields`/`log_values` (proposed), or the cheaper option: keep the 5 fixed columns, let users switch them off, and only add *new* custom fields in a side table?
-3. Home: two fixed columns (proposed), or a free grid?
+1. Daily log: full move to `log_fields`/`log_values` (proposed) vs keeping the 5 fixed columns plus a side table for custom fields.
