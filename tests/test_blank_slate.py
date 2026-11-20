@@ -168,3 +168,24 @@ def test_add_a_category_button_takes_you_to_the_editor(store):
     assert "tt_open_categories" not in at.session_state              # used up
     assert any(t.label == "Name" for t in at.text_input)             # the "Adjust categories" dialog is open
     assert not store.load_categories().shape[0]
+
+
+def test_assistant_errors_with_no_categories_say_what_to_do(store):
+    from venato import tools
+    for call in (lambda: tools.add_block("2026-11-02", "plan", "09:00", "10:00", "Read", category="Study"),
+                 lambda: tools.add_goal("Read", 4, period="monthly", unit="h", category="Study")):
+        with pytest.raises(tools.ToolError) as e:
+            call()
+        assert "no categories yet" in str(e.value) and "edit_category" in str(e.value)
+        assert ": ." not in str(e.value)
+
+
+def test_focus_note_follows_the_timetable_block(store):
+    from datetime import datetime, timedelta
+    from venato.blocks import focus
+    now = datetime(2026, 11, 2, 10, 0)
+    session = {"id": "s1", "kind": "focus", "minutes": 25, "label": "Read", "category_id": None,
+               "started": now.isoformat(), "ended": (now + timedelta(minutes=25)).isoformat()}
+    assert "Adjust categories" in focus._maybe_timetable(session)
+    _blocks().save(["focus"])
+    assert "Switch the Timetable on" in focus._maybe_timetable(session)

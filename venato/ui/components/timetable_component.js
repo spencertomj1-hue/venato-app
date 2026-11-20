@@ -1473,6 +1473,7 @@ class Timetable {
     });
 
     const save = () => {
+      if (!catEl.value) return;                 // no category to put it in: nothing to save
       const label = labelEl.value.trim() || (this.cats.get(catEl.value) || {}).name || "";
       const details = pop.querySelector(".p-details").value.trim() || null;
       this.commit([{ opId: uid(), kind: "upsert", entry: { ...entry, label, categoryId: catEl.value, details } }]);
@@ -1480,6 +1481,7 @@ class Timetable {
     };
     labelEl.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
     pop.querySelector(".save").addEventListener("click", save);
+    if (!catEl.value) pop.querySelector(".save").disabled = true;
     pop.querySelector(".cancel").addEventListener("click", () => this.closePopover());
     pop.querySelector(".del").addEventListener("click", () => {
       this.commit([{ opId: uid(), kind: "delete", id: entry.id }]);

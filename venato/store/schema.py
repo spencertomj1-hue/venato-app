@@ -13,7 +13,7 @@ from .grid import slot_count, slot_time
 
 
 def init_db():
-    """Create tables if they don't exist yet, and seed the timetable key."""
+    """Create tables if they don't exist yet, and bring an older database up to date. A new database has no categories."""
     db_path().parent.mkdir(parents=True, exist_ok=True)
     with db() as conn:
         _goals_became_todos(conn)

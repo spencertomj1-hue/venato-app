@@ -36,6 +36,8 @@ def _category(label, category):
     cid = store.resolve_category(label=label, category=category)
     if cid is None:
         names = ", ".join(store.load_categories()["name"])
+        if not names:
+            raise ToolError("There are no categories yet. Ask the user for a name, then create it with edit_category (create=true).")
         what = f"category '{category}'" if category else f"default category for '{label}'"
         raise ToolError(f"There's no {what}. Ask the user which category to use: {names}.")
     return cid

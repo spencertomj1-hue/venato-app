@@ -296,7 +296,10 @@ def _maybe_timetable(session):
                                  category=_category_name(session["category_id"]))
     except tools.ToolError:
         if store.load_categories().empty:
-            return "Not added to the timetable. Add a category first (Timetable, then Adjust categories)."
+            from venato import blocks
+            return ("Not added to the timetable. Add a category first (Timetable, then Adjust categories)."
+                    if blocks.is_on("timetable") else
+                    "Not added to the timetable. Switch the Timetable on in Settings and add a category first.")
         return "Not added to the timetable: pick a category for it (or give the activity a default category)."
     if result.pending:
         return "Not added to the timetable: something's already there at that time."
