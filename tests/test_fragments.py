@@ -73,14 +73,15 @@ def test_review_period_reruns_charts_only(store):
     with fragment_run.recording():
         at = AppTest.from_file(APP, default_timeout=60)
         at.session_state["page"] = "Review"
+        at.session_state["rv_view"] = "Trends"
         at.run()
         assert not at.exception
-        weeks = at.selectbox(key="review_week")
+        view = at.segmented_control(key="rv_view_w")
         fragment_run.click(at, at.radio(key="stats_period").set_value("Last 7 days"))
     assert not at.exception
     assert at.radio(key="stats_period").value == "Last 7 days"
-    assert not [s for s in at.selectbox if s.key == "review_week"]   # the weekly review wasn't redrawn
-    assert weeks
+    assert not [s for s in at.segmented_control if s.key == "rv_view_w"]   # the page's header wasn't redrawn
+    assert view
 
 
 def test_timetable_rejected_ops_are_acked_with_a_reason(store, monkeypatch):
