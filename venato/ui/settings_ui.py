@@ -9,6 +9,7 @@ The Claude assistant is optional (settings.json "ai_enabled"): everything in
 Venato works by hand, and switching it on adds the chat box and voice input.
 """
 
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -23,9 +24,6 @@ from venato import store
 from venato import undo
 from venato import system
 from venato.ui import onboarding
-
-STEPS = [(name, icon) for _, name, icon, _ in onboarding.STEPS]      # all of them; students get the uni ones
-
 
 # ---------------------------------------------------------------------------
 # Shared sections
@@ -225,7 +223,7 @@ def mic_section(prefix):
 
 def ai_switch(prefix):
     """The on/off switch for the optional Claude assistant; True if it's on."""
-    on = store.ai_enabled() if "ai_enabled" in store.load_settings() else prefix != "wiz"
+    on = store.ai_enabled() if "ai_enabled" in store.load_settings() else True
     new = st.toggle("Use the Claude assistant", value=on, key=f"{prefix}_ai_on",
                     help="Adds a chat box (and voice input) where you can ask Claude to make changes for you. "
                          "Everything also works without it.")
@@ -259,7 +257,7 @@ def _finish():
     try:
         onboarding.prefill_home(onboarding.chosen_home_keys())
     except Exception:                                 # Home keeps its default; setup is done either way
-        pass
+        logging.getLogger(__name__).warning("Setup couldn't prefill Home", exc_info=True)
     setup_checks.save_settings(wizard_done=True)
     st.session_state["wizard_open"] = False
     onboarding.restart()

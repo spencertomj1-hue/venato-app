@@ -241,8 +241,10 @@ def apply_suggestion(s, goal_id=None, number=False):
     kind = s["kind"]
     if kind == "habit":
         store.add_habit(s["name"])
-        if goal_id:
-            store.update_goal(goal_id, habit_id=store.find_habit(s["name"])[0])
+        if goal_id:                                   # the goal counts ticks now: no category, and no hours unit
+            goal = store.get_goal(goal_id)
+            store.update_goal(goal_id, habit_id=store.find_habit(s["name"])[0],
+                              **({"unit": None} if goal and goal["category_id"] and goal["unit"] == "h" else {}))
     elif kind == "category":
         ensure_category(s["cid"])
         goal = store.get_goal(goal_id) if goal_id else None
@@ -404,6 +406,11 @@ def _link_step(kind):
         st.caption("A calendar is already connected. Paste another link to add one.")
 
 
+def _cand_key(c):
+    """A detected module's widget key: its code, else its name (so it doesn't shift when others are added)."""
+    return c["code"] or c["name"].lower()
+
+
 def _modules():
     ob = _ob()
     st.header(":material/menu_book: Your modules", anchor=False)
@@ -415,10 +422,10 @@ def _modules():
         st.markdown(f":material/check_circle: **{escape(m['name'])}**" + (f" · {escape(m['code'])}" if m["code"] else "")
                     + " · :gray[already in Venato]")
     names = [m["name"] for m in existing]
-    for i, c in enumerate(cands):
+    for c in cands:
         keep, name = st.columns([1, 5], vertical_alignment="bottom")
-        on = keep.checkbox("Add", value=True, key=f"ob_keep_{i}")
-        typed = name.text_input(c["code"] or "Module", value=c["name"], key=f"ob_name_{i}",
+        on = keep.checkbox("Add", value=True, key=f"ob_keep_{_cand_key(c)}")
+        typed = name.text_input(c["code"] or "Module", value=c["name"], key=f"ob_name_{_cand_key(c)}",
                                 help=f"{c['count']} events in your timetable")
         if on and typed.strip():
             names.append(typed.strip())
@@ -455,9 +462,9 @@ def _modules():
 def _save_modules():
     ob = _ob()
     picked = []
-    for i, c in enumerate(ob.get("cands", [])):
-        name = (st.session_state.get(f"ob_name_{i}") or c["name"]).strip()
-        if st.session_state.get(f"ob_keep_{i}", True) and name:
+    for c in ob.get("cands", []):
+        name = (st.session_state.get(f"ob_name_{_cand_key(c)}") or c["name"]).strip()
+        if st.session_state.get(f"ob_keep_{_cand_key(c)}", True) and name:
             picked.append({"code": c["code"], "name": name})
     add_modules(picked, st.session_state.get("ob_credits") or DEFAULT_CREDITS,
                 TARGET_GRADES.get(st.session_state.get("ob_target")))

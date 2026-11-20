@@ -521,7 +521,12 @@ def test_tracking_suggestions_link_and_switch(fresh):
     assert g["category_id"] == "exercise" and g["unit"] == "h" and goal["habit_id"] is None
     assert "exercise" in set(fresh.load_categories()["id"]) and fresh.load_label_map().set_index("label").loc["Gym", "category_id"] == "exercise"
     onboarding.apply_suggestion({"kind": "habit", "name": "Trained"}, ids[0])
-    assert fresh.get_goal(ids[0])["habit_id"] == fresh.find_habit("Trained")[0]     # a habit wins over a category
+    g = fresh.get_goal(ids[0])
+    assert g["habit_id"] == fresh.find_habit("Trained")[0]                           # a habit wins over a category
+    assert g["category_id"] is None and g["unit"] is None
+    onboarding.apply_suggestion({"kind": "category", "name": "Exercise", "cid": "exercise"}, ids[0], number=True)
+    g = fresh.get_goal(ids[0])                                                       # either order ends the same
+    assert g["habit_id"] and g["category_id"] is None and g["unit"] is None
     assert fresh.tracks_sleep() is False
     onboarding.apply_suggestion({"kind": "sleep", "name": "Track my sleep"}, ids[1])
     assert fresh.tracks_sleep() is True
