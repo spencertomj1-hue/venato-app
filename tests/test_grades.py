@@ -184,3 +184,27 @@ def test_module_hours_count_once(gr, store, ol):
     from venato import review
     plan, _ = importlib.reload(review)._slot_maps("2026-11-23")
     assert plan[store.slot_of("10:00")] == cat
+
+
+def test_linking_a_course_keeps_deadlines_the_student_moved(gr, store):
+    from venato import feeds
+    store.import_canvas(feeds.canvas_events(CANVAS, store.tz()))
+    a = gr.add_module("A", code="AAA1001")
+    b = gr.add_module("B", code="BBB1001")
+    c = gr.add_module("C", code="CCC1001")
+    gr.link_canvas_course("1101", a)
+    ds = sorted((d for d in store.deadlines(include_done=True) if d["module_id"] == a), key=lambda d: d["due"])
+    store.update_deadline(ds[0]["id"], module_id=c)                          # moved by hand
+    gr.link_canvas_course("1101", b)
+    assert store.get_deadline(ds[0]["id"])["module_id"] == c                 # left alone
+    assert store.get_deadline(ds[1]["id"])["module_id"] == b
+
+
+def test_no_orphan_category_when_the_module_insert_fails(gr, store, monkeypatch):
+    import sqlite3
+    first = gr.add_module("A")
+    before = sorted(store.load_categories()["name"])
+    monkeypatch.setattr(gr, "_id", lambda: first)                            # the same id: the insert fails
+    with pytest.raises(sqlite3.IntegrityError):
+        gr.add_module("B")
+    assert sorted(store.load_categories()["name"]) == before                 # nothing made or renamed

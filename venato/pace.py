@@ -224,7 +224,8 @@ class Ctx:
         for ev in rows["events"] if not store.day_started(day, self.now) else ():   # (copied into a started day's Actual)
             if ev["all_day"] or not ev["start"]:
                 continue
-            if not any(store._goal_matches(g, self.ocat, ev["title"], event=True) for g in serving):
+            cat = ev.get("module_category") or self.ocat       # a module's event: its module's category only
+            if not any(store._goal_matches(g, cat, ev["title"], event=True) for g in serving):
                 mark(store.slot_of(ev["start"]), store.slot_of(ev["end"]))
         return fixed
 

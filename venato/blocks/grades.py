@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS gr_canvas_courses (
 
 
 def _migrate(conn):
-    """Later columns: each module's timetable category (older modules have none until they're renamed)."""
+    """Later columns: each module's timetable category. Modules made before it have none (no backfill:
+    existing data isn't rewritten; a later phase offers to make them)."""
     store._add_column(conn, "gr_modules", "category_id", "TEXT")
 
 
@@ -124,11 +125,12 @@ def add_module(name, credits=10, year=None, target=None, code=None):
         raise GradeError(f"There's already a module called {name}.")
     target = _pct(target, "target")
     mid = _id()
-    cid = store.add_module_category(f"module-{mid[:12]}", name)       # its own category, next free colour
-    with store.db() as conn:
+    cid = f"module-{mid[:12]}"
+    with store.db() as conn:                                          # one transaction: no orphan category
         conn.execute("INSERT INTO gr_modules (id, name, code, credits, year, target, final, category_id, created_at) "
                      "VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
                      (mid, name, _code(code), credits, year, target, cid, store.stamp()))
+        store.add_module_category(conn, cid, name)                    # its own category, next free colour
     if code:
         store.tag_outlook_modules()                                   # its timetable events
     return mid
@@ -183,13 +185,16 @@ def canvas_courses():
 
 def link_canvas_course(course_id, module_id):
     """Link a Canvas course to a module (None: unlink). Its deadlines, already imported or still to come,
-    move with it."""
+    move with it, except any the student gave another module themselves."""
     module_id = module_id or None
     with store.db() as conn:
+        row = conn.execute("SELECT module_id FROM gr_canvas_courses WHERE course_id = ?", (course_id,)).fetchone()
+        previous = row[0] if row else None
         conn.execute("INSERT INTO gr_canvas_courses (course_id, module_id) VALUES (?, ?) "
                      "ON CONFLICT(course_id) DO UPDATE SET module_id = excluded.module_id", (course_id, module_id))
-        conn.execute("UPDATE deadlines SET module_id = ? WHERE source = 'canvas' AND course_id = ?",
-                     (module_id, course_id))
+        # Only the ones that followed the course (no module, or its old one): one the student moved stays put.
+        conn.execute("UPDATE deadlines SET module_id = ? WHERE source = 'canvas' AND course_id = ? "
+                     "AND (module_id IS NULL OR module_id = ?)", (module_id, course_id, previous))
 
 
 def assessments(mid):

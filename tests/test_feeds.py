@@ -124,3 +124,26 @@ def test_is_canvas(feeds):
 def test_check_any_link_names_canvas(outlook):
     assert outlook.check_any_link(CANVAS_URL) == (CANVAS_URL, "Canvas")
     assert outlook.check_any_link("webcal://school.instructure.com/feeds/calendars/user_1.ics")[1] == "Canvas"
+
+
+def test_one_canvas_uid_in_a_mixed_calendar_is_not_canvas(feeds):
+    mixed = (b"BEGIN:VCALENDAR\r\nPRODID:-//Google Inc//Google Calendar 70.9054//EN\r\n"
+             + b"".join(b"BEGIN:VEVENT\r\nUID:ev%d@google.com\r\nDTSTART:20261201T100000Z\r\nSUMMARY:x\r\nEND:VEVENT\r\n" % i
+                        for i in range(3))
+             + b"BEGIN:VEVENT\r\nUID:event-assignment-1\r\nDTSTART:20261201T100000Z\r\nSUMMARY:y\r\nEND:VEVENT\r\n"
+             + b"END:VCALENDAR\r\n")
+    assert not feeds.is_canvas("https://example.org/cal.ics", mixed)
+    mostly = mixed.replace(b"UID:ev0@google.com", b"UID:event-assignment-2").replace(b"UID:ev1@google.com",
+                                                                                     b"UID:event-assignment-3")
+    assert feeds.is_canvas("https://example.org/cal.ics", mostly)                 # most events are assignments
+    assert feeds.is_canvas("https://example.org/cal.ics", CANVAS)                 # PRODID icalendar-ruby
+
+
+def test_event_category_with_no_categories_reads_nothing(blank_store, monkeypatch):
+    from venato.store import categories
+
+    def boom(*a, **k):
+        raise AssertionError("looked up per event")
+    monkeypatch.setattr(categories, "outlook_category", boom)
+    assert categories.event_category({"title": "Lecture", "module_category": None}, None) is None
+    assert categories.event_category({"title": "Lecture", "module_category": "m"}, None) == "m"

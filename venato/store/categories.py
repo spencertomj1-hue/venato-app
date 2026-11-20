@@ -118,13 +118,17 @@ def outlook_category(title, module_id=None):
     return wanted if wanted in ids else (ids[0] if ids else None)
 
 
-def event_category(event, default=None):
+_LOOK_UP = object()
+
+
+def event_category(event, default=_LOOK_UP):
     """The category an imported event counts under: its module's (the module_category that
-    outlook_between & co. read), else `default` (outlook_category(), looked up once by loops), else
-    outlook_category(). Each event has exactly one, so its hours are counted once."""
+    outlook_between & co. read), else `default` (outlook_category(), looked up once by loops; None
+    when there are no categories), else, with no default given, outlook_category(). Each event has
+    exactly one, so its hours are counted once."""
     if event.get("module_category"):
         return event["module_category"]
-    return default if default is not None else outlook_category(event.get("title"))
+    return outlook_category(event.get("title")) if default is _LOOK_UP else default
 
 
 # Modules (Grades) each get a category in this group, coloured with the first of these no category uses yet.
@@ -133,17 +137,24 @@ MODULE_COLOURS = ["#4E79A7", "#F28E2B", "#59A14F", "#B07AA1", "#76B7B2", "#EDC94
                   "#E15759", "#8CD17D", "#86BCB6", "#D4A6C8", "#A0CBE8", "#FFBE7D", "#BAB0AC", "#D37295"]
 
 
-def next_free_colour():
+def next_free_colour(conn=None):
     """The first module colour no category uses (then round again)."""
-    with db() as conn:
-        used = [r[0].upper() for r in conn.execute("SELECT colour FROM tt_categories")]
+    if conn is None:
+        with db() as conn:
+            return next_free_colour(conn)
+    used = [r[0].upper() for r in conn.execute("SELECT colour FROM tt_categories")]
     free = [c for c in MODULE_COLOURS if c not in used]
     return free[0] if free else MODULE_COLOURS[len(used) % len(MODULE_COLOURS)]
 
 
-def add_module_category(cid, name):
-    """A module's category: group "Modules", the next free colour. Returns its id."""
-    save_category(cid, name, next_free_colour(), MODULES_GROUP)
+def add_module_category(conn, cid, name):
+    """Make a module's category (group "Modules", the next free colour) inside the caller's transaction,
+    so it's made only if the module is. A plain insert: an id already taken fails rather than renaming
+    another category. Returns its id."""
+    order = conn.execute("SELECT COALESCE(MAX(ord), -1) + 1 FROM tt_categories WHERE grp = ?",
+                         (MODULES_GROUP,)).fetchone()[0]
+    conn.execute("INSERT INTO tt_categories VALUES (?, ?, ?, ?, ?, ?)",
+                 (cid, name, next_free_colour(conn), None, MODULES_GROUP, order))
     return cid
 
 

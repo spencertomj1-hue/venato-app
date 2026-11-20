@@ -68,16 +68,26 @@ def due(now, minutes, sent):
 DEADLINE_HOUR = 9        # deadlines due today or tomorrow are announced once, from 9 am
 
 
+DEADLINE_EARLY = timedelta(hours=3)   # one due before 9 am + this is announced this long before its time
+
+
 def due_deadlines(now, sent):
-    """[(key, title, body)] for deadlines due today or tomorrow, once each per day, after 9 am."""
-    if now.hour < DEADLINE_HOUR:
-        return []
+    """[(key, title, body)] for deadlines due today or tomorrow, once each per day, from 9 am (or 3 hours
+    before a due time that's earlier than that). One already past its due time isn't "due" any more."""
     out = []
     for d in store.deadlines():
         days = (store._as_date(d["due"]) - now.date()).days
         key = f"{now.date().isoformat()}|deadline|{d['id']}"
-        if 0 <= days <= 1 and key not in sent:
-            out.append((key, f"Due {'today' if days == 0 else 'tomorrow'}: {d['title']}", d["notes"] or ""))
+        if not 0 <= days <= 1 or key in sent or store.deadline_overdue(d, now):
+            continue
+        start = now.replace(hour=DEADLINE_HOUR, minute=0, second=0, microsecond=0)
+        if days == 0 and d.get("due_time"):
+            h, m = map(int, d["due_time"].split(":"))
+            start = min(start, now.replace(hour=h, minute=m, second=0, microsecond=0) - DEADLINE_EARLY)
+        if now < start:
+            continue
+        at = f" at {regional.time(d['due_time'])}" if d.get("due_time") else ""
+        out.append((key, f"Due {'today' if days == 0 else 'tomorrow'}{at}: {d['title']}", d["notes"] or ""))
     return out
 
 

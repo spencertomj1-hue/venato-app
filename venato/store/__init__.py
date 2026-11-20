@@ -53,8 +53,8 @@ from .habits import (HABIT_PREFIX, add_habit, delete_habit, find_habit, get_habi
     habit_progress, habit_targets, habit_ticks_between, rename_habit, set_habit_done, set_habit_target,
     streaks, week_ticks, weekly_streaks)
 from .history import load_all_data, save_all_data
-from .deadline import (DEADLINE_COLS, add_deadline, countdown, deadlines, delete_deadline, get_deadline,
-    import_canvas, set_deadline_done, update_deadline)
+from .deadline import (DEADLINE_COLS, add_deadline, countdown, deadline_overdue, deadlines, delete_deadline,
+    get_deadline, import_canvas, set_deadline_done, update_deadline)
 from .todos import (TODO_COLS, TODO_PERIODS, add_todo, carry_over, delete_todo, get_todo, load_todos,
     move_target, move_todo, reorder_todos, roll_todos, save_todos, set_todo_done, todos_for, todos_progress,
     update_todo)

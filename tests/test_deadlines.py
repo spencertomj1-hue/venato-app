@@ -180,3 +180,58 @@ def test_an_older_database_only_gains_columns(tmp_path, monkeypatch):
         assert conn.execute("SELECT name, code, credits, category_id FROM gr_modules").fetchall() == \
             [("Organic", "CHEM1", 20.0, None)]
         assert conn.execute("SELECT COUNT(*) FROM deadlines_hidden").fetchone()[0] == 0
+
+
+# --- Fix round 1 ---
+
+def test_countdown_uses_the_due_time(store):
+    from datetime import datetime as dt
+    assert store.countdown("2026-11-20", due_time="17:00", now=dt(2026, 11, 20, 16, 0)) == "Today, 17:00"
+    assert store.countdown("2026-11-20", due_time="17:00", now=dt(2026, 11, 20, 17, 1)) == "Overdue since 17:00"
+    assert store.countdown("2026-11-20", now=dt(2026, 11, 20, 23, 0)) == "Today"           # no time: all day
+    assert store.countdown("2026-11-21", due_time="09:00", now=dt(2026, 11, 20, 23, 0)) == "Tomorrow, 09:00"
+    assert not store.deadline_overdue({"due": "2026-11-20", "due_time": "17:00"}, dt(2026, 11, 20, 16, 0))
+    assert store.deadline_overdue({"due": "2026-11-20", "due_time": "17:00"}, dt(2026, 11, 20, 17, 1))
+    assert not store.deadline_overdue({"due": "2026-11-20", "due_time": None}, dt(2026, 11, 20, 23, 59))
+    assert store.deadline_overdue({"due": "2026-11-19", "due_time": None}, dt(2026, 11, 20, 0, 1))
+
+
+def test_reminders_use_the_due_time(store):
+    from venato import notify
+    notify = importlib.reload(notify)
+    store.add_deadline("Lab report", "2026-11-20", due_time="17:00")
+    out = notify.due_deadlines(datetime(2026, 11, 20, 16, 0), set())
+    assert [t for _, t, _ in out] == ["Due today at 17:00: Lab report"]
+    assert notify.due_deadlines(datetime(2026, 11, 20, 17, 1), set()) == []              # overdue: no "due today"
+    early = store.add_deadline("Quiz", "2026-11-21", due_time="08:00")
+    morning = notify.due_deadlines(datetime(2026, 11, 21, 6, 30), set())                   # before 9 am, 1.5 h to go
+    assert [t for _, t, _ in morning] == ["Due today at 08:00: Quiz"]
+    assert early
+
+
+def test_tools_show_the_due_time(store, monkeypatch):
+    from venato import tools
+    tools = importlib.reload(tools)
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 11, 20, 16, 0))
+    monkeypatch.setattr(store, "local_today", lambda: date(2026, 11, 20))
+    store.add_deadline("Lab report", "2026-11-20", due_time="17:00")
+    assert "(Today, 17:00)" in tools.list_deadlines().text
+
+
+def test_a_canvas_time_change_keeps_a_date_the_student_moved(store):
+    store.import_canvas(_canvas(store))
+    did = _by_uid(store)["event-assignment-500210"]["id"]
+    store.update_deadline(did, due="2026-11-28")
+    store.import_canvas(_canvas(store, CANVAS.replace(b"DTSTART:20261125T170000Z", b"DTSTART:20261125T120000Z")))
+    d = store.get_deadline(did)
+    assert (d["due"], d["due_time"]) == ("2026-11-28", "12:00")          # the time from Canvas, their date
+
+
+def test_auto_link_needs_the_exact_code(store):
+    from venato.blocks import grades
+    short = grades.add_module("Short", code="CHEM1")
+    full = grades.add_module("Full", code="CHEM10001")
+    store.import_canvas([{"uid": "event-assignment-1", "title": "Quiz", "label": "CHEM10001.2026",
+                          "course_id": "7", "due": "2026-12-01", "due_time": None}])
+    assert grades.canvas_courses()[0]["module_id"] == full
+    assert short

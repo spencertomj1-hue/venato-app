@@ -358,3 +358,16 @@ def test_history_and_chart_count_confirmed_days(store, pace):
     assert svg.count("<polyline") == 1 and 'stroke-dasharray="5 4"' in svg and 'role="img"' in svg
     assert "2 h of 30 h by" in goal_chart.describe(p, ctx) and "confirmed days this week" in goal_chart.describe(p, ctx)
     assert pace.history(store.add_goal("Books", "yearly", "2026-01-01", 10, "books"), ctx) is None
+
+
+def test_a_module_lecture_serves_its_module_goal_not_the_calendar_category(store, pace):
+    """Phase 2: a module-tagged event is fixed time for a Classes goal, and free (serving) for its module's goal."""
+    from venato.blocks import grades
+    mid = grades.add_module("Organic Chemistry", code="CHEM50001")
+    cat = grades.get_module(mid)["category_id"]
+    store.replace_outlook([{**event("lec", "2026-11-12", "09:00", "11:00", "Organic Chemistry"),
+                            "module_code": "CHEM50001"}])
+    store.add_goal("Classes", "monthly", "2026-11-01", 30, "h", category_id="classes")
+    assert pace.week_capacity(NOW.date(), pace.Ctx(NOW))["days"][3]["hours"] == 16      # fixed for Classes
+    store.add_goal("Organic", "monthly", "2026-11-01", 30, "h", category_id=cat)
+    assert pace.week_capacity(NOW.date(), pace.Ctx(NOW))["days"][3]["hours"] == 18      # serves its module's goal

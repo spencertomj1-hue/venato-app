@@ -105,11 +105,17 @@ def detect_modules(events):
 
 def is_canvas(url, data=None):
     """A Canvas calendar feed: an instructure.com host or a /feeds/calendars/ path (a uni's own Canvas
-    host), or a feed whose events are Canvas assignments."""
+    host), or content from Canvas (PRODID icalendar-ruby, or most of its events Canvas assignments)."""
     parts = urlparse(str(url or ""))
     if "instructure.com" in (parts.hostname or "").lower() or "/feeds/calendars/" in parts.path.lower():
         return True
-    return bool(data) and re.search(rb"(?m)^UID:event-assignment-", data) is not None
+    if not data:
+        return False
+    prodid = re.search(rb"(?m)^PRODID:(.*)$", data)
+    if prodid and b"icalendar-ruby" in prodid.group(1).lower():
+        return True
+    uids = re.findall(rb"(?m)^UID:(\S*)", data)              # a calendar with one stray assignment isn't Canvas
+    return bool(uids) and sum(u.startswith(b"event-assignment-") for u in uids) * 2 > len(uids)
 
 
 def canvas_events(ics_bytes, zone):

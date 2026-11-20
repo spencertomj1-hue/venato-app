@@ -7,9 +7,11 @@ A deadline can belong to a module (Grades) and can come from Canvas (import_canv
 
 import re
 import uuid
+from datetime import datetime, timedelta
+from datetime import time as dtime
 
 from .database import KEEP, db
-from .dates import _as_date, local_today, stamp
+from .dates import _as_date, local_now, stamp
 
 
 DEADLINE_COLS = "id, title, due, notes, done, done_at, created_at, due_time, module_id, source, uid"
@@ -100,10 +102,12 @@ def _course_module(conn, course_id, label):
         if label and label != row[1]:
             conn.execute("UPDATE gr_canvas_courses SET label = ? WHERE course_id = ?", (label, course_id))
         return row[0]
-    norm = re.sub(r"\s+", "", label or "").upper()
+    from venato import feeds
+    in_label = {feeds.norm_code(c) for c in feeds.CODE.findall(label or "")}   # whole codes, not substrings
     module = None
-    for mid, code in conn.execute("SELECT id, code FROM gr_modules WHERE code IS NOT NULL AND TRIM(code) != ''"):
-        if re.sub(r"\s+", "", code).upper() in norm:
+    for mid, code in conn.execute("SELECT id, code FROM gr_modules WHERE code IS NOT NULL AND TRIM(code) != '' "
+                                  "ORDER BY created_at"):
+        if feeds.norm_code(code) in in_label:
             module = mid
             break
     conn.execute("INSERT INTO gr_canvas_courses (course_id, label, module_id) VALUES (?, ?, ?)",
@@ -140,9 +144,10 @@ def import_canvas(events):
             fields = {}
             if ev["title"] != s_title:
                 fields |= {"title": ev["title"], "source_title": ev["title"]}
-            if (ev["due"], ev.get("due_time")) != (s_due, s_time):
-                fields |= {"due": ev["due"], "due_time": ev.get("due_time"),
-                           "source_due": ev["due"], "source_due_time": ev.get("due_time")}
+            if ev["due"] != s_due:            # date and time apart: a new time keeps a date the student moved
+                fields |= {"due": ev["due"], "source_due": ev["due"]}
+            if ev.get("due_time") != s_time:
+                fields |= {"due_time": ev.get("due_time"), "source_due_time": ev.get("due_time")}
             if fields:
                 conn.execute(f"UPDATE deadlines SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
                              (*fields.values(), did))
@@ -150,13 +155,39 @@ def import_canvas(events):
     return {"added": added, "updated": updated}
 
 
-def countdown(due, today=None):
-    """'Today', 'Tomorrow', 'in 5 days', 'Yesterday' or '3 days overdue'."""
-    n = (_as_date(due) - (today or local_today())).days
+def _due_at(due, due_time):
+    """The moment a deadline is due (naive local): its time, or the end of its day."""
+    day = _as_date(due)
+    if due_time:
+        h, m = map(int, due_time.split(":"))
+        return datetime.combine(day, dtime(h, m))
+    return datetime.combine(day + timedelta(days=1), dtime(0))
+
+
+def deadline_overdue(d, now=None):
+    """Is a deadline ({due, due_time}) past it? With a time, from that minute; without, from the next day."""
+    now = now or local_now()
+    return now.replace(tzinfo=None) > _due_at(d["due"], d.get("due_time"))
+
+
+def countdown(due, today=None, due_time=None, now=None):
+    """'Today', 'Today, 17:00', 'Overdue since 17:00', 'Tomorrow', 'Tomorrow, 09:00', 'in 5 days',
+    '1 day overdue' or '3 days overdue'. With a due time and `now` (default: the clock, unless only
+    `today` is given), a deadline due today is overdue from that time on."""
+    from venato import regional
+    if now is None and today is None:
+        now = local_now()
+    today = _as_date(today) if today is not None else now.date()
+    if now is not None and now.date() != today:
+        now = None                                   # a `now` on another day says nothing about the time
+    n = (_as_date(due) - today).days
+    at = f", {regional.time(due_time)}" if due_time else ""
     if n == 0:
-        return "Today"
+        if due_time and now is not None and deadline_overdue({"due": due, "due_time": due_time}, now):
+            return f"Overdue since {regional.time(due_time)}"
+        return "Today" + at
     if n == 1:
-        return "Tomorrow"
+        return "Tomorrow" + at
     if n == -1:
         return "1 day overdue"
     return f"in {n} days" if n > 0 else f"{-n} days overdue"
