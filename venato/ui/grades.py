@@ -13,6 +13,7 @@ from venato import store
 from venato import undo
 from venato.blocks import grades as gr
 from venato.ui import kit
+from venato.ui.goal_time import md
 
 
 COLUMN_FIELD = {"Assessment": "name", "Weight %": "weight", "Mark %": "mark", "Due": "due"}
@@ -185,7 +186,7 @@ def _facts(m, ctx):
     due = gr.open_deadlines(m["id"])
     if due:
         d = due[0]
-        st.caption(f":material/event: Next: {escape(d['title'])} · "
+        st.caption(f":material/event: Next: {md(d['title'])} · "
                    f"{store.countdown(d['due'], store.local_today(), d.get('due_time'), store.local_now())}")
     else:
         st.caption(":material/event_available: No deadlines")

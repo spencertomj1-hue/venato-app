@@ -69,10 +69,6 @@ def update_deadline(did, title=KEEP, due=KEEP, notes=KEEP, due_time=KEEP, module
         fields["title"] = str(title).strip()
     if due is not KEEP:
         fields["due"] = _as_date(due).isoformat()
-        with db() as conn:
-            row = conn.execute("SELECT due FROM deadlines WHERE id = ?", (did,)).fetchone()
-            if row:
-                _move_plan(conn, did, row[0], fields["due"])
     if notes is not KEEP:
         fields["notes"] = (notes or "").strip() or None
     if due_time is not KEEP:
@@ -80,7 +76,11 @@ def update_deadline(did, title=KEEP, due=KEEP, notes=KEEP, due_time=KEEP, module
     if module_id is not KEEP:
         fields["module_id"] = module_id or None
     if fields:
-        with db() as conn:
+        with db() as conn:                       # the plan moves in the same transaction as the date
+            if "due" in fields:
+                row = conn.execute("SELECT due FROM deadlines WHERE id = ?", (did,)).fetchone()
+                if row:
+                    _move_plan(conn, did, row[0], fields["due"])
             conn.execute(f"UPDATE deadlines SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
                          (*fields.values(), did))
 
@@ -111,7 +111,7 @@ def _move_plan(conn, did, old_due, new_due):
     row = conn.execute("SELECT id, due, period_start FROM goals WHERE deadline_id = ?", (did,)).fetchone() if delta else None
     if row:
         start = _as_date(row[2])
-        due = max(start, _as_date(row[1]) + timedelta(days=delta))
+        due = max(start, min(_as_date(new_due), _as_date(row[1]) + timedelta(days=delta)))   # never after the deadline
         conn.execute("UPDATE goals SET due = ?, period = ? WHERE id = ?",
                      (due.isoformat(), _period_for(start, due), row[0]))
 

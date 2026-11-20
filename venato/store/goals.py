@@ -422,7 +422,8 @@ def save_goals(df, replace=False):
             category_id = cats.get(category.strip().lower()) if category and habit_id is None else None
             ord_ = _clean(row.get("ord"), int)
             conn.execute(
-                f"INSERT OR REPLACE INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET title = excluded.title, period = excluded.period, period_start = excluded.period_start, target = excluded.target, unit = excluded.unit, progress = excluded.progress, habit_id = excluded.habit_id, ord = excluded.ord, created_at = excluded.created_at, category_id = excluded.category_id, label = excluded.label, due = excluded.due",   # (not REPLACE: deadline_id and closed stay)
                 (_clean(row.get("id"), str) or uuid.uuid4().hex, title.strip(), period, start, target,
                  _clean(row.get("unit"), str), max(0.0, _clean(row.get("progress"), float) or 0.0),
                  habit_id, count if ord_ is None else ord_,

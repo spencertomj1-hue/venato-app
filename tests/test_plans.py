@@ -126,25 +126,66 @@ def test_a_deadline_moved_by_hand_moves_the_goal(store, gr):
     assert store.get_goal(g["id"])["due"] == "2026-12-03"
 
 
+def _ev(due="2026-11-30", uid="a1"):
+    return {"uid": uid, "title": "Quiz", "label": "X", "course_id": "7", "due": due, "due_time": "23:59"}
+
+
+def _canvas_deadline(store, gr, uid="a1", due="2026-11-30"):
+    store.import_canvas([_ev(due, uid)])
+    return next(x for x in store.deadlines() if x["uid"] == uid), gr.get_module(gr.add_module(f"Mod {uid}"))["category_id"]
+
+
 def test_a_canvas_redate_moves_the_plan_goal_keeping_its_offset(store, gr):
-    store.import_canvas([{"uid": "a1", "title": "Quiz", "label": "X", "course_id": "7",
-                          "due": "2026-11-30", "due_time": "23:59"}])
-    d = next(x for x in store.deadlines() if x["uid"] == "a1")
-    cat = gr.get_module(gr.add_module("Quiz module"))["category_id"]
+    d, cat = _canvas_deadline(store, gr)
     default = store.plan_deadline(d["id"], cat, total=6, today=MON)
     assert default["due"] == "2026-11-29"                                 # the day before
-    custom = store.plan_deadline(store.add_deadline("Other", "2026-12-05"), cat, total=6,
-                                 finish_by="2026-12-01", today=MON)       # 4 days before
-    store.import_canvas([{"uid": "a1", "title": "Quiz", "label": "X", "course_id": "7",
-                          "due": "2026-12-03", "due_time": "23:59"}])     # Canvas moves it 3 days on
+    store.import_canvas([_ev("2026-12-03")])                              # Canvas moves it 3 days on
     assert store.get_deadline(d["id"])["due"] == "2026-12-03"
     assert store.get_goal(default["id"])["due"] == "2026-12-02"           # still the day before
-    assert store.get_goal(custom["id"])["due"] == "2026-12-01"            # a hand-made one isn't Canvas's
-    # a deadline the student re-dated, or ticked, is not reset by the next sync; a ticked one keeps its closed goal
+
+
+def test_a_custom_finish_by_on_a_canvas_deadline_moves_by_the_same_days(store, gr):
+    d, cat = _canvas_deadline(store, gr)
+    g = store.plan_deadline(d["id"], cat, total=6, finish_by="2026-11-26", today=MON)   # 4 days before
+    store.import_canvas([_ev("2026-12-03")])
+    assert store.get_goal(g["id"])["due"] == "2026-11-29"                 # 3 days later, still 4 before
+
+
+def test_canvas_redate_after_a_hand_edit_takes_the_delta_from_the_current_due(store, gr):
+    d, cat = _canvas_deadline(store, gr)
+    g = store.plan_deadline(d["id"], cat, total=6, today=MON)             # finish 29 Nov
+    store.update_deadline(d["id"], due="2026-12-02")                      # the student: +2 days
+    assert store.get_goal(g["id"])["due"] == "2026-12-01"
+    store.import_canvas([_ev("2026-12-03")])                              # Canvas: now 3 Dec (+1 from the student's)
+    assert store.get_deadline(d["id"])["due"] == "2026-12-03"
+    assert store.get_goal(g["id"])["due"] == "2026-12-02"
+
+
+def test_the_finish_by_never_lands_after_the_new_due_date(store, gr):
+    d, cat = _canvas_deadline(store, gr)
+    g = store.plan_deadline(d["id"], cat, total=6, finish_by="2026-11-30", today=MON)   # the due day itself
+    store.update_deadline(d["id"], due="2026-11-25")
+    assert store.get_goal(g["id"])["due"] == "2026-11-25"
+
+
+def test_a_ticked_canvas_deadline_keeps_its_closed_goal_through_a_sync(store, gr):
+    d, cat = _canvas_deadline(store, gr)
+    store.plan_deadline(d["id"], cat, total=6, today=MON)
     store.set_deadline_done(d["id"], True)
-    store.import_canvas([{"uid": "a1", "title": "Quiz", "label": "X", "course_id": "7",
-                          "due": "2026-12-03", "due_time": "23:59"}])
-    assert store.deadline_goal(d["id"]) is None
+    store.import_canvas([_ev("2026-12-03")])
+    assert store.deadline_goal(d["id"]) is None and store.get_deadline(d["id"])["done"]
+
+
+def test_a_csv_round_trip_keeps_a_plan_goal_closed_and_linked(store, gr):
+    _, did, g = _plan(store, gr, total=10)
+    store.set_deadline_done(did, True)
+    df = store.load_goals()
+    store.save_goals(df)
+    with store.db() as conn:
+        assert conn.execute("SELECT deadline_id, closed, target FROM goals WHERE id = ?", (g["id"],)).fetchone() == (did, 1, 10)
+    store.set_deadline_done(did, False)
+    store.save_goals(df)
+    assert store.deadline_goal(did)["id"] == g["id"]
 
 
 def test_needs_you_says_no_plan_then_behind_then_nothing(store, gr, pace):
