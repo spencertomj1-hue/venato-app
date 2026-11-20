@@ -189,3 +189,11 @@ def test_one_blocks_bad_need_loses_only_its_own(store, monkeypatch):
     monkeypatch.setattr(blocks, "all_blocks", lambda: [*real, bad, good])
     blocks.save(["bad", "good"])
     assert [n["text"] for n in blocks.needs()] == ["Walk"]
+
+
+def test_only_marked_subheadings_get_the_serif_style():
+    """The CSS hits the .vn-subhead marker, not every paragraph with one bold run in it."""
+    from venato.ui import kit, paper
+    css = paper._fonts()
+    assert ".vn-subhead" in css and "only-child" not in css
+    assert kit.subhead("Needs you") == '<span class="vn-subhead">**Needs you**</span>'

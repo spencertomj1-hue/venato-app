@@ -66,12 +66,18 @@ def rgba(hex_colour, alpha):
 
 # --- Layout ---
 
+def subhead(text):
+    """Markdown for a bold serif subheading (a card title). Only text made with this is styled so: the
+    style (paper.py) hits the .vn-subhead marker, not every paragraph that happens to be one bold phrase."""
+    return f'<span class="vn-subhead">**{text}**</span>'
+
+
 @contextmanager
 def card(title=None, caption=None, stretch=True):
     """A bordered card with a bold title. Cards side by side in st.columns stretch to the same height."""
     with st.container(border=True, height="stretch" if stretch else "content"):
         if title:
-            st.markdown(f"**{title}**")
+            st.markdown(subhead(title))
         if caption:
             st.caption(caption)
         yield

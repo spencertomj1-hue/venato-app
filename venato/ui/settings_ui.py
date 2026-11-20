@@ -25,6 +25,7 @@ from venato import store
 from venato import undo
 from venato import system
 from venato.ui import onboarding
+from venato.ui import kit
 
 # ---------------------------------------------------------------------------
 # Shared sections
@@ -75,7 +76,7 @@ def claude_section(prefix):
                     f"command-line app. Open **{setup_checks.SHELL}** and run these one at a time (use the copy "
                     "button on each):")
         if not status["found"]:
-            st.markdown("**1. Install Claude Code**")
+            st.markdown(kit.subhead("1. Install Claude Code"))
             st.code(setup_checks.INSTALL_CMD, language="powershell" if system.IS_WINDOWS else "bash")
         st.markdown(f"**{'2' if not status['found'] else '1'}. Sign in** (opens your browser)")
         st.code(setup_checks.LOGIN_CMD, language="bash")

@@ -8,6 +8,9 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 LOG_TILES = ("Avg sleep", "Avg water", "Habits on target")
 
 
+from venato.ui import kit  # noqa: E402
+
+
 def _seed(store):
     from venato import review
     today = store.local_today()
@@ -47,7 +50,7 @@ def test_starter_only_install(store, monkeypatch):
     page = _review_page(at)
     assert not any(t in LOG_TILES for t in page) and "No entries in this period yet." not in page
     assert not any("Daily log filled in" in t for t in page)
-    assert not any(m.value == "**Habits**" or m.value.startswith("**Journal**") for m in at.markdown)
+    assert not any(m.value == kit.subhead("Habits") or m.value.startswith(kit.subhead("Journal")) for m in at.markdown)
     s = review.summary(week)
     assert s["habits"] == [] and s["journal"] == [] and s["days_logged"] == 0
     assert "Habits:" not in review.as_text(s) and "Journal" not in review.as_text(s)

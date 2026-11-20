@@ -16,6 +16,7 @@ from venato import regional
 from venato import store
 from venato import undo
 from venato.ui.goal_time import md
+from venato.ui import kit
 
 HOME_LIMIT = 5
 
@@ -73,7 +74,7 @@ def render_home():
     today = store.local_today()
     rows = store.deadlines()
     head = st.container(horizontal=True, vertical_alignment="center")
-    head.markdown("**Deadlines**", width="stretch")
+    head.markdown(kit.subhead("Deadlines"), width="stretch")
     head.button("See all", key="home_deadlines_all", type="tertiary", on_click=_go_to_goals)
     if not rows:
         st.caption("Nothing due. Add deadlines on the Goals page.")

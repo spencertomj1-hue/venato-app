@@ -24,6 +24,7 @@ from venato import regional
 from venato import store
 from venato import tools
 from venato import undo
+from venato.ui import kit
 
 PENDING = "goal_time_pending"        # a tools.Pending preview from the Goals page, waiting for Confirm
 ICONS = {"done": ":material/check_circle:", "on_track": ":material/check:", "behind": ":material/warning:",
@@ -173,7 +174,7 @@ def planner(first, ctx=None):
     ended = first + timedelta(days=6) < ctx.today            # a past week: a scorecard, nothing to plan
     confirmed, so_far = ctx.confirmed(first, first + timedelta(days=6))
     with st.container(border=True, key="tt_planner"):
-        st.markdown("**How the week went**" if ended else "**Plan this week**")
+        st.markdown(kit.subhead("How the week went" if ended else "Plan this week"))
         st.caption(f"Free hours for goals per day · {pace.fmt(budget['capacity'])} h in all")
         st.html(_free_bars(budget["days"]))
         rows = [w for w in budget["goals"]]
@@ -576,7 +577,7 @@ def needs_you(ctx=None):
     ctx = ctx or _ctx()
     items = needs_items(ctx)
     with st.container(border=True, key="home_needs_you"):
-        st.markdown("**Needs you**")
+        st.markdown(kit.subhead("Needs you"))
         if not any(items.values()):
             st.markdown(EMPTY)
             return
@@ -644,7 +645,7 @@ def offers(ctx=None):
             continue
         with st.container(border=True, key=f"offer_card_{g['id']}"):
             p = n["pace"]
-            st.markdown(f"**:material/error: {md(g['title'])} can't be finished in time**")
+            st.markdown(kit.subhead(f":material/error: {md(g['title'])} can't be finished in time"))
             st.caption(f"{md(pace.amount(g, p['remaining']))} to go, about "
                        f"{md(pace.amount(g, n['reachable'] - p['value']))} within reach.")
             for o in n["offers"]:

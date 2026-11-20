@@ -514,7 +514,7 @@ def _goals():
         _goal_row(i, label)
     targets = [m for m in gr.modules() if m["target"] is not None]
     if is_student() and targets:
-        st.markdown("**Goals you already have**")
+        st.markdown(kit.subhead("Goals you already have"))
         for m in targets:
             st.markdown(f":material/flag: {escape(m['name'])}: {m['target']:g}%")
 
@@ -543,7 +543,7 @@ def _track():
         kit.empty("Add a goal on the previous step and examples show up here.", ":material/info:")
     for i, g in goals:
         found = suggest.for_goal(g["title"])
-        st.markdown(f"**{escape(g['title'])}**")
+        st.markdown(kit.subhead(f"{escape(g['title'])}"))
         if not found:
             st.caption("No examples for this one. Add your own below.")
         for j, s in enumerate(found):
@@ -606,16 +606,16 @@ def _day():
         kit.empty("No categories yet.", ":material/info:")
     for grp in dict.fromkeys(cats["grp"]):
         rows = cats[cats["grp"] == grp]
-        st.markdown(f"**{escape(grp)}**")
+        st.markdown(kit.subhead(f"{escape(grp)}"))
         st.html("".join(_chip(r["name"], r["colour"]) for r in rows.to_dict("records")))
     have = set(cats["id"]) | {n.lower() for n in cats["name"]}
     examples = [e for e in store.EXAMPLE_CATEGORIES if e[0] not in have and e[1].lower() not in have]
     if examples:
-        st.markdown("**Examples: pick what you want**")
+        st.markdown(kit.subhead("Examples: pick what you want"))
         cols = st.columns(3)
         for i, (cid, name, colour, _, grp) in enumerate(examples):
             cols[i % 3].checkbox(f"{name} ({grp})", value=False, key=f"ob_ex_{cid}")
-    st.markdown("**Add your own**")
+    st.markdown(kit.subhead("Add your own"))
     a, b = st.columns([3, 1], vertical_alignment="bottom")
     a.text_input("Name", key="ob_cat_name", placeholder="e.g. Lab work")
     b.color_picker("Colour", "#4E79A7", key="ob_cat_colour")

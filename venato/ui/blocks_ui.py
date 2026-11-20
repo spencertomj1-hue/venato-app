@@ -6,6 +6,7 @@ of the ones switched on, which is the order of their widgets on Home.
 import streamlit as st
 
 from venato import blocks
+from venato.ui import kit
 
 COLUMNS = 3
 
@@ -38,7 +39,7 @@ def picker(prefix):
         members = [b for b in blocks.all_blocks() if b.group == group]
         if not members:
             continue
-        st.markdown(f"**{group}**")
+        st.markdown(kit.subhead(f"{group}"))
         cols = st.columns(COLUMNS)
         for i, b in enumerate(members):
             with cols[i % COLUMNS].container(border=True):

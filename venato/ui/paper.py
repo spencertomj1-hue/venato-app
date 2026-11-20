@@ -44,8 +44,8 @@ def _fonts():
     .stApp h1 *, .stApp h2 *, .stApp h3 *, .stApp h4 * {{
         font-family: {SERIF} !important; font-weight: 600 !important; letter-spacing: -0.005em; }}
     [data-testid="stMetricValue"], [data-testid="stMetricValue"] * {{ font-family: {SERIF} !important; }}
-    /* Card titles are a paragraph that's just one bold phrase (kit.card, "Needs you this week"...). */
-    .stApp [data-testid="stMarkdownContainer"] > p:only-child > strong:first-child:last-child {{
+    /* Card titles and subheadings: text made with kit.subhead (kit.card, "Needs you"...). */
+    .stApp .vn-subhead, .stApp .vn-subhead strong {{
         font-family: {SERIF}; font-size: 1.19rem; font-weight: 600; }}
     """
 
