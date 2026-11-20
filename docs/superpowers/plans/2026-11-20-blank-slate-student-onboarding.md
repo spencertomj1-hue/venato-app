@@ -158,6 +158,17 @@ Every step except Welcome can be skipped. "Skip setup" leaves a truly blank app.
 - [ ] "Run setup again" in Settings only adds things, never deletes.
 - [ ] Tests: skipping everything lands on a blank Home with no errors. With the fixture feeds, a student ends up with modules, categories, deadlines, goals and planned blocks. A non-student gets no uni steps. Re-running setup deletes nothing.
 
+### Phase 6b: Send feedback (small, can land any time)
+
+**Form:** https://docs.google.com/forms/d/e/1FAIpQLSfKtBy2MutZ__Q5Ivkzz5urT0ABhtF8Rgu5yii2O3bQyLTmWQ/viewform
+Questions: annoying/broken, missing, optional email, Version (short answer), System (multiple choice: macOS / Windows / Linux).
+
+- [ ] Get the form's **pre-filled link** from the owner (⋮ → Get pre-filled link) to read the `entry.<id>` keys for Version and System. Don't guess them.
+- [ ] `venato/feedback.py`: `feedback_url()` builds the pre-filled link (app version; `platform.system()` mapped Darwin → macOS, Windows → Windows, Linux → Linux). The URL lives in `venato_config.json` (`feedback_url`), with the form above as the default.
+- [ ] A "Send feedback" link at the bottom of the sidebar and in Settings → About. It opens the browser. Nothing is sent from the app.
+- [ ] A one-time Needs you card after 14 days of use: "How's Venato treating you?" → Send feedback / Not now. Dismissal saved in `settings.json`.
+- [ ] Tests: URL has the right version and system. The card shows once and stays gone after dismissal.
+
 ### Phase 7: Docs and merge
 
 - [ ] README ("Getting started" for the new setup, Money removed), CHANGELOG, HANDOVER.
