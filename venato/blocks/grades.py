@@ -3,6 +3,10 @@ Grades: modules (credits, year, a target) with weighted assessments; the running
 marks secured so far, what you need on the rest to hit your target, and an overall mark
 for each year and the whole degree (credit-weighted, years weighted as you set) shown as a
 UK classification or a US GPA. Marks are percentages.
+
+Each module has its own timetable category (group "Modules"), made with it and renamed with it.
+Deadlines (module_id), imported timetable events (tt_outlook.module_id, matched by code) and Canvas
+courses (gr_canvas_courses) link to a module; deleting the module only clears those links.
 """
 
 import re
@@ -35,7 +39,20 @@ CREATE TABLE IF NOT EXISTS gr_assessments (
     mark      REAL,                        -- %, once marked
     due       TEXT                         -- YYYY-MM-DD
 );
+-- Canvas courses seen in a Canvas feed (it gives no names or codes: the label is the SIS bracket
+-- text, e.g. "20501.202610"), and the module the student linked each one to (NULL = none).
+CREATE TABLE IF NOT EXISTS gr_canvas_courses (
+    course_id TEXT PRIMARY KEY,
+    label     TEXT,
+    module_id TEXT                         -- gr_modules.id
+);
 """
+
+
+def _migrate(conn):
+    """Later columns: each module's timetable category. Modules made before it have none (no backfill:
+    existing data isn't rewritten; a later phase offers to make them)."""
+    store._add_column(conn, "gr_modules", "category_id", "TEXT")
 
 
 class GradeError(ValueError):
@@ -72,7 +89,8 @@ def save_settings(system=None, years=None):
 
 # --- Modules and assessments ---
 
-M_COLS = ("id", "name", "code", "credits", "year", "target", "final")
+M_COLS = ("id", "name", "code", "credits", "year", "target", "final", "category_id")
+EDITABLE = ("name", "code", "credits", "year", "target", "final")
 A_COLS = ("id", "module_id", "name", "weight", "mark", "due")
 
 
@@ -105,27 +123,78 @@ def add_module(name, credits=10, year=None, target=None, code=None):
         raise GradeError("Credits must be between 1 and 200.")
     if any(m["name"].lower() == name.lower() for m in modules()):
         raise GradeError(f"There's already a module called {name}.")
+    target = _pct(target, "target")
     mid = _id()
-    with store.db() as conn:
-        conn.execute(f"INSERT INTO gr_modules ({', '.join(M_COLS)}, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
-                     (mid, name, code, credits, year, _pct(target, "target"), store.stamp()))
+    cid = f"module-{mid[:12]}"
+    with store.db() as conn:                                          # one transaction: no orphan category
+        conn.execute("INSERT INTO gr_modules (id, name, code, credits, year, target, final, category_id, created_at) "
+                     "VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+                     (mid, name, _code(code), credits, year, target, cid, store.stamp()))
+        store.add_module_category(conn, cid, name)                    # its own category, next free colour
+    if code:
+        store.tag_outlook_modules()                                   # its timetable events
     return mid
 
 
+def _code(code):
+    return (str(code).strip() or None) if code is not None else None
+
+
 def update_module(mid, **fields):
-    f = {k: v for k, v in fields.items() if k in M_COLS[1:]}
+    """Change a module's details. Renaming it renames its category; a new code re-tags the timetable."""
+    f = {k: v for k, v in fields.items() if k in EDITABLE}
     for k in ("target", "final"):
         if k in f:
             f[k] = _pct(f[k], k)
+    if "name" in f:
+        f["name"] = str(f["name"] or "").strip()
+        if not f["name"]:
+            raise GradeError("The module needs a name.")
+    if "code" in f:
+        f["code"] = _code(f["code"])
     if f:
         with store.db() as conn:
             conn.execute(f"UPDATE gr_modules SET {', '.join(f'{k} = ?' for k in f)} WHERE id = ?", (*f.values(), mid))
+    m = get_module(mid)
+    if m and "name" in f and m["category_id"]:
+        store.rename_category(m["category_id"], f["name"])
+    if "code" in f:
+        store.tag_outlook_modules()
 
 
 def delete_module(mid):
+    """Delete a module and its assessments. Only its links go: its category, deadlines, Canvas courses
+    and timetable events stay (unlinked)."""
     with store.db() as conn:
+        conn.execute("UPDATE deadlines SET module_id = NULL WHERE module_id = ?", (mid,))
+        conn.execute("UPDATE tt_outlook SET module_id = NULL WHERE module_id = ?", (mid,))
+        conn.execute("UPDATE gr_canvas_courses SET module_id = NULL WHERE module_id = ?", (mid,))
         conn.execute("DELETE FROM gr_assessments WHERE module_id = ?", (mid,))
         conn.execute("DELETE FROM gr_modules WHERE id = ?", (mid,))
+
+
+# --- Canvas courses ---
+
+def canvas_courses():
+    """[{course_id, label, module_id}] of the Canvas courses seen so far."""
+    with store.db() as conn:
+        rows = conn.execute("SELECT course_id, label, module_id FROM gr_canvas_courses "
+                            "ORDER BY LENGTH(course_id), course_id").fetchall()
+    return [dict(zip(("course_id", "label", "module_id"), r)) for r in rows]
+
+
+def link_canvas_course(course_id, module_id):
+    """Link a Canvas course to a module (None: unlink). Its deadlines, already imported or still to come,
+    move with it, except any the student gave another module themselves."""
+    module_id = module_id or None
+    with store.db() as conn:
+        row = conn.execute("SELECT module_id FROM gr_canvas_courses WHERE course_id = ?", (course_id,)).fetchone()
+        previous = row[0] if row else None
+        conn.execute("INSERT INTO gr_canvas_courses (course_id, module_id) VALUES (?, ?) "
+                     "ON CONFLICT(course_id) DO UPDATE SET module_id = excluded.module_id", (course_id, module_id))
+        # Only the ones that followed the course (no module, or its old one): one the student moved stays put.
+        conn.execute("UPDATE deadlines SET module_id = ? WHERE source = 'canvas' AND course_id = ? "
+                     "AND (module_id IS NULL OR module_id = ?)", (module_id, course_id, previous))
 
 
 def assessments(mid):
@@ -363,4 +432,4 @@ def _home():
 BLOCK = Block("grades", "Grades", ":material/grade:",
               "Modules and weighted marks: averages, what you need to hit your target, and your classification or GPA.",
               group="Study & work", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=40, default=True, core=True)
+              quick=[_quick], schema=SCHEMA, migrate=_migrate, order=40, default=True, core=True)

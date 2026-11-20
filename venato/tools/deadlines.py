@@ -8,7 +8,9 @@ from .common import Pending, Result, ToolError, _best_match, _day, nice_day
 
 
 def describe_deadline(d, today=None):
-    return f"'{d['title']}' due {nice_day(d['due'])} ({store.countdown(d['due'], today)})"
+    when = store.countdown(d["due"], today or store.local_today(), d.get("due_time"), store.local_now())
+    return f"'{d['title']}' due {nice_day(d['due'])}" + (f" at {d['due_time']}" if d.get("due_time") else "") + \
+        f" ({when})"
 
 
 def _find_deadline(deadline, include_done=False):

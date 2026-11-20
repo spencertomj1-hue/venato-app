@@ -381,6 +381,7 @@ def render_grid(days, key="timetable", single=False, readonly=False, suggestions
     label_map = store.load_label_map()
     show_outlook = st.session_state.setdefault("tt_show_outlook", True)
     events = store.outlook_between(days[0].isoformat(), days[-1].isoformat()) if show_outlook else []
+    outlook_cat = store.outlook_category("")      # each event's own: its module's category, else this
 
     data = {
         "days": [d.isoformat() for d in days],
@@ -415,7 +416,7 @@ def render_grid(days, key="timetable", single=False, readonly=False, suggestions
         "outlook": [
             {"id": e["uid"], "date": e["date"], "start": e["start"], "end": e["end"], "title": e["title"],
              "location": e["location"], "exact": regional.times_in(e["exact"]), "description": e["description"],
-             "details": store.outlook_details(e), "categoryId": store.outlook_category(e["title"])}
+             "details": store.outlook_details(e), "categoryId": store.event_category(e, outlook_cat)}
             for e in events if not e["all_day"]
         ],
         "outlookAllDay": [{"date": e["date"], "title": e["title"]} for e in events if e["all_day"]]

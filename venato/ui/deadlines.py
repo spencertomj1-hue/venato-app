@@ -21,9 +21,15 @@ def _go_to_goals():
     st.session_state["page"] = "Goals"
 
 
-def _tone(due, today):
-    days = (store._as_date(due) - today).days
-    return "over" if days < 0 else "soon" if days <= 2 else ""
+def _tone(d, today):
+    """"over" once it's past its due time (or day), "soon" within 2 days."""
+    days = (store._as_date(d["due"]) - today).days
+    return "over" if store.deadline_overdue(d) else "soon" if days <= 2 else ""
+
+
+def _when(d, today):
+    """Its countdown, with its due time when it has one ("Today, 17:00", "Overdue since 17:00")."""
+    return store.countdown(d["due"], today, d.get("due_time"), store.local_now())
 
 
 def render_home():
@@ -38,8 +44,8 @@ def render_home():
     from venato.ui import appearance
     soon, over = appearance.warn_colours()
     items = "".join(
-        f'<div class="dl-row {_tone(d["due"], today)}"><span class="dl-title">{escape(d["title"])}</span>'
-        f'<span class="dl-when">{store.countdown(d["due"], today)}</span></div>' for d in rows[:HOME_LIMIT])
+        f'<div class="dl-row {_tone(d, today)}"><span class="dl-title">{escape(d["title"])}</span>'
+        f'<span class="dl-when">{escape(_when(d, today))}</span></div>' for d in rows[:HOME_LIMIT])
     more = f'<div class="dl-more">and {len(rows) - HOME_LIMIT} more</div>' if len(rows) > HOME_LIMIT else ""
     st.html(f"""<style>
       .dl {{ display: grid; gap: 6px; font-size: 0.88rem; }}
@@ -84,11 +90,11 @@ def _row(d, today):
     key = f"dl_done_{d['id']}"
     tick.checkbox("Done", value=d["done"], key=key, label_visibility="collapsed",
                   on_change=_toggle, args=(d["id"], key))
-    tone = {"over": ":red", "soon": ":orange"}.get(_tone(d["due"], today), "")
+    tone = {"over": ":red", "soon": ":orange"}.get(_tone(d, today), "")
     title.markdown(f"~~{d['title']}~~" if d["done"] else f"**{d['title']}**"
                    + (f"  \n:gray[{d['notes']}]" if d["notes"] else ""))
     due = store._as_date(d["due"])
-    text = regional.day_month(due) + ("" if d["done"] else f" · {store.countdown(due, today)}")
+    text = regional.day_month(due) + ("" if d["done"] else f" · {_when(d, today)}")
     when.markdown(f"{tone}[{text}]" if tone and not d["done"] else text)
     if edit.button("", icon=":material/edit:", key=f"dl_edit_btn_{d['id']}", help="Edit or delete"):
         _edit_dialog(d["id"])
