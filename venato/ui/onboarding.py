@@ -42,7 +42,7 @@ STEPS = [
 GOAL_SLOTS = [("In 3 months", 3), ("In 6 months", 6), ("In 1 year", 12)]
 TARGET_GRADES = {"First": 70.0, "2:1": 60.0, "2:2": 50.0}
 STUDY_WEEKS = 12                       # a study goal runs this many weeks; its hours are the weekly hours times this
-DEFAULT_CREDITS = 15.0
+DEFAULT_CREDITS = 15
 NEW_GROUP = "New group…"
 
 
@@ -339,7 +339,7 @@ def _welcome():
 
 
 def _student():
-    st.header(":material/school: Are you a student?", anchor=False)
+    st.header("Are you a student?", anchor=False)
     st.markdown("Students get a **Modules** page and a few extra steps: your uni timetable, Canvas deadlines "
                 "and study hours.")
     now = _ob().get("student", store.load_settings().get("student"))
@@ -368,10 +368,10 @@ GUIDES = {
 def _link_step(kind):
     ob = _ob()
     if kind == "uni":
-        st.header(":material/calendar_month: Your uni timetable", anchor=False)
+        st.header("Your uni timetable", anchor=False)
         st.markdown("Your lectures appear in the timetable, and Venato finds your modules from them. Venato only reads it.")
     else:
-        st.header(":material/assignment: Canvas", anchor=False)
+        st.header("Canvas", anchor=False)
         st.markdown("Your Canvas assignments become deadlines. Venato only reads the feed.")
     st.markdown(GUIDES[kind])
     st.info("Anyone with this link can see your calendar. Venato keeps it in your system's secret store, never in a file.",
@@ -413,7 +413,7 @@ def _cand_key(c):
 
 def _modules():
     ob = _ob()
-    st.header(":material/menu_book: Your modules", anchor=False)
+    st.header("Your modules", anchor=False)
     st.markdown("Tick the ones to add and rename any you like. Each gets its own category in the timetable.")
     existing = gr.modules()
     cands = [c for c in detected_modules() if not _module_for(c["code"], c["name"])]
@@ -432,7 +432,7 @@ def _modules():
     if not cands and not existing:
         kit.empty("No modules found yet. Add them below, or connect your timetable on the earlier step.", ":material/info:")
     a, b = st.columns(2)
-    a.number_input("Credits for each new module", 1.0, 200.0, DEFAULT_CREDITS, key="ob_credits",
+    a.number_input("Credits for each new module", 1, 200, DEFAULT_CREDITS, key="ob_credits",
                    help="You can change a module's credits later on the Modules page.")
     b.segmented_control("Target grade", list(TARGET_GRADES), key="ob_target",
                         help="Your target for every new module. You can change it for each one later.")
@@ -477,7 +477,7 @@ def _save_modules():
 
 
 def _hours():
-    st.header(":material/schedule: Study hours", anchor=False)
+    st.header("Study hours", anchor=False)
     mods = gr.modules()
     st.markdown("How many hours a week do you want to spend on each module? Lectures count too. "
                 "You can change it for one module on its page.")
@@ -507,7 +507,7 @@ def _goal_row(i, label):
 
 
 def _goals():
-    st.header(":material/flag: Your goals", anchor=False)
+    st.header("Your goals", anchor=False)
     st.markdown("What do you want to have done in 3 months, 6 months and a year? A few words is enough, "
                 "and a number if there is one.")
     for i, (label, _) in enumerate(GOAL_SLOTS):
@@ -536,11 +536,11 @@ def _suggestion_label(s):
 
 def _track():
     ob = _ob()
-    st.header(":material/checklist: What would you track?", anchor=False)
-    st.markdown("These are examples based on your goals: **pick what you want**. Nothing is switched on until you tick it.")
+    st.header("What would you track?", anchor=False)
+    st.markdown("These are examples based on your goals: pick what you want. Nothing is switched on until you tick it.")
     goals = _my_goals()
     if not goals:
-        kit.empty("Add a goal on the last step and examples show up here.", ":material/info:")
+        kit.empty("Add a goal on the previous step and examples show up here.", ":material/info:")
     for i, g in goals:
         found = suggest.for_goal(g["title"])
         st.markdown(f"**{escape(g['title'])}**")
@@ -598,7 +598,7 @@ def _add_own_category():
 
 
 def _day():
-    st.header(":material/view_day: Your day", anchor=False)
+    st.header("Your day", anchor=False)
     st.markdown("Categories colour your timetable. Your modules and anything you picked are already there. "
                 "Tick any examples you'd like, or add your own.")
     cats = store.load_categories()
@@ -657,7 +657,7 @@ def _add_week():
 
 def _week():
     ob = _ob()
-    st.header(":material/event_available: Your first week", anchor=False)
+    st.header("Your first week", anchor=False)
     sittings = first_week()
     ob["sittings"] = sittings
     if not sittings:
@@ -665,14 +665,14 @@ def _week():
                   ":material/info:")
         return
     hours = sum(store.slot_of(s["end"]) - store.slot_of(s["start"]) for s in sittings) / 2
-    st.markdown(f"Here's how your goals could fit in the next 7 days: **{pace.fmt(hours)} h** in free time. "
+    st.markdown(f"Here's how your goals could fit in the next 7 days: {pace.fmt(hours)} h in free time. "
                 "Nothing already in your timetable moves.")
     _grid(sittings)
     st.button("Add to my Plan", key="ob_week_add", type="primary", icon=":material/playlist_add:", on_click=_add_week)
 
 
 def _home():
-    st.header(":material/home: Home", anchor=False)
+    st.header("Home", anchor=False)
     picks = home_picks()
     st.markdown("Home shows what you want to see first. These are added from what you picked:")
     if not picks:
