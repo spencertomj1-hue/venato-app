@@ -26,9 +26,9 @@ def _find_deadline(deadline, include_done=False):
     raise ToolError(f"There's no deadline matching '{deadline}'. Use list_deadlines to see them.")
 
 
-def add_deadline(title, due, notes=None):
+def add_deadline(title, due, notes=None, due_time=None):
     try:
-        did = store.add_deadline(title, _day(due), notes)
+        did = store.add_deadline(title, _day(due), notes, due_time or None)
     except ValueError as e:
         raise ToolError(str(e))
     return Result(f"Added deadline {describe_deadline(store.get_deadline(did))}.", changed=True)
@@ -48,11 +48,13 @@ def complete_deadline(deadline, done=True):
     return Result(f"{'Ticked off' if done else 'Reopened'} {describe_deadline(d)}.", changed=True)
 
 
-def edit_deadline(deadline, title=None, due=None, notes=None):
+def edit_deadline(deadline, title=None, due=None, notes=None, due_time=None):
+    """due_time "HH:MM" sets the time; "" clears it; None leaves it."""
     d = _find_deadline(deadline, include_done=True)
     try:
         store.update_deadline(d["id"], title=title if title is not None else store.KEEP,
-                              due=_day(due) if due else store.KEEP, notes=notes if notes is not None else store.KEEP)
+                              due=_day(due) if due else store.KEEP, notes=notes if notes is not None else store.KEEP,
+                              due_time=due_time if due_time is not None else store.KEEP)
     except ValueError as e:
         raise ToolError(str(e))
     return Result(f"Updated: {describe_deadline(store.get_deadline(d['id']))}.", changed=True)

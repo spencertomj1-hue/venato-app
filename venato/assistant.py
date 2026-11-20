@@ -267,7 +267,7 @@ What the app tracks
   The review asks two questions; save_review_answers stores the user's answers ("what went well:
   ...", "next week I'll ..."), in their own words.
 - Deadlines: things due on a date ("essay due Friday", "apply for the internship by 15 Nov") ->
-  add_deadline(title, due). They show on Home with a countdown. complete_deadline ticks one off;
+  add_deadline(title, due, due_time "HH:MM" if it has one). They show on Home with a countdown. complete_deadline ticks one off;
   edit_deadline changes it; delete_deadline needs confirmation. To make time for one, use plan_time
   with end_date the day before it's due.
 - To-dos: tick-off lists for a day, a week or a month (period "daily", "weekly" or
@@ -461,13 +461,15 @@ TOOL_SPECS = [
      "switched-on blocks add, and the user's reflections. Default: the latest finished week (the Sunday-evening review).",
      _schema([], date={**DATE, "description": "any day in the week"}), tools.weekly_review),
     ("add_deadline", "Add a deadline: something due on a date.",
-     _schema(["title", "due"], title={"type": "string"}, due=DATE, notes={"type": "string"}), tools.add_deadline),
+     _schema(["title", "due"], title={"type": "string"}, due=DATE, notes={"type": "string"},
+             due_time={"type": "string", "description": "HH:MM, e.g. 17:00"}), tools.add_deadline),
     ("list_deadlines", "List deadlines, soonest first (with ids and countdowns).",
      _schema([], include_done={"type": "boolean"}), tools.list_deadlines),
     ("complete_deadline", "Tick a deadline off (done=false reopens it). Find it by id or title.",
      _schema(["deadline"], deadline={"type": "string"}, done={"type": "boolean"}), tools.complete_deadline),
-    ("edit_deadline", "Change a deadline's title, due date or notes.",
-     _schema(["deadline"], deadline={"type": "string"}, title={"type": "string"}, due=DATE, notes={"type": "string"}),
+    ("edit_deadline", "Change a deadline's title, due date, due time or notes (due_time \"\" clears the time).",
+     _schema(["deadline"], deadline={"type": "string"}, title={"type": "string"}, due=DATE, notes={"type": "string"},
+             due_time={"type": "string", "description": "HH:MM, e.g. 17:00"}),
      tools.edit_deadline),
     ("delete_deadline", "Delete a deadline (needs the user's confirmation).",
      _schema(["deadline"], deadline={"type": "string"}), tools.delete_deadline),
