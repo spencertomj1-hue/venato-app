@@ -20,7 +20,7 @@ COLUMN_FIELD = {"Assessment": "name", "Weight %": "weight", "Mark %": "mark", "D
 OPEN = "gr_open"
 
 
-def _band(pct):
+def band(pct):
     """(label, colour) for a mark: green at the top band, then blue, amber, orange, red."""
     if pct is None:
         return "–", "#BAB0AC"
@@ -57,7 +57,7 @@ def _stats(ms, o, s):
     numbers = [gr.module_numbers(m) for m in ms]
     weight = sum(m["credits"] for m in ms) or 1
     marked = sum(m["credits"] * n["done_weight"] for m, n in zip(ms, numbers)) / weight
-    label, _ = _band(o["degree"])
+    label, _ = band(o["degree"])
     items = [{"label": "Overall (projected)", "value": "–" if o["degree"] is None else f"{o['degree']:.1f}%",
               "help": "Credit-weighted, with years weighted as set in Settings"}]
     if s["system"] == "UK":
@@ -82,8 +82,8 @@ def _chart(ms):
     names = [m["code"] or m["name"] for m, _ in rows]
     top = max(100, max(n["projected"] for _, n in rows))
     df = pd.DataFrame({"Module": names, "Projected": [n["projected"] for _, n in rows],
-                       "Name": [m["name"] for m, _ in rows], "Band": [_band(n["projected"])[0] for _, n in rows],
-                       "Marked": [n["done_weight"] for _, n in rows], "Colour": [_band(n["projected"])[1] for _, n in rows],
+                       "Name": [m["name"] for m, _ in rows], "Band": [band(n["projected"])[0] for _, n in rows],
+                       "Marked": [n["done_weight"] for _, n in rows], "Colour": [band(n["projected"])[1] for _, n in rows],
                        "Label": [f"{n['projected']:.0f}%" for _, n in rows]})
     x_enc = alt.X("Projected", type="quantitative", scale=alt.Scale(domain=[0, top], nice=False),
                   axis=alt.Axis(values=list(range(0, int(top) + 1, 10)), labelExpr="datum.value + '%'", title=None))
@@ -133,7 +133,7 @@ def _coming_up(ms):
 
 # --- Modules ---
 
-def _assessments(m):
+def assessment_editor(m):
     rows = gr.assessments(m["id"])
     if rows:
         df = pd.DataFrame([{"Assessment": a["name"], "Weight %": a["weight"], "Mark %": a["mark"],
@@ -158,7 +158,7 @@ def _assessments(m):
                 st.error(str(e))
 
 
-def _module_settings(m):
+def module_settings(m):
     x, y, z, w = st.columns(4)
     target = x.number_input("Target %", 0.0, 100.0, m["target"], key=f"gr_t_{m['id']}")
     final = y.number_input("Final mark %", 0.0, 100.0, m["final"], key=f"gr_f_{m['id']}", help="Once it's known")
@@ -202,7 +202,7 @@ def _facts(m, ctx):
 
 def _module_card(m, ctx):
     n = gr.module_numbers(m)
-    label, colour = _band(n["projected"])
+    label, colour = band(n["projected"])
     stripe = gr.category_colour(m)
     with st.container(border=True, height="stretch"):
         if stripe:
@@ -232,8 +232,8 @@ def _module_card(m, ctx):
         _facts(m, ctx)
         st.button("Open", key=f"gr_open_btn_{m['id']}", icon=":material/arrow_forward:", on_click=_open, args=(m["id"],))
         if st.toggle("Assessments and settings", key=f"gr_open_{m['id']}"):
-            _assessments(m)
-            _module_settings(m)
+            assessment_editor(m)
+            module_settings(m)
 
 
 def _add_module(expanded):
@@ -289,7 +289,7 @@ def render_page():
         with a, kit.card("Modules at a glance"):
             _chart(ms)
             if len(o["years"]) > 1:
-                kit.pills([(f"{y}: {v:.1f}%", _band(v)[1]) for y, v in o["years"].items()])
+                kit.pills([(f"{y}: {v:.1f}%", band(v)[1]) for y, v in o["years"].items()])
         with b, kit.card("Coming up"):
             _coming_up(ms)
         years = list(dict.fromkeys(m["year"] or "Other" for m in ms))

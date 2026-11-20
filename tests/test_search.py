@@ -42,3 +42,12 @@ def test_search_box_and_open(store):
     at.text_input(key="global_search").set_value("priya").run()
     next(b for b in at.button if b.key and "To-do" in b.key).click().run()
     assert not at.exception and at.sidebar.radio[0].value == "Home"     # to-dos live on Home
+
+
+def test_search_skips_the_closed_plan_of_a_done_deadline(store):
+    store.save_category("study", "Study", "#00B050", "Work")
+    did = store.add_deadline("Thesis draft", "2026-11-20")
+    store.plan_deadline(did, "study", total=6, today="2026-11-10")
+    assert [r["kind"] for r in store.search("thesis") if r["kind"] == "Goal"] == ["Goal"]
+    store.set_deadline_done(did, True)                       # its plan goal is closed with it
+    assert [r["kind"] for r in store.search("thesis") if r["kind"] == "Goal"] == []
