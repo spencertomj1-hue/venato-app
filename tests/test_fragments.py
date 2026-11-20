@@ -43,6 +43,7 @@ def test_todo_delete_reruns_app_for_the_undo_bar(store):
 def test_unlinked_habit_reruns_fragment_only(store):
     store.add_habit("Stretch")
     hid = store.find_habit("stretch")[0]
+    store.save_settings(home=[{"w": "habits", "size": "m"}])
     with fragment_run.recording():
         at = app()
         draws = at.session_state["home_draws"]

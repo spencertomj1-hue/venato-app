@@ -57,11 +57,11 @@ def render():
         width: auto !important; max-width: min(560px, 92vw); padding: 6px 8px 6px 16px; border-radius: 12px;
         background: #26272f; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }}
       .st-key-undo_bar p {{ color: #f4f4f6 !important; margin: 0; }}
-      .st-key-undo_bar button {{ min-height: 2rem; background: transparent !important;
+      .stApp .st-key-undo_bar button {{ min-height: 2rem; background: transparent !important;
         border: 1px solid rgba(255, 255, 255, 0.35) !important; color: #fff !important; }}
-      .st-key-undo_bar button:hover {{ background: rgba(255, 255, 255, 0.12) !important; }}
+      .stApp .st-key-undo_bar button:hover {{ background: rgba(255, 255, 255, 0.12) !important; }}
       .st-key-undo_bar button:focus-visible {{ outline: 2px solid #fff; outline-offset: 2px; }}
-      .st-key-undo_bar button * {{ color: #fff !important; }}
+      .stApp .st-key-undo_bar button * {{ color: #fff !important; }}
     </style>""")
     with st.container(key="undo_bar", horizontal=True, vertical_alignment="center", gap="small"):
         st.markdown(label)

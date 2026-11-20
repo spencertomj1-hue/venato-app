@@ -33,14 +33,15 @@ def _when(d, today):
 
 
 def render_home():
-    """Home: what's due, soonest first, with a countdown. Nothing due: nothing drawn."""
+    """Home's Deadlines widget: what's due, soonest first, with a countdown."""
     today = store.local_today()
     rows = store.deadlines()
-    if not rows:
-        return
     head = st.container(horizontal=True, vertical_alignment="center")
     head.markdown("**Deadlines**", width="stretch")
     head.button("See all", key="home_deadlines_all", type="tertiary", on_click=_go_to_goals)
+    if not rows:
+        st.caption("Nothing due. Add deadlines on the Goals page.")
+        return
     from venato.ui import appearance
     soon, over = appearance.warn_colours()
     items = "".join(

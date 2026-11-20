@@ -392,11 +392,33 @@ def goal_bar(g, today, line=""):
             + (f'<div class="hg-line">{escape(line)}</div>' if line else ""))
 
 
+def render_home():
+    """Home's Goals widget: the goals running now, each with its bar and the "should be here by today" tick."""
+    today = store.local_today()
+    running = store.goals_active(today)
+    head = st.container(horizontal=True, vertical_alignment="center")
+    head.markdown("**Goals**", width="stretch")
+    head.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
+    if not running:
+        st.caption("No goals running. Set one on the Goals page.")
+        return
+    st.html(goal_bar_css())
+    for g in running[:HOME_LIMIT]:
+        st.html(f'<div class="hg-title">{escape(g["title"])}</div>'
+                + goal_bar(g, today, f"{amount(g)} {store.goal_title_due(g['due'], today)}"))
+    if len(running) > HOME_LIMIT:
+        st.caption(f"and {len(running) - HOME_LIMIT} more")
+
+
+HOME_LIMIT = 5
+
+
 def goal_bar_css():
     """The styles goal_bar needs (the bar in the theme's accent)."""
     return ("""<style>
       .hg-track { position: relative; }
       .hg-mark { position: absolute; top: -4px; width: 2px; height: 15px; margin-left: -1px; border-radius: 1px;
                  background: currentColor; opacity: 0.85; }
+      .hg-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 4px; }
       .hg-line { font-size: 0.8rem; opacity: 0.8; margin-top: 3px; font-variant-numeric: tabular-nums; }
     </style>""" + BAR_CSS.replace("ACCENT", _accent()))

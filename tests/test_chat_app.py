@@ -40,6 +40,21 @@ def test_every_page_renders_with_chat_bar(store):
         assert at.session_state["chat_busy"] is None
 
 
+def test_home_ask_widget_or_the_bar(store):
+    """Home's Ask widget is the chat box; with it hidden (or arranged away) Home gets the pinned bar instead."""
+    import fragment_run
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert fragment_run.component_data(at, "chat")["inline"] is True
+    store.save_settings(home=[{"w": "todos", "size": "s"}])
+    at.run()
+    assert not at.exception and fragment_run.component_data(at, "chat")["inline"] is False
+    store.save_settings(ai_enabled=False)
+    at.run()
+    assert not at.exception
+    with pytest.raises(LookupError):
+        fragment_run.component_data(at, "chat")
+
+
 def test_message_runs_claude_and_saves(store, fake_claude):
     at = AppTest.from_file(APP, default_timeout=60).run()
     # What the "send" callback does when the user presses Enter:

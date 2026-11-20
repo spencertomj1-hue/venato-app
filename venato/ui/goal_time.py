@@ -463,20 +463,23 @@ def free_split(ctx=None):
 
 
 # ---------------------------------------------------------------------------
-# Home: "Needs you this week" (Home B)
+# Home: "Needs you"
 # ---------------------------------------------------------------------------
 
 PILL = {"behind": "orange", "slipping": "orange", "unreachable": "red"}
+EMPTY = "Nothing needs you. Go touch grass."
+DEADLINE_DAYS = 7               # deadlines this soon need a plan
+OFFER_AFTER_DAYS = 7            # the assistant is offered (once) this long after first using Venato
 
 
-def needs_you(ctx=None):
-    """
-    Home: only the goals that are behind (or slipping, or can't be reached) or short of time this week,
-    each with its state pill and "N h to plan" (habit and hand-kept goals: what this week needs), its
-    progress bar with the "should be here by today" tick and "8 / 25 by 04/01 · 3.5 under today's pace",
-    and Plan my goals. On-track goals are only on the Goals page. Nothing to show: nothing drawn.
-    """
-    ctx = ctx or _ctx()
+def deadline_needs_plan(d, ctx):
+    """Why a deadline due within the week needs you, or "" when it doesn't: no plan yet, or behind on its plan.
+    Plans arrive later (a deadline's plan is an hours goal): this is the one place that will check it."""
+    return "no plan yet"
+
+
+def _goal_rows(ctx):
+    """[(pace, state, what it needs)] for goals behind (or slipping, or out of reach) or short of time this week."""
     rows = []
     for p in pace.pace_all(ctx):
         g, w = p["goal"], p.get("week")
@@ -487,24 +490,130 @@ def needs_you(ctx=None):
         what = (f"{pace.fmt(pace.half_up(short))} h to plan" if short >= pace.TOLERANCE
                 else f"{pace.amount(g, p['need'])} this week" if p["need"] else "")
         rows.append((p, state, what))
-    if not rows:
-        return
-    from venato.ui import goals
+    return rows
+
+
+def _deadline_rows(ctx):
+    """[(deadline, why)] due in the next week that have no plan or are behind on it."""
+    last = ctx.today + timedelta(days=DEADLINE_DAYS)
+    out = []
+    for d in store.deadlines():
+        if ctx.today <= store._as_date(d["due"]) <= last:
+            why = deadline_needs_plan(d, ctx)
+            if why:
+                out.append((d, why))
+    return out
+
+
+def _past_days():
+    """Today (once its Plan is over) and yesterday, if not confirmed (timetable.prompt_days); not an empty day
+    from before you started using Venato."""
+    from venato.ui import timetable
+    first = store.load_settings().get("first_seen") or ""
+    out = []
+    for day in timetable.prompt_days():
+        iso = day.isoformat()
+        if iso < first and not (store.blocks_between(iso, iso) or store.outlook_between(iso, iso)):
+            continue
+        out.append(day)
+    return out
+
+
+def assistant_offer_due(today=None):
+    """The one-time "try the assistant" card: a week after first using Venato, while the assistant is off,
+    until it's been answered."""
+    s = store.load_settings()
+    if store.ai_enabled() or s.get("assistant_offer_done") or not s.get("first_seen"):
+        return False
+    try:
+        first = store._as_date(s["first_seen"])
+    except (TypeError, ValueError):
+        return False
+    return ((today or store.local_today()) - first).days >= OFFER_AFTER_DAYS
+
+
+def needs_items(ctx=None):
+    """Everything that needs you now: unconfirmed days, goals, deadlines, the blocks' own items and the
+    assistant card. Parts whose block is off are empty."""
+    from venato import blocks
+    ctx = ctx or _ctx()
+    goals_on = blocks.is_on("goals")
+    return {"days": _past_days() if blocks.is_on("timetable") else [],
+            "goals": _goal_rows(ctx) if goals_on else [],
+            "deadlines": _deadline_rows(ctx) if goals_on else [],
+            "blocks": blocks.needs(),
+            "assistant": assistant_offer_due(ctx.today)}
+
+
+def _open_page(page):
+    st.session_state["page"] = page
+
+
+def _assistant_answer(open_settings):
+    store.save_settings(assistant_offer_done=True)
+    if open_settings:
+        st.session_state["settings_tab"] = "claude"
+        st.session_state["page"] = "Settings"
+
+
+def needs_you(ctx=None):
+    """
+    Home's Needs you widget, everything that wants something from you, in one card:
+      - today (once its Plan is over) and yesterday if unconfirmed: Confirm / Review / Not now
+      - goals behind (or slipping, or out of reach) or short of time this week, each with its state pill,
+        "N h to plan", its bar with the "should be here by today" tick, and Plan my goals
+      - deadlines in the next 7 days with no plan (or behind on it)
+      - the blocks' own items (Block.needs)
+      - once, a week in, with the assistant off: where to switch it on
+    Nothing: "Nothing needs you. Go touch grass."
+    """
+    ctx = ctx or _ctx()
+    items = needs_items(ctx)
     with st.container(border=True, key="home_needs_you"):
-        st.markdown("**Needs you this week**")
-        st.html(goals.goal_bar_css())
-        for p, state, what in rows:            # each goal: its pill and what it needs, then its bar
-            g = p["goal"]
-            st.markdown(f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}] **{md(g['title'])}**"
-                        f"<span style='float:right'>{escape(what)}</span>", unsafe_allow_html=True)
-            line = " · ".join(x for x in (f"{goals.amount(g)} {store.goal_title_due(g['due'], ctx.today)}",
-                                          goals.pace_detail(p)) if x)
-            st.html(goals.goal_bar(g, ctx.today, line))
-        if any(p.get("week") and p["week"]["short"] >= pace.TOLERANCE and not p["week"]["over"] for p in pace.pace_all(ctx)):
-            if st.button("Plan my goals", icon=":material/auto_awesome_motion:", key="home_plan_goals", width="stretch",
-                         help="Fill what each goal is short into free time this week, top goal first. You'll see it first."):
-                from venato.ui import timetable_tools
-                timetable_tools.open_plan_goals(ctx.today)
+        st.markdown("**Needs you**")
+        if not any(items.values()):
+            st.markdown(EMPTY)
+            return
+        if items["days"]:
+            from venato.ui import timetable
+            for day in items["days"]:
+                timetable.end_of_day_row(day)
+        if items["goals"]:
+            _needs_goals(items["goals"], ctx)
+        for d, why in items["deadlines"]:
+            when = store.countdown(d["due"], ctx.today, d.get("due_time"), store.local_now())
+            st.markdown(f":material/event: **{md(d['title'])}** · {md(when)} · :gray[{md(why)}]")
+        for i, item in enumerate(items["blocks"]):
+            row = st.container(horizontal=True, vertical_alignment="center", gap="small")
+            row.markdown(f"{item['icon'] or ''} {md(item['text'])}".strip(), width="stretch")
+            if item.get("page"):
+                row.button("Open", key=f"needs_open_{i}_{item['block']}", type="tertiary",
+                           icon=":material/arrow_forward:", on_click=_open_page, args=(item["page"],))
+        if items["assistant"]:
+            st.markdown(":material/chat: **Want a hand?** The assistant can plan your week with you and answer "
+                        "questions about your notes. Turn it on in Settings → Assistant.")
+            row = st.container(horizontal=True, gap="small")
+            row.button("Open Settings", key="needs_ai_yes", icon=":material/settings:",
+                       on_click=_assistant_answer, args=(True,))
+            row.button("No thanks", key="needs_ai_no", type="tertiary", on_click=_assistant_answer, args=(False,),
+                       help="Hide this for good. The assistant stays in Settings if you change your mind.")
+
+
+def _needs_goals(rows, ctx):
+    from venato.ui import goals
+    st.html(goals.goal_bar_css())
+    for p, state, what in rows:            # each goal: its pill and what it needs, then its bar
+        g = p["goal"]
+        st.markdown(f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}] **{md(g['title'])}**"
+                    f"<span style='float:right'>{escape(what)}</span>", unsafe_allow_html=True)
+        line = " · ".join(x for x in (f"{goals.amount(g)} {store.goal_title_due(g['due'], ctx.today)}",
+                                      goals.pace_detail(p)) if x)
+        st.html(goals.goal_bar(g, ctx.today, line))
+    if any(p.get("week") and p["week"]["short"] >= pace.TOLERANCE and not p["week"]["over"] for p, _, _ in rows):
+        if st.button("Plan my goals", icon=":material/auto_awesome_motion:", key="home_plan_goals", width="stretch",
+                     help="Fill what each goal is short into free time this week, top goal first. You'll see it first."):
+            from venato.ui import timetable_tools
+            timetable_tools.open_plan_goals(ctx.today)
 
 
 def offers(ctx=None):

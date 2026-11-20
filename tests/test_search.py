@@ -1,4 +1,4 @@
-"""Search everything: what it finds, and Open going to the right place (Home's search box)."""
+"""Search everything: what it finds, and Open going to the right place (the search box at the top of the sidebar)."""
 
 from pathlib import Path
 
@@ -31,7 +31,14 @@ def test_search_everything(store):
 def test_search_box_and_open(store):
     seed(store)
     at = AppTest.from_file(APP, default_timeout=60).run()
+    assert at.sidebar.text_input(key="global_search")                 # in the sidebar, off Home
+    at.sidebar.radio[0].set_value("Goals").run()                       # on every page
     at.text_input(key="global_search").set_value("thesis writing").run()
     assert not at.exception
+    opens = [b for b in at.button if b.key and b.key.startswith("search_open_")]
+    assert opens and all(b.label and b.label != "Open" for b in opens)  # the result itself is the button
     next(b for b in at.button if b.key and "Timetable" in b.key).click().run()
     assert at.sidebar.radio[0].value == "Timetable" and str(at.session_state["tt_day"]) == "2026-10-29"
+    at.text_input(key="global_search").set_value("priya").run()
+    next(b for b in at.button if b.key and "To-do" in b.key).click().run()
+    assert not at.exception and at.sidebar.radio[0].value == "Home"     # to-dos live on Home

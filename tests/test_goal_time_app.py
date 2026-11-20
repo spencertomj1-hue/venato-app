@@ -140,7 +140,7 @@ def test_home_needs_you_lists_only_goals_that_need_something(store):
     at = app()
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
-    assert "Needs you this week" in text and "Revision" in text
+    assert "**Needs you**" in text and "Revision" in text
     assert "Books" not in text                                                     # on track: only on the Goals page
     html = " ".join(h.proto.body for h in at.get("html"))
     assert 'class="hg-bar"' in html and "/ 200 h by " in html                      # its bar and "0 / 200 h by …"
@@ -172,6 +172,7 @@ def test_linked_habit_updates_goal(store):
     store.add_habit("Gym")
     hid = store.find_habit("gym")[0]
     store.add_goal("Gym", "monthly", today, 12, "sessions", habit_id=hid)
+    store.save_settings(home=[{"w": "needs_you", "size": "s"}, {"w": "habits", "size": "m"}])
     html = lambda at: " ".join(h.proto.body for h in at.get("html"))
     with fragment_run.recording():
         at = app()

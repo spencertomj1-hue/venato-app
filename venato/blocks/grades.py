@@ -13,7 +13,7 @@ import re
 import uuid
 
 from venato import store
-from venato.blocks import Block
+from venato.blocks import Block, Widget
 
 SYSTEMS = ("UK", "US", "Percent")
 UK_CLASSES = [(70, "First"), (60, "2:1"), (50, "2:2"), (40, "Third"), (0, "Fail")]
@@ -431,5 +431,5 @@ def _home():
 
 BLOCK = Block("grades", "Grades", ":material/grade:",
               "Modules and weighted marks: averages, what you need to hit your target, and your classification or GPA.",
-              group="Study & work", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
+              group="Study & work", page=_page, widgets=[Widget("modules", "Grades", _home, "m")], tools=TOOLS, prompt=PROMPT, context=_context,
               quick=[_quick], schema=SCHEMA, migrate=_migrate, order=40, default=True, core=True)

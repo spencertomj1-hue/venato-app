@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from venato import store
-from venato.blocks import Block
+from venato.blocks import Block, Widget
 
 KINDS = ("focus", "break", "track")
 DEFAULTS = {"focus_minutes": 25, "short_break": 5, "long_break": 15, "long_every": 4,
@@ -454,5 +454,5 @@ TOOLS = [
 
 BLOCK = Block("focus", "Focus", ":material/timer:",
               "A Pomodoro timer with breaks and a stopwatch for tracking time; sessions go into your timetable.",
-              group="Plan", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
+              group="Plan", page=_page, widgets=[Widget("focus", "Focus", _home, "s")], tools=TOOLS, prompt=PROMPT, context=_context,
               quick=[_quick], schema=SCHEMA, order=30, default=True, core=True)

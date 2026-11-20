@@ -92,6 +92,9 @@ def test_page_renders(focus, store):
     assert not at.exception
 
 
+HOME = [{"w": "timetable_today", "size": "l"}, {"w": "focus", "size": "s"}]     # Home with the Focus widget
+
+
 def test_focus_stop_updates_actual(focus, store, monkeypatch):
     """Stopping Home's timer puts the session in today's Actual, and Home's timetable (outside the
     focus fragment) shows it in the same run."""
@@ -101,6 +104,7 @@ def test_focus_stop_updates_actual(focus, store, monkeypatch):
     at_ = lambda hh, mm: datetime.combine(today, clock(hh, mm), tzinfo=store.tz()).timestamp()
     monkeypatch.setattr(focus, "_now", lambda: at_(10, 30))
     focus.start("Essay", None, "track", category_id="study", now=at_(10, 0))
+    store.save_settings(home=HOME)
     with fragment_run.recording():
         at = AppTest.from_file(APP, default_timeout=60).run()
         assert not at.exception
@@ -117,6 +121,7 @@ def test_focus_stop_updates_actual(focus, store, monkeypatch):
 
 def test_focus_pause_reruns_fragment_only(focus, store):
     focus.start("Essay", 25, "focus", category_id="study")
+    store.save_settings(home=HOME)
     import fragment_run
     with fragment_run.recording():
         at = AppTest.from_file(APP, default_timeout=60).run()
