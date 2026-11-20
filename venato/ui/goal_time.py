@@ -33,12 +33,7 @@ ICONS = {"done": ":material/check_circle:", "on_track": ":material/check:", "beh
 TONE = {"behind": "orange", "slipping": "orange", "unreachable": "red"}
 
 
-def md(text):
-    """Text that shows as itself in st.markdown (titles may contain [ ] * _ and so on)."""
-    text = escape(str(text))
-    for ch in "\\[]*_`$~":
-        text = text.replace(ch, "\\" + ch)
-    return text
+md = kit.md                    # text that shows as itself in st.markdown
 
 
 def _ctx():
@@ -174,7 +169,7 @@ def planner(first, ctx=None):
     ended = first + timedelta(days=6) < ctx.today            # a past week: a scorecard, nothing to plan
     confirmed, so_far = ctx.confirmed(first, first + timedelta(days=6))
     with st.container(border=True, key="tt_planner"):
-        st.markdown(kit.subhead("How the week went" if ended else "Plan this week"))
+        kit.subhead("How the week went" if ended else "Plan this week")
         st.caption(f"Free hours for goals per day · {pace.fmt(budget['capacity'])} h in all")
         st.html(_free_bars(budget["days"]))
         rows = [w for w in budget["goals"]]
@@ -587,7 +582,7 @@ def needs_you(ctx=None):
     ctx = ctx or _ctx()
     items = needs_items(ctx)
     with st.container(border=True, key="home_needs_you"):
-        st.markdown(kit.subhead("Needs you"))
+        kit.subhead("Needs you")
         if not any(items.values()):
             st.markdown(EMPTY)
             return
@@ -658,7 +653,7 @@ def offers(ctx=None):
             continue
         with st.container(border=True, key=f"offer_card_{g['id']}"):
             p = n["pace"]
-            st.markdown(kit.subhead(f":material/error: {md(g['title'])} can't be finished in time"))
+            kit.subhead(f"{g['title']} can't be finished in time", icon=":material/error:")
             st.caption(f"{md(pace.amount(g, p['remaining']))} to go, about "
                        f"{md(pace.amount(g, n['reachable'] - p['value']))} within reach.")
             for o in n["offers"]:

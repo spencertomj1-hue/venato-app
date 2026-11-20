@@ -66,10 +66,25 @@ def rgba(hex_colour, alpha):
 
 # --- Layout ---
 
-def subhead(text):
-    """Markdown for a bold serif subheading (a card title). Only text made with this is styled so: the
-    style (paper.py) hits the .vn-subhead marker, not every paragraph that happens to be one bold phrase."""
-    return f'<span class="vn-subhead">**{text}**</span>'
+def md(text):
+    """Text that shows as itself in st.markdown (titles may contain [ ] * _ < & and so on)."""
+    text = escape(str(text))
+    for ch in "\\[]*_`$~":
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
+def subhead_markdown(text, icon=None):
+    """The markdown (with its marker span) for a bold serif subheading. `text` is plain: it is escaped,
+    because the span needs unsafe_allow_html. `icon` is a ":material/..:" shortcode."""
+    return f'<span class="vn-subhead">**{icon + " " if icon else ""}{md(text)}**</span>'
+
+
+def subhead(text, where=st, icon=None, **kwargs):
+    """Draw a bold serif subheading (a card title) in `where` (st, a container, a row). Only this is styled so:
+    the style (paper.py) hits the .vn-subhead marker, not every paragraph that is one bold phrase. Extra
+    keyword arguments (width, help) go to markdown."""
+    return where.markdown(subhead_markdown(text, icon), unsafe_allow_html=True, **kwargs)
 
 
 @contextmanager
@@ -77,7 +92,7 @@ def card(title=None, caption=None, stretch=True):
     """A bordered card with a bold title. Cards side by side in st.columns stretch to the same height."""
     with st.container(border=True, height="stretch" if stretch else "content"):
         if title:
-            st.markdown(subhead(title))
+            subhead(title)
         if caption:
             st.caption(caption)
         yield

@@ -39,7 +39,7 @@ def picker(prefix):
         members = [b for b in blocks.all_blocks() if b.group == group]
         if not members:
             continue
-        st.markdown(kit.subhead(f"{group}"))
+        kit.subhead(group)
         cols = st.columns(COLUMNS)
         for i, b in enumerate(members):
             with cols[i % COLUMNS].container(border=True):

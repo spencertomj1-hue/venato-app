@@ -10,9 +10,6 @@ from streamlit.testing.v1 import AppTest
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
-from venato.ui import kit  # noqa: E402
-
-
 def app():
     return AppTest.from_file(APP, default_timeout=60).run()
 
@@ -34,7 +31,7 @@ def test_home_shows_todos_but_no_goals_card(store):
     keys = home_keys(at)
     assert "home_todos_card" in keys and "home_todos" in keys
     assert "home_goals_card" not in keys and "home_goals_all" not in keys
-    assert not [m for m in at.markdown if m.value == kit.subhead("Goals")]
+    assert not [m for m in at.markdown if "vn-subhead" in m.value and "Goals" in m.value]
 
 
 def home_keys(at):

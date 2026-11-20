@@ -353,9 +353,9 @@ def end_of_day_row(day):
     """Home's Needs you: "Is the timetable right for today / yesterday?" with Confirm / Review / Not now."""
     when = "today" if day == store.local_today() else "yesterday"
     row = st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"eod_{day.isoformat()}")
-    row.markdown(kit.subhead(f"Is the timetable right for {when}?"), width="stretch",
-                 help=f"Confirm {regional.long_date(day)}'s Actual is what you really did: only confirmed "
-                      "days count in your stats and goals.")
+    kit.subhead(f"Is the timetable right for {when}?", row, width="stretch",
+                help=f"Confirm {regional.long_date(day)}'s Actual is what you really did: only confirmed "
+                     "days count in your stats and goals.")
     row.button("Confirm", key=f"eod_ok_{day}", type="primary", icon=":material/task_alt:",
                on_click=_confirm_all, args=(day,), help=f"Confirm {when}'s Actual is what you did")
     row.button("Review", key=f"eod_review_{day}", icon=":material/edit_calendar:",

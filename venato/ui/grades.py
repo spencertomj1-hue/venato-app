@@ -213,7 +213,7 @@ def _module_card(m, ctx):
                         "centre": "–" if n["projected"] is None else f"{n['projected']:.0f}%",
                         "centre_sub": label if n["projected"] is not None else ""}])
         with right:
-            st.markdown(kit.subhead(f"{escape(m['name'])}"))
+            kit.subhead(m['name'])
             bits = [b for b in (m["code"], f"{m['credits']:g} credits", m["year"]) if b]
             st.caption(" · ".join(bits))
             if m["final"] is not None:
@@ -313,7 +313,7 @@ def render_page():
 def render_home():
     """Home's Grades widget: the degree so far and the next assessment due."""
     o = gr.overall()
-    st.markdown(kit.subhead("Grades"))
+    kit.subhead("Grades")
     if o["degree"] is None:
         st.caption("No marks yet. Add them on the Modules page.")
         return

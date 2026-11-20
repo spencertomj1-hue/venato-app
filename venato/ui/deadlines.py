@@ -74,7 +74,7 @@ def render_home():
     today = store.local_today()
     rows = store.deadlines()
     head = st.container(horizontal=True, vertical_alignment="center")
-    head.markdown(kit.subhead("Deadlines"), width="stretch")
+    kit.subhead("Deadlines", head, width="stretch")
     head.button("See all", key="home_deadlines_all", type="tertiary", on_click=_go_to_goals)
     if not rows:
         st.caption("Nothing due. Add deadlines on the Goals page.")

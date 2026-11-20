@@ -196,4 +196,18 @@ def test_only_marked_subheadings_get_the_serif_style():
     from venato.ui import kit, paper
     css = paper._fonts()
     assert ".vn-subhead" in css and "only-child" not in css
-    assert kit.subhead("Needs you") == '<span class="vn-subhead">**Needs you**</span>'
+    assert kit.subhead_markdown("Needs you") == '<span class="vn-subhead">**Needs you**</span>'
+    assert kit.subhead_markdown("A *b* <b>&") == '<span class="vn-subhead">**A \\*b\\* &lt;b&gt;&amp;**</span>'
+
+
+def test_subheads_render_with_html_allowed_and_user_text_escaped(store):
+    """Streamlit only keeps the span's class when allow_html is on, so check the element itself."""
+    from streamlit.testing.v1 import AppTest
+    from pathlib import Path
+    store.add_goal("Tricky <b>&_x_", "monthly", store.local_today(), 200, "h", category_id="study")
+    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
+    assert not at.exception
+    heads = [m for m in at.markdown if "vn-subhead" in m.value]
+    assert heads and all(m.proto.allow_html for m in heads)
+    assert any("Needs you" in m.value for m in heads)
+    assert not any("<b>" in m.value for m in at.markdown if "Tricky" in m.value)    # shown as text, never as markup

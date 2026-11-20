@@ -174,7 +174,7 @@ def _categories_dialog():
 
 
 def _edit_categories(cats, groups):
-    st.markdown(kit.subhead("Your categories"))
+    kit.subhead("Your categories")
     with st.form("tt_cats_form", border=False):
         edits = []
         for c in cats:
@@ -199,7 +199,7 @@ def _edit_categories(cats, groups):
 
 
 def _new_category(groups):
-    st.markdown(kit.subhead("New category"))
+    kit.subhead("New category")
     with st.form("tt_cat_new", clear_on_submit=True, border=False):
         a, b, g, s = st.columns([4, 1, 2, 2], vertical_alignment="bottom")
         name = a.text_input("Name", placeholder="e.g. Music")
@@ -215,7 +215,7 @@ def _new_category(groups):
 
 
 def _activity_defaults():
-    st.markdown(kit.subhead("Activity defaults"))
+    kit.subhead("Activity defaults")
     st.caption("Typing one of these in the timetable picks its category automatically.")
     names = dict(zip(store.load_categories()["id"], store.load_categories()["name"]))
     for row in store.load_label_map().to_dict("records"):
@@ -233,7 +233,7 @@ def _activity_defaults():
             _call(tools.set_activity_default, label, cat)
 
     st.divider()
-    st.markdown(kit.subhead("Outlook events"))
+    kit.subhead("Outlook events")
     current = store.outlook_category("")
     ids = list(names)
     pick = st.selectbox("Colour Outlook events as", ids, index=ids.index(current) if current in ids else 0,
