@@ -136,7 +136,8 @@ def test_confirm_button_runs_the_change_with_undo(store, monkeypatch):
 
 
 def test_quick_command_skips_claude(store, fake_claude):
-    """'drank 500ml' is done straight away: Claude isn't asked."""
+    """'drank 500ml' is done straight away: Claude isn't asked (when water is switched on)."""
+    store.set_tracking(water=True)
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.session_state["chat_messages"] = [{"role": "user", "text": "drank 500ml"}]
     at.session_state["chat_queue"] = "drank 500ml"

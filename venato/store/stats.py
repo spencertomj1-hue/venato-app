@@ -11,7 +11,7 @@ from .dates import local_today
 from .days import confirmed_days
 from .grid import slot_of
 from .habits import get_habits, habit_targets
-from .journal import entries_between
+from .journal import entries_between, tracks_sleep, tracks_water
 from .timetable import blocks_between
 
 
@@ -67,9 +67,8 @@ def get_stats(days=None, today=None):
     return {
         "start": first, "end": last, "days": num_days,
         "days_logged": len(entries),
-        "avg_mood": avg("mood"), "avg_sleep": avg("sleep"), "avg_energy": avg("energy"),
-        "avg_productivity": avg("productivity"),
-        "avg_water": avg("water"),
+        "avg_sleep": avg("sleep") if tracks_sleep() else None,
+        "avg_water": avg("water") if tracks_water() else None,
         "habit_completion_pct": habits,
         "timetable_hours": hours,
         "days_confirmed": len(confirmed),

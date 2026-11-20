@@ -344,6 +344,20 @@ def reminders_section():
             st.error(f"Couldn't show a notification on this {system.COMPUTER}.")
 
 
+def daily_log_section():
+    """Sleep and water are optional extras on the Daily Log; the journal and habits are always there."""
+    st.subheader("Daily Log", anchor=False)
+    st.write("The Daily Log is a journal. You can also record how long you slept and how much water you drank. "
+             "Switching one off hides it everywhere (the page, calendar, charts, review and assistant). "
+             "What you've already recorded is kept.")
+    sleep = st.toggle("Track sleep", value=store.tracks_sleep(), key="log_sleep_on")
+    water = st.toggle("Track water", value=store.tracks_water(), key="log_water_on")
+    if (sleep, water) != (store.tracks_sleep(), store.tracks_water()):
+        store.set_tracking(sleep=sleep, water=water)
+        st.toast("Saved", icon=":material/check_circle:")
+        st.rerun()
+
+
 def appearance_section():
     from venato.ui import appearance
     st.subheader("Appearance", anchor=False)
@@ -459,15 +473,16 @@ def _updates_section():
 def page_settings():
     st.header("Settings", anchor=False)
     ai = store.ai_enabled()
-    names = [":material/widgets: Blocks", ":material/palette: Appearance", ":material/public: Region", ":material/calendar_month: Calendar",
-             ":material/chat: Assistant",
-             ":material/notifications: Reminders", ":material/database: Data", ":material/info: About"]
+    pages = [("blocks", ":material/widgets: Blocks"), ("look", ":material/palette: Appearance"),
+             ("region", ":material/public: Region"), ("log", ":material/edit_calendar: Daily Log"),
+             ("cal", ":material/calendar_month: Calendar"), ("claude", ":material/chat: Assistant")]
     if ai:
-        names.insert(5, ":material/mic: Voice")       # voice input is for the assistant
-    tabs = dict(zip(["blocks", "look", "region", "cal", "claude", "mic", "remind", "data", "about"] if ai else
-                    ["blocks", "look", "region", "cal", "claude", "remind", "data", "about"], st.tabs(names)))
-    look, region, cal, claude, mic, remind, data, about = (
-        tabs.get(k) for k in ("look", "region", "cal", "claude", "mic", "remind", "data", "about"))
+        pages.append(("mic", ":material/mic: Voice"))       # voice input is for the assistant
+    pages += [("remind", ":material/notifications: Reminders"), ("data", ":material/database: Data"),
+              ("about", ":material/info: About")]
+    tabs = dict(zip([k for k, _ in pages], st.tabs([n for _, n in pages])))
+    look, region, log, cal, claude, mic, remind, data, about = (
+        tabs.get(k) for k in ("look", "region", "log", "cal", "claude", "mic", "remind", "data", "about"))
     with tabs["blocks"]:
         from venato.ui import blocks_ui
         blocks_ui.section("set")
@@ -475,6 +490,8 @@ def page_settings():
         appearance_section()
     with region:
         region_section()
+    with log:
+        daily_log_section()
     with cal:
         st.subheader("Outlook calendar", anchor=False)
         connected = calendar_status("set")
@@ -493,7 +510,7 @@ def page_settings():
         if ai:
             quick_on = st.toggle(
                 "Quick commands", value=store.load_settings().get("quick_commands", True), key="set_quick",
-                help="Short everyday messages like \"drank 500ml\", \"tick gym\" or \"mood 4\" are done "
+                help="Short everyday messages like \"drank 500ml\" or \"tick gym\" are done "
                      "straight away without asking Claude (their reply starts with ⚡). Anything else still goes to Claude.")
             if quick_on != store.load_settings().get("quick_commands", True):
                 store.save_settings(quick_commands=quick_on)
@@ -539,7 +556,7 @@ def _data_section():
     _backup_settings()
 
     st.subheader("Export", anchor=False)
-    st.write("Your daily log and habits as one CSV: one row per date, one column per habit.")
+    st.write("Your journal and habits as one CSV: one row per date, one column per habit (plus sleep and water, if you track them).")
     csv = store.load_all_data().to_csv(index=False)
     st.download_button("Download CSV", csv, file_name=f"venato_export_{store.local_today()}.csv",
                        mime="text/csv", icon=":material/download:")
@@ -547,7 +564,7 @@ def _data_section():
     st.subheader("Import", anchor=False)
     st.write(
         f"Use the same format as the export: a `date` column (YYYY-MM-DD), optional "
-        f"`mood`, `sleep`, `energy`, `productivity` (scores out of 10), `water` (litres), `notes` columns, and `{store.HABIT_PREFIX}<name>` columns "
+        f"`notes`, `sleep` (hours) and `water` (litres) columns, and `{store.HABIT_PREFIX}<name>` columns "
         f"containing true/false or 1/0."
     )
     uploaded = st.file_uploader("CSV file", type="csv")

@@ -77,8 +77,9 @@ def test_resolve_category(store):
 
 def test_stats(store):
     with store.db() as conn:
-        store.save_entry(conn, "2026-10-28", 4, 8.0, 3, None)
-        store.save_entry(conn, "2026-10-29", 2, 6.0, 5, "tired")
+        store.save_entry(conn, "2026-10-28", None, 8.0)
+        store.save_entry(conn, "2026-10-29", "tired", 6.0)
+    store.set_tracking(sleep=True)
     store.add_habit("Read")
     hid = store.find_habit("read")[0]
     with store.db() as conn:
@@ -87,21 +88,22 @@ def test_stats(store):
     store.paint("2026-10-28", "actual", 4, 8, {"label": "Lecture", "category_id": "classes"})    # not confirmed
     store.mark_confirmed("2026-10-29")
     s = store.get_stats(7, today=date(2026, 10, 29))
-    assert s["avg_mood"] == 3 and s["avg_sleep"] == 7 and s["avg_energy"] == 4
+    assert s["avg_sleep"] == 7 and s["avg_water"] is None and not any("mood" in k for k in s)
     assert s["habit_completion_pct"] == {"Read": round(100 / 7, 1)}
     assert s["timetable_hours"]["actual"] == {"Classes": 2.0} and s["days_confirmed"] == 1
 
 
 def test_water_import_export(store):
     import pandas as pd
+    store.set_tracking(sleep=True, water=True)
     with store.db() as conn:
-        store.save_entry(conn, "2026-10-28", 3, 7.0, 3, None, 2.25)
-        store.save_entry(conn, "2026-10-29", 4, 8.0, 4, "ok", 1.0)
-        store.save_entry(conn, "2026-10-29", 5, 8.0, 4, "ok")            # water not given: kept
+        store.save_entry(conn, "2026-10-28", None, 7.0, 2.25)
+        store.save_entry(conn, "2026-10-29", "ok", 8.0, 1.0)
+        store.save_entry(conn, "2026-10-29", "ok", 8.0)                  # water not given: kept
     assert store.get_entry("2026-10-29")["water"] == 1.0
     df = store.load_all_data()
     assert dict(zip(df["date"].astype(str), df["water"])) == {"2026-10-29": 1.0, "2026-10-28": 2.25}
-    store.save_all_data(pd.DataFrame({"date": ["2026-10-29"], "mood": [2]}))  # old CSV without water: kept
+    store.save_all_data(pd.DataFrame({"date": ["2026-10-29"], "notes": ["x"]}))  # CSV without water: kept
     assert store.get_entry("2026-10-29")["water"] == 1.0
     store.save_all_data(pd.DataFrame({"date": ["2026-10-30"], "water": [3]}))
     assert store.get_entry("2026-10-30")["water"] == 3.0
@@ -109,29 +111,21 @@ def test_water_import_export(store):
 
 
 def test_scores_moved_to_out_of_ten_once(store):
-    import importlib
-    import sqlite3
     with store.db() as conn:
-        store.save_entry(conn, "2026-01-01", 4, 7, 3, None)
+        conn.execute("INSERT INTO entries (date, mood, energy) VALUES ('2026-01-01', 4, 3)")
         conn.execute("DELETE FROM meta WHERE key = 'scores_out_of_10'")    # as if from before the change
     store.init_db()
     store.init_db()                                                           # only doubled once
-    e = store.get_entry("2026-01-01")
-    assert (e["mood"], e["energy"], e["productivity"]) == (8, 6, None)
     with store.db() as conn:
-        store.save_entry(conn, "2026-01-02", 9, 7, 8, None, productivity=7)
-    assert store.get_entry("2026-01-02")["productivity"] == 7
-    assert store.get_stats(None, today=__import__("datetime").date(2026, 1, 2))["avg_productivity"] == 7
+        assert conn.execute("SELECT mood, energy, productivity FROM entries").fetchone() == (8, 6, None)
 
 
-def test_old_csv_scores_doubled(store):
+def test_old_csv_scores_are_ignored(store):
     import pandas as pd
-    store.save_all_data(pd.DataFrame([{"date": "2026-02-01", "mood": 4, "sleep": 7, "energy": 5, "notes": None}]))
-    assert store.get_entry("2026-02-01")["mood"] == 8
-    store.save_all_data(pd.DataFrame([{"date": "2026-02-02", "mood": 4, "sleep": 7, "energy": 5, "productivity": 6,
-                                       "notes": None}]))
-    e = store.get_entry("2026-02-02")
-    assert (e["mood"], e["energy"], e["productivity"]) == (4, 5, 6)
+    store.save_all_data(pd.DataFrame([{"date": "2026-02-01", "mood": 4, "sleep": 7, "energy": 5, "productivity": 6,
+                                       "notes": "hi"}]))
+    e = store.get_entry("2026-02-01")
+    assert e["notes"] == "hi" and e["sleep"] == 7 and (e["mood"], e["energy"], e["productivity"]) == (None, None, None)
 
 
 # --- data version: the cache key that changes whenever the database does ---

@@ -33,8 +33,8 @@
 
 - **Plan, then adjust, then confirm.** Your Plan for a day is locked in when the day starts and copied into its Actual, so you never log your day twice: move, stretch or delete blocks as the day really goes, then confirm it at the end. The weekly review then tells you how much of your plan you followed, per category, counting only the days you've confirmed. Notion and Daylio don't do that out of the box.
 - **Your data never leaves your computer.** No account, no server, no cloud sync. Everything is one SQLite file in your data folder, the app only listens on `127.0.0.1`, and voice is transcribed locally.
-- **Everything in one place.** Timetable, to-dos, deadlines, goals, focus sessions and grades, with an optional daily log (mood, sleep, energy, water), journal and habits, all linked: tick a habit and the goal it counts towards moves; a deadline shows on the timetable and gets a reminder.
-- **Optional Claude assistant.** Type or say "Fit 6 hours of revision into next week around my lectures" or "Mood 4, slept 7.5 hours, tick reading". It works through a fixed set of Venato actions, previews anything destructive for you to confirm, and is off unless you switch it on. Everything also works by hand.
+- **Everything in one place.** Timetable, to-dos, deadlines, goals, focus sessions and grades, with a daily journal with habits (and optional sleep and water), all linked: tick a habit and the goal it counts towards moves; a deadline shows on the timetable and gets a reminder.
+- **Optional Claude assistant.** Type or say "Fit 6 hours of revision into next week around my lectures" or "Add a note to today's journal and tick reading". It works through a fixed set of Venato actions, previews anything destructive for you to confirm, and is off unless you switch it on. Everything also works by hand.
 
 ## Features
 
@@ -47,7 +47,7 @@
 | **Focus** | Pomodoro or stopwatch with auto breaks; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". |
 | **Grades** | Modules and weighted assessments, mark needed for your target, UK classification or US GPA, year weightings. "got 68 in acp coursework". |
 | **Review** | Weekly review, time planned vs done, charts and history. |
-| **Daily Log** | Mood, sleep, energy and water by day, a journal, and habits with streaks. Optional. |
+| **Daily Log** | A journal for each day, and habits with streaks. Sleep and water are optional extras (Settings → Daily Log). |
 | **Money** | Spending and income by category, monthly budgets, savings goals, subscriptions (logged when they renew) and bank CSV import. "spent £12 on lunch". Optional. |
 | **Workouts** | Sets, reps, weight, distance; 1RM, personal bests, progress charts, weekly volume, saved plans; kg/lb, km/mi. "bench 3x8 at 60". Optional. |
 
@@ -66,11 +66,11 @@
 - **To-dos** in one card with a Daily / Weekly / Monthly switch, then deadlines, habits and search. A widget with nothing to show (no habits, no marks, no deadlines…) isn't drawn.
 
 **Tracking**
-- **Daily log (optional):** a month calendar of mood, sleep, energy and water. Click a day to tick habits and write notes.
+- **Daily log (optional):** a journal box for each day, with a month calendar marking the days you wrote. Click a day to open it and tick habits.
 - **Habits (optional):** daily or with a weekly target ("Gym 3 times a week"), with current and best streaks.
 - **Journal (optional):** each day's notes, with a daily prompt and a searchable list of past entries.
-- **Review:** time planned vs done, goal pace and past weekly reviews; with Daily Log on, charts of mood, energy, sleep and water and habit completion rates.
-- **Weekly review:** pops up after 7pm on Sunday with plan followed, time per category, goal pace, to-dos, deadlines and two questions to reflect on; with Daily Log on it adds mood/sleep/energy/water vs last week, habits and the journal.
+- **Review:** time planned vs done, goal pace and past weekly reviews; with Daily Log on, habit completion rates, and sleep and water charts if you track them.
+- **Weekly review:** pops up after 7pm on Sunday with plan followed, time per category, goal pace, to-dos, deadlines and two questions to reflect on; with Daily Log on it adds habits and the journal (and sleep and water vs last week, if you track them).
 
 **Everything else**
 - **Search** across to-dos, goals, deadlines, habits, journal, timetable, calendar events and past reviews.
@@ -134,7 +134,7 @@ The first install downloads about 1 GB of packages; the speech model (about 470 
 
 Claude can only use Venato's own actions. It has no access to your files, terminal or the web.
 
-It runs on **Claude Haiku 5.5** at low effort, kept open between messages, and replies appear as they're written. Short everyday messages ("drank 500ml", "tick gym", "mood 4", "slept 7h", "done finish essay") are handled straight away without asking Claude; their replies start with ⚡ (switch off in Settings → Assistant → Quick commands). To use a different model, set `"model"` (and optionally `"effort"`) in `venato_config.json`.
+It runs on **Claude Haiku 5.5** at low effort, kept open between messages, and replies appear as they're written. Short everyday messages ("drank 500ml", "tick gym", "slept 7h", "done finish essay" (sleep and water need switching on in Settings → Daily Log)) are handled straight away without asking Claude; their replies start with ⚡ (switch off in Settings → Assistant → Quick commands). To use a different model, set `"model"` (and optionally `"effort"`) in `venato_config.json`.
 
 **Outlook calendar.** In Outlook on the web: Settings → Calendar → Shared calendars → Publish a calendar, pick **Can view all details**, copy the **ICS** link and paste it into Settings → Calendar. The link is stored in the macOS Keychain / Windows Credential Manager. Anyone with that link can see your calendar, so unpublish it in Outlook to revoke it. Some universities and workplaces block publishing.
 

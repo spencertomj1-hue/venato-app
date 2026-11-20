@@ -1,12 +1,14 @@
 """
-The daily log: one row per day (mood, sleep, energy, water, productivity, notes). A day's notes
-are its journal entry (entries.notes).
+The daily log: one row per day (notes, and optionally sleep and water). A day's notes are its journal
+entry (entries.notes). The table still has the old mood, energy and productivity columns: nothing
+reads or writes them, so an older install's values stay as they were.
 """
 
 import sqlite3
 
 from .database import KEEP, _read, db
 from .dates import _as_date
+from .settings import load_settings, save_settings
 
 
 def get_entry(day):
@@ -17,14 +19,42 @@ def get_entry(day):
     return dict(row) if row else {}
 
 
-def save_entry(conn, day, mood, sleep, energy, notes, water=KEEP, productivity=KEEP):
-    """Insert or update the entry for a date (uses an open connection). Mood, energy and
-    productivity are 1-10."""
-    cols = {"mood": mood, "sleep": sleep, "energy": energy, "notes": notes}
-    if water is not KEEP:
-        cols["water"] = water
-    if productivity is not KEEP:
-        cols["productivity"] = productivity
+def _has_values(column):
+    with db() as conn:
+        return conn.execute(f"SELECT 1 FROM entries WHERE {column} IS NOT NULL LIMIT 1").fetchone() is not None
+
+
+def _tracks(setting, column):
+    """Is this optional measure switched on? Off on new installs; an install that already has some
+    recorded counts as on until it chooses (so an upgrade doesn't hide anything)."""
+    chosen = load_settings().get(setting)
+    return bool(chosen) if chosen is not None else _has_values(column)
+
+
+def tracks_sleep():
+    """Is sleep switched on (Settings -> Daily Log)?"""
+    return _tracks("log_sleep", "sleep")
+
+
+def tracks_water():
+    """Is water switched on (Settings -> Daily Log)?"""
+    return _tracks("log_water", "water")
+
+
+def set_tracking(sleep=None, water=None):
+    """Switch sleep and/or water on or off. Recorded values are kept either way."""
+    changes = {k: bool(v) for k, v in (("log_sleep", sleep), ("log_water", water)) if v is not None}
+    if changes:
+        save_settings(**changes)
+
+
+def save_entry(conn, day, notes=KEEP, sleep=KEEP, water=KEEP):
+    """Insert or update the entry for a date (uses an open connection). Only the fields given are
+    written (KEEP leaves one as it is), so the old mood/energy/productivity columns are never touched."""
+    cols = {k: v for k, v in (("notes", notes), ("sleep", sleep), ("water", water)) if v is not KEEP}
+    if not cols:
+        conn.execute("INSERT OR IGNORE INTO entries (date) VALUES (?)", (day,))
+        return
     conn.execute(
         f"INSERT INTO entries (date, {', '.join(cols)}) VALUES (?{', ?' * len(cols)}) "
         f"ON CONFLICT(date) DO UPDATE SET {', '.join(f'{c} = excluded.{c}' for c in cols)}",
@@ -45,7 +75,7 @@ def get_journal(day):
 
 
 def save_journal(day, text):
-    """Set a day's notes / journal entry, leaving mood, sleep etc. alone; blank text clears it."""
+    """Set a day's notes / journal entry, leaving sleep and water alone; blank text clears it."""
     day, text = _as_date(day).isoformat(), str(text or "").strip() or None
     with db() as conn:
         conn.execute("INSERT INTO entries (date, notes) VALUES (?, ?) "

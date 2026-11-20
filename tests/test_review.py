@@ -37,8 +37,9 @@ def test_summary_numbers(review, store, monkeypatch):
     tools.add_block("2026-10-27", "actual", "10:00", "11:00", "Scrolling", category="Distracted").pending.run()
     store.confirm_day("2026-10-27")
     with store.db() as conn:
-        store.save_entry(conn, "2026-10-27", 4, 7.0, 3, "Good day", 2.0)
-        store.save_entry(conn, "2026-10-20", 2, 6.0, 2, None)    # the week before
+        store.save_entry(conn, "2026-10-27", "Good day", 7.0, 2.0)
+        store.save_entry(conn, "2026-10-20", None, 5.0)    # the week before
+    store.set_tracking(sleep=True, water=False)
     store.add_habit("Gym", per_week=2)
     gym = store.find_habit("Gym")[0]
     with store.db() as conn:
@@ -48,11 +49,11 @@ def test_summary_numbers(review, store, monkeypatch):
     s = review.summary(date(2026, 10, 26))
     assert (s["planned_hours"], s["actual_hours"], s["followed_pct"]) == (2.0, 2.0, 50)
     assert {t["category"]: (t["plan"], t["actual"]) for t in s["time"]} == {"Study": (2.0, 1.0), "Distracted": (0.0, 1.0)}
-    assert s["log"]["mood"] == {"now": 4.0, "before": 2.0} and s["days_logged"] == 1
+    assert s["log"] == {"sleep": {"now": 7.0, "before": 5.0}} and s["days_logged"] == 1
     assert s["habits"] == [{"name": "Gym", "ticks": 2, "target": 2, "hit": True}]
     assert [d["title"] for d in s["deadlines"]["missed"]] == ["Essay"] and s["has_data"]
     text = review.as_text(s)
-    assert "50% of the Plan followed" in text and "Average mood: 4.0 (week before 2.0)" in text
+    assert "50% of the Plan followed" in text and "Average sleep: 7.0 (week before 5.0)" in text and "mood" not in text
 
 
 def test_popup_until_done_and_history(store, monkeypatch):

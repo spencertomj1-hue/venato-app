@@ -125,10 +125,8 @@ def main():
             day = TODAY - timedelta(days=back)
             if random.random() < 0.1:
                 continue                                # a few days not logged
-            mood = random.choice([2, 3, 3, 4, 4, 4, 5])
             sleep = random.choice([6.0, 6.5, 7.0, 7.0, 7.5, 8.0, 8.5])
-            energy = max(1, min(5, mood + random.choice([-1, 0, 0, 1])))
-            store.save_entry(conn, day.isoformat(), mood, sleep, energy, random.choice(NOTES))
+            store.save_entry(conn, day.isoformat(), random.choice(NOTES), sleep)
 
     # --- Habits with streaks ---
     for name, rate in (("Read 20 pages", 0.8), ("Exercise", 0.6), ("Meditate", 0.5), ("No phone in bed", 0.4)):

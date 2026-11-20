@@ -182,9 +182,9 @@ def next_week(first):
 
 def trend(first, weeks=8):
     """The last `weeks` weeks up to the one starting `first`, oldest first: [{week, followed_pct,
-    actual_hours, mood, sleep}] (mood and sleep None when Daily Log is off or nothing was logged)."""
+    actual_hours, sleep}] (sleep None when Daily Log or its sleep switch is off, or nothing was logged)."""
     first, now = store._as_date(first), store.local_now()
-    log_on = blocks.is_on("log")
+    log_on = blocks.is_on("log") and store.tracks_sleep()
     out = []
     for i in range(weeks - 1, -1, -1):
         w = first - timedelta(days=7 * i)
@@ -192,7 +192,7 @@ def trend(first, weeks=8):
         rows = store.entries_between(w.isoformat(), (w + timedelta(days=6)).isoformat()).to_dict("records") \
             if log_on else []
         out.append({"week": w, "followed_pct": n["followed_pct"], "actual_hours": n["actual_hours"],
-                    "mood": _avg(rows, "mood"), "sleep": _avg(rows, "sleep")})
+                    "sleep": _avg(rows, "sleep")})
     return out
 
 
@@ -218,7 +218,8 @@ def summary(first):
     prev = store.entries_between((first - timedelta(days=7)).isoformat(), (first - timedelta(days=1)).isoformat()).to_dict("records")
     if not log_on:
         this, prev = [], []
-    log = {k: {"now": _avg(this, k), "before": _avg(prev, k)} for k in ("mood", "sleep", "energy", "productivity", "water")}
+    measures = [k for k, on in (("sleep", store.tracks_sleep()), ("water", store.tracks_water())) if on]
+    log = {k: {"now": _avg(this, k), "before": _avg(prev, k)} for k in measures}
 
     # --- Habits ---
     targets, habits = store.habit_targets(), []

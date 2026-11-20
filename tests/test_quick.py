@@ -13,6 +13,7 @@ def quick(store):
 
 
 def test_water(quick, store):
+    store.set_tracking(water=True)
     today = store.local_today().isoformat()
     r = quick.handle("drank 500ml")
     assert r.reply.startswith(quick.MARK) and r.changed and store.get_entry(today)["water"] == 0.5
@@ -26,19 +27,26 @@ def test_water(quick, store):
         assert quick.handle(text) is None, text
 
 
-def test_scores(quick, store):
+def test_sleep(quick, store):
+    store.set_tracking(sleep=True)
     today = store.local_today().isoformat()
-    quick.handle("mood 7")
-    quick.handle("energy was 3/5")                    # out of 5 still works: doubled
-    quick.handle("productivity 8/10")
     quick.handle("slept 7.5h last night")
-    e = store.get_entry(today)
-    assert (e["mood"], e["energy"], e["productivity"], e["sleep"]) == (7, 6, 8, 7.5)
-    r = quick.handle("mood 2")                        # overwriting asks first, like Claude's tool
-    assert r.pending and store.get_entry(today)["mood"] == 7
-    assert quick.handle("mood 11") is None            # out of range: Claude explains
-    assert quick.handle("mood 7/5") is None
-    assert quick.handle("my mood is great") is None
+    assert store.get_entry(today)["sleep"] == 7.5
+    r = quick.handle("slept 6")                       # overwriting asks first, like Claude's tool
+    assert r.pending and store.get_entry(today)["sleep"] == 7.5
+    assert quick.handle("slept 20h") is None          # out of range: Claude explains
+
+
+def test_scores_are_gone(quick, store):
+    store.set_tracking(sleep=True, water=True)
+    for text in ("mood 7", "energy was 3/5", "productivity 8/10", "my mood is great"):
+        assert quick.handle(text) is None, text
+    assert store.get_entry(store.local_today().isoformat()) == {}
+
+
+def test_sleep_and_water_off_are_left_to_claude(quick, store):
+    assert quick.handle("drank 500ml") is None and quick.handle("slept 7.5h") is None
+    assert store.get_entry(store.local_today().isoformat()) == {}
 
 
 def test_habits_and_todos(quick, store):
