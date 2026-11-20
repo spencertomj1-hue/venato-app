@@ -182,3 +182,20 @@ def test_linked_habit_updates_goal(store):
     assert not at.exception
     assert at.session_state["home_draws"] == draws + 1
     assert "1 / 12 sessions" in html(at)
+
+
+def test_a_new_hours_goal_needs_a_plan_it_is_not_behind(store):
+    from datetime import timedelta
+    today = store.local_today()
+    store.add_goal("Revision", None, today, 40, "h", category_id="study", due=today + timedelta(days=40))
+    store.add_goal("Old plan", None, today - timedelta(days=10), 40, "h", category_id="work",
+                   due=today + timedelta(days=30))
+    at = app()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    rev = next(m.value for m in at.markdown if "Revision" in m.value and "badge" in m.value)
+    old = next(m.value for m in at.markdown if "Old plan" in m.value and "badge" in m.value)
+    assert "Needs a plan" in rev and "Behind" not in rev
+    assert "Behind" in old                                                         # a week in: honestly behind
+    assert "float:right" not in text                                               # "N h to plan" sits beside, not over, the bar
+    assert any("h to plan" in m.value for m in at.markdown)

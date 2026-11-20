@@ -469,6 +469,8 @@ def free_split(ctx=None):
 # ---------------------------------------------------------------------------
 
 PILL = {"behind": "orange", "slipping": "orange", "unreachable": "red"}
+NEW_GOAL_DAYS = 7               # a goal this young isn't "behind": it just needs time planned for it
+NEEDS_PLAN = ":blue-badge[:material/edit_calendar: Needs a plan]"
 EMPTY = "Nothing needs you. Go touch grass."
 DEADLINE_DAYS = 7               # deadlines this soon need a plan
 OFFER_AFTER_DAYS = 7            # the assistant is offered (once) this long after first using Venato
@@ -492,10 +494,18 @@ def _goal_rows(ctx):
         if p["state"] not in PILL and short < pace.TOLERANCE:
             continue
         state = p["state"] if p["state"] in PILL else "behind"
+        if state == "behind" and _just_started(p, ctx.today):
+            state = "needs_plan"
         what = (f"{pace.fmt(pace.half_up(short))} h to plan" if short >= pace.TOLERANCE
                 else f"{pace.amount(g, p['need'])} this week" if p["need"] else "")
         rows.append((p, state, what))
     return rows
+
+
+def _just_started(p, today):
+    """An hours goal in its first week with nothing done: "behind" would only mean no time is planned yet."""
+    return (p["goal"]["kind"] == "hours" and p["value"] < pace.TOLERANCE
+            and (today - p["start"]).days < NEW_GOAL_DAYS)
 
 
 def _deadline_rows(ctx):
@@ -619,8 +629,11 @@ def _needs_goals(rows, ctx):
     st.html(goals.goal_bar_css())
     for p, state, what in rows:            # each goal: its pill and what it needs, then its bar
         g = p["goal"]
-        st.markdown(f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}] **{md(g['title'])}**"
-                    f"<span style='float:right'>{escape(what)}</span>", unsafe_allow_html=True)
+        head = st.container(horizontal=True, vertical_alignment="center", gap="small")      # no float: it overlapped the bar
+        pill = NEEDS_PLAN if state == "needs_plan" else f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}]"
+        head.markdown(f"{pill} **{md(g['title'])}**", width="stretch")
+        if what:
+            head.markdown(md(what), width="content")
         line = " · ".join(x for x in (f"{goals.amount(g)} {store.goal_title_due(g['due'], ctx.today)}",
                                       goals.pace_detail(p)) if x)
         st.html(goals.goal_bar(g, ctx.today, line))
