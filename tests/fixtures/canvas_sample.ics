@@ -1,0 +1,102 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:icalendar-ruby
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:Sam Student Calendar (Canvas)
+X-WR-CALDESC:Calendar events for the user\, Sam Student
+BEGIN:VEVENT
+DTSTAMP:20261119T122900Z
+UID:event-assignment-override-4101
+DTSTART:20261023T160000Z
+DTEND:20261023T160000Z
+CLASS:PUBLIC
+DESCRIPTION:For Term 1 (autumn) - Submit Group Assignment 1 here.
+SEQUENCE:0
+SUMMARY:Term 1 - Assignment 1 (OC Grp4) [20501.202610]
+URL;VALUE=URI:https://canvas.example.ac.uk/calendar?include_contexts=course
+ _1101&month=10&year=2026#assignment_400101
+X-ALT-DESC;FMTTYPE=text/html:<p>For Term 1 (autumn) - Submit Group Assignme
+ nt 1 here.</p>
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261119T122900Z
+UID:event-assignment-500210
+DTSTART:20261125T170000Z
+DTEND:20261125T170000Z
+CLASS:PUBLIC
+DESCRIPTION:
+SEQUENCE:0
+SUMMARY:Lab Report 2 (Kinetics) Data Entry: Due Wed 25th Nov at 5pm [20502.
+ 202610]
+URL;VALUE=URI:https://canvas.example.ac.uk/calendar?include_contexts=course
+ _1102&month=11&year=2026#assignment_500210
+X-ALT-DESC;FMTTYPE=text/html:
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261119T122900Z
+UID:event-assignment-override-4117
+DTSTART:20261204T170000Z
+DTEND:20261204T170000Z
+CLASS:PUBLIC
+DESCRIPTION:For Term 1 (autumn) - Submit Group Assignment 2 here.
+SEQUENCE:0
+SUMMARY:Term 1 - Assignment 2 (OC Grp4) [20501.202610]
+URL;VALUE=URI:https://canvas.example.ac.uk/calendar?include_contexts=course
+ _1101&month=12&year=2026#assignment_400117
+X-ALT-DESC;FMTTYPE=text/html:<p>For Term 1 (autumn) - Submit Group Assignme
+ nt 2 here.</p>
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261119T122900Z
+UID:event-assignment-500233
+DTSTART:20261209T120000Z
+DTEND:20261209T120000Z
+CLASS:PUBLIC
+DESCRIPTION:Upload a single PDF.
+SEQUENCE:0
+SUMMARY:Problem Sheet 3 [20502.202610]
+URL;VALUE=URI:https://canvas.example.ac.uk/calendar?include_contexts=course
+ _1102&month=12&year=2026#assignment_500233
+X-ALT-DESC;FMTTYPE=text/html:<p>Upload a single PDF.</p>
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261119T122900Z
+UID:event-assignment-900501
+DTSTART:20261211T130000Z
+DTEND:20261211T130000Z
+CLASS:PUBLIC
+DESCRIPTION:
+SEQUENCE:0
+SUMMARY:CORE - Wellbeing Basics [TRNG-260812134148.202610]
+URL;VALUE=URI:https://canvas.example.ac.uk/calendar?include_contexts=course
+ _2201&month=12&year=2026#assignment_900501
+X-ALT-DESC;FMTTYPE=text/html:
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261119T122900Z
+UID:event-assignment-900502
+DTSTART:20261211T130000Z
+DTEND:20261211T130000Z
+CLASS:PUBLIC
+DESCRIPTION:
+SEQUENCE:0
+SUMMARY:CORE - Academic Integrity [TRNG-260812134148.202610]
+URL;VALUE=URI:https://canvas.example.ac.uk/calendar?include_contexts=course
+ _2201&month=12&year=2026#assignment_900502
+X-ALT-DESC;FMTTYPE=text/html:
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261119T122900Z
+UID:event-assignment-900503
+DTSTART:20261211T130000Z
+DTEND:20261211T130000Z
+CLASS:PUBLIC
+DESCRIPTION:
+SEQUENCE:0
+SUMMARY:Fire Safety for Students [TRNG-260812134148.202610]
+URL;VALUE=URI:https://canvas.example.ac.uk/calendar?include_contexts=course
+ _2201&month=12&year=2026#assignment_900503
+X-ALT-DESC;FMTTYPE=text/html:
+END:VEVENT
+END:VCALENDAR
