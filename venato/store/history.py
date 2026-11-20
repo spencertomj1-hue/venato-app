@@ -2,15 +2,15 @@
 The whole daily log as one table, for History and Export/Import.
 
 Everything is represented as one "wide" table: one row per date with
-mood/sleep/energy/productivity/notes plus a True/False column per habit.
+notes (plus sleep and water when switched on) and a True/False column per habit.
 The value cleaners here are shared with the to-do and goal imports.
 """
 
 import pandas as pd
 
-from .database import KEEP, db
+from .database import db
 from .habits import HABIT_PREFIX, get_habits, set_habit_done
-from .journal import save_entry
+from .journal import save_entry, tracks_sleep, tracks_water
 
 
 def load_all_data():
@@ -25,6 +25,10 @@ def load_all_data():
     # Every date that has an entry or at least one habit tick.
     all_dates = sorted(set(entries["date"]) | set(logs["date"]), reverse=True)
     df = entries.set_index("date").reindex(all_dates)
+    # The old mood/energy/productivity columns stay in the database but aren't exported, and sleep
+    # and water only when switched on.
+    df = df[[c for c in ("notes", "sleep", "water") if c in df.columns
+             and (c == "notes" or (tracks_sleep() if c == "sleep" else tracks_water()))]]
     for name in habit_names:
         done = set(logs.loc[logs["name"] == name, "date"])
         df[HABIT_PREFIX + name] = df.index.isin(done)
@@ -42,11 +46,6 @@ def _clean(value, cast):
     return cast(value)
 
 
-def _score(value):
-    """A 1-10 score from a CSV / table cell (rounded, kept in range)."""
-    return max(1, min(10, int(round(float(value)))))
-
-
 def _is_ticked(value):
     """Interpret a CSV/table cell as a habit tick."""
     if value is None or pd.isna(value):
@@ -60,13 +59,15 @@ def save_all_data(df, replace=False):
     replace=True wipes existing data first; otherwise rows are merged by date.
     """
     habit_cols = [c for c in df.columns if c.startswith(HABIT_PREFIX)]
-    # A CSV exported before scores went out of 10 has no productivity column: its mood and
-    # energy are out of 5 (if none is above 5), so they're doubled.
-    old_scale = "productivity" not in df.columns and all(
-        pd.to_numeric(df[c], errors="coerce").dropna().le(5).all() for c in ("mood", "energy") if c in df.columns)
     with db() as conn:
         if replace:
-            conn.execute("DELETE FROM entries")
+            # Clear only the measures this CSV carries (an export leaves out sleep/water when they're switched
+            # off, so those stay); the old mood/energy/productivity columns are never touched.
+            carried = [c for c in ("notes", "sleep", "water") if c in df.columns]
+            if carried:
+                conn.execute(f"UPDATE entries SET {', '.join(c + ' = NULL' for c in carried)}")
+            conn.execute("DELETE FROM entries WHERE mood IS NULL AND sleep IS NULL AND energy IS NULL "
+                         "AND notes IS NULL AND water IS NULL AND productivity IS NULL")
             conn.execute("DELETE FROM habits")  # also clears habit_log (cascade)
 
         # Make sure every habit column has a habit, then look up the ids.
@@ -79,16 +80,14 @@ def save_all_data(df, replace=False):
                 continue  # skip blank rows (e.g. an empty row added in the editor)
             day = pd.to_datetime(row["date"]).date().isoformat()
 
-            mood = _clean(row.get("mood"), _score)
-            sleep = _clean(row.get("sleep"), float)
-            energy = _clean(row.get("energy"), _score)
-            if old_scale:
-                mood, energy = (None if v is None else v * 2 for v in (mood, energy))
-            notes = _clean(row.get("notes"), str)
-            water = _clean(row.get("water"), float) if "water" in df.columns else KEEP
-            prod = _clean(row.get("productivity"), _score) if "productivity" in df.columns else KEEP
-            if any(v not in (None, KEEP) for v in (mood, sleep, energy, notes, water, prod)):
-                save_entry(conn, day, mood, sleep, energy, notes, water, prod)
+            # Old exports have mood/energy/productivity columns: ignored. Only the columns present are written.
+            fields = {"notes": _clean(row.get("notes"), str)} if "notes" in df.columns else {}
+            if "sleep" in df.columns:
+                fields["sleep"] = _clean(row.get("sleep"), float)
+            if "water" in df.columns:
+                fields["water"] = _clean(row.get("water"), float)
+            if any(v is not None for v in fields.values()):
+                save_entry(conn, day, **fields)
 
             for col in habit_cols:
                 set_habit_done(conn, habit_ids[col[len(HABIT_PREFIX):]], day, _is_ticked(row[col]))

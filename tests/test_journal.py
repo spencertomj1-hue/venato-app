@@ -42,9 +42,9 @@ def test_tools(store):
 
 def test_journal_is_the_days_notes(store):
     with store.db() as conn:
-        store.save_entry(conn, "2026-10-28", 4, 7.0, 3, None, 2.0)
+        store.save_entry(conn, "2026-10-28", None, 7.0, 2.0)
     store.append_journal("2026-10-28", "Lab day.")
-    assert store.get_entry("2026-10-28")["notes"] == "Lab day." and store.get_entry("2026-10-28")["mood"] == 4
+    assert store.get_entry("2026-10-28")["notes"] == "Lab day." and store.get_entry("2026-10-28")["sleep"] == 7.0
     store.save_journal("2026-10-28", "")                                  # clears the notes, keeps the numbers
     assert store.get_entry("2026-10-28")["notes"] is None and store.get_entry("2026-10-28")["water"] == 2.0
     store.save_journal("2026-10-27", "Only words")
@@ -57,8 +57,8 @@ def test_old_journal_table_is_folded_into_notes(store):
         conn.execute("CREATE TABLE journal (date TEXT PRIMARY KEY, text TEXT NOT NULL, updated_at TEXT NOT NULL)")
         conn.executemany("INSERT INTO journal VALUES (?, ?, 'x')",
                          [("2026-10-20", "Journal only"), ("2026-10-21", "Pizza after"), ("2026-10-22", "Same")])
-        store.save_entry(conn, "2026-10-21", 3, None, None, "Rainy")
-        store.save_entry(conn, "2026-10-22", 3, None, None, "Same")
+        store.save_entry(conn, "2026-10-21", "Rainy")
+        store.save_entry(conn, "2026-10-22", "Same")
     store.init_db()
     assert store.get_journal("2026-10-20") == "Journal only"
     assert store.get_journal("2026-10-21") == "Rainy\n\nPizza after"

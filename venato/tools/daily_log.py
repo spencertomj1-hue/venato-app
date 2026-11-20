@@ -1,5 +1,5 @@
 """
-Tools for the daily log (mood, sleep, energy, notes...), habits, and the stats over them.
+Tools for the daily log (notes, and sleep and water when switched on), habits, and the stats over them.
 """
 
 import re
@@ -9,20 +9,20 @@ from venato import store
 from .common import Pending, Result, ToolError, _date_range, _day, nice_day
 
 
-def log_day(date, mood=None, sleep=None, energy=None, notes=None, append_notes=False, confirmed=False, water=None,
-            productivity=None):
-    """Set fields of a day's log (mood, energy and productivity 1-10); untouched fields keep their values."""
+def log_day(date, notes=None, append_notes=False, confirmed=False, sleep=None, water=None):
+    """Set fields of a day's log (notes, and sleep and water if switched on); untouched fields keep their values."""
     day = _day(date)
+    for name, value, on in (("sleep", sleep, store.tracks_sleep()), ("water", water, store.tracks_water())):
+        if value is not None and not on:
+            raise ToolError(f"{name.capitalize()} tracking is off. The user can switch it on in Settings → Daily Log.")
     old = store.get_entry(day)
-    new = {k: old.get(k) for k in ("mood", "sleep", "energy", "notes", "water", "productivity")}
+    new = {k: old.get(k) for k in ("notes", "sleep", "water")}
     changes, overwrites = [], []
 
-    for name, value, lo, hi, cast in (("mood", mood, 1, 10, int), ("sleep", sleep, 0, 24, float),
-                                      ("energy", energy, 1, 10, int), ("water", water, 0, 15, float),
-                                      ("productivity", productivity, 1, 10, int)):
+    for name, value, lo, hi in (("sleep", sleep, 0, 24), ("water", water, 0, 15)):
         if value is None:
             continue
-        value = cast(value)
+        value = float(value)
         if not lo <= value <= hi:
             raise ToolError(f"{name} must be between {lo} and {hi}.")
         if name == "water" and old.get(name) is not None and old[name] != value:
@@ -46,20 +46,19 @@ def log_day(date, mood=None, sleep=None, energy=None, notes=None, append_notes=F
             changes.append("notes")
 
     if not changes and not overwrites:
-        if any(v is not None for v in (mood, sleep, energy, notes, water, productivity)):
+        if any(v is not None for v in (notes, sleep, water)):
             return Result(f"Nothing to change: {nice_day(day)} already has those values.")
-        raise ToolError("Give at least one of mood, sleep, energy, productivity, water or notes.")
+        raise ToolError("Give at least one of notes" + (", sleep" if store.tracks_sleep() else "")
+                        + (", water" if store.tracks_water() else "") + ".")
 
     summary = f"{nice_day(day)} log: " + ", ".join(overwrites + changes)
     if overwrites and not confirmed:
         return Result(
             "",
-            pending=Pending(summary, lambda: log_day(date, mood, sleep, energy, notes, append_notes, True, water,
-                                                    productivity)),
+            pending=Pending(summary, lambda: log_day(date, notes, append_notes, True, sleep, water)),
         )
     with store.db() as conn:
-        store.save_entry(conn, day, new["mood"], new["sleep"], new["energy"], new["notes"], new["water"],
-                         new["productivity"])
+        store.save_entry(conn, day, new["notes"], new["sleep"], new["water"])
     return Result(f"Saved. {summary}.", changed=True)
 
 
@@ -155,17 +154,21 @@ def query_entries(start_date, end_date):
     first, last = _date_range(start_date, end_date)
     entries = {e["date"]: e for e in store.entries_between(first, last).to_dict("records")}
     ticks = store.habit_ticks_between(first, last)
+    sleep_on, water_on = store.tracks_sleep(), store.tracks_water()
     lines = []
     for day in sorted(set(entries) | set(ticks)):
         e = entries.get(day, {})
-        parts = [f"{k} {e[k]}" for k in ("mood", "sleep", "energy", "productivity") if e.get(k) is not None]
-        if e.get("water") is not None:
+        parts = []
+        if sleep_on and e.get("sleep") is not None:
+            parts.append(f"sleep {e['sleep']:g} h")
+        if water_on and e.get("water") is not None:
             parts.append(f"water {e['water']:g} L")
         if e.get("notes"):
             parts.append(f"notes: “{e['notes']}”")
         if ticks.get(day):
             parts.append("habits: " + ", ".join(ticks[day]))
-        lines.append(f"- {day} ({nice_day(day)}): " + "; ".join(parts))
+        if parts:
+            lines.append(f"- {day} ({nice_day(day)}): " + "; ".join(parts))
     return Result("\n".join(lines) or f"Nothing logged between {first} and {last}.")
 
 
@@ -183,11 +186,12 @@ def get_stats(period="30d", today=None):
     hours = {track: ", ".join(f"{k} {v:g}h" for k, v in sorted(h.items(), key=lambda kv: -kv[1])) or "none"
              for track, h in s["timetable_hours"].items()}
     habits = ", ".join(f"{k} {v:g}%" for k, v in s["habit_completion_pct"].items()) or "no habits"
+    averages = ", ".join(([f"sleep {s['avg_sleep']}h"] if store.tracks_sleep() else [])
+                         + ([f"water {s['avg_water']} L/day"] if store.tracks_water() else []))
+    averages = f"Averages: {averages}\n" if averages else ""
     return Result(
         f"{s['start']} to {s['end']} ({s['days']} days, {s['days_logged']} logged)\n"
-        f"Averages (out of 10): mood {s['avg_mood']}, energy {s['avg_energy']}, productivity {s['avg_productivity']}; "
-        f"sleep {s['avg_sleep']}h, "
-        f"water {s['avg_water']} L/day\n"
+        f"{averages}"
         f"Habit completion: {habits}\n"
         f"Timetable (only the {s['days_confirmed']} confirmed days of {s['days']}; unconfirmed days are only assumed) "
         f"plan hours: {hours['plan']}\n"

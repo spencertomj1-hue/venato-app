@@ -338,8 +338,8 @@ def trends(first):
     df = pd.DataFrame(rows)
     df["Week"] = df["week"].map(lambda w: regional.day_month(w, weekday=False))
     charts = [("Plan followed (%)", "followed_pct"), ("Hours logged", "actual_hours")]
-    if blocks.is_on("log"):
-        charts += [("Avg mood", "mood"), ("Avg sleep (h)", "sleep")]
+    if blocks.is_on("log") and store.tracks_sleep():
+        charts += [("Avg sleep (h)", "sleep")]
     charts = [(t, c) for t, c in charts if df[c].notna().sum() >= 2]
     if not charts:
         return

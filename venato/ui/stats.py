@@ -1,7 +1,7 @@
 """
 The Review page. Week: one week's review in three columns that fit the window (ui/review.py render),
 with a ‹ week › stepper. Trends: the last 8 weeks, then time planned vs done and (with Daily Log on)
-mood, energy, productivity, sleep, water and habits over a period, then anything blocks add (EXTRAS).
+sleep and water (when switched on) and habits over a period, then anything blocks add (EXTRAS).
 """
 
 from datetime import timedelta
@@ -130,47 +130,43 @@ def _charts():
     st.caption(f"Timetable time is counted from the {stats['days_confirmed']} of {stats['days']} days you've "
                "confirmed. Confirm a day on the Timetable, or from Home's end-of-day prompt.")
 
-    if not blocks.is_on("log"):             # mood, sleep, water and habits are Daily Log's
+    if not blocks.is_on("log"):             # sleep, water and habits are Daily Log's
         return
 
     entries = entries_between(stats["start"], stats["end"])
     entries["date"] = pd.to_datetime(entries["date"])
-    for col in ("mood", "sleep", "energy", "productivity", "water"):
+    sleep_on, water_on = store.tracks_sleep(), store.tracks_water()
+    for col in ("sleep", "water"):
         entries[col] = pd.to_numeric(entries[col]) if col in entries else pd.Series(dtype=float)
 
     # --- Averages ---
     def fmt(value, unit=""):
         return f"{value:.1f}{unit}" if value is not None else "–"
 
-    a, b, c, p, d = st.columns(5)
-    a.metric("Avg mood", fmt(stats["avg_mood"], "/10"))
-    b.metric("Avg sleep", fmt(stats["avg_sleep"], " h"))
-    c.metric("Avg energy", fmt(stats["avg_energy"], "/10"))
-    p.metric("Avg productivity", fmt(stats["avg_productivity"], "/10"))
-    d.metric("Avg water", regional.water_text(None if stats["avg_water"] is None else round(stats["avg_water"], 1)))
+    shown = [m for m, on in (("sleep", sleep_on), ("water", water_on)) if on]
+    for col, m in zip(st.columns(len(shown)) if shown else [], shown):
+        if m == "sleep":
+            col.metric("Avg sleep", fmt(stats["avg_sleep"], " h"))
+        else:
+            col.metric("Avg water", regional.water_text(None if stats["avg_water"] is None else round(stats["avg_water"], 1)))
 
     # --- Line charts ---
     if entries.empty:
-        st.info("No entries in this period yet.")
-    else:
+        if shown:
+            st.info("No entries in this period yet.")
+    elif shown:
         axis, xscale = _date_axis(stats)
 
-        # Mood, energy and productivity share a 1-10 scale, so they go on the same chart.
-        chart = kit.line_chart(entries, "date", ["mood", "energy", "productivity"], y_title="Score (1-10)",
-                               title="Mood, energy & productivity", x_axis=axis, x_scale=xscale,
-                               y_scale=alt.Scale(domain=[0.5, 10.5]), y_axis=alt.Axis(values=list(range(1, 11)),
-                                                                                       format="d", title="Score (1-10)", labelOverlap=False))
-        kit.show(chart)
-
         # Whole hours from 0, so a few nights of similar sleep don't zoom into 7.1, 7.2...
-        top = max(10, int(entries["sleep"].max() if entries["sleep"].notna().any() else 0) + 2)
-        chart = kit.line_chart(entries, "date", "sleep", title="Sleep", x_axis=axis, x_scale=xscale, y_scale=alt.Scale(domain=[0, top]),
-                               y_axis=alt.Axis(values=list(range(0, top + 1, 1 if top <= 12 else 2)), format="d",
-                                               title="Hours"))
-        kit.show(chart)
+        if sleep_on:
+            top = max(10, int(entries["sleep"].max() if entries["sleep"].notna().any() else 0) + 2)
+            chart = kit.line_chart(entries, "date", "sleep", title="Sleep", x_axis=axis, x_scale=xscale, y_scale=alt.Scale(domain=[0, top]),
+                                   y_axis=alt.Axis(values=list(range(0, top + 1, 1 if top <= 12 else 2)), format="d",
+                                                   title="Hours"))
+            kit.show(chart)
 
         water = entries.dropna(subset=["water"]).assign(water=lambda df: df["water"].map(regional.water_out))
-        if not water.empty:
+        if water_on and not water.empty:
             chart = kit.bar_chart(water, "date", "water", title="Water", x_axis=axis, x_scale=xscale,
                                   y_axis=alt.Axis(title=regional.water_unit().capitalize()), colour=kit.water(),
                                   size=max(4, min(24, 620 // max(stats["days"], 1))))

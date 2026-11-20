@@ -1,5 +1,5 @@
 """
-Venato — a small local app for logging mood, sleep, energy and habits.
+Venato — a small local app for keeping a journal, habits, goals and a timetable.
 
 Run with:   streamlit run app.py
 All data is stored in life.db (SQLite) next to this file.

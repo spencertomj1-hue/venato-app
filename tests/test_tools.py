@@ -24,25 +24,28 @@ def blocks(store, track="plan", day=DAY):
 # --- log_day ---
 
 def test_log_day_new_entry_saves_straight_away(tools, store):
-    r = tools.log_day(DAY, mood=4, sleep=7.5)
+    store.set_tracking(sleep=True)
+    r = tools.log_day(DAY, notes="ok", sleep=7.5)
     assert r.changed and r.pending is None
-    assert store.get_entry(DAY)["mood"] == 4 and store.get_entry(DAY)["sleep"] == 7.5
+    assert store.get_entry(DAY)["notes"] == "ok" and store.get_entry(DAY)["sleep"] == 7.5
 
 
 def test_log_day_keeps_untouched_fields(tools, store):
-    tools.log_day(DAY, mood=4, sleep=7.5, notes="ok")
-    tools.log_day(DAY, energy=3)
+    store.set_tracking(sleep=True, water=True)
+    tools.log_day(DAY, sleep=7.5, notes="ok")
+    tools.log_day(DAY, water=2)
     e = store.get_entry(DAY)
-    assert (e["mood"], e["sleep"], e["energy"], e["notes"]) == (4, 7.5, 3, "ok")
+    assert (e["sleep"], e["water"], e["notes"]) == (7.5, 2, "ok")
 
 
 def test_log_day_overwrite_needs_confirm(tools, store):
-    tools.log_day(DAY, mood=4)
-    r = tools.log_day(DAY, mood=2)
-    assert r.pending and "mood 4 → 2" in r.pending.summary
-    assert store.get_entry(DAY)["mood"] == 4           # not applied yet
+    store.set_tracking(sleep=True)
+    tools.log_day(DAY, sleep=4)
+    r = tools.log_day(DAY, sleep=6)
+    assert r.pending and "sleep 4.0 → 6.0" in r.pending.summary
+    assert store.get_entry(DAY)["sleep"] == 4           # not applied yet
     done = r.pending.run()
-    assert done.changed and store.get_entry(DAY)["mood"] == 2
+    assert done.changed and store.get_entry(DAY)["sleep"] == 6
 
 
 def test_log_day_append_notes_needs_no_confirm(tools, store):
@@ -57,15 +60,27 @@ def test_log_day_replacing_notes_needs_confirm(tools, store):
     assert tools.log_day(DAY, notes="Cinema").pending
 
 
-def test_log_day_validation(tools):
+def test_log_day_validation(tools, store):
+    store.set_tracking(sleep=True)
     with pytest.raises(tools.ToolError):
-        tools.log_day(DAY, mood=11)
+        tools.log_day(DAY, sleep=30)
     with pytest.raises(tools.ToolError):
-        tools.log_day(DAY, productivity=0)
-    with pytest.raises(tools.ToolError):
-        tools.log_day("tomorrow", mood=3)
+        tools.log_day("tomorrow", notes="x")
     with pytest.raises(tools.ToolError):
         tools.log_day(DAY)
+    with pytest.raises(TypeError):
+        tools.log_day(DAY, mood=3)                       # mood, energy and productivity are gone
+    with pytest.raises(TypeError):
+        tools.log_day(DAY, energy=3)
+    with pytest.raises(TypeError):
+        tools.log_day(DAY, productivity=3)
+
+
+def test_log_day_refuses_sleep_and_water_when_off(tools, store):
+    for field in ("sleep", "water"):
+        with pytest.raises(tools.ToolError, match="off"):
+            tools.log_day(DAY, **{field: 1})
+    assert store.get_entry(DAY) == {}
 
 
 # --- habits ---
@@ -169,7 +184,8 @@ def test_delete_block(tools, store):
 
 def test_queries(tools, store):
     tools.add_block(DAY, "plan", "09:00", "11:00", "Lecture")
-    tools.log_day(DAY, mood=4, notes="good")
+    store.set_tracking(sleep=True)
+    tools.log_day(DAY, sleep=6, notes="good")
     tools.add_habit("Read")
     tools.set_habit(DAY, "Read", True)
     assert "Lecture (Classes)" in tools.query_blocks("2026-10-26", "2026-11-01").text
@@ -177,9 +193,9 @@ def test_queries(tools, store):
     assert "Classes" not in tools.get_stats("7d", today=date(2026, 10, 29)).text     # not confirmed yet
     store.mark_confirmed(DAY)
     q = tools.query_entries("2026-10-26", "2026-11-01").text
-    assert "mood 4" in q and "habits: Read" in q
+    assert "sleep 6 h" in q and "habits: Read" in q and "mood" not in q
     s = tools.get_stats("7d", today=date(2026, 10, 29)).text
-    assert "mood 4.0" in s and "Classes 2h" in s
+    assert "sleep 6.0h" in s and "Classes 2h" in s and "mood" not in s and "energy" not in s
     assert "Life:" in tools.list_categories().text
     with pytest.raises(tools.ToolError):
         tools.get_stats("fortnight")
@@ -378,9 +394,10 @@ def test_plan_time_spaces_sittings_out(tools, store):
 
 
 def test_log_water(tools, store):
-    tools.log_day(DAY, mood=4)
+    store.set_tracking(sleep=True, water=True)
+    tools.log_day(DAY, notes="hi")
     r = tools.log_day(DAY, water=1.5)
-    assert r.changed and store.get_entry(DAY)["water"] == 1.5 and store.get_entry(DAY)["mood"] == 4
+    assert r.changed and store.get_entry(DAY)["water"] == 1.5 and store.get_entry(DAY)["notes"] == "hi"
     r = tools.log_day(DAY, water=2)                      # a running total: updates straight away
     assert not r.pending and "water 1.5 → 2 L" in r.text and store.get_entry(DAY)["water"] == 2
     tools.log_day(DAY, sleep=7)                          # other fields leave water alone

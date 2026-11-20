@@ -17,7 +17,7 @@ def test_cached_stats_see_new_log(store):
     today = store.local_today()
     assert cached_stats(7)["days_logged"] == 0
     with store.db() as conn:
-        store.save_entry(conn, today.isoformat(), 7, 8, 6, "ok")
+        store.save_entry(conn, today.isoformat(), "ok")
     assert cached_stats(7)["days_logged"] == 1      # not the remembered answer
 
 

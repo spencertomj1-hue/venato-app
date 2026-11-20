@@ -5,7 +5,7 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
-LOG_TILES = ("Avg mood", "Avg sleep", "Avg energy", "Avg productivity", "Avg water", "Habits on target")
+LOG_TILES = ("Avg sleep", "Avg water", "Habits on target")
 
 
 def _seed(store):
@@ -68,7 +68,7 @@ def test_log_on_shows_it(store, monkeypatch):
     assert "1 journal entry ›" in popup                       # the week's journal, behind a link
     assert "1 journal entry ›" in _review_page(at, "Week")
     page = _review_page(at)
-    assert "Avg mood" in page
+    assert not any(t in LOG_TILES for t in page)
     assert sorted(r["kind"] for r in store.search("stretch")) == ["Habit", "Journal"]
     _search(store, at, "stretch")
     assert [b for b in at.button if b.key and "Habit" in b.key]
@@ -78,5 +78,16 @@ def test_log_on_shows_it(store, monkeypatch):
 
 def test_log_on_with_nothing_logged_says_so(store):
     store.save_settings(blocks=["log"])
+    store.set_tracking(sleep=True, water=True)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    assert "No entries in this period yet." in _review_page(at)
+    page = _review_page(at)
+    assert "No entries in this period yet." in page and "Avg sleep" in page and "Avg water" in page
+
+
+def test_sleep_and_water_tiles_follow_their_switches(store):
+    store.save_settings(blocks=["log"])
+    store.set_tracking(sleep=True, water=False)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    page = _review_page(at)
+    assert "Avg sleep" in page and "Avg water" not in page
+    assert not any(w in t.lower() for t in page for w in ("mood", "energy", "productivity"))

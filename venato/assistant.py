@@ -198,7 +198,20 @@ def _block_prompts():
     return f"\n{text}\n" if text else ""
 
 
+def _log_extras():
+    """The Daily Log lines about sleep and water: only when they are switched on."""
+    sleep, water = store.tracks_sleep(), store.tracks_water()
+    measures = (["sleep hours"] if sleep else []) + (["water drunk in litres"] if water else [])
+    text = ", plus " + " and ".join(measures) + " (log_day)." if measures else "."
+    if water:
+        text += (f'\n  The user sees water in {regional.water_unit()}; tools take litres ("64 oz" -> water=1.89).'
+                 '\n  "drank 2 litres today" -> water=2; a 500 ml bottle is 0.5; glasses are about 0.25 L.'
+                 '\n  water is the day\'s total: for "another 500 ml", check the day first (query_entries) and add to it.')
+    return text
+
+
 def system_prompt(now=None):
+    log_extras = _log_extras()
     return f"""You are the assistant built into Venato, the user's personal life-tracking app.
 You change their data only through the venato tools. You have no other tools.
 
@@ -206,14 +219,10 @@ Each message starts with a [Now] section: the current date and time, and a snaps
 (timetable, habits, to-dos, deadlines, and more). Use it instead of looking those up, and
 work out relative dates ("tomorrow", "next Tuesday", "last night") from it. Always pass
 dates to tools as YYYY-MM-DD. Weeks start on {store.week_start_name()}. Tools always take 24-hour
-"HH:mm" times and litres; the user sees {regional.clock()} times and water in {regional.water_unit()}, so
-use those when talking to them (e.g. "64 oz" -> water=1.89).
+"HH:mm" times; the user sees {regional.clock()} times, so use those when talking to them.
 
 What the app tracks
-- Daily log: per date, mood 1-10, energy 1-10, productivity 1-10 (self-rated), sleep hours, water drunk (litres)
-  and the day's notes,
-  which are its journal entry (log_day for the numbers; write_journal for the notes). "drank 2 litres today" -> water=2; a 500 ml bottle is 0.5; glasses are about 0.25 L.
-  water is the day's total: for "another 500 ml", check the day first (query_entries) and add to it.
+- Daily log: a journal. Per date, the day's notes are its journal entry (write_journal, or log_day's notes){log_extras}
 - Habits: named habits ticked per day, with streaks (set_habit, add_habit, list_habits). A habit is
   either every day or has a weekly target ("gym 3 times a week" -> add_habit("Gym", times_per_week=3),
   or set_habit_target for an existing one); weekly ones count ticks per week.
@@ -382,12 +391,9 @@ TODO_REF = _schema(["todo"], todo={"type": "string", "description": "the to-do's
 GOAL_REF = {"goal": {"type": "string", "description": "the goal's title (or part of it), or its id"}}
 
 TOOL_SPECS = [
-    ("log_day", "Set mood/sleep/energy/productivity/water/notes for a date (scores 1-10). Fields not given are left as they are.",
+    ("log_day", "Set the notes (and sleep or water, when switched on) for a date. Fields not given are left as they are.",
      _schema(["date"], date=DATE,
-             mood={"type": "integer", "minimum": 1, "maximum": 10},
              sleep={"type": "number", "description": "hours slept"},
-             energy={"type": "integer", "minimum": 1, "maximum": 10},
-             productivity={"type": "integer", "minimum": 1, "maximum": 10, "description": "how productive the day felt"},
              water={"type": "number", "description": "litres of water drunk that day (the total)"},
              notes={"type": "string"},
              append_notes={"type": "boolean", "description": "add to existing notes instead of replacing"}),
@@ -571,7 +577,18 @@ def _make_server(state):
 def tool_specs():
     """The built-in tools, plus those of every switched-on block."""
     from venato import blocks
-    return TOOL_SPECS + [spec for b in blocks.enabled() for spec in b.tools]
+    return [_log_day_spec(spec) for spec in TOOL_SPECS] + [spec for b in blocks.enabled() for spec in b.tools]
+
+
+def _log_day_spec(spec):
+    """log_day without the sleep and water fields that are switched off (Settings -> Daily Log)."""
+    if spec[0] != "log_day":
+        return spec
+    off = [k for k, on in (("sleep", store.tracks_sleep()), ("water", store.tracks_water())) if not on]
+    props = {k: v for k, v in spec[2]["properties"].items() if k not in off}
+    return (spec[0], "Set a day's journal notes" + ("" if off == ["sleep", "water"] else " and " + " and ".join(
+        k for k in ("sleep", "water") if k not in off)) + " for a date. Fields not given are left as they are.",
+        {**spec[2], "properties": props}, *spec[3:])
 
 
 def allowed_tools():

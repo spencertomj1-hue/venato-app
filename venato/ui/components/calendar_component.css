@@ -65,6 +65,10 @@ button { font: inherit; color: inherit; }
 .num { display: flex; align-items: center; gap: 4px; font-size: 0.85rem; font-weight: 600; }
 .cell.today .num { color: var(--accent); }
 .note svg { width: 11px; height: 11px; fill: none; stroke: var(--muted); stroke-width: 2; }
+.cell.has-entry .num .note svg { stroke: var(--accent); }
+.cell.has-entry { box-shadow: inset 0 -3px 0 var(--accent); }   /* a day with a journal entry */
+.cell.has-entry.selected { box-shadow: inset 0 0 0 2px var(--accent); }
+.cal-key .stat.note svg { fill: none; stroke: var(--accent); }
 
 .stats { display: grid; grid-template-columns: auto auto; justify-content: start; gap: 4px 14px; }
 .stat {
@@ -76,9 +80,7 @@ button { font: inherit; color: inherit; }
   color: var(--muted);
 }
 .stat svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.stat.mood { color: color-mix(in srgb, var(--c, var(--muted)) 50%, var(--text)); font-weight: 600; }   /* readable in both modes */
 .stat.sleep svg { fill: currentColor; stroke: none; }
-.stat.energy svg { fill: currentColor; stroke: none; }
 .stat.water svg { fill: currentColor; stroke: none; }
 .cal-key .stat { font-size: 0.75rem; gap: 3px; }                 /* the key stays small; the days' numbers are big */
 .cal-key .stat svg { width: 12px; height: 12px; }

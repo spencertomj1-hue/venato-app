@@ -1,9 +1,9 @@
 """
 Daily Log page (the day's log and habits) and Home's habits.
 
-Daily log: a month calendar (calendar_component.js/.css) showing each day's
-mood, sleep, energy, productivity and water; clicking a day shows its notes, and the form below
-saves the entry for the selected day.
+Daily log: a journal. The page leads with the selected day's journal box (today's prompt), with sleep
+and water beside it when switched on (Settings -> Daily Log). A month calendar (calendar_component.js/.css)
+marks the days that have an entry; clicking a day opens it. Habits follow.
 Habits: tick habits for a day, see streaks, add/remove habits.
 """
 
@@ -38,7 +38,7 @@ PROMPTS = [
     "What's on your mind right now?",
     "What did you learn today?",
     "What are you grateful for?",
-    "What drained your energy today? What gave you energy?",
+    "What drained you today? What gave you a lift?",
     "What would make tomorrow a good day?",
     "Who did you enjoy spending time with?",
     "What's something you're putting off, and what's the first small step?",
@@ -86,78 +86,95 @@ def page_daily_log():
 
 @st.fragment
 def _day_card():
-    """The month calendar, the selected day's card, its habits and the form to save it: a fragment, so picking
-    a day or a month redraws just this. Saving reruns the app (Past entries below shows the journal)."""
+    """The selected day's journal box (with sleep and water beside it when on), the month calendar and the
+    day's habits: a fragment, so picking a day or a month redraws just this. Saving reruns the app (Past
+    entries below shows the journal)."""
     today = store.local_today()
     selected = st.session_state.setdefault("log_day", today)
     month = st.session_state.setdefault("log_month", today.replace(day=1))
+    sleep_on, water_on = store.tracks_sleep(), store.tracks_water()
+    d = selected.isoformat()
+    entry = store.get_entry(d)
 
-    # --- Month calendar (6 weeks from the Monday on/before the 1st) ---
+    # --- The journal box, for the selected day ---
+    st.subheader(nice_date(selected), anchor=False)
+    if selected > today:
+        st.info("You can't log a day that hasn't happened yet. Pick today or an earlier day.")
+    else:
+        _entry_form(selected, d, entry, sleep_on, water_on)
+
+    # --- Month calendar (6 weeks from the Monday on/before the 1st), marking days with an entry ---
     first = store.week_start_of(month)
     entries = store.entries_between(first.isoformat(), (first + timedelta(days=41)).isoformat())
+    days = calendar_days(entries.to_dict("records"), sleep_on, water_on)
     _calendar_component(
         data={
             "month": f"{month:%Y-%m}",
             "today": today.isoformat(),
             "selected": selected.isoformat(),
             "weekStart": regional.week_start(), "weekdays": regional.weekday_names(), "waterUnit": regional.water_short(),
-            "days": {e["date"]: {k: e.get(k) for k in ("mood", "sleep", "energy", "productivity", "notes")}
-                     | {"water": regional.water_out(e["water"])}
-                     for e in entries.to_dict("records")},
+            "showSleep": sleep_on, "showWater": water_on,
+            "days": days,
         },
         key="log_calendar", on_select_change=_on_select, on_nav_change=_on_month,
     )
 
-    # --- The selected day ---
-    d = selected.isoformat()
-    entry = store.get_entry(d)
-    with st.container(border=True):
-        st.subheader(nice_date(selected), anchor=False)
-        if entry:
-            a, b, c, p, w = st.columns(5)
-            a.metric("Mood", f"{entry['mood']}/10" if entry.get("mood") else "–")
-            b.metric("Sleep", f"{entry['sleep']:g} h" if entry.get("sleep") is not None else "–")
-            c.metric("Energy", f"{entry['energy']}/10" if entry.get("energy") else "–")
-            p.metric("Productivity", f"{entry['productivity']}/10" if entry.get("productivity") else "–")
-            w.metric("Water", regional.water_text(entry.get("water")))
-            st.markdown(entry["notes"].replace("\n", "  \n") if entry.get("notes") else "*No journal entry.*")
-        else:
-            st.caption("Nothing logged for this day yet.")
-
     _habits_for(selected, today)
 
-    # --- Save an entry for the selected day ---
-    if selected > today:
-        st.info("You can't log a day that hasn't happened yet. Pick today or an earlier day.")
-        return
-    st.subheader("Save entry", anchor=False)
+
+def calendar_days(entries, sleep_on, water_on):
+    """What the calendar draws for each day: whether it has a journal entry, and sleep / water when switched on."""
+    days = {}
+    for e in entries:
+        day = {"notes": bool((e.get("notes") or "").strip())}
+        if sleep_on:
+            day["sleep"] = e.get("sleep")
+        if water_on:
+            day["water"] = regional.water_out(e.get("water"))
+        days[e["date"]] = day
+    return days
+
+
+def _entry_form(selected, d, entry, sleep_on, water_on):
     # Widget keys include the date, so the form reloads when you pick another day, and a hash of the
     # saved entry, so it shows what Claude just wrote instead of a stale draft.
     v = f"{d}_{hashlib.sha1(repr(sorted(entry.items())).encode('utf-8')).hexdigest()[:8]}"
-    with st.form(f"entry_form_{v}"):
-        mood = st.slider("Mood", 1, 10, int(entry.get("mood") or 5), key=f"mood_{v}")
-        sleep = st.number_input(
-            "Sleep (hours)", 0.0, 24.0, float(entry.get("sleep") or 7.0), step=0.5, key=f"sleep_{v}"
-        )
-        energy = st.slider("Energy", 1, 10, int(entry.get("energy") or 5), key=f"energy_{v}")
-        productivity = st.slider("Productivity", 1, 10, int(entry.get("productivity") or 5), key=f"prod_{v}",
-                                 help="How productive did the day feel?")
-        litres = regional.water_unit() == "litres"
-        water = st.number_input(f"Water ({regional.water_unit()})", 0.0, 15.0 if litres else 500.0,
-                                regional.water_out(entry.get("water")),
-                                step=0.25 if litres else 4.0, format="%.2f" if litres else "%.0f",
-                                placeholder="e.g. 2", key=f"water_{v}_{regional.water_unit()}", help="Leave empty if you didn't track it.")
-        notes = st.text_area("Journal", entry.get("notes") or "", height=260, key=f"notes_{v}",
-                             placeholder=prompt_for(selected), help="The day's notes: write as much as you like.")
+    with st.form(f"entry_form_{v}", border=False):
+        extras = sleep_on or water_on
+        journal, side = st.columns([3, 1], gap="medium") if extras else (st.container(), None)
+        notes = journal.text_area("Journal", entry.get("notes") or "", height=260, key=f"notes_{v}",
+                                  placeholder=prompt_for(selected), help="The day's notes: write as much as you like.")
+        sleep = water = None
+        if side is not None:
+            with side:
+                if sleep_on:
+                    sleep = st.number_input("Sleep (hours)", 0.0, 24.0, entry.get("sleep"), step=0.5,
+                                            placeholder="e.g. 7.5", key=f"sleep_{v}", help="Leave empty if you didn't track it.")
+                if water_on:
+                    litres = regional.water_unit() == "litres"
+                    water = st.number_input(f"Water ({regional.water_unit()})", 0.0, 15.0 if litres else 500.0,
+                                            regional.water_out(entry.get("water")),
+                                            step=0.25 if litres else 4.0, format="%.2f" if litres else "%.0f",
+                                            placeholder="e.g. 2", key=f"water_{v}_{regional.water_unit()}",
+                                            help="Leave empty if you didn't track it.")
         if st.form_submit_button(f"Save {nice_date(selected)}", type="primary"):
-            with store.db() as conn:
-                if entry:
-                    undo.checkpoint(f"Updated the log for {nice_date(selected)}")
-                store.save_entry(conn, d, mood, sleep, energy, notes.strip() or None, regional.water_in(water), productivity)
-            st.toast(f"Saved {nice_date(selected)}.")
-            st.rerun()   # refresh the calendar
-    if entry:
-        st.caption("An entry already exists for this day — saving will update it.")
+            text = notes.strip() or None
+            fields = {"notes": text}
+            if sleep_on:
+                fields["sleep"] = sleep
+            if water_on:
+                fields["water"] = regional.water_in(water)
+            if not entry and not any(x is not None for x in fields.values()):
+                st.toast("Nothing to save yet.")
+            else:
+                with store.db() as conn:
+                    if entry:
+                        undo.checkpoint(f"Updated the log for {nice_date(selected)}")
+                    store.save_entry(conn, d, **fields)
+                st.toast(f"Saved {nice_date(selected)}.")
+                st.rerun()   # refresh the calendar
+    if entry and (entry.get("notes") or entry.get("sleep") is not None or entry.get("water") is not None):
+        st.caption("An entry already exists for this day: saving will update it.")
 
 
 def _open_day(day):
