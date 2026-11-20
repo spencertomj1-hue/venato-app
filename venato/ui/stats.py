@@ -14,7 +14,7 @@ import streamlit as st
 from venato import blocks, regional
 from venato import store
 from venato.store import entries_between, get_stats
-from venato.ui import appearance, kit
+from venato.ui import appearance, kit, timetable_tools
 from venato.ui import review as review_ui
 
 EXTRAS = []     # more sections, as functions drawing them (a block can add one: the private copy's Uni stats)
@@ -125,6 +125,8 @@ def _charts():
     if rows:
         kit.show(kit.bar_chart(pd.DataFrame(rows), "Category", "Hours", color="Track", title="Time: planned vs done",
                                labels=".1f", palette={"Planned": kit.muted(), "Done": review_ui.regional_accent()}))
+    if not rows and store.load_categories().empty:
+        timetable_tools.no_categories("stats_addcat", "You have no categories yet, so there's no time to compare.")
     st.caption(f"Timetable time is counted from the {stats['days_confirmed']} of {stats['days']} days you've "
                "confirmed. Confirm a day on the Timetable, or from Home's end-of-day prompt.")
 

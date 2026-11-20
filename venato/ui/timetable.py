@@ -292,6 +292,9 @@ def render_page():
     from venato.ui import goal_time, timetable_tools
     ctx = pace.Ctx()                             # one look at the timetable for the grid, the panel and the bar
     sugg = goal_time.suggestions_for(monday, ctx)
+    if store.load_categories().empty:
+        timetable_tools.no_categories("tt_addcat", "You have no categories yet. Add one (like Study or Exercise), "
+                                      "then paint it onto the week.")
     grid, panel = st.columns([4, 1.3], gap="medium")     # the panel stacks under the grid on narrow screens
     with grid:
         render_grid([monday + timedelta(days=i) for i in range(7)], suggestions=sugg)

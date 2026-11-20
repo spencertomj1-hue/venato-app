@@ -47,11 +47,11 @@ def home_keys(at):
 def test_home_skips_empty_widgets(store):
     """A Home widget with nothing to show isn't drawn at all: no "No habits yet", no "No marks yet",
     no empty Focus box, no Deadlines heading with nothing under it. Once there's something, it shows."""
-    store.save_settings(blocks=["timetable", "goals", "log", "stats", "focus", "grades", "money", "workouts"])
+    store.save_settings(blocks=["timetable", "goals", "log", "stats", "focus", "grades"])
     at = app()
     assert not at.exception
     shown = [m.value for m in at.markdown]
-    for title in ("**Habits**", "**Focus**", "**Grades**", "**Money**", "**Workouts**", "**Deadlines**",
+    for title in ("**Habits**", "**Focus**", "**Grades**", "**Deadlines**",
                   "**Needs you this week**"):
         assert title not in shown, title
     assert not [c for c in at.caption if "No habits yet" in c.value or "No marks yet" in c.value]

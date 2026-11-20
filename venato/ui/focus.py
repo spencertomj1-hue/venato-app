@@ -132,8 +132,12 @@ def _controls():
                      format_func=lambda m: f"{m} min", label_visibility="collapsed")
     with st.container(horizontal_alignment="center"):
         with st.popover("Timetable category", icon=":material/palette:", type="tertiary"):
-            st.selectbox("Timetable category", _category_options(), key="focus_cat",
-                         help="Which category its block in the Actual column gets")
+            if store.load_categories().empty:
+                from venato.ui import timetable_tools
+                timetable_tools.no_categories("focus_addcat", "Add a category to put your sessions in the timetable.")
+            else:
+                st.selectbox("Timetable category", _category_options(), key="focus_cat",
+                             help="Which category its block in the Actual column gets")
 
 
 def _start_form(prefix):

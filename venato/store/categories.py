@@ -7,9 +7,9 @@ from .database import _read, db
 from .settings import load_settings
 
 
-# The categories a new install starts with: generic, and editable by asking Claude.
+# Examples to suggest when someone adds their first categories. A new install starts with none.
 # (id, name, colour, text colour, group) in key order.
-DEFAULT_CATEGORIES = [
+EXAMPLE_CATEGORIES = [
     ("sleep", "Sleep", "#D0D0D0", None, "Life"),
     ("meals", "Meals", "#F7C7AC", None, "Life"),
     ("exercise", "Exercise", "#FFC000", None, "Life"),
@@ -26,12 +26,12 @@ DEFAULT_CATEGORIES = [
 ]
 
 
-# Outlook events use this category unless settings.json says otherwise ("outlook_category").
+# Outlook events use this category when there is one, unless settings.json says otherwise ("outlook_category").
 DEFAULT_OUTLOOK_CATEGORY = "classes"
 
 
-# Typing one of these activities picks its category automatically.
-DEFAULT_LABEL_MAP = {
+# Activities that could default to one of the examples above (suggestions only; nothing is saved).
+EXAMPLE_LABEL_MAP = {
     "Sleep": "sleep", "Breakfast": "meals", "Lunch": "meals", "Dinner": "meals",
     "Gym": "exercise", "Run": "exercise", "Lecture": "classes", "Seminar": "classes",
     "Homework": "study", "Revision": "study", "Commute": "commute",
@@ -104,8 +104,9 @@ def resolve_category(label=None, category=None):
 def outlook_category(title):
     """
     Category for Outlook events: settings.json "outlook_category" (set by asking Claude),
-    else the default, else the first category. (The title is kept for future rules.)
+    else the default, else the first category. With no categories at all: None (the event shows grey).
+    (The title is kept for future rules.)
     """
     wanted = load_settings().get("outlook_category") or DEFAULT_OUTLOOK_CATEGORY
     ids = list(load_categories()["id"])
-    return wanted if wanted in ids else (ids[0] if ids else wanted)
+    return wanted if wanted in ids else (ids[0] if ids else None)

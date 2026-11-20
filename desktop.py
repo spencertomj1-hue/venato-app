@@ -120,7 +120,7 @@ def check():
     data = Path(os.environ.setdefault("VENATO_DATA_DIR", tempfile.mkdtemp(prefix="venato-check-")))
     data.mkdir(parents=True, exist_ok=True)
     from venato import blocks
-    every_block = [b.key for b in blocks.all_blocks()]       # every page, Money and Workouts included
+    every_block = [b.key for b in blocks.all_blocks()]       # every page
     (data / "settings.json").write_text(json.dumps({"wizard_done": True, "blocks": every_block}), encoding="utf-8")
     try:
         check_arrow()

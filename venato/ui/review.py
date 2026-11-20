@@ -273,7 +273,11 @@ def _time(s, key):
     with st.container(border=True, key=f"{key}_time", height=_fill(key)):
         _title("Time", f"planned vs done · {s['days_confirmed']} of 7 confirmed")
         if not rows:
-            st.caption("No time on the timetable this week yet.")
+            if store.load_categories().empty:
+                from venato.ui import timetable_tools
+                timetable_tools.no_categories(f"{key}_addcat", "You have no categories yet, so there's no time to compare.")
+            else:
+                st.caption("No time on the timetable this week yet.")
             return
         top = 1.03 * max(max(t["plan"], t["actual"]) for t in rows) or 1     # room for a tick at the end
         out = []

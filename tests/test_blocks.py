@@ -17,7 +17,7 @@ def _blocks():
 def test_registry_and_defaults(store):
     b = _blocks()
     keys = [x.key for x in b.all_blocks()]
-    assert {"timetable", "goals", "log", "focus", "grades", "money", "workouts", "stats"} <= set(keys)
+    assert {"timetable", "goals", "log", "focus", "grades", "stats"} <= set(keys)
     assert len(keys) == len(set(keys))
     settings = store.load_settings()
     settings.pop("blocks", None)
@@ -28,10 +28,10 @@ def test_registry_and_defaults(store):
 
 def test_switch_order_and_pages(store):
     b = _blocks()
-    b.save(["stats", "timetable", "nonsense", "stats", "money"])   # unknown keys and repeats are dropped
-    assert b.chosen_keys() == ["stats", "timetable", "money"]
-    assert list(b.pages()) == ["Timetable", "Review", "Money"]       # the sidebar keeps its own order
-    assert b.is_on("stats") and not b.is_on("workouts") and not b.is_on("goals")
+    b.save(["stats", "timetable", "nonsense", "stats", "grades"])   # unknown keys and repeats are dropped
+    assert b.chosen_keys() == ["stats", "timetable", "grades"]
+    assert list(b.pages()) == ["Timetable", "Grades", "Review"]       # the sidebar keeps its own order
+    assert b.is_on("stats") and not b.is_on("focus") and not b.is_on("goals")
 
 
 def test_every_block_can_be_switched_off(store):
@@ -46,10 +46,10 @@ def test_every_block_can_be_switched_off(store):
 
 def test_app_follows_the_choice(store):
     b = _blocks()
-    b.save(["money"])
+    b.save(["grades"])
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    assert list(at.sidebar.radio[0].options) == ["Home", "Money", "Settings"]
+    assert list(at.sidebar.radio[0].options) == ["Home", "Grades", "Settings"]
 
 
 def test_settings_tab_switches_blocks(store):
@@ -57,35 +57,35 @@ def test_settings_tab_switches_blocks(store):
     b.save(b.STARTER)
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.sidebar.radio[0].set_value("Settings").run()
-    at.toggle(key="set_block_money").set_value(True).run()
-    assert not at.exception and b.is_on("money")
-    assert "Money" in at.sidebar.radio[0].options
-    at.toggle(key="set_block_money").set_value(False).run()
-    assert not at.exception and not b.is_on("money")
-    assert "Money" not in at.sidebar.radio[0].options
+    at.toggle(key="set_block_grades").set_value(True).run()
+    assert not at.exception and b.is_on("grades")
+    assert "Grades" in at.sidebar.radio[0].options
+    at.toggle(key="set_block_grades").set_value(False).run()
+    assert not at.exception and not b.is_on("grades")
+    assert "Grades" not in at.sidebar.radio[0].options
     at.toggle(key="set_block_timetable").set_value(False).run()       # nothing is always on
     assert not at.exception and not b.is_on("timetable")
     assert "Timetable" not in at.sidebar.radio[0].options
     assert not any(c.value == "Always on" for c in at.caption)
     at.button(key="set_down_goals").click().run()                    # priority order
-    assert b.chosen_keys()[:2] == ["focus", "goals"]
+    assert b.chosen_keys()[:2] == ["stats", "goals"]
 
 
 def test_saved_before_blocks_were_optional_keeps_the_starter(store):
     b = _blocks()
-    store.save_settings(blocks=["money"])                             # an older install's list, no blocks_optional
-    assert b.chosen_keys() == ["money", *b.STARTER]
+    store.save_settings(blocks=["log"])                               # an older install's list, no blocks_optional
+    assert b.chosen_keys() == ["log", "timetable", "goals", "focus", "grades", "stats"]   # the once always-on ones stay
     assert b.get("stats").name == "Review"
-    b.save(["money"])                                                 # once saved now, it's exactly the list
-    assert b.chosen_keys() == ["money"]
+    b.save(["log"])                                                   # once saved now, it's exactly the list
+    assert b.chosen_keys() == ["log"]
 
 
 def test_unknown_saved_keys_ignored(store):
     b = _blocks()
-    b.save(["gone", "no_such_block", "money"])                        # e.g. blocks a later version removed
-    assert b.chosen_keys() == ["money"]
-    store.save_settings(blocks=["gone", "money"])
-    assert b.chosen_keys() == ["money"]
+    b.save(["gone", "no_such_block", "log"])                        # e.g. blocks a later version removed
+    assert b.chosen_keys() == ["log"]
+    store.save_settings(blocks=["gone", "log"])
+    assert b.chosen_keys() == ["log"]
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
 
@@ -96,7 +96,6 @@ def test_existing_install_keeps_log(store):
     settings.pop("blocks", None)
     (store.DATA_DIR / "settings.json").write_text(json.dumps(settings))
     assert b.is_on("log") and all(k in b.chosen_keys() for k in b.STARTER)
-    assert not b.is_on("money") and not b.is_on("workouts")
 
 
 def _install(monkeypatch, **extra):
@@ -146,5 +145,5 @@ def test_review_sections_from_block(store, monkeypatch):
 def test_old_saved_order_keeps_its_order(store):
     """A list saved before blocks were optional: its order stays first, the once always-on ones follow."""
     b = _blocks()
-    store.save_settings(blocks=["timetable", "goals", "stats", "log", "money"])    # saved before Focus and Grades existed
-    assert b.chosen_keys() == ["timetable", "goals", "stats", "log", "money", "focus", "grades"]
+    store.save_settings(blocks=["timetable", "goals", "stats", "log", "grades"])    # saved before Focus and Grades existed
+    assert b.chosen_keys() == ["timetable", "goals", "stats", "log", "grades", "focus"]

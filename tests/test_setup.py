@@ -132,7 +132,7 @@ def test_wizard_shows_on_a_fresh_data_folder_and_finishes(store, monkeypatch):
     assert not at.exception
     assert setup_checks.load_settings()["wizard_done"] is True
     assert at.sidebar.radio[0].value == "Home"                   # the app
-    assert setup_checks.load_settings()["blocks"] == ["timetable", "goals", "focus", "grades", "stats"]   # the starter set
+    assert setup_checks.load_settings()["blocks"] == ["timetable", "goals", "stats", "focus", "log"]   # the starter set
 
     # Reopening the app later doesn't show it again.
     assert AppTest.from_file(APP, default_timeout=60).run().sidebar.radio
@@ -200,7 +200,7 @@ def test_wizard_saves_the_starter_blocks(store):
     at.button(key="wiz_skip").click().run()
     at.button(key="wiz_finish").click().run()
     assert not at.exception and setup_checks.load_settings()["blocks"] == blocks.STARTER
-    assert not blocks.is_on("log") and blocks.is_on("stats")
+    assert blocks.is_on("log") and blocks.is_on("stats") and not blocks.is_on("grades")   # Grades is the student branch's
 
 
 def test_wizard_without_the_assistant(store):
@@ -300,7 +300,7 @@ def test_finish_keeps_a_saved_block_choice(store):
     """Finishing the wizard again (wizard_done false, blocks already chosen) doesn't wipe the choice."""
     from venato import setup_checks
     from venato.ui import settings_ui
-    store.save_settings(wizard_done=False, blocks=["money"])
+    store.save_settings(wizard_done=False, blocks=["grades"])
     settings_ui._finish()
     s = setup_checks.load_settings()
-    assert s["blocks"] == ["money"] and s["wizard_done"] is True
+    assert s["blocks"] == ["grades"] and s["wizard_done"] is True

@@ -52,6 +52,8 @@ def _goal_category(category):
     cid = store.resolve_category(category=str(category))
     if cid is None:
         names = ", ".join(store.load_categories()["name"])
+        if not names:
+            raise ToolError("There are no categories yet. Ask the user for a name, then create it with edit_category (create=true).")
         raise ToolError(f"There's no category '{category}'. Categories: {names}.")
     return cid
 
