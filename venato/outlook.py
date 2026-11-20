@@ -138,27 +138,46 @@ def friendly(error):
 
 def try_link(url, fetcher=None, today=None):
     """
-    Test-download a calendar link. Returns {data, count, preview}: the number of
-    events in the next 2 weeks and the next 3 of them. Raises SyncError.
+    Test-download a calendar link. Returns {data, count, preview, kind}. For a calendar: the number of
+    events in the next 2 weeks and the next 3 of them (kind "calendar"). For a Canvas feed (its
+    assignments become deadlines): the assignments due from today on and the next 3 (kind "canvas").
+    Raises SyncError.
     """
     data = (fetcher or fetch)(url)
     now = datetime.now(store.tz())
+    if feeds.is_canvas(url, data):
+        day = (today or store.local_today()).isoformat()
+        due = sorted((e for e in feeds.canvas_events(data, store.tz()) if e["due"] >= day),
+                     key=lambda e: (e["due"], e["due_time"] or ""))
+        preview = [{"title": e["title"], "when": _when(date.fromisoformat(e["due"]), e["due_time"])} for e in due[:3]]
+        return {"data": data, "count": len(due), "preview": preview, "kind": "canvas"}
     soon = []
     for ev in parse(data, today):
         start = ev["start"] if not ev["all_day"] else datetime.combine(ev["start"], time(0), store.tz())
         if now - timedelta(hours=1) <= start <= now + timedelta(days=14):
             soon.append((start, ev))
     soon.sort(key=lambda p: p[0])
-    preview = [{"title": ev["title"],
-                "when": f"{s:%a} {s.day} {s:%b}, " + ("all day" if ev["all_day"] else f"{s:%H:%M}")}
+    preview = [{"title": ev["title"], "when": _when(s.date(), None if ev["all_day"] else f"{s:%H:%M}")}
                for s, ev in soon[:3]]
-    return {"data": data, "count": len(soon), "preview": preview}
+    return {"data": data, "count": len(soon), "preview": preview, "kind": "calendar"}
 
 
-def connect(url, data):
+def _when(day, hhmm):
+    return f"{day:%a} {day.day} {day:%b}, " + (hhmm or "all day")
+
+
+def found_text(found):
+    """What a test download found, in words: 'Found 4 events in the next 2 weeks.' or 'Found 3 assignments due.'"""
+    n = found["count"]
+    if found.get("kind") == "canvas":
+        return f"Found {n} assignment{'s' if n != 1 else ''} due."
+    return f"Found {n} event{'s' if n != 1 else ''} in the next 2 weeks."
+
+
+def connect(url, data, today=None):
     """Save a working link to the Keychain and import its events."""
     save_url(url)
-    return sync(fetcher=lambda _: data)
+    return sync(today=today, fetcher=lambda _: data)
 
 
 def fetch(url):
@@ -408,7 +427,7 @@ def check_any_link(text):
     return url, provider
 
 
-def add_calendar(name, url, data):
+def add_calendar(name, url, data, today=None):
     """Save another calendar (after try_link worked) and sync everything."""
     import uuid
     items = extra_calendars()
@@ -419,7 +438,14 @@ def add_calendar(name, url, data):
     cid = uuid.uuid4().hex[:10]
     _save_extra(items + [{"id": cid, "name": str(name or "Calendar").strip()[:40] or "Calendar", "url": url}])
     _extra_cache(cid).write_bytes(data)
-    return sync(fetcher=lambda u: data if u == url else fetch(u))
+    return sync(today=today, fetcher=lambda u: data if u == url else fetch(u))
+
+
+def cached_calendars():
+    """[(name, last good download)] of every connected calendar that has one (setup finds modules in these)."""
+    out = [("Outlook", CACHE.read_bytes())] if ics_url() and CACHE.exists() else []
+    return out + [(c["name"], _extra_cache(c["id"]).read_bytes()) for c in extra_calendars()
+                  if _extra_cache(c["id"]).exists()]
 
 
 def remove_calendar(cid):

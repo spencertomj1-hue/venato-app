@@ -1,9 +1,9 @@
 """
 First-run setup wizard and the Settings page.
 
-The wizard shows once (settings.json "wizard_done") and can be reopened from
-Settings → About. Its Claude, Outlook and microphone steps are the same
-sections the Settings page uses, so both stay in sync.
+The setup wizard (steps in ui/onboarding.py) shows once (settings.json "wizard_done") and can be
+reopened from Settings → About; running it again only adds things. The Claude assistant, calendar and
+microphone are set up here in Settings, not in the wizard.
 
 The Claude assistant is optional (settings.json "ai_enabled"): everything in
 Venato works by hand, and switching it on adds the chat box and voice input.
@@ -22,9 +22,9 @@ from venato import regional
 from venato import store
 from venato import undo
 from venato import system
+from venato.ui import onboarding
 
-STEPS = [("Welcome", ":material/waving_hand:"), ("Assistant", ":material/chat:"),
-         ("Calendar", ":material/calendar_month:"), ("Microphone", ":material/mic:"), ("Done", ":material/check_circle:")]
+STEPS = [(name, icon) for _, name, icon, _ in onboarding.STEPS]      # all of them; students get the uni ones
 
 
 # ---------------------------------------------------------------------------
@@ -122,8 +122,7 @@ def outlook_guide(prefix):
 
     found = st.session_state.get(f"{prefix}_found")
     if found and outlook.ics_url():
-        st.success(f"Connected. Found {found['count']} event{'s' if found['count'] != 1 else ''} in the next 2 weeks.",
-                   icon=":material/check_circle:")
+        st.success(f"Connected. {outlook.found_text(found)}", icon=":material/check_circle:")
         for ev in found["preview"]:
             st.markdown(f"- **{ev['title']}** · {ev['when']}")
 
@@ -158,7 +157,7 @@ def other_calendars(prefix):
                 with st.spinner("Checking the link…"):
                     found = outlook.try_link(url)
                     st.session_state["outlook_status"] = outlook.add_calendar(name or provider, url, found["data"])
-                st.success(f"Added. Found {found['count']} events in the next 2 weeks.", icon=":material/check_circle:")
+                st.success(f"Added. {outlook.found_text(found)}", icon=":material/check_circle:")
                 st.rerun()
             except outlook.LinkError as e:
                 st.error(str(e), icon=":material/error:")
@@ -245,79 +244,29 @@ def needs_wizard():
     return st.session_state.get("wizard_open") or not setup_checks.load_settings().get("wizard_done")
 
 
-MIC = 3          # STEPS index of the microphone step
-
-
-def _go(step):
-    if step == MIC and not store.ai_enabled():        # the microphone is only for the assistant
-        step = MIC + 1 if st.session_state.get("wizard_step", 0) < MIC else MIC - 1
-    st.session_state["wizard_step"] = step
-
-
 def _finish():
+    """Setup is over (done or skipped): the core blocks (Modules too for a student), the assistant off, no wizard again.
+    Setup only adds: a block choice already made is kept, and a student's Modules block is added to it."""
     if "ai_enabled" not in setup_checks.load_settings():
         setup_checks.save_settings(ai_enabled=False)  # skipped the question: the assistant stays off
+    from venato import blocks
     done = setup_checks.load_settings()
+    student = onboarding.is_student()
     if not done.get("wizard_done") and "blocks" not in done:
-        from venato import blocks
-        blocks.save(blocks.STARTER)                   # first setup: the starter blocks; change them in Settings
+        blocks.save(blocks.STARTER + (["grades"] if student else []))   # first setup; change them in Settings
+    elif student and not blocks.is_on("grades"):
+        blocks.save(blocks.chosen_keys() + ["grades"])
+    try:
+        onboarding.prefill_home(onboarding.chosen_home_keys())
+    except Exception:                                 # Home keeps its default; setup is done either way
+        pass
     setup_checks.save_settings(wizard_done=True)
     st.session_state["wizard_open"] = False
-    st.session_state["wizard_step"] = 0
+    onboarding.restart()
 
 
 def wizard():
-    # Full-screen: no sidebar while setting up.
-    st.html("<style>[data-testid='stSidebar'], [data-testid='stSidebarCollapsedControl'] { display: none; }</style>")
-    step = st.session_state.setdefault("wizard_step", 0)
-    _, mid, _ = st.columns([1, 3, 1])
-    with mid:
-        name, icon = STEPS[step]
-        st.caption(f"Setup · step {step + 1} of {len(STEPS)}")
-        st.progress((step + 1) / len(STEPS))
-        if step == 0:
-            st.title("Welcome to Venato", anchor=False)
-            st.markdown(
-                "Venato keeps track of your days:\n\n"
-                "- :material/calendar_view_week: a **timetable** of what you planned and what you actually did\n"
-                "- :material/checklist: **to-dos** and **deadlines**, and **goals** with a pace to keep\n"
-                "- :material/timer: **focus** sessions and **grades**, with a **weekly review** to see how it went\n"
-                "- :material/chat: optionally, a **Claude assistant** that can update it all for you\n\n"
-                f":material/lock: **Your data stays on your {system.COMPUTER}.** Nothing is uploaded (unless you switch on "
-                "the assistant, which sends your messages to Claude).\n\nThis takes about two minutes. You can skip "
-                "anything and set it up later in **Settings**."
-            )
-        elif step == 1:
-            st.header(f"{icon} Claude assistant (optional)", anchor=False)
-            st.markdown(AI_PITCH)
-            if ai_switch("wiz"):
-                claude_section("wiz")
-        elif step == 2:
-            st.header(f"{icon} Outlook calendar (optional)", anchor=False)
-            st.markdown("Show your Outlook events (classes, meetings) in the timetable. Venato only reads them.")
-            if not calendar_status("wiz"):
-                outlook_guide("wiz")
-        elif step == MIC:
-            st.header(f"{icon} Microphone", anchor=False)
-            mic_section("wiz")
-        else:
-            st.title("You're all set", anchor=False)
-            st.markdown("Venato opens on **Home**: today's agenda and timetable, your to-dos, habits and goals"
-                        + (", and the box to ask Claude" if store.ai_enabled() else "") + ". "
-                        "Everything from this setup is in **Settings** if you want to change it"
-                        + ("" if store.ai_enabled() else ", including switching on the Claude assistant") + ".")
-
-        st.divider()
-        back, skip, nxt = st.columns([1, 1, 1])
-        if step > 0:
-            back.button("Back", key="wiz_back", on_click=_go, args=(step - 1,), icon=":material/arrow_back:")
-        if step == len(STEPS) - 1:
-            nxt.button("Start using Venato", key="wiz_finish", type="primary", on_click=_finish, width="stretch")
-        else:
-            if 0 < step < len(STEPS) - 1:
-                skip.button("Skip for now", key="wiz_skip", on_click=_go, args=(step + 1,))
-            nxt.button("Next" if step else "Get started", key="wiz_next", type="primary", on_click=_go,
-                       args=(step + 1,), width="stretch", icon=":material/arrow_forward:")
+    onboarding.wizard(_finish)
 
 
 # ---------------------------------------------------------------------------
@@ -534,9 +483,10 @@ def page_settings():
             "Open source under the **MIT licence**."
         )
         _updates_section()
-        if st.button("Run the setup wizard again", icon=":material/restart_alt:"):
+        st.caption("Setup only adds things: nothing you have is deleted.")
+        if st.button("Run setup again", icon=":material/restart_alt:"):
+            onboarding.restart()
             st.session_state["wizard_open"] = True
-            st.session_state["wizard_step"] = 0
             st.rerun()
 
 
