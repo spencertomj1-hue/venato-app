@@ -101,12 +101,53 @@ def resolve_category(label=None, category=None):
     return None
 
 
-def outlook_category(title):
+def outlook_category(title, module_id=None):
     """
-    Category for Outlook events: settings.json "outlook_category" (set by asking Claude),
-    else the default, else the first category. With no categories at all: None (the event shows grey).
-    (The title is kept for future rules.)
+    Category for Outlook events: the module's category for an event tagged with a module (module_id),
+    else settings.json "outlook_category" (set by asking Claude), else the default, else the first
+    category. With no categories at all: None (the event shows grey). (The title is kept for future rules.)
     """
+    if module_id:
+        with db() as conn:
+            row = conn.execute("SELECT c.id FROM gr_modules m JOIN tt_categories c ON c.id = m.category_id "
+                               "WHERE m.id = ?", (module_id,)).fetchone()
+        if row:
+            return row[0]
     wanted = load_settings().get("outlook_category") or DEFAULT_OUTLOOK_CATEGORY
     ids = list(load_categories()["id"])
     return wanted if wanted in ids else (ids[0] if ids else None)
+
+
+def event_category(event, default=None):
+    """The category an imported event counts under: its module's (the module_category that
+    outlook_between & co. read), else `default` (outlook_category(), looked up once by loops), else
+    outlook_category(). Each event has exactly one, so its hours are counted once."""
+    if event.get("module_category"):
+        return event["module_category"]
+    return default if default is not None else outlook_category(event.get("title"))
+
+
+# Modules (Grades) each get a category in this group, coloured with the first of these no category uses yet.
+MODULES_GROUP = "Modules"
+MODULE_COLOURS = ["#4E79A7", "#F28E2B", "#59A14F", "#B07AA1", "#76B7B2", "#EDC948", "#FF9DA7", "#9C755F",
+                  "#E15759", "#8CD17D", "#86BCB6", "#D4A6C8", "#A0CBE8", "#FFBE7D", "#BAB0AC", "#D37295"]
+
+
+def next_free_colour():
+    """The first module colour no category uses (then round again)."""
+    with db() as conn:
+        used = [r[0].upper() for r in conn.execute("SELECT colour FROM tt_categories")]
+    free = [c for c in MODULE_COLOURS if c not in used]
+    return free[0] if free else MODULE_COLOURS[len(used) % len(MODULE_COLOURS)]
+
+
+def add_module_category(cid, name):
+    """A module's category: group "Modules", the next free colour. Returns its id."""
+    save_category(cid, name, next_free_colour(), MODULES_GROUP)
+    return cid
+
+
+def rename_category(cid, name):
+    """Rename a category (keeps its colour, group and place)."""
+    with db() as conn:
+        conn.execute("UPDATE tt_categories SET name = ? WHERE id = ?", (name, cid))

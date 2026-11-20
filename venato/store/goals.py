@@ -63,7 +63,8 @@ def _goal_matches(goal, category_id, label, event=False):
 def goal_hours(goal, first, last, track, data=None, window=None):
     """
     Hours of an hours goal's category (and label, if it has one) in one track between two days
-    (inclusive). The Plan also counts visible timed calendar events in that category, which serve
+    (inclusive). The Plan also counts visible timed calendar events in that category (an event tagged
+    with a module counts under the module's category only, see event_category), which serve
     the goal; detached calendar events (blocks with ids "ol:...") are fixed time and never count.
     Every goal calculation (value, pace, budget, forecast) goes through here.
 
@@ -101,8 +102,8 @@ def goal_hours(goal, first, last, track, data=None, window=None):
               if track in ("plan", "live") and not ev["all_day"] and ev["start"] and first <= ev["date"] <= last]
     if events:
         cat = data.get("outlook_category") or outlook_category("")     # (a Ctx already looked it up once)
-        for ev in events:
-            if _goal_matches(goal, cat, ev["title"], event=True):
+        for ev in events:              # each event under one category: its module's, else the Outlook one
+            if _goal_matches(goal, ev.get("module_category") or cat, ev["title"], event=True):
                 total += slots(ev["date"], slot_of(ev["start"]), slot_of(ev["end"]))
     return total / 2
 

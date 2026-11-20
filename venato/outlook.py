@@ -8,7 +8,9 @@ is ever written back to Outlook).
   to_rows() fit events to the timetable grid (its hours, 07:00-01:00 by default); after-midnight slots belong to the
             day before, start rounds down / end rounds up to 30 minutes
   sync()    all of the above, storing the rows in tt_outlook. The last good .ics is cached,
-            so when offline the timetable keeps showing the cached events.
+            so when offline the timetable keeps showing the cached events. Events are tagged
+            with their module by code (venato/feeds.py). A Canvas feed goes to the deadlines
+            instead (store.import_canvas), never to the timetable.
 
 The URL is private: never log or display it. Error messages here never include it
 (requests puts the URL in its exception text, so those are replaced).
@@ -26,6 +28,7 @@ import recurring_ical_events
 import requests
 from icalendar.timezone.windows_to_olson import WINDOWS_TO_OLSON
 
+from venato import feeds
 from venato import store
 from venato import system
 
@@ -193,7 +196,8 @@ def _to_london(value, tzid=None):
 
 
 def parse(ics_bytes, today=None):
-    """Events in the sync window, as dicts: uid, title, location, all_day, start, end."""
+    """Events in the sync window, as dicts: uid, title, location, description, module (the raw
+    "Module:" line of a uni timetable event, or None), all_day, start, end."""
     today = today or store.local_today()
     window = (today - timedelta(days=DAYS_BACK), today + timedelta(weeks=WEEKS_AHEAD))
     calendar = icalendar.Calendar.from_ical(ics_bytes)
@@ -217,6 +221,7 @@ def parse(ics_bytes, today=None):
             "title": title or "(No title)",
             "location": str(ev.get("LOCATION", "")).strip().strip("-–— ") or None,   # "-" means none
             "description": short_description(str(ev.get("DESCRIPTION", ""))),
+            "module": feeds.module_line(str(ev.get("DESCRIPTION", ""))),   # kept whole for finding modules
         }
         if isinstance(start, datetime):
             tzid = ev["DTSTART"].params.get("TZID")
@@ -259,7 +264,7 @@ def _grid_rows(ev):
                 "uid": f"{ev['uid']}|{s.isoformat()}|{day}", "date": day.isoformat(),
                 "start": store.slot_time(first), "end": store.slot_time(min(last, store.SLOTS)),
                 "title": ev["title"], "location": ev["location"], "all_day": 0, "exact": exact,
-                "description": ev.get("description"),
+                "description": ev.get("description"), "module_code": feeds.event_code(ev),
             })
         day += timedelta(days=1)
     return rows
@@ -276,7 +281,7 @@ def to_rows(events):
         while day < ev["end"]:
             rows.append({"uid": f"{ev['uid']}|{day}", "date": day.isoformat(), "start": None, "end": None,
                          "title": ev["title"], "location": ev["location"], "all_day": 1, "exact": None,
-                         "description": ev.get("description")})
+                         "description": ev.get("description"), "module_code": feeds.event_code(ev)})
             day += timedelta(days=1)
     return rows
 
@@ -291,10 +296,15 @@ def last_synced():
 
 
 def _rows_for(url, cache, today, fetcher, prefix=""):
-    """(rows, error) for one calendar; falls back to its cached copy when the download fails."""
+    """(rows, error) for one calendar; falls back to its cached copy when the download fails.
+    A Canvas feed's assignments become deadlines (import_canvas), not timetable events: rows None."""
     error = None
     try:
         data = fetcher(url)
+        if feeds.is_canvas(url, data):
+            store.import_canvas(feeds.canvas_events(data, store.tz()))
+            cache.write_bytes(data)
+            return None, None
         rows = to_rows(parse(data, today))     # check it parses before replacing the cache
         cache.write_bytes(data)
     except SyncError as e:
@@ -302,6 +312,8 @@ def _rows_for(url, cache, today, fetcher, prefix=""):
     except Exception as e:                     # a malformed calendar
         error, rows = f"Couldn't read the calendar ({type(e).__name__}).", None
     if rows is None and cache.exists():
+        if feeds.is_canvas(url, cache.read_bytes()):
+            return None, error                 # its deadlines are already saved
         try:
             rows = to_rows(parse(cache.read_bytes(), today))   # re-parse so the window moves on
         except Exception:
@@ -371,7 +383,7 @@ def _save_extra(items):
 
 
 def check_any_link(text):
-    """A secret / public calendar link from Google, iCloud or anywhere: https (webcal:// is
+    """A secret / public calendar link from Google, iCloud, Canvas or anywhere: https (webcal:// is
     turned into https://), and not a local or private address. Returns (url, provider)."""
     import ipaddress
     url = (text or "").strip().strip("\"'<> ")
@@ -388,7 +400,8 @@ def check_any_link(text):
     except ValueError:
         if host == "localhost" or host.endswith((".local", ".localhost", ".internal")):
             raise LinkError("That's a local network address, not a calendar on the internet.")
-    provider = ("Google" if host == "calendar.google.com" else "iCloud" if host.endswith("icloud.com")
+    provider = ("Canvas" if feeds.is_canvas(url) else "Google" if host == "calendar.google.com"
+                else "iCloud" if host.endswith("icloud.com")
                 else "Outlook" if any(host == h or host.endswith("." + h) for h in OUTLOOK_HOSTS) else "Other")
     if provider == "Google" and "/ical/" not in parts.path:
         raise LinkError("Use the \"Secret address in iCal format\" from Google Calendar's settings (it ends in basic.ics).")

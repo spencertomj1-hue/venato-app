@@ -37,11 +37,11 @@ from .dates import (WEEK_START, _as_date, computer_zone_name, end_of_period, fmt
     zone_name)
 from .grid import (BLOCK_COLS, TRACKS, apply_block_ops, blocks_for, first_min, get_block_in, plan_paint,
     slot_count, slot_of, slot_time)
-from .categories import (EXAMPLE_CATEGORIES, EXAMPLE_LABEL_MAP, DEFAULT_OUTLOOK_CATEGORY, groups,
-    load_categories, load_label_map, outlook_category, remove_label_default, resolve_category, save_category,
-    set_label_default)
+from .categories import (EXAMPLE_CATEGORIES, EXAMPLE_LABEL_MAP, DEFAULT_OUTLOOK_CATEGORY, MODULE_COLOURS,
+    MODULES_GROUP, add_module_category, event_category, groups, load_categories, load_label_map, next_free_colour,
+    outlook_category, remove_label_default, rename_category, resolve_category, save_category, set_label_default)
 from .outlook import (OUTLOOK_COLS, _as_block, detach_outlook, get_outlook, hide_outlook, outlook_between,
-    outlook_details, outlook_overlaps, outlook_signature, replace_outlook)
+    outlook_details, outlook_overlaps, outlook_signature, replace_outlook, tag_outlook_modules)
 from .timetable import (blocks_between, delete_block, get_block, move_block, paint, preview_paint,
     set_block_label, upsert_blocks)
 from .days import (confirm_day, confirmed_days, correct, day_ended, day_started, day_status, free_runs,
@@ -54,7 +54,7 @@ from .habits import (HABIT_PREFIX, add_habit, delete_habit, find_habit, get_habi
     streaks, week_ticks, weekly_streaks)
 from .history import load_all_data, save_all_data
 from .deadline import (DEADLINE_COLS, add_deadline, countdown, deadlines, delete_deadline, get_deadline,
-    set_deadline_done, update_deadline)
+    import_canvas, set_deadline_done, update_deadline)
 from .todos import (TODO_COLS, TODO_PERIODS, add_todo, carry_over, delete_todo, get_todo, load_todos,
     move_target, move_todo, reorder_todos, roll_todos, save_todos, set_todo_done, todos_for, todos_progress,
     update_todo)

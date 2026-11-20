@@ -174,6 +174,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS away_days (date TEXT PRIMARY KEY);
             """
         )
+        _deadlines_from_feeds(conn)
         _scores_out_of_ten(conn)
         _day_status_table(conn)
         _forget_future_status(conn)
@@ -236,6 +237,26 @@ def _goals_get_deadlines(conn):
     rows = conn.execute("SELECT id, period, period_start FROM goals WHERE due IS NULL").fetchall()
     conn.executemany("UPDATE goals SET due = ? WHERE id = ?",
                      [(end_of_period(p, start).isoformat(), gid) for gid, p, start in rows])
+
+
+def _deadlines_from_feeds(conn):
+    """Deadlines and timetable events linked to a module (Grades), and deadlines imported from Canvas.
+    Only adds columns and tables: existing rows keep their values (the new columns start NULL)."""
+    _add_column(conn, "deadlines", "module_id", "TEXT")         # gr_modules.id (cleared when the module goes)
+    _add_column(conn, "deadlines", "due_time", "TEXT")          # "HH:MM", NULL = any time that day
+    _add_column(conn, "deadlines", "source", "TEXT")            # NULL = typed in; "canvas" = imported
+    _add_column(conn, "deadlines", "uid", "TEXT")               # the feed's stable id (Canvas UID)
+    _add_column(conn, "deadlines", "course_id", "TEXT")         # the Canvas course (gr_canvas_courses)
+    # The last title / date the feed gave: a sync changes the deadline only when the feed changes,
+    # so a title or date the student edited stays until Canvas itself changes it.
+    _add_column(conn, "deadlines", "source_title", "TEXT")
+    _add_column(conn, "deadlines", "source_due", "TEXT")
+    _add_column(conn, "deadlines", "source_due_time", "TEXT")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS deadlines_uid ON deadlines (uid) WHERE uid IS NOT NULL")
+    # Imported deadlines the student deleted: a sync never brings them back.
+    conn.execute("CREATE TABLE IF NOT EXISTS deadlines_hidden (uid TEXT PRIMARY KEY)")
+    _add_column(conn, "tt_outlook", "module_code", "TEXT")      # the code the event names (feeds.event_code)
+    _add_column(conn, "tt_outlook", "module_id", "TEXT")        # the module with that code, if there is one
 
 
 def _add_column(conn, table, column, kind):
