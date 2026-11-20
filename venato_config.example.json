@@ -1,5 +1,6 @@
 {
   "claude_path": "/opt/homebrew/bin/claude",
   "model": null,
-  "effort": null
+  "effort": null,
+  "feedback_url": "https://docs.google.com/forms/d/e/1FAIpQLSfKtBy2MutZ__Q5Ivkzz5urT0ABhtF8Rgu5yii2O3bQyLTmWQ/viewform"
 }

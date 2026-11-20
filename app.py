@@ -94,6 +94,9 @@ choice = st.sidebar.radio("Go to", list(PAGES), label_visibility="collapsed", ke
 with st.sidebar:
     from venato.ui import page_fade               # fades between pages instead of swapping bits in front of you
     page_fade.render()
+    from venato import feedback                   # opens the feedback form in the browser; nothing is sent
+    st.link_button("Send feedback", feedback.feedback_url(), icon=":material/rate_review:", type="tertiary",
+                   key="sidebar_feedback", width="stretch")
 
 
 def update_banner():

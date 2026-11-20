@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from venato import assistant
+from venato import feedback
 from venato import outlook
 from venato import setup_checks
 from venato import regional
@@ -481,6 +482,8 @@ def page_settings():
             "Open source under the **MIT licence**."
         )
         _updates_section()
+        st.link_button("Send feedback", feedback.feedback_url(), icon=":material/rate_review:",
+                       help="Opens a short form in your browser. Nothing is sent from the app.")
         st.caption("Setup only adds things: nothing you have is deleted.")
         if st.button("Run setup again", icon=":material/restart_alt:"):
             onboarding.restart()

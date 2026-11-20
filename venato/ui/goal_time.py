@@ -18,6 +18,7 @@ from html import escape
 
 import streamlit as st
 
+from venato import feedback
 from venato import pace
 from venato import regional
 from venato import store
@@ -545,7 +546,8 @@ def needs_items(ctx=None):
             "goals": _goal_rows(ctx) if goals_on else [],
             "deadlines": _deadline_rows(ctx) if goals_on else [],
             "blocks": blocks.needs(),
-            "assistant": assistant_offer_due(ctx.today)}
+            "assistant": assistant_offer_due(ctx.today),
+            "feedback": feedback.card_due(ctx.today)}
 
 
 def _open_page(page):
@@ -568,6 +570,7 @@ def needs_you(ctx=None):
       - deadlines in the next 7 days with no plan (or behind on it)
       - the blocks' own items (Block.needs)
       - once, a week in, with the assistant off: where to switch it on
+      - once, two weeks in: "How's Venato treating you?" with a link to the feedback form
     Nothing: "Nothing needs you. Go touch grass."
     """
     ctx = ctx or _ctx()
@@ -600,6 +603,14 @@ def needs_you(ctx=None):
                        on_click=_assistant_answer, args=(True,))
             row.button("No thanks", key="needs_ai_no", type="tertiary", on_click=_assistant_answer, args=(False,),
                        help="Hide this for good. The assistant stays in Settings if you change your mind.")
+        if items["feedback"]:
+            st.markdown(":material/rate_review: **How's Venato treating you?** Tell us what's annoying or missing. "
+                        "It opens a short form in your browser.")
+            row = st.container(horizontal=True, gap="small")
+            row.link_button("Send feedback", feedback.feedback_url(), icon=":material/open_in_new:",
+                            key="needs_fb_yes", on_click=feedback.card_done)
+            row.button("Not now", key="needs_fb_no", type="tertiary", on_click=feedback.card_done,
+                       help="Hide this for good. Send feedback stays in the sidebar and Settings → About.")
 
 
 def _needs_goals(rows, ctx):
