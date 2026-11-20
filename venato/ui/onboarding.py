@@ -114,12 +114,25 @@ def check_feed(text, kind, fetcher=None, day=None):
 def connect_feed(found, day=None):
     """Save a checked link (it stays in the system secret store) and import it: lectures go on the timetable,
     Canvas assignments become deadlines. Returns the sync's status."""
-    return outlook.add_calendar("Canvas" if found["kind"] == "canvas" else "Uni timetable",
-                                found["url"], found["data"], day)
+    status = outlook.add_calendar("Canvas" if found["kind"] == "canvas" else "Uni timetable",
+                                  found["url"], found["data"], day)
+    _forget_calendars()
+    return status
+
+
+def _forget_calendars():
+    """A calendar was connected: what setup worked out from the old ones is stale."""
+    ob = _ob()
+    ob.pop("detected", None)
+    ob.pop("canvas_events", None)
 
 
 def detected_modules(day=None):
-    """[{code, name, count}] found in the connected timetable calendars (Canvas has no module names)."""
+    """[{code, name, count}] found in the connected timetable calendars (Canvas has no module names).
+    Parsed once per run of setup (kept in `ob`, cleared when a calendar is connected); `day` is for tests."""
+    ob = _ob()
+    if day is None and "detected" in ob:
+        return ob["detected"]
     events = []
     for _, data in outlook.cached_calendars():
         if feeds.is_canvas("", data):
@@ -128,18 +141,28 @@ def detected_modules(day=None):
             events += outlook.parse(data, day)
         except Exception:                                      # a calendar that no longer parses adds nothing
             continue
-    return feeds.detect_modules(events)
+    found = feeds.detect_modules(events)
+    if day is None:
+        ob["detected"] = found
+    return found
 
 
 def canvas_courses(day=None):
-    """The connected Canvas courses: [{course_id, label, titles (a couple of its assignments), module_id}]."""
-    events = []
-    for _, data in outlook.cached_calendars():
-        if feeds.is_canvas("", data):
-            try:
-                events += feeds.canvas_events(data, store.tz())
-            except Exception:
-                continue
+    """The connected Canvas courses: [{course_id, label, titles (a couple of its assignments), module_id}].
+    The feeds are parsed once per run of setup (kept in `ob`); the module links are read fresh."""
+    ob = _ob()
+    if day is None and "canvas_events" in ob:
+        events = ob["canvas_events"]
+    else:
+        events = []
+        for _, data in outlook.cached_calendars():
+            if feeds.is_canvas("", data):
+                try:
+                    events += feeds.canvas_events(data, store.tz())
+                except Exception:
+                    continue
+        if day is None:
+            ob["canvas_events"] = events
     linked = {c["course_id"]: c["module_id"] for c in gr.canvas_courses()}
     return [{"course_id": c["course_id"], "label": c["label"], "module_id": linked.get(c["course_id"]),
              "titles": [e["title"] for e in events if e.get("course_id") == c["course_id"]][:2]}
@@ -386,6 +409,8 @@ def _link_step(kind):
                 found = check_feed(text, kind)
                 connect_feed(found)
             ob[f"found_{kind}"] = found
+        except outlook.AlreadyAdded:
+            st.info("Already connected. Nothing more to do here.", icon=":material/check_circle:")
         except outlook.LinkError as e:
             st.error(str(e), icon=":material/error:")
         except outlook.SyncError as e:

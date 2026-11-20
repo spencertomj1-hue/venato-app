@@ -56,6 +56,10 @@ class LinkError(Exception):
     """A pasted calendar link that isn't usable (the message says why)."""
 
 
+class AlreadyAdded(LinkError):
+    """A link that's already connected (setup says so kindly rather than as an error)."""
+
+
 # ---------------------------------------------------------------------------
 # Where the link is kept: only in the macOS Keychain
 # ---------------------------------------------------------------------------
@@ -434,7 +438,7 @@ def add_calendar(name, url, data, today=None):
     if len(items) >= MAX_EXTRA:
         raise LinkError(f"You can add up to {MAX_EXTRA} calendars.")
     if any(c["url"] == url for c in items) or url == ics_url():
-        raise LinkError("That calendar is already added.")
+        raise AlreadyAdded("That calendar is already added.")
     cid = uuid.uuid4().hex[:10]
     _save_extra(items + [{"id": cid, "name": str(name or "Calendar").strip()[:40] or "Calendar", "url": url}])
     _extra_cache(cid).write_bytes(data)

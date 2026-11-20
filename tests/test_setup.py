@@ -576,3 +576,33 @@ def test_a_wrong_link_shows_an_error_not_a_crash(fresh):
 def test_try_link_keeps_the_calendar_message(outlook, store):
     found = outlook.try_link(GOOD, fetcher=lambda url: FIXTURE)
     assert found["kind"] == "calendar" and outlook.found_text(found).endswith("in the next 2 weeks.")
+
+
+def test_pasting_a_connected_link_again_says_already_connected(fresh):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at)
+    at.radio(key="ob_student").set_value("Yes").run()
+    _next(at)
+    at.text_input(key="ob_link_uni").set_value(UNI_URL)
+    _submit(at)
+    assert at.success and not at.error
+    at.text_input(key="ob_link_uni").set_value(UNI_URL)
+    _submit(at)
+    assert not at.error and any("Already connected" in i.value for i in at.info)
+
+
+def test_setup_parses_the_calendars_once_until_one_is_connected(fresh, monkeypatch):
+    from venato import outlook as ol
+    from venato.ui import onboarding
+    calls = []
+    real = ol.parse
+    monkeypatch.setattr(ol, "parse", lambda *a, **k: calls.append(1) or real(*a, **k))
+    state = {}
+    monkeypatch.setattr(onboarding, "_ob", lambda: state)
+    onboarding.connect_feed(onboarding.check_feed(UNI_URL, "uni", day=MON), MON)
+    calls.clear()
+    first = onboarding.detected_modules()
+    n = len(calls)
+    assert n and onboarding.detected_modules() == first and len(calls) == n       # the second is from `ob`
+    onboarding.connect_feed(onboarding.check_feed(CANVAS_URL, "canvas", day=MON), MON)
+    assert "detected" not in state                                                  # a new calendar: parse again
