@@ -1,5 +1,6 @@
-"""The Grades page (where you stand overall, a chart of every module against the classification
-bands, what's due next, and a card per module with its assessments) and its Home widget.
+"""The Modules page (where you stand overall, a chart of every module against the classification
+bands, what's due next, and a card per module: its colour, next deadline, hours this week and mark against
+target, with its assessments) and its Home widget. A module's own page is in module_page.py.
 The data and maths are in venato/blocks/grades.py."""
 
 from html import escape
@@ -174,10 +175,37 @@ def _module_settings(m):
             st.rerun()
 
 
-def _module_card(m):
+def _open(mid):
+    st.session_state["gr_module"] = mid
+
+
+def _facts(m, ctx):
+    """The card's lines: next deadline, and hours this week (done / planned / goal)."""
+    from venato import pace
+    due = gr.open_deadlines(m["id"])
+    if due:
+        d = due[0]
+        st.caption(f":material/event: Next: {escape(d['title'])} · "
+                   f"{store.countdown(d['due'], store.local_today(), d.get('due_time'), store.local_now())}")
+    else:
+        st.caption(":material/event_available: No deadlines")
+    if m["category_id"]:
+        h = gr.module_hours(m, ctx)
+        f = pace.fmt
+        st.caption(f":material/schedule: This week: {f(h['done'])} done / {f(h['planned'])} planned / {f(h['goal'])} h goal")
+    elif st.button("Create its category", key=f"gr_cat_{m['id']}", icon=":material/add:",
+                   help="Its hours and sittings count in a category of their own"):
+        gr.create_category(m["id"])
+        st.rerun()
+
+
+def _module_card(m, ctx):
     n = gr.module_numbers(m)
     label, colour = _band(n["projected"])
+    stripe = gr.category_colour(m)
     with st.container(border=True, height="stretch"):
+        if stripe:
+            st.html(f'<div aria-hidden="true" style="height:4px;border-radius:2px;background:{stripe}"></div>')
         left, right = st.columns([1, 2.4], vertical_alignment="center")
         with left:
             kit.rings([{"frac": (n["projected"] or 0) / 100, "colour": colour, "size": 96,
@@ -200,6 +228,8 @@ def _module_card(m):
             st.markdown(line)
             kit.bars([{"label": "Marked", "frac": n["done_weight"] / 100, "colour": colour,
                        "value": f"{n['done_weight']:g}% · {n['secured']:.1f}% banked"}])
+        _facts(m, ctx)
+        st.button("Open", key=f"gr_open_btn_{m['id']}", icon=":material/arrow_forward:", on_click=_open, args=(m["id"],))
         if st.toggle("Assessments and settings", key=f"gr_open_{m['id']}"):
             _assessments(m)
             _module_settings(m)
@@ -240,11 +270,19 @@ def _settings(ms, s):
 
 
 def render_page():
-    st.title("Grades")
+    current = gr.get_module(st.session_state.get("gr_module") or "")
+    if current:
+        from venato.ui import module_page
+        module_page.render(current)
+        return
+    st.session_state.pop("gr_module", None)
+    st.title("Modules")
     ms = gr.modules()
     o = gr.overall()
     s = gr.settings()
     if ms:
+        from venato import pace
+        ctx = pace.Ctx()
         _stats(ms, o, s)
         a, b = st.columns([3, 2])
         with a, kit.card("Modules at a glance"):
@@ -263,9 +301,10 @@ def render_page():
                 cols = st.columns(2)
                 for col, m in zip(cols, these[i:i + 2]):
                     with col:
-                        _module_card(m)
+                        _module_card(m, ctx)
     else:
-        kit.empty("No modules yet. Add your first one below.", ":material/school:")
+        kit.empty("No modules yet. Add your first one below, and its deadlines, lectures and study hours gather here.",
+                  ":material/school:")
     _add_module(not ms)
     _settings(ms, s)
 
@@ -275,7 +314,7 @@ def render_home():
     o = gr.overall()
     st.markdown("**Grades**")
     if o["degree"] is None:
-        st.caption("No marks yet. Add them on the Grades page.")
+        st.caption("No marks yet. Add them on the Modules page.")
         return
     text = gr.describe(o["degree"], o["gpa"])
     due = sorted((a["due"], a["name"], m["name"]) for m in gr.modules() for a in gr.assessments(m["id"])

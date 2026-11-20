@@ -89,7 +89,7 @@ def save_settings(system=None, years=None):
 
 # --- Modules and assessments ---
 
-M_COLS = ("id", "name", "code", "credits", "year", "target", "final", "category_id")
+M_COLS = ("id", "name", "code", "credits", "year", "target", "final", "category_id", "created_at")
 EDITABLE = ("name", "code", "credits", "year", "target", "final")
 A_COLS = ("id", "module_id", "name", "weight", "mark", "due")
 
@@ -171,6 +171,80 @@ def delete_module(mid):
         conn.execute("UPDATE gr_canvas_courses SET module_id = NULL WHERE module_id = ?", (mid,))
         conn.execute("DELETE FROM gr_assessments WHERE module_id = ?", (mid,))
         conn.execute("DELETE FROM gr_modules WHERE id = ?", (mid,))
+
+
+def create_category(mid):
+    """Give a module made before categories existed its own category (group "Modules"). Does nothing for
+    one that has it. Returns the category id (None if there's no such module)."""
+    m = get_module(mid)
+    if not m:
+        return None
+    if m["category_id"]:
+        return m["category_id"]
+    cid = f"module-{mid[:12]}"
+    with store.db() as conn:
+        store.add_module_category(conn, cid, m["name"])
+        conn.execute("UPDATE gr_modules SET category_id = ? WHERE id = ?", (cid, mid))
+    return cid
+
+
+def category_colour(m):
+    """A module's colour: its category's, or None while it has no category."""
+    if not m["category_id"]:
+        return None
+    cats = store.load_categories()
+    row = cats[cats["id"] == m["category_id"]]
+    return None if row.empty else row.iloc[0]["colour"]
+
+
+# --- A module's time ---
+
+DEFAULT_WEEK_HOURS = 6
+
+
+def week_hours_goal(m):
+    """Study hours a week for a module: its own number if set, else the default for every module (6 h)."""
+    s = store.load_settings()
+    own = (s.get("module_hours") or {}).get(m["id"])
+    return float(own if own is not None else s.get("study_hours", DEFAULT_WEEK_HOURS))
+
+
+def set_week_hours_goal(mid, hours):
+    """Set one module's hours a week (None goes back to the default)."""
+    own = dict(store.load_settings().get("module_hours") or {})
+    if hours is None:
+        own.pop(mid, None)
+    else:
+        own[mid] = float(hours)
+    store.save_settings(module_hours=own)
+
+
+def module_hours(m, ctx):
+    """{"done", "planned", "goal", "term"} hours of the module's category: this week's Actual (confirmed days),
+    this week's Plan (its lectures count once, under this category), the weekly goal, and the Actual since
+    the module was added. All zero while the module has no category."""
+    from venato import pace
+    week = pace.week_days(ctx.today)
+    goal = {"category_id": m["category_id"], "label": None}
+    since = min(ctx.today, store._as_date((m.get("created_at") or ctx.today.isoformat())[:10]))
+    return {"done": ctx.hours(goal, week[0], week[-1], "actual"), "planned": ctx.hours(goal, week[0], week[-1], "plan"),
+            "goal": week_hours_goal(m), "term": ctx.hours(goal, since, ctx.today, "actual")}
+
+
+def open_deadlines(mid):
+    """The module's deadlines not yet done, soonest first."""
+    return [d for d in store.deadlines() if d["module_id"] == mid]
+
+
+def week_events(mid, first, last):
+    """The module's timetable events (lectures) between two days."""
+    return [e for e in store.outlook_between(first.isoformat(), last.isoformat()) if e.get("module_id") == mid]
+
+
+def week_blocks(m, first, last):
+    """The Plan blocks the student put in the module's category between two days."""
+    return [b for b in store.blocks_between(first.isoformat(), last.isoformat(), "plan")
+            if m["category_id"] and b["category_id"] == m["category_id"]]
 
 
 # --- Canvas courses ---
@@ -429,7 +503,7 @@ def _home():
     ui.render_home()
 
 
-BLOCK = Block("grades", "Grades", ":material/grade:",
-              "Modules and weighted marks: averages, what you need to hit your target, and your classification or GPA.",
+BLOCK = Block("grades", "Modules", ":material/school:",
+              "Your modules: deadlines, study hours, weighted marks, what you need to hit your target, and your classification or GPA.",
               group="Study & work", page=_page, widgets=[Widget("modules", "Grades", _home, "m")], tools=TOOLS, prompt=PROMPT, context=_context,
               quick=[_quick], schema=SCHEMA, migrate=_migrate, order=40, default=True, core=True)

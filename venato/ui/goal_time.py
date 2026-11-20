@@ -473,9 +473,12 @@ OFFER_AFTER_DAYS = 7            # the assistant is offered (once) this long afte
 
 
 def deadline_needs_plan(d, ctx):
-    """Why a deadline due within the week needs you, or "" when it doesn't: no plan yet, or behind on its plan.
-    Plans arrive later (a deadline's plan is an hours goal): this is the one place that will check it."""
-    return "no plan yet"
+    """Why a deadline due within the week needs you, or "" when it doesn't: no plan yet, or behind on its plan
+    (a deadline's plan is an hours goal, so "behind" is the goal's own pace)."""
+    goal = store.deadline_goal(d["id"])
+    if not goal:
+        return "no plan yet"
+    return "behind on its plan" if pace.goal_pace(goal, ctx)["state"] in PILL else ""
 
 
 def _goal_rows(ctx):

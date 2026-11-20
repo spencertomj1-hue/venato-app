@@ -57,7 +57,7 @@ def test_tools_quick_and_page(gr, store):
     assert "needs" in gr.tool_needed("ACP").text and "Overall" in gr.tool_summary().text
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Grades").run()
+    at.sidebar.radio[0].set_value("Modules").run()
     assert not at.exception
 
 

@@ -30,6 +30,9 @@ GOAL_PERIODS = ("monthly", "yearly")
 
 
 GOAL_COLS = "id, title, period, period_start, target, unit, progress, habit_id, ord, created_at, category_id, label, due"
+# What is read back: also the deadline a plan goal belongs to (deadline_id). A closed goal (its deadline
+# is done) is left out of every list, so pace, sittings and Needs you no longer see it.
+GOAL_SELECT = GOAL_COLS + ", deadline_id"
 
 
 def _period_for(start, due):
@@ -160,7 +163,8 @@ def goals_in(period, start):
 def _goals_where(where, params, order="ord, due, created_at"):
     with db() as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(f"SELECT {GOAL_COLS} FROM goals WHERE {where} ORDER BY {order}", params).fetchall()
+        rows = conn.execute(f"SELECT {GOAL_SELECT} FROM goals WHERE closed = 0 AND ({where}) ORDER BY {order}",
+                            params).fetchall()
         return [_with_value(conn, r) for r in rows]
 
 
@@ -191,10 +195,16 @@ def goals_past(day=None):
     return _goals_where("due < ?", (_as_date(day or local_today()).isoformat(),), order="due DESC, ord, created_at")
 
 
+def deadline_goal(deadline_id):
+    """The open hours goal that is a deadline's plan, or None."""
+    rows = _goals_where("deadline_id = ?", (deadline_id,))
+    return rows[0] if rows else None
+
+
 def get_goal(goal_id):
     with db() as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute(f"SELECT {GOAL_COLS} FROM goals WHERE id = ?", (goal_id,)).fetchone()
+        row = conn.execute(f"SELECT {GOAL_SELECT} FROM goals WHERE id = ?", (goal_id,)).fetchone()
         return _with_value(conn, row) if row else None
 
 
@@ -214,7 +224,7 @@ def _check_tracking(conn, habit_id, category_id):
 
 
 def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None, category_id=None, label=None,
-             due=None):
+             due=None, deadline_id=None):
     """Add a goal; returns it. With `due`, it runs from `day` (default today) to that deadline; without,
     `period` makes it the month's or year's containing `day` (due on its last day). category_id (and
     optionally an activity label) makes it count the Actual hours of that category instead of a hand-kept number."""
@@ -242,6 +252,8 @@ def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None,
             (goal_id, title, period, start, _check_target(target), (unit or "").strip() or None, habit_id,
              stamp(), category_id or None, label, due),
         )
+        if deadline_id:
+            conn.execute("UPDATE goals SET deadline_id = ? WHERE id = ?", (deadline_id, goal_id))
     return get_goal(goal_id)
 
 

@@ -255,6 +255,9 @@ def _deadlines_from_feeds(conn):
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS deadlines_uid ON deadlines (uid) WHERE uid IS NOT NULL")
     # Imported deadlines the student deleted: a sync never brings them back.
     conn.execute("CREATE TABLE IF NOT EXISTS deadlines_hidden (uid TEXT PRIMARY KEY)")
+    # A deadline's plan is an hours goal: deadline_id links it, closed hides it once the deadline is done.
+    _add_column(conn, "goals", "deadline_id", "TEXT")
+    _add_column(conn, "goals", "closed", "INTEGER NOT NULL DEFAULT 0")
     _add_column(conn, "tt_outlook", "module_code", "TEXT")      # the code the event names (feeds.event_code)
     _add_column(conn, "tt_outlook", "module_id", "TEXT")        # the module with that code, if there is one
 
