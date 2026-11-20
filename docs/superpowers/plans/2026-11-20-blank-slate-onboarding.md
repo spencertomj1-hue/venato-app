@@ -30,13 +30,17 @@ so someone who deletes every category doesn't get them back.
 4. `blocks.STARTER` → `[]` for new installs. Blocks get picked in onboarding (Phase 4).
 5. Tests: a fresh database has 0 categories / 0 label defaults / 0 exercises, and every page renders without errors.
 
-## Phase 2: customisable daily log
-1. New table `log_fields(id, name, kind, unit, min, max, ord, on)`. Kinds: `score` (1-10), `number` (with a unit), `yes/no`, `text`.
-2. New table `log_values(date, field_id, value)`. Mood, sleep, energy, water and productivity become **built-in example fields**. On existing installs a migration creates them as `log_fields` rows (switched on) and copies the `entries` columns into `log_values`. Keep `entries.notes` for the journal.
-3. New installs: no fields switched on. The Daily Log page shows "What do you want to log each day?", with the 5 examples as chips plus "Custom…".
-4. Update the form, the calendar component, stats charts, CSV import/export (`store/history.py`), assistant tools/context and the weekly review so they read the field list instead of fixed columns.
-5. Settings → Daily Log: add, rename, reorder or switch off fields. Switching a field off hides it but keeps its data.
-6. Tests: migration round-trip (old columns → values, identical numbers), a custom field shows in the form, stats and the CSV.
+## Phase 2: Daily Log becomes a journal
+The Daily Log turns into a **journal** that can also track **sleep** and **water**. Mood, energy and productivity are removed.
+1. Sleep and water are optional: switches in Settings → Daily Log (and in onboarding), both **off** on new installs. Off = hidden everywhere.
+2. Remove mood, energy and productivity from: the form and calendar (`ui/daily_log.py`, `components/calendar_component.js`), stats and charts
+   (`store/stats.py`, `ui/stats.py`, `ui/uni_stats.py`), the weekly review (`review.py`, `ui/review.py`), the assistant (`tools/`, `assistant.py`, `quick.py`, `facade.py`),
+   CSV import/export (`store/history.py`), search (`ui/search.py`) and the block blurb (`blocks/core.py`).
+3. Database: leave the old `mood`/`energy`/`productivity` columns where they are, unread. No migration, so nothing can be lost, and old data stays in the
+   file if it's ever wanted. New writes don't touch them.
+4. The page leads with the journal box (today's prompt). Sleep and water (if on) sit beside it as two small inputs. The calendar shows which days
+   have an entry, plus sleep/water if on. Habits stay on this page.
+5. Tests: the form saves notes/sleep/water. No mood/energy/productivity anywhere in the UI, the tools or the CSV. Sleep/water switches hide them.
 
 ## Phase 3: Home you arrange yourself
 1. Split Home into **widgets**, separate from blocks: `timetable_today`, `ask`, `needs_you`, `todos`, `deadlines`, `goals`, `habits`, `daily_log`, `focus`, plus each other block's existing `home`. Each block declares a list of widgets (`Block.widgets`) instead of just one `home`.
@@ -60,19 +64,16 @@ New wizard: **Welcome → Your goals → What would you track? → Your day (cat
 
 1. **Your goals**: three boxes, *3 months / 6 months / 1 year*. Each one takes free text plus an optional number target ("Run a half marathon", "Save £2,000"). Saved as goals with `due` = today + 3/6/12 months (the goals table already has `due`).
 2. **What would you track to get there?**: for each goal, the user writes or picks what they'd measure. Suggestions come from:
-   - AI on: Claude proposes habits, log fields, categories and blocks for each goal (one tool call returning JSON). The user ticks which to keep.
+   - AI on: Claude proposes habits, sleep/water tracking, categories and blocks for each goal (one tool call returning JSON). The user ticks which to keep.
    - AI off: a keyword map (e.g. run/gym → Workouts block, Exercise category, "Trained" habit; save/money → Money block; exam/degree → Grades, Study category).
    Everything is **unticked by default**, labelled "examples: pick what you want". Ticked items link to the goal (`habit_id` / `category_id` when the goal is measured that way).
 3. **Your day**: build timetable categories. Shows the categories implied by step 2, plus `EXAMPLE_CATEGORIES` as chips, plus "Add your own" (name + colour).
-4. **Daily log & habits**: the same chip pattern for log fields (Phase 2) and habits.
+4. **Journal & habits**: switches for tracking sleep and water. Habits use the same chip pattern (examples, unticked, plus add your own).
 5. **Home**: Home gets prefilled from what they picked. The last screen points at the Arrange button.
 6. Every step can be skipped. "Skip setup" leaves a truly blank app with clear empty states.
 7. Re-run from Settings ("Run setup again"). This *adds* things and never deletes.
 8. Later: the weekly review asks "still on track for your 3-month goal?" (separate task, not this plan).
 
 ## Order and sizing
-Phase 1 (small) → Phase 3 (medium) → Phase 2 (largest: schema migration) → Phase 4 (medium, depends on 1-3).
+Phase 1 (small) → Phase 3 (medium) → Phase 2 (medium: removal across many files) → Phase 4 (medium, depends on 1-3).
 Each phase is its own PR on `venato-app`, then gets merged into `venato-private`.
-
-## Open decisions
-1. Daily log: full move to `log_fields`/`log_values` (proposed) vs keeping the 5 fixed columns plus a side table for custom fields.
