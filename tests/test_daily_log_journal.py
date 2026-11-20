@@ -180,8 +180,50 @@ def test_settings_page_has_the_switches(blank_store):
 def test_nothing_user_facing_mentions_old_scores():
     root = Path(__file__).resolve().parents[1] / "venato"
     skip = {"schema.py", "journal.py", "history.py"}                  # the old column names, in comments and SQL
-    for f in list(root.rglob("*.py")) + list(root.rglob("*.js")) + list(root.rglob("*.css")):
+    for f in list(root.rglob("*.py")) + list(root.rglob("*.js")) + list(root.rglob("*.css")) + [root.parent / "app.py"]:
         if f.name in skip:
             continue
         text = f.read_text(encoding="utf-8").lower()
         assert not any(w in text for w in OLD), f
+
+
+def test_replace_import_keeps_measures_the_csv_does_not_carry(blank_store):
+    with blank_store.db() as conn:
+        blank_store.save_entry(conn, "2026-10-28", "old", 7.0, 2.0)
+    blank_store.set_tracking(sleep=False, water=False)
+    df = blank_store.load_all_data()                                   # exported with notes only
+    assert "water" not in df.columns
+    blank_store.save_all_data(df, replace=True)
+    e = blank_store.get_entry("2026-10-28")
+    assert (e["notes"], e["sleep"], e["water"]) == ("old", 7.0, 2.0)
+
+
+def test_rows_with_only_old_scores_are_not_logged_days(blank_store):
+    from venato import review
+    from datetime import date
+    _seed_old_scores(blank_store, "2026-10-28")
+    with blank_store.db() as conn:
+        conn.execute("UPDATE entries SET notes = NULL")
+        conn.execute("INSERT INTO entries (date, water) VALUES ('2026-10-27', 2.0)")
+    blank_store.set_tracking(sleep=False, water=False)
+    assert blank_store.get_stats(7, today=date(2026, 10, 29))["days_logged"] == 0
+    assert review.summary(date(2026, 10, 26))["days_logged"] == 0
+    blank_store.set_tracking(water=True)
+    assert blank_store.get_stats(7, today=date(2026, 10, 29))["days_logged"] == 1
+    assert review.summary(date(2026, 10, 26))["days_logged"] == 1
+
+
+def test_prompt_mentions_water_only_when_on(blank_store):
+    from venato import assistant
+    blank_store.set_tracking(water=False)
+    assert "water" not in assistant.system_prompt().lower().split("what the app tracks")[0]
+    assert "water" not in assistant.system_prompt().lower().split("- habits")[0].split("what the app tracks")[1]
+    blank_store.set_tracking(water=True)
+    assert "water" in assistant.system_prompt().split("- Habits")[0]
+
+
+def test_existing_install_check_follows_writes(blank_store):
+    assert not blank_store.tracks_water()
+    with blank_store.db() as conn:
+        blank_store.save_entry(conn, "2026-10-28", water=1.0)
+    assert blank_store.tracks_water()

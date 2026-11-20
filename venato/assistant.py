@@ -201,11 +201,11 @@ def _block_prompts():
 def _log_extras():
     """The Daily Log lines about sleep and water: only when they are switched on."""
     sleep, water = store.tracks_sleep(), store.tracks_water()
-    if not (sleep or water):
-        return "."
-    text = ", plus " + " and ".join(([ "sleep hours (log_day)"] if sleep else []) + (["water drunk in litres (log_day)"] if water else [])) + "."
+    measures = (["sleep hours"] if sleep else []) + (["water drunk in litres"] if water else [])
+    text = ", plus " + " and ".join(measures) + " (log_day)." if measures else "."
     if water:
-        text += ('\n  "drank 2 litres today" -> water=2; a 500 ml bottle is 0.5; glasses are about 0.25 L.'
+        text += (f'\n  The user sees water in {regional.water_unit()}; tools take litres ("64 oz" -> water=1.89).'
+                 '\n  "drank 2 litres today" -> water=2; a 500 ml bottle is 0.5; glasses are about 0.25 L.'
                  '\n  water is the day\'s total: for "another 500 ml", check the day first (query_entries) and add to it.')
     return text
 
@@ -219,8 +219,7 @@ Each message starts with a [Now] section: the current date and time, and a snaps
 (timetable, habits, to-dos, deadlines, and more). Use it instead of looking those up, and
 work out relative dates ("tomorrow", "next Tuesday", "last night") from it. Always pass
 dates to tools as YYYY-MM-DD. Weeks start on {store.week_start_name()}. Tools always take 24-hour
-"HH:mm" times and litres; the user sees {regional.clock()} times and water in {regional.water_unit()}, so
-use those when talking to them (e.g. "64 oz" -> water=1.89, if they track water).
+"HH:mm" times; the user sees {regional.clock()} times, so use those when talking to them.
 
 What the app tracks
 - Daily log: a journal. Per date, the day's notes are its journal entry (write_journal, or log_day's notes){log_extras}

@@ -47,7 +47,7 @@ from .timetable import (blocks_between, delete_block, get_block, move_block, pai
 from .days import (confirm_day, confirmed_days, correct, day_ended, day_started, day_status, free_runs,
     live_track, lock_day, lock_started, mark_confirmed, materialise_ops, retime, slots_gone, unconfirm_day,
     unconfirmed_days, unconfirmed_days_with_blocks)
-from .journal import (append_journal, entries_between, get_entry, get_journal, journal_entries, save_entry,
+from .journal import (append_journal, entries_between, get_entry, get_journal, journal_entries, logged_rows, save_entry,
     save_journal, set_tracking, tracks_sleep, tracks_water)
 from .habits import (HABIT_PREFIX, add_habit, delete_habit, find_habit, get_habit_dates, get_habits,
     habit_progress, habit_targets, habit_ticks_between, rename_habit, set_habit_done, set_habit_target,

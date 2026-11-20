@@ -6,7 +6,7 @@ reads or writes them, so an older install's values stay as they were.
 
 import sqlite3
 
-from .database import KEEP, _read, db
+from .database import KEEP, _read, data_version, db, db_path
 from .dates import _as_date
 from .settings import load_settings, save_settings
 
@@ -19,9 +19,23 @@ def get_entry(day):
     return dict(row) if row else {}
 
 
+_seen = {}      # column -> (data version, has values): the existing-install check runs once per database change
+
+
 def _has_values(column):
-    with db() as conn:
-        return conn.execute(f"SELECT 1 FROM entries WHERE {column} IS NOT NULL LIMIT 1").fetchone() is not None
+    version = (data_version(), str(db_path()))
+    if _seen.get(column, (None,))[0] != version:
+        with db() as conn:
+            found = conn.execute(f"SELECT 1 FROM entries WHERE {column} IS NOT NULL LIMIT 1").fetchone() is not None
+        _seen[column] = (version, found)
+    return _seen[column][1]
+
+
+def logged_rows(rows):
+    """The days that count as logged: those with notes, or sleep/water while that is switched on."""
+    sleep, water = tracks_sleep(), tracks_water()
+    return [r for r in rows if (r.get("notes") or "").strip()
+            or (sleep and r.get("sleep") is not None) or (water and r.get("water") is not None)]
 
 
 def _tracks(setting, column):

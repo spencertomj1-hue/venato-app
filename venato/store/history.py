@@ -61,9 +61,13 @@ def save_all_data(df, replace=False):
     habit_cols = [c for c in df.columns if c.startswith(HABIT_PREFIX)]
     with db() as conn:
         if replace:
-            # Clear what the export holds; the old mood/energy/productivity columns are left as they are.
-            conn.execute("UPDATE entries SET notes = NULL, sleep = NULL, water = NULL")
-            conn.execute("DELETE FROM entries WHERE mood IS NULL AND energy IS NULL AND productivity IS NULL")
+            # Clear only the measures this CSV carries (an export leaves out sleep/water when they're switched
+            # off, so those stay); the old mood/energy/productivity columns are never touched.
+            carried = [c for c in ("notes", "sleep", "water") if c in df.columns]
+            if carried:
+                conn.execute(f"UPDATE entries SET {', '.join(c + ' = NULL' for c in carried)}")
+            conn.execute("DELETE FROM entries WHERE mood IS NULL AND sleep IS NULL AND energy IS NULL "
+                         "AND notes IS NULL AND water IS NULL AND productivity IS NULL")
             conn.execute("DELETE FROM habits")  # also clears habit_log (cascade)
 
         # Make sure every habit column has a habit, then look up the ids.

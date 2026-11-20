@@ -248,14 +248,14 @@ def summary(first):
 
     journal = store.journal_entries(first=days[0], last=days[-1]) if log_on else []
     sections = blocks.review_sections(first, last)        # what the switched-on blocks say about the week
-    has_data = bool(hours or store.blocks_between(days[0], days[-1]) or any(this) or any(h["ticks"] for h in habits) or weekly or daily or journal or sections)
+    has_data = bool(hours or store.blocks_between(days[0], days[-1]) or bool(store.logged_rows(this)) or any(h["ticks"] for h in habits) or weekly or daily or journal or sections)
     s = {
         "first": first, "last": last, "complete": last < today, "has_data": has_data,
         "time": time, "planned_hours": planned / 2, "actual_hours": sum(h["actual"] for h in time),
         "followed_pct": _pct(matched, planned),
         "days_confirmed": len(confirmed), "days_so_far": so_far, "unconfirmed": _unconfirmed(days, now),
         "before": before, "promise": store.get_review(prev_first).get("to_change"),
-        "log": log, "days_logged": len(this),
+        "log": log, "days_logged": len(store.logged_rows(this)),
         "habits": habits,
         "todos": {"weekly_done": sum(t["done"] for t in weekly), "weekly": len(weekly),
                   "daily_done": sum(t["done"] for t in daily), "daily": len(daily)},
