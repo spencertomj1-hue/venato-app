@@ -19,9 +19,8 @@ sleep/water tracking, habits, blocks and the Home layout. Examples are offered a
 | Onboarding | Welcome → Assistant → Calendar → Mic → Done. No goals step | `ui/settings_ui.py:224+` |
 
 ## Existing installs
-No special treatment: the blank-slate rules apply to everyone. The one exception is **data**: daily-log history gets
-migrated, never dropped, because the owner's own Mac is an existing install. Seeding happens only when a database is created,
-so someone who deletes every category doesn't get them back.
+No special treatment: the blank-slate rules apply to everyone. Data is never deleted (the owner's own Mac is an existing
+install). Seeding happens only when a database is created, so someone who deletes every category doesn't get them back.
 
 ## Phase 1: no presets
 1. Remove the seeding of `DEFAULT_CATEGORIES` and `DEFAULT_LABEL_MAP` on new databases. Keep the lists, renamed `EXAMPLE_CATEGORIES`, for suggestions only.
@@ -59,7 +58,7 @@ The Daily Log turns into a **journal** that can also track **sleep** and **water
 5. Tests: a custom grid renders the right rows and widths. An unknown or disabled widget gets skipped. A row whose spans add up to more than 12 gets clamped.
 
 ## Phase 4: goal-led onboarding
-New wizard: **Welcome → Your goals → What would you track? → Your day (categories) → Daily log & habits → Home → Assistant / Calendar / Mic → Done**
+New wizard: **Welcome → Your goals → What would you track? → Your day (categories) → Journal & habits → Home → Assistant / Calendar / Mic → Done**
 (Assistant moves later so the core flow works without AI. If AI is on, it powers the suggestions.)
 
 1. **Your goals**: three boxes, *3 months / 6 months / 1 year*. Each one takes free text plus an optional number target ("Run a half marathon", "Save £2,000"). Saved as goals with `due` = today + 3/6/12 months (the goals table already has `due`).
