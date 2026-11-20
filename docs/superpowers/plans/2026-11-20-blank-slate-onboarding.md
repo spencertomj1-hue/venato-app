@@ -40,7 +40,12 @@ The "is new" check is "the database was just created", not "the table is empty",
 ## Phase 3: Home you arrange yourself
 1. Split Home into **widgets**, separate from blocks: `timetable_today`, `ask`, `needs_you`, `todos`, `deadlines`, `goals`, `habits`, `daily_log`, `focus`, plus each other block's existing `home`. Each block declares a list of widgets (`Block.widgets`) instead of just one `home`.
 2. Save the layout in `settings.json` as `home: {"left": [...], "right": [...]}`. Missing key = today's layout, so existing installs see no change.
-3. Settings → Home: two columns of chips. Drag (or ↑/↓) to reorder, move between columns, toggle on and off. Only widgets from switched-on blocks are listed. "Reset to default" button.
+3. Arranging happens **on Home itself**: a small "Arrange" icon button (`:material/dashboard_customize:`, tertiary) in Home's top-right corner. Clicking it switches Home into arrange mode:
+   - Each widget gets a slim bar on top: ↑ / ↓ (order), ← / → (column), and 👁 (hide).
+   - A "+ Add widget" chip row at the bottom lists hidden widgets, plus any from switched-on blocks that aren't placed yet.
+   - "Done" and "Reset" buttons replace the Arrange button. Changes save straight to `settings.json` (with undo via `venato/undo.py`).
+   - Widgets keep showing their real content while you arrange (no placeholder boxes), so you can see what you're moving.
+   - There's no Settings → Home page. Arranging lives on Home only.
 4. `ui/home.py` draws from the layout, keeping the per-widget try/except and the fragment behaviour.
 5. Tests: a custom layout renders in that order. An unknown or disabled widget gets skipped. The default layout matches the current Home exactly.
 
@@ -55,7 +60,7 @@ New wizard: **Welcome → Your goals → What would you track? → Your day (cat
    Everything is **unticked by default**, labelled "examples: pick what you want". Ticked items link to the goal (`habit_id` / `category_id` when the goal is measured that way).
 3. **Your day**: build timetable categories. Shows the categories implied by step 2, plus `EXAMPLE_CATEGORIES` as chips, plus "Add your own" (name + colour).
 4. **Daily log & habits**: the same chip pattern for log fields (Phase 2) and habits.
-5. **Home**: a preview of the Home layout built from what they picked (Phase 3 editor, prefilled).
+5. **Home**: Home gets prefilled from what they picked. The last screen points at the Arrange button.
 6. Every step can be skipped. "Skip setup" leaves a truly blank app with clear empty states.
 7. Re-run from Settings ("Run setup again"). This *adds* things and never deletes.
 8. Later: the weekly review asks "still on track for your 3-month goal?" (separate task, not this plan).
