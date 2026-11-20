@@ -37,7 +37,7 @@ from .dates import (WEEK_START, _as_date, computer_zone_name, end_of_period, fmt
     zone_name)
 from .grid import (BLOCK_COLS, TRACKS, apply_block_ops, blocks_for, first_min, get_block_in, plan_paint,
     slot_count, slot_of, slot_time)
-from .categories import (DEFAULT_CATEGORIES, DEFAULT_LABEL_MAP, DEFAULT_OUTLOOK_CATEGORY, groups,
+from .categories import (EXAMPLE_CATEGORIES, EXAMPLE_LABEL_MAP, DEFAULT_OUTLOOK_CATEGORY, groups,
     load_categories, load_label_map, outlook_category, remove_label_default, resolve_category, save_category,
     set_label_default)
 from .outlook import (OUTLOOK_COLS, _as_block, detach_outlook, get_outlook, hide_outlook, outlook_between,

@@ -14,13 +14,29 @@ import re
 
 import streamlit as st
 
-from venato import regional
+from venato import blocks, regional
 from venato import store
 from venato import undo
 from venato import tools
 
 AUTO = "Automatic (from the activity)"
 PENDING = "tt_tool_pending"          # a tools.Pending preview waiting for Confirm
+OPEN_CATEGORIES = "tt_open_categories"   # set by "Add a category" elsewhere: the Timetable opens its category editor
+
+
+def _go_add_category():
+    st.session_state["page"] = "Timetable"        # the sidebar radio's key; callbacks run before it's drawn
+    st.session_state[OPEN_CATEGORIES] = True
+
+
+def no_categories(key, text="You have no categories yet. Add one to plan and track your time."):
+    """The empty state for anything that needs a category: a line of text and a button that opens the
+    category editor (on the Timetable page, where categories are managed)."""
+    st.caption(text)
+    if blocks.is_on("timetable"):
+        st.button("Add a category", icon=":material/palette:", key=key, on_click=_go_add_category)
+    else:
+        st.caption("Switch the Timetable on in Settings, then use Adjust categories.")
 
 
 def _times(first, last):
@@ -101,6 +117,9 @@ def _fit_dialog(day, label="", last=None, category=None, hours=6.0):
                "hours over the days, with a break between sittings. You'll see the times before anything is added.")
     if _confirm_box("Add to Plan"):
         return
+    if store.load_categories().empty:
+        no_categories("tt_fit_addcat", "Add a category first, so the time you fit has somewhere to go.")
+        return
     today = store.local_today()
     first = max(day, today)
     last = max(first, last) if last else first + timedelta(days=6)
@@ -140,6 +159,20 @@ def _categories_dialog():
     cats = store.load_categories().to_dict("records")
     groups = store.groups()
 
+    if not cats:
+        st.caption("Categories are what you sort your time into, like Study or Exercise. Each has a colour "
+                   "on the timetable. For example: " + ", ".join(c[1] for c in store.EXAMPLE_CATEGORIES[:5]) + ".")
+    else:
+        _edit_categories(cats, groups)
+    _new_category(groups)
+    if not cats:
+        return
+
+    st.divider()
+    _activity_defaults()
+
+
+def _edit_categories(cats, groups):
     st.markdown("**Your categories**")
     with st.form("tt_cats_form", border=False):
         edits = []
@@ -163,19 +196,24 @@ def _categories_dialog():
                 st.toast("Categories saved", icon=":material/check_circle:")
                 st.rerun()
 
+
+def _new_category(groups):
     st.markdown("**New category**")
     with st.form("tt_cat_new", clear_on_submit=True, border=False):
         a, b, g, s = st.columns([4, 1, 2, 2], vertical_alignment="bottom")
         name = a.text_input("Name", placeholder="e.g. Music")
         colour = b.color_picker("Colour", "#3E8EF7")
-        grp = g.selectbox("Group", groups)
+        grp = g.selectbox("Group", groups) if groups else g.text_input("Group", value="General")   # the first one names the first group
         if s.form_submit_button("Add", icon=":material/add:"):
             if not name.strip():
                 st.error("Give it a name.")
+            elif not (grp or "").strip():
+                st.error("Give the group a name.")
             else:
                 _call(tools.edit_category, name, colour=colour, group=grp, create=True)
 
-    st.divider()
+
+def _activity_defaults():
     st.markdown("**Activity defaults**")
     st.caption("Typing one of these in the timetable picks its category automatically.")
     names = dict(zip(store.load_categories()["id"], store.load_categories()["name"]))
@@ -317,5 +355,6 @@ def toolbar(day, row=None):
                 help="Fit hours of something (e.g. 6 h of revision) into your free time"):
         st.session_state.pop(PENDING, None)
         _fit_dialog(day)
-    if c.button("Adjust categories", icon=":material/palette:", key="tt_btn_cats"):
+    opened = st.session_state.pop(OPEN_CATEGORIES, False)         # "Add a category" was pressed somewhere
+    if c.button("Adjust categories", icon=":material/palette:", key="tt_btn_cats") or opened:
         _categories_dialog()

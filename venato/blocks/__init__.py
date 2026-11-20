@@ -34,6 +34,8 @@ class Block:
     migrate: Callable | None = None  # conn -> None: later changes to its tables
     order: int = 100                 # where its page goes in the sidebar
     default: bool = False            # on for someone who never chose (existing installs: the original pages)
+    core: bool = False               # one of the built-in blocks: on for new installs and offered in setup. Extras
+                                     # a copy adds stay False: they sit under "More blocks" and setup never offers them
     page_name: str = ""              # the sidebar page it shares, when not its own name (two blocks can share one page)
     search: dict = field(default_factory=dict)      # Home search: kind -> (select, haystack[, order]), as in store._SEARCH
     search_icons: dict = field(default_factory=dict)  # kind -> Material icon name for its search results
@@ -42,10 +44,13 @@ class Block:
     status: dict = field(default_factory=dict)      # word in its tools' names -> what the chat shows while one runs
 
 
-GROUPS = ["Plan", "Health & body", "Study & work", "Money", "Other"]
+GROUPS = ["Plan", "Health & body", "Study & work", "Other"]
 
-# The blocks a new setup starts with. They used to be always on; every block can be switched off now.
-STARTER = ["timetable", "goals", "focus", "grades", "stats"]
+# The blocks a new setup starts with: the core ones, bar Grades (setup adds that for students).
+STARTER = ["timetable", "goals", "stats", "focus", "log"]
+
+# What was always on before every block could be switched off. Settings saved back then keep these on.
+_ONCE_ALWAYS_ON = ["timetable", "goals", "focus", "grades", "stats"]
 
 _all = None
 
@@ -80,7 +85,7 @@ def chosen_keys():
         return [b.key for b in all_blocks() if b.default]
     keys = [k for k in saved if k in known]
     if not settings.get("blocks_optional"):    # saved before every block could be switched off: the
-        keys += [k for k in STARTER if k not in keys and k in known]   # once always-on ones stay on
+        keys += [k for k in _ONCE_ALWAYS_ON if k not in keys and k in known]   # once always-on ones stay on
     return keys
 
 

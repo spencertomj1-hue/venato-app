@@ -84,10 +84,13 @@ def edit_category(name, colour=None, new_name=None, group=None, create=False):
     match = [r for r in cats.to_dict("records") if r["name"].lower() == str(name).strip().lower()]
     if colour is not None and not re.fullmatch(r"#[0-9A-Fa-f]{6}", str(colour).strip()):
         raise ToolError("colour must be a hex code like #00B0F0.")
-    if group is not None:
-        group = next((g for g in store.groups() if g.lower() == str(group).strip().lower()), None)
+    existing = store.groups()
+    if group is not None and not existing:
+        group = str(group).strip() or None             # the very first category names the first group
+    elif group is not None:
+        group = next((g for g in existing if g.lower() == str(group).strip().lower()), None)
         if group is None:
-            raise ToolError(f"group must be one of: {', '.join(store.groups())}.")
+            raise ToolError(f"group must be one of: {', '.join(existing)}.")
     if new_name and new_name.strip().lower() != str(name).strip().lower() and \
             any(r["name"].lower() == new_name.strip().lower() for r in cats.to_dict("records")):
         raise ToolError(f"There's already a category called '{new_name}'.")
@@ -99,7 +102,7 @@ def edit_category(name, colour=None, new_name=None, group=None, create=False):
         if colour is None:
             raise ToolError("A new category needs a colour (hex, e.g. #00B0F0).")
         cid = re.sub(r"[^a-z0-9]+", "_", str(name).strip().lower()).strip("_") or "category"
-        group = group or store.groups()[0]
+        group = group or (existing[0] if existing else "General")
         store.save_category(cid, str(name).strip(), colour.strip(), group)
         return Result(f"Created category {str(name).strip()} ({colour.upper()}) in {group}.",
                       changed=True)

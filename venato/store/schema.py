@@ -1,13 +1,12 @@
 """
-The database schema: init_db() creates the tables if they don't exist yet, seeds the default
-categories, and brings an older database up to date (the one-off migrations below it).
+The database schema: init_db() creates the tables if they don't exist yet (no categories: a new
+install starts blank), and brings an older database up to date (the one-off migrations below it).
 Run once at startup (app.py); safe to run again.
 """
 
 import sqlite3
 from datetime import datetime
 
-from .categories import DEFAULT_CATEGORIES, DEFAULT_LABEL_MAP
 from .database import data_dir, db, db_path
 from .dates import end_of_period, local_today, stamp
 from .grid import slot_count, slot_time
@@ -178,13 +177,6 @@ def init_db():
         _scores_out_of_ten(conn)
         _day_status_table(conn)
         _forget_future_status(conn)
-        if conn.execute("SELECT COUNT(*) FROM tt_categories").fetchone()[0] == 0:
-            conn.executemany(
-                "INSERT INTO tt_categories VALUES (?, ?, ?, ?, ?, ?)",
-                [(cid, name, col, txt, grp, i) for i, (cid, name, col, txt, grp) in enumerate(DEFAULT_CATEGORIES)],
-            )
-        if conn.execute("SELECT COUNT(*) FROM tt_label_map").fetchone()[0] == 0:
-            conn.executemany("INSERT INTO tt_label_map VALUES (?, ?)", DEFAULT_LABEL_MAP.items())
 
 
 def _goals_became_todos(conn):

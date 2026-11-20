@@ -1,6 +1,6 @@
 """
 Shared look for the block pages: cards, stat tiles, charts, tables, progress rings and pills,
-so Money, Workouts and Grades all read as one app.
+so every page reads as one app.
 
 Everything is built from Streamlit's own pieces (bordered containers, st.metric, st.dataframe,
 Altair) plus a little HTML for rings and pills, and works in light and dark mode.
@@ -193,18 +193,15 @@ def show(chart, key=None):
 
 # --- Tables ---
 
-def table(rows, money=(), fmt=None, progress=(), dates=None, numbers=None, height=None, key=None):
-    """A read-only table. money: columns shown with mn.fmt (or `fmt`), right-aligned. progress: 0..1
-    columns drawn as bars with a %. dates: {column: format}. numbers: {column: printf format}."""
+def table(rows, progress=(), dates=None, numbers=None, height=None, key=None):
+    """A read-only table. progress: 0..1 columns drawn as bars with a %.
+    dates: {column: format}. numbers: {column: printf format}."""
     df = pd.DataFrame(rows)
     if df.empty:
         return
     df = df.dropna(axis=1, how="all")          # a column with nothing in it is just noise
     cfg = {}
-    money, progress = [c for c in money if c in df], [c for c in progress if c in df]
-    for c in money:
-        df[c] = df[c].map(lambda v: "" if v is None or v != v else fmt(v))
-        cfg[c] = st.column_config.TextColumn(alignment="right")
+    progress = [c for c in progress if c in df]
     for c in progress:
         df[c] = df[c] * 100
         cfg[c] = st.column_config.ProgressColumn(format="%.0f%%", min_value=0, max_value=100)

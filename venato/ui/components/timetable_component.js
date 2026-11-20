@@ -1473,7 +1473,7 @@ class Timetable {
     });
 
     const save = () => {
-      const label = labelEl.value.trim() || this.cats.get(catEl.value).name;
+      const label = labelEl.value.trim() || (this.cats.get(catEl.value) || {}).name || "";
       const details = pop.querySelector(".p-details").value.trim() || null;
       this.commit([{ opId: uid(), kind: "upsert", entry: { ...entry, label, categoryId: catEl.value, details } }]);
       this.closePopover();

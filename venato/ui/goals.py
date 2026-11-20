@@ -129,6 +129,11 @@ def _goal_form(key, goal=None):
         values["habit_id"] = st.selectbox("Habit", ids, format_func=habits.get, key=f"{key}_habit",
                                           index=ids.index(goal["habit_id"]) if mode == 1 and goal["habit_id"] in ids else 0)
     elif how == BY_HOURS:
+        if not categories:
+            from venato.ui import timetable_tools
+            timetable_tools.no_categories(f"{key}_addcat", "Counting timetable hours needs a category to count. "
+                                          "Add one first, or track this goal by hand.")
+            return None
         ids = list(categories)
         c, d = st.columns(2)
         values["category_id"] = c.selectbox("Category", ids, format_func=categories.get, key=f"{key}_cat",

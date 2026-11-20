@@ -13,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 @pytest.fixture
-def store(tmp_path, monkeypatch):
+def blank_store(tmp_path, monkeypatch):
+    """A brand-new install: no categories, no activity defaults (what a new database starts with)."""
     data = tmp_path / "data"
     monkeypatch.setenv("VENATO_DATA_DIR", str(data))
     monkeypatch.setenv("VENATO_DB", str(data / "test.db"))
@@ -23,6 +24,18 @@ def store(tmp_path, monkeypatch):
     # Most tests want the app itself, not the first-run wizard.
     (data / "settings.json").write_text('{"wizard_done": true, "timezone": "Europe/London"}')   # the tests' dates assume London
     yield store_module
+
+
+@pytest.fixture
+def store(blank_store):
+    """A new install that has made the usual categories and activity defaults (the examples a person
+    would pick when adding their first ones). Tests of the blank slate itself use `blank_store`."""
+    from venato.store import categories
+    for cid, name, colour, text, grp in categories.EXAMPLE_CATEGORIES:
+        blank_store.save_category(cid, name, colour, grp, text)
+    for label, cid in categories.EXAMPLE_LABEL_MAP.items():
+        blank_store.set_label_default(label, cid)
+    yield blank_store
 
 
 @pytest.fixture(autouse=True)

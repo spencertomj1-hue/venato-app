@@ -295,6 +295,8 @@ def _maybe_timetable(session):
         result = tools.add_block(started.date().isoformat(), "actual", hhmm(s), hhmm(e), session["label"],
                                  category=_category_name(session["category_id"]))
     except tools.ToolError:
+        if store.load_categories().empty:
+            return "Not added to the timetable. Add a category first (Timetable, then Adjust categories)."
         return "Not added to the timetable: pick a category for it (or give the activity a default category)."
     if result.pending:
         return "Not added to the timetable: something's already there at that time."
@@ -450,4 +452,4 @@ TOOLS = [
 BLOCK = Block("focus", "Focus", ":material/timer:",
               "A Pomodoro timer with breaks and a stopwatch for tracking time; sessions go into your timetable.",
               group="Plan", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=30, default=True)
+              quick=[_quick], schema=SCHEMA, order=30, default=True, core=True)
