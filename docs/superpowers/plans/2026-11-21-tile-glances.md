@@ -88,7 +88,7 @@ cut-off graphic or label, light and dark; the full suite passes
 ## Progress
 | Phase | Status |
 | --- | --- |
-| 1 Column size | not started |
+| 1 Column size | done |
 | 2 Whole-day timetable | not started |
 | 3 Stopwatch tile | not started |
 | 4 Glances | not started |
