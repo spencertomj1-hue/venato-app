@@ -2,8 +2,8 @@
 The setup wizard's steps. A new install starts blank; setup only ever adds things, so running it again
 never deletes anything. Every step but Welcome can be skipped, and "Skip setup" leaves the app as it is.
 
-  Welcome (are you a student?) -> (students: Connect your calendars -> Your modules -> Study hours)
-  -> Your goals -> What would you track? -> Your day -> Your first week
+  Welcome (are you a student?) -> (students: Connect your calendars -> Your modules, with their study hours)
+  -> Your goals -> What would you track? (and the timetable colours) -> Your first week
 
 What a step writes happens when its Next is pressed, and writing again changes the same thing rather than
 adding a second (goals made in this setup are remembered by id in st.session_state["ob"]).
@@ -30,17 +30,13 @@ STEPS = [
     ("welcome", "Welcome", ":material/waving_hand:", False),
     ("calendars", "Calendars", ":material/calendar_month:", True),
     ("modules", "Modules", ":material/menu_book:", True),
-    ("hours", "Hours", ":material/schedule:", True),
     ("goals", "Goals", ":material/flag:", False),
     ("track", "Track", ":material/checklist:", False),
-    ("day", "Day", ":material/view_day:", False),
     ("week", "First week", ":material/event_available:", False),
 ]
 GOAL_SLOTS = [("In 3 months", 3), ("In 6 months", 6), ("In 1 year", 12)]
-TARGET_GRADES = {"First": 70.0, "2:1": 60.0, "2:2": 50.0}
 STUDY_WEEKS = 12                       # a study goal runs this many weeks; its hours are the weekly hours times this
 DEFAULT_CREDITS = 15
-NEW_GROUP = "New group…"
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +64,7 @@ def is_student():
 
 
 def steps():
-    """The steps for this person: [(key, name, icon)]. Students get the three uni steps."""
+    """The steps for this person: [(key, name, icon)]. Students get the two uni steps."""
     student = is_student()
     return [(k, n, i) for k, n, i, uni in STEPS if student or not uni]
 
@@ -176,15 +172,15 @@ def _module_for(code, name):
     return None
 
 
-def add_modules(picked, credits=DEFAULT_CREDITS, target=None):
-    """Add the picked modules ([{code, name}]): each gets its own timetable category. One already in Venato is
-    left alone. Returns the ids of the ones just made."""
+def add_modules(picked):
+    """Add the picked modules ([{code, name}]): each gets its own timetable category, the default credits and no
+    target (setup asks no grade questions). One already in Venato is left alone. Returns the ids of the ones just made."""
     made = []
     for m in picked:
         if _module_for(m.get("code"), m["name"]):
             continue
-        made.append(gr.add_module(m["name"], credits, target=target, code=m.get("code")))
-    _ob().setdefault("new_modules", []).extend(made)           # the only ones Study hours touches
+        made.append(gr.add_module(m["name"], DEFAULT_CREDITS, code=m.get("code")))
+    _ob().setdefault("new_modules", []).extend(made)           # the only ones the study goals touch
     return made
 
 
@@ -275,6 +271,14 @@ def apply_suggestion(s, goal_id=None, number=False):
             store.update_goal(goal_id, category_id=s["cid"], unit="h")
     elif kind in ("sleep", "water"):
         store.set_tracking(**{kind: True})
+
+
+def default_group():
+    """The group an own category goes in: the one with the fewest categories (not Modules), else Life."""
+    cats = store.load_categories()
+    counts = cats[cats["grp"] != store.MODULES_GROUP]["grp"].value_counts()
+    counts = counts.reindex([g for g in store.groups() if g in counts.index])
+    return counts.idxmin() if len(counts) else "Life"
 
 
 def add_category(name, colour, group):
@@ -506,14 +510,10 @@ def _modules():
             names.append(typed.strip())
     if not cands and not existing:
         kit.empty("No modules found yet. Add them below, or connect your timetable on the earlier step.", ":material/info:")
-    a, b = st.columns(2)
-    a.number_input("Credits for each new module", 1, 200, DEFAULT_CREDITS, key="ob_credits",
-                   help="You can change a module's credits later on the Modules page.")
-    b.segmented_control("Target grade", list(TARGET_GRADES), key="ob_target",
-                        help="Your target for every new module. You can change it for each one later.")
     x, y = st.columns([4, 1], vertical_alignment="bottom")
     x.text_input("Add a module", key="ob_new_module", placeholder="e.g. Organic Chemistry")
     y.button("Add", key="ob_add_module", icon=":material/add:", on_click=_add_module_button)
+    _hours_boxes(existing, cands)
     courses = canvas_courses()
     if courses:
         st.subheader("Your Canvas courses", anchor=False)
@@ -527,13 +527,40 @@ def _modules():
                          index=options.index(current) if current in options else 0)
 
 
+def _default_hours():
+    return float(store.load_settings().get("study_hours", gr.DEFAULT_WEEK_HOURS))
+
+
+def _hours_key(c=None, m=None):
+    return f"ob_hours_{_cand_key(c)}" if c is not None else f"ob_hours_{m['id']}"
+
+
+def _hours_boxes(existing, cands):
+    """One hours-a-week box per module that will exist after Next, and what they add up to."""
+    ob = _ob()
+    start, total = {}, 0.0
+    ob["hours_start"] = start
+    rows = [(m["name"], _hours_key(m=m), min(gr.week_hours_goal(m), 40.0)) for m in existing]
+    for c in cands:
+        name = (st.session_state.get(f"ob_name_{_cand_key(c)}") or c["name"]).strip()
+        if st.session_state.get(f"ob_keep_{_cand_key(c)}", True) and name:
+            rows.append((name, _hours_key(c), min(_default_hours(), 40.0)))
+    if not rows:
+        return
+    kit.subhead("Hours a week")
+    for name, key, value in rows:
+        start[key] = value
+        total += st.number_input(name, 0.0, 40.0, value, 0.5, key=key, help="Lectures count too. You can change it "
+                                 "for one module on its page.")
+    st.caption(f"{len(rows)} module{'s' if len(rows) != 1 else ''} · {pace.fmt(total)} h a week, lectures included")
+
+
 def _add_typed_module():
     """Add the module typed in the box (the Add button, and Next). Raises ValueError if it can't be added."""
     name = (st.session_state.get("ob_new_module") or "").strip()
     if not name:
         return
-    add_modules([{"name": name}], st.session_state.get("ob_credits") or DEFAULT_CREDITS,
-                TARGET_GRADES.get(st.session_state.get("ob_target")))
+    add_modules([{"name": name}])
     st.session_state["ob_new_module"] = ""
 
 
@@ -545,40 +572,28 @@ def _add_module_button():
 
 
 def _save_modules():
-    ob = _ob()
+    """Add the modules, set the hours boxes that were changed, then give the new modules their study goals."""
+    ob, ss = _ob(), st.session_state
     _add_typed_module()
-    picked = []
+    for m in gr.modules():                                     # one from before: its box, if it was drawn and changed
+        key = _hours_key(m=m)
+        if key in ss and float(ss[key]) != gr.week_hours_goal(m):
+            gr.set_week_hours_goal(m["id"], ss[key])
+    default = _default_hours()
     for c in ob.get("cands", []):
-        name = (st.session_state.get(f"ob_name_{_cand_key(c)}") or c["name"]).strip()
-        if st.session_state.get(f"ob_keep_{_cand_key(c)}", True) and name:
-            picked.append({"code": c["code"], "name": name})
-    add_modules(picked, st.session_state.get("ob_credits") or DEFAULT_CREDITS,
-                TARGET_GRADES.get(st.session_state.get("ob_target")))
+        name = (ss.get(f"ob_name_{_cand_key(c)}") or c["name"]).strip()
+        if ss.get(f"ob_keep_{_cand_key(c)}", True) and name:
+            add_modules([{"code": c["code"], "name": name}])
+            key = _hours_key(c)
+            if key in ss and float(ss[key]) != default and (m := _module_for(c["code"], name)):
+                gr.set_week_hours_goal(m["id"], ss[key])
     links = {}
     for c in canvas_courses():
         choice = st.session_state.get(f"ob_course_{c['course_id']}")
         if choice is not None:
             links[c["course_id"]] = None if choice == "Not linked" else choice
     link_courses(links)
-
-
-def _hours():
-    st.header("Study hours", anchor=False)
-    mods = gr.modules()
-    st.markdown("How many hours a week do you want to spend on each module? Lectures count too. "
-                "You can change it for one module on its page.")
-    st.slider("Hours a week for each module", 0.0, 20.0, float(store.load_settings().get("study_hours", gr.DEFAULT_WEEK_HOURS)),
-              0.5, key="ob_hours")
-    if mods:
-        st.caption(f"Each of your {len(mods)} module{'s' if len(mods) != 1 else ''} gets a goal for the next "
-                   f"{STUDY_WEEKS} weeks.")
-    else:
-        kit.empty("You haven't added a module yet, so there's nothing to set. The hours are kept for when you do.",
-                  ":material/info:")
-
-
-def _save_hours():
-    apply_study_hours(st.session_state.get("ob_hours", gr.DEFAULT_WEEK_HOURS))
+    apply_study_hours(default)
 
 
 def _goal_row(i, label):
@@ -598,11 +613,6 @@ def _goals():
                 "and a number if there is one.")
     for i, (label, _) in enumerate(GOAL_SLOTS):
         _goal_row(i, label)
-    targets = [m for m in gr.modules() if m["target"] is not None]
-    if is_student() and targets:
-        kit.subhead("Goals you already have")
-        for m in targets:
-            st.markdown(f":material/flag: {escape(m['name'])}: {m['target']:g}%")
 
 
 def _save_goals():
@@ -641,6 +651,7 @@ def _track():
     a_titles = ["No goal"] + [g["title"] for _, g in goals]
     b.selectbox("Count it towards", a_titles, key="ob_own_link")
     c.button("Add", key="ob_own_add", icon=":material/add:", on_click=_add_own_habit)
+    _colours()
 
 
 def _add_own_habit():
@@ -665,6 +676,10 @@ def _save_track():
         gid = next((g["id"] for _, g in goals if g["title"] == goal_title), None)
         apply_suggestion({"kind": "habit", "name": name}, gid)
     ob["own"] = []
+    for cid, name, *_ in _colour_options():                    # setup only adds: a category left off is not removed
+        if name in (st.session_state.get("ob_cats") or []):
+            ensure_category(cid)
+    _make_own_category()
 
 
 def _text_on(colour):
@@ -681,15 +696,47 @@ def _chip(name, colour):
             f'background:{colour};color:{_text_on(colour)};font-size:.9rem">{escape(name)}</span>')
 
 
+def _colour_options():
+    """[(id, name, colour)] for the colour chips: every example, then categories that aren't one of them."""
+    cats = store.load_categories().to_dict("records")
+    have = {c["id"]: c for c in cats}
+    by_name = {c["name"].lower(): c for c in cats}
+    out = []
+    for cid, name, colour, *_ in store.EXAMPLE_CATEGORIES:
+        mine = have.get(cid) or by_name.get(name.lower())
+        out.append((cid, name, mine["colour"] if mine else colour))
+    shown = {o[0] for o in out} | {n.lower() for _, n, _ in out}
+    out += [(c["id"], c["name"], c["colour"]) for c in cats if c["id"] not in shown and c["name"].lower() not in shown]
+    return out
+
+
+def _colours():
+    """Colour your timetable: a chip to switch on for each category, and a box to add your own."""
+    options = _colour_options()
+    names = [n for _, n, _ in options]
+    existing = {n for n in store.load_categories()["name"]}
+    on = st.session_state.get("ob_cats")
+    on = [n for n in names if n in existing] if on is None else on
+    kit.subhead("Colour your timetable")
+    st.caption("Tap a category to switch it on. Your modules and anything you picked above are already there.")
+    st.html("".join(_chip(n, c) for _, n, c in options if n in on) or "<i>None switched on yet.</i>")
+    st.pills("Categories", names, selection_mode="multi", default=[n for n in names if n in existing], key="ob_cats",
+             label_visibility="collapsed")
+    a, b, c = st.columns([3, 1, 1], vertical_alignment="bottom")
+    a.text_input("Add your own category", key="ob_cat_name", placeholder="e.g. Lab work")
+    b.color_picker("Colour", "#4E79A7", key="ob_cat_colour")
+    c.button("Add", key="ob_cat_add", icon=":material/add:", on_click=_add_own_category)
+
+
 def _make_own_category(required=False):
-    """Add the category typed in the box (nothing if the name is empty, unless `required`). Raises ValueError
-    if it can't be added."""
+    """Add the category typed in the box (nothing if the name is empty, unless `required`), in the smallest
+    group. Raises ValueError if it can't be added."""
     if not required and not (st.session_state.get("ob_cat_name") or "").strip():
         return
-    group = st.session_state.get("ob_cat_group")
-    group = st.session_state.get("ob_cat_newgroup") if group in (None, NEW_GROUP) else group
-    add_category(st.session_state.get("ob_cat_name"), st.session_state.get("ob_cat_colour") or "#4E79A7", group)
+    name = st.session_state.get("ob_cat_name")
+    add_category(name, st.session_state.get("ob_cat_colour") or "#4E79A7", default_group())
     st.session_state["ob_cat_name"] = ""
+    st.session_state["ob_cats"] = [*(st.session_state.get("ob_cats") or []), name.strip()]
 
 
 def _add_own_category():
@@ -697,43 +744,6 @@ def _add_own_category():
         _make_own_category(required=True)
     except ValueError as e:
         st.session_state["ob_error"] = str(e)
-
-
-def _day():
-    st.header("Your day", anchor=False)
-    st.markdown("Categories colour your timetable. Your modules and anything you picked are already there. "
-                "Tick any examples you'd like, or add your own.")
-    cats = store.load_categories()
-    if cats.empty:
-        kit.empty("No categories yet.", ":material/info:")
-    for grp in dict.fromkeys(cats["grp"]):
-        rows = cats[cats["grp"] == grp]
-        kit.subhead(grp)
-        st.html("".join(_chip(r["name"], r["colour"]) for r in rows.to_dict("records")))
-    have = set(cats["id"]) | {n.lower() for n in cats["name"]}
-    examples = [e for e in store.EXAMPLE_CATEGORIES if e[0] not in have and e[1].lower() not in have]
-    if examples:
-        kit.subhead("Examples: pick what you want")
-        cols = st.columns(3)
-        for i, (cid, name, colour, _, grp) in enumerate(examples):
-            cols[i % 3].checkbox(f"{name} ({grp})", value=False, key=f"ob_ex_{cid}")
-    kit.subhead("Add your own")
-    a, b = st.columns([3, 1], vertical_alignment="bottom")
-    a.text_input("Name", key="ob_cat_name", placeholder="e.g. Lab work")
-    b.color_picker("Colour", "#4E79A7", key="ob_cat_colour")
-    groups = store.groups()
-    c, d = st.columns(2, vertical_alignment="bottom")
-    group = c.selectbox("Group", groups + [NEW_GROUP], key="ob_cat_group")
-    if group == NEW_GROUP:
-        d.text_input("New group name", value="Life", key="ob_cat_newgroup")
-    st.button("Add category", key="ob_cat_add", icon=":material/add:", on_click=_add_own_category)
-
-
-def _save_day():
-    _make_own_category()
-    for cid, *_ in store.EXAMPLE_CATEGORIES:
-        if st.session_state.get(f"ob_ex_{cid}"):
-            ensure_category(cid)
 
 
 def _grid(sittings):
@@ -779,10 +789,8 @@ def _week():
     st.button("Add to my Plan", key="ob_week_add", type="primary", icon=":material/playlist_add:", on_click=_add_week)
 
 
-STEP_BODY = {"calendars": _calendars, "modules": _modules, "hours": _hours, "goals": _goals, "track": _track,
-             "day": _day, "week": _week}
-SAVE = {"calendars": _save_calendars, "modules": _save_modules, "hours": _save_hours, "goals": _save_goals,
-        "track": _save_track, "day": _save_day}
+STEP_BODY = {"calendars": _calendars, "modules": _modules, "goals": _goals, "track": _track, "week": _week}
+SAVE = {"calendars": _save_calendars, "modules": _save_modules, "goals": _save_goals, "track": _save_track}
 
 
 def _typed(key):
@@ -798,16 +806,14 @@ def _filled(key):
     if key == "modules":
         return (_typed("ob_new_module") or any(ss.get(f"ob_keep_{_cand_key(c)}", True) for c in ob.get("cands", []))
                 or bool(ob.get("new_modules"))
+                or any(k in ss and float(ss[k]) != v for k, v in ob.get("hours_start", {}).items())
                 or any(v not in (None, "Not linked") for k, v in ss.items() if k.startswith("ob_course_")))
-    if key == "hours":
-        saved = float(store.load_settings().get("study_hours", gr.DEFAULT_WEEK_HOURS))
-        return bool(ob.get("new_modules")) or float(ss.get("ob_hours", saved)) != saved
     if key == "goals":
         return any(_typed(f"ob_goal_{i}") for i in range(len(GOAL_SLOTS)))
     if key == "track":
-        return _typed("ob_own_name") or bool(ob.get("own")) or any(v for k, v in ss.items() if k.startswith("ob_sg_"))
-    if key == "day":
-        return _typed("ob_cat_name") or any(v for k, v in ss.items() if k.startswith("ob_ex_"))
+        return (_typed("ob_own_name") or _typed("ob_cat_name") or bool(ob.get("own"))
+                or any(v for k, v in ss.items() if k.startswith("ob_sg_"))
+                or bool(set(ss.get("ob_cats") or []) - set(store.load_categories()["name"])))
     return False
 
 

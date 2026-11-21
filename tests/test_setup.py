@@ -301,7 +301,7 @@ def test_skipping_everything_lands_on_a_blank_home(fresh):
 def test_skipping_every_step_one_by_one_adds_nothing(fresh):
     at = AppTest.from_file(APP, default_timeout=60).run()
     seen = _skip_to_the_end(at)                                  # Welcome: "Not a student" is the way on
-    assert seen == ["Welcome to Venato", "Your goals", "What would you track?", "Your day"]      # up to the last step
+    assert seen == ["Welcome to Venato", "Your goals", "What would you track?"]      # up to the last step
     _next(at, "wiz_finish")
     assert at.session_state["page"] == "Home"
     assert fresh.load_categories().empty and fresh.goals_open() == [] and fresh.get_habits() == []
@@ -309,12 +309,12 @@ def test_skipping_every_step_one_by_one_adds_nothing(fresh):
 
 def test_a_non_student_gets_no_uni_steps(fresh):
     from venato.ui import onboarding
-    assert [k for k, *_ in onboarding.STEPS] == ["welcome", "calendars", "modules", "hours", "goals", "track", "day", "week"]
+    assert [k for k, *_ in onboarding.STEPS] == ["welcome", "calendars", "modules", "goals", "track", "week"]
     at = AppTest.from_file(APP, default_timeout=60).run()
     _next(at, "ob_student_no")
     assert at.header[0].value.endswith("Your goals")             # straight past the uni steps
     names = _skip_to_the_end(at)
-    assert not any(n.endswith(("Connect your calendars", "Your modules", "Study hours")) for n in names)
+    assert not any(n.endswith(("Connect your calendars", "Your modules")) for n in names)
     _next(at, "wiz_finish")
     from venato import blocks
     assert not blocks.is_on("grades") and blocks.chosen_keys() == blocks.STARTER
@@ -329,8 +329,7 @@ def test_a_student_gets_the_uni_steps_and_modules(fresh):
     assert at.header[0].value.endswith("Your modules")
     assert any("Add a module" in t.label for t in at.text_input)  # no feed: a plain box
     _next(at, "wiz_skip")
-    assert at.header[0].value.endswith("Study hours")
-    _next(at, "wiz_skip")
+    assert at.header[0].value.endswith("Your goals")
     _skip_to_the_end(at)
     _next(at, "wiz_finish")
     assert blocks.is_on("grades")
@@ -362,19 +361,18 @@ def test_student_with_the_fixture_feeds_ends_up_with_everything(fresh):
     course = next(s for s in at.selectbox if s.key.startswith("ob_course_"))
     assert "Not linked" in course.options and course.value == "Not linked"
     assert any(("Assignment" in s.label) or ("[" in s.label) for s in at.selectbox)
-    at.segmented_control(key="ob_target").set_value("First").run()
+    assert not at.segmented_control and not any(n.key == "ob_credits" for n in at.number_input)   # no grade questions
+    assert all(n.value == 6 for n in at.number_input if n.key.startswith("ob_hours_"))
+    assert any("module" in c.value and "h a week, lectures included" in c.value for c in at.caption)
     course.set_value("Organic Chemistry").run()
     _next(at)
     mods = gr.modules()
-    assert {"Organic Chemistry"} <= {m["name"] for m in mods} and all(m["category_id"] and m["target"] == 70 for m in mods)
+    assert {"Organic Chemistry"} <= {m["name"] for m in mods} and all(m["category_id"] and m["target"] is None for m in mods)
     assert {c["id"] for c in fresh.load_categories().to_dict("records")} >= {m["category_id"] for m in mods}
     assert any(d["module_id"] for d in fresh.deadlines())                # the linked course's deadlines
 
-    # Study hours
-    at.slider(key="ob_hours").set_value(4.0).run()
-    _next(at)
-    study = [g for g in fresh.goals_open() if g["unit"] == "h"]
-    assert len(study) == len(mods) and all(g["target"] == 4 * 12 for g in study)
+    study = [g for g in fresh.goals_open() if g["unit"] == "h"]                   # the default 6 h each
+    assert len(study) == len(mods) and all(g["target"] == 6 * 12 for g in study)
 
     # Goals
     at.text_input(key="ob_goal_0").set_value("Get a First in my degree")
@@ -393,21 +391,19 @@ def test_student_with_the_fixture_feeds_ends_up_with_everything(fresh):
     next(c for c in boxes if "Trained" in c.label).set_value(True)
     next(c for c in boxes if "category: Study" in c.label).set_value(True)
     at.run()
-    _next(at)
-    assert fresh.find_habit("Trained") and "study" in set(fresh.load_categories()["id"])
-    assert fresh.get_goal(mine["Run a 10k"]["id"])["habit_id"] == fresh.find_habit("Trained")[0]
-
-    # Your day: module categories and the picked one are there; add one of our own in a new group
-    assert at.header[0].value.endswith("Your day")
+    # Colours on the same step: a chip for each example, none of them on yet; add one of our own
+    pills = at.get("pills")[0]
+    assert "Sleep" in pills.options and not any("(Life)" in o or "(Work)" in o for o in pills.options)
+    assert "Organic Chemistry" in pills.value                    # the existing categories start on
     at.text_input(key="ob_cat_name").set_value("Lab work")
     at.run()
-    at.selectbox(key="ob_cat_group").set_value("New group…").run()
-    at.text_input(key="ob_cat_newgroup").set_value("Uni").run()
     at.button(key="ob_cat_add").click().run()
     assert not at.exception, at.exception
     row = fresh.load_categories().set_index("name").loc["Lab work"]
-    assert row["grp"] == "Uni"
-    _next(at, "wiz_skip")                                        # the box was emptied by Add: nothing left to save
+    assert row["grp"] != "Modules"
+    _next(at)
+    assert fresh.find_habit("Trained") and "study" in set(fresh.load_categories()["id"])
+    assert fresh.get_goal(mine["Run a 10k"]["id"])["habit_id"] == fresh.find_habit("Trained")[0]
 
     # First week: suggested sittings go into the Plan
     assert at.header[0].value.endswith("Your first week")
@@ -485,6 +481,65 @@ def test_study_hours_leave_old_modules_alone(fresh):
     assert [g["title"] for g in made] == ["Fresh study"]
     assert gr.get_module(old)["category_id"] is None
     assert not [g for g in fresh.goals_open(MON) if g["title"] == "Old module study"] and new
+
+
+def test_changing_one_modules_hours_box_gives_just_that_module_a_different_goal(fresh):
+    from venato.blocks import grades as gr
+    at = _student_at(fresh)
+    _next(at, "wiz_skip")
+    at.text_input(key="ob_new_module").set_value("Algebra")
+    at.button(key="ob_add_module").click().run()
+    at.text_input(key="ob_new_module").set_value("Analysis")
+    at.button(key="ob_add_module").click().run()
+    boxes = {n.label: n for n in at.number_input if n.key.startswith("ob_hours_")}
+    assert set(boxes) == {"Algebra", "Analysis"} and all(n.value == 6 for n in boxes.values())
+    assert any(c.value == "2 modules · 12 h a week, lectures included" for c in at.caption)
+    boxes["Analysis"].set_value(9.0).run()
+    assert any(c.value == "2 modules · 15 h a week, lectures included" for c in at.caption)
+    assert _main_label(at) == "Next"
+    _next(at)
+    by = {g["title"]: g["target"] for g in fresh.goals_open() if g["unit"] == "h"}
+    assert by == {"Algebra study": 6 * 12, "Analysis study": 9 * 12}
+    assert {m["name"]: gr.week_hours_goal(m) for m in gr.modules()} == {"Algebra": 6, "Analysis": 9}
+    assert all(m["target"] is None and m["credits"] == 15 for m in gr.modules())
+
+
+def test_a_hours_box_for_a_detected_module_is_kept(fresh):
+    from venato.blocks import grades as gr
+    at = _student_at(fresh)
+    at.text_input(key="ob_link_uni").set_value(UNI_URL)
+    at.button(key="ob_connect_uni").click().run()
+    _next(at)
+    box = next(n for n in at.number_input if n.key.startswith("ob_hours_") and "Organic Chemistry" in n.label)
+    box.set_value(2.5).run()
+    _next(at)
+    m = next(m for m in gr.modules() if m["name"] == "Organic Chemistry")
+    assert gr.week_hours_goal(m) == 2.5
+    assert all(gr.week_hours_goal(o) == 6 for o in gr.modules() if o["id"] != m["id"])
+
+
+def test_a_chip_switched_on_in_setup_makes_its_category_and_activity_names(fresh):
+    at = _student_at(fresh, student=False)
+    _next(at, "wiz_skip")
+    assert at.header[0].value.endswith("What would you track?")
+    pills = at.get("pills")[0]
+    assert pills.value == [] and "Exercise" in pills.options
+    pills.set_value(["Exercise"]).run()
+    assert _main_label(at) == "Next"
+    _next(at)
+    assert "exercise" in set(fresh.load_categories()["id"]) and "sleep" not in set(fresh.load_categories()["id"])
+    labels = fresh.load_label_map().set_index("label")["category_id"].to_dict()
+    assert labels["Gym"] == "exercise" and labels["Run"] == "exercise" and "Lecture" not in labels
+
+
+def test_the_default_group_for_an_own_category_is_the_smallest_not_modules(fresh):
+    from venato.ui import onboarding
+    assert onboarding.default_group() == "Life"
+    fresh.save_category("a", "A", "#111111", "Work")
+    fresh.save_category("b", "B", "#222222", "Work")
+    fresh.save_category("c", "C", "#333333", "Life")
+    fresh.save_category("m", "M", "#444444", fresh.MODULES_GROUP)
+    assert onboarding.default_group() == "Life"
 
 
 def test_check_feed_is_canvas_aware(fresh):
@@ -675,33 +730,26 @@ def test_next_keeps_a_typed_module_habit_and_category(fresh):
     at.text_input(key="ob_new_module").set_value("Organic Chemistry").run()
     _next(at)                                                    # Next, not Add
     assert [m["name"] for m in gr.modules()] == ["Organic Chemistry"]
-    assert at.header[0].value.endswith("Study hours")
-    _next(at)                                                    # a module was made in this run: Next
+    assert at.header[0].value.endswith("Your goals")
     at.text_input(key="ob_goal_0").set_value("Run a 10k").run()
     _next(at)
     assert at.header[0].value.endswith("What would you track?")
     at.text_input(key="ob_own_name").set_value("Stretch").run()
-    _next(at)
-    assert fresh.find_habit("Stretch")
-    assert at.header[0].value.endswith("Your day")
     at.text_input(key="ob_cat_name").set_value("Lab work").run()
-    at.selectbox(key="ob_cat_group").set_value("New group…").run()
-    at.text_input(key="ob_cat_newgroup").set_value("Uni").run()
-    _next(at)
-    assert fresh.load_categories().set_index("name").loc["Lab work", "grp"] == "Uni"
+    _next(at)                                                    # one Next saves both
+    assert fresh.find_habit("Stretch")
+    assert fresh.load_categories().set_index("name").loc["Lab work", "grp"] == "Life"
     assert at.header[0].value.endswith("Your first week")
 
 
-def test_next_with_a_bad_category_stays_on_the_step(fresh):
+def test_next_with_a_taken_category_name_stays_on_the_step(fresh):
+    fresh.save_category("lab-work", "Lab work", "#112233", "Life")
     at = _student_at(fresh, student=False)
     _next(at, "wiz_skip")
-    _next(at, "wiz_skip")
-    assert at.header[0].value.endswith("Your day")
-    at.text_input(key="ob_cat_name").set_value("Lab work").run()
-    at.selectbox(key="ob_cat_group").set_value("New group…").run()
-    at.text_input(key="ob_cat_newgroup").set_value("").run()
+    assert at.header[0].value.endswith("What would you track?")
+    at.text_input(key="ob_cat_name").set_value("lab work").run()
     _next(at)
-    assert at.header[0].value.endswith("Your day") and at.error and fresh.load_categories().empty
+    assert at.header[0].value.endswith("What would you track?") and at.error
 
 
 def test_the_main_button_says_skip_until_something_is_filled_in(fresh):
@@ -720,7 +768,6 @@ def test_the_main_button_says_skip_until_something_is_filled_in(fresh):
     at.text_input(key="ob_new_module").set_value("Algebra").run()   # Your modules
     assert _main_label(at) == "Next"
     _next(at)
-    _next(at, "wiz_next")                                        # Study hours: a module was just made
     assert at.header[0].value.endswith("Your goals") and _main_label(at) == "Skip"
     at.text_input(key="ob_goal_0").set_value("Run").run()
     assert _main_label(at) == "Next"
@@ -739,11 +786,11 @@ def test_the_student_question_is_two_buttons_and_nothing_else(fresh):
 def test_welcome_shows_the_step_names_and_a_saved_answer(fresh):
     at = AppTest.from_file(APP, default_timeout=60).run()
     cap = at.caption[0].value
-    assert cap == "**Welcome** · Goals · Track · Day · First week"
+    assert cap == "**Welcome** · Goals · Track · First week"
     assert not any(b.type == "primary" for b in at.button if b.key.startswith("ob_student_"))
     _next(at, "ob_student_yes")
     cap = at.caption[0].value
-    assert cap == "Welcome · **Calendars** · Modules · Hours · Goals · Track · Day · First week"
+    assert cap == "Welcome · **Calendars** · Modules · Goals · Track · First week"
     at.button(key="wiz_back").click().run()                      # a re-run: the saved answer is on its button
     assert at.title[0].value == "Welcome to Venato"
     assert at.button(key="ob_student_yes").proto.type == "primary" and at.button(key="ob_student_no").proto.type == "secondary"
@@ -796,7 +843,7 @@ def test_a_stale_skip_click_on_the_modules_step_still_adds_the_typed_module(fres
     assert at.header[0].value.endswith("Your modules")
     at.text_input(key="ob_new_module").set_value("Algebra")
     at.button(key="wiz_skip").click().run()
-    assert [m["name"] for m in gr.modules()] == ["Algebra"] and at.header[0].value.endswith("Study hours")
+    assert [m["name"] for m in gr.modules()] == ["Algebra"] and at.header[0].value.endswith("Your goals")
 
 
 def test_picking_only_a_canvas_course_link_says_next(fresh):
