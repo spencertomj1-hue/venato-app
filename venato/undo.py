@@ -67,13 +67,13 @@ def checkpoint(label, quiet=False):
     _write({"label": label, "at": time.time(), "after": None, "quiet": bool(quiet)})
 
 
-def checkpoint_settings(label, **changes):
+def checkpoint_settings(label, quiet=False, **changes):
     """Save these settings, keeping what they were so Undo can put them back. A setting that wasn't
-    there comes back as null (read as not set)."""
+    there comes back as null (read as not set). quiet: no Undo bar, but Cmd/Ctrl+Z still undoes it."""
     before = store.load_settings()
     _snapshot().unlink(missing_ok=True)
     store.save_settings(**changes)
-    _write({"label": label, "at": time.time(), "quiet": False,
+    _write({"label": label, "at": time.time(), "quiet": bool(quiet),
             "settings": {k: before.get(k) for k in changes}, "after": _settings_now(changes)})
 
 

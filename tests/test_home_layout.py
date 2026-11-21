@@ -241,74 +241,58 @@ def test_edit_home(store):
     assert not at.exception
     assert at.title[0].value == "Edit Home"
     assert at.button(key="home_done") and at.button(key="home_reset") and not has(at, "home_arrange")
-    assert at.button(key="hwpick_todos") and at.button(key="hwx_todos") and not has(at, "go_tile_todos")
+    assert at.button(key="hwx_todos") and at.button(key="hwsz_todos") and not has(at, "go_tile_todos")
+    assert not [b for b in at.button if b.key and b.key.startswith(("hwpick_", "hwl_", "hwr_", "home_drop"))]
     assert "home_todos" in keys(at) and "home_add_panel" in keys(at)      # real content, and "Add a tile"
     assert has(at, "home_add_deadlines") and not has(at, "home_add_todos")  # only hidden tiles are offered
-    assert not has(at, "hwsz_todos_small")                                # sizes only on the picked-up tile
-    # Tap to pick up: highlighted, with sizes, ← / → and a drop slot.
-    at.button(key="hwpick_todos").click().run()
-    assert at.session_state["home_picked"] == "todos"
-    assert {"hwsz_todos_small", "hwsz_todos_wide", "hwl_todos", "hwr_todos",
-            "home_drop_end"} <= {b.key for b in at.button}
-    assert not has(at, "hwsz_todos_large") and not has(at, "hwsz_todos_tall")   # To-dos: Small or Wide
-    assert [b.key for b in at.button if b.key.startswith("hwsz_focus")] == []
-    at.button(key="hwsz_todos_small").click().run()                       # resize to a named size
+    at.button(key="hwsz_todos").click().run()                             # size steps on: Wide -> Small
     assert saved(store)[1] == {"w": "todos", "size": "small"}
-    at.button(key="hwpick_timetable_today").click().run()                 # tap another: moved there
-    assert hl.keys(saved(store))[:2] == ["todos", "timetable_today"] and at.session_state["home_picked"] is None
-    assert at.button(key="undo_btn")
-    at.button(key="hwpick_todos").click().run()
-    at.button(key="home_drop_end").click().run()                          # Drop here: to the end
-    assert hl.keys(saved(store))[-1] == "todos"
+    at.button(key="hwsz_todos").click().run()                             # and round again
+    assert saved(store)[1] == {"w": "todos", "size": "wide"}
     at.button(key="hwx_focus").click().run()                              # − remove
     assert "focus" not in hl.keys(saved(store)) and "hw_focus" not in keys(at)
     at.button(key="home_add_focus").click().run()                         # + Add: at the end, its own size
     assert saved(store)[-1] == {"w": "focus", "size": "small"}
-    at.button(key="undo_btn").click().run()                               # undo the add
-    assert "focus" not in hl.keys(saved(store))
     at.button(key="home_reset").click().run()
     assert saved(store) == hl.default()
     at.button(key="home_done").click().run()
     assert not at.exception and at.button(key="home_arrange") and not has(at, "home_done")
-    assert not [b for b in at.button if b.key and b.key.startswith("hwpick_")]
 
 
-def test_drag_onto_another_tile_moves_it(store):
+def test_home_edits_are_quiet_but_undoable(store):
+    from venato import undo
+    before = store.load_settings().get("home")
     at = app()
     at.button(key="home_arrange").click().run()
-    fragment_run.trigger(at, "home_flip", "drop", {"from": "review", "to": "timetable_today", "nonce": "x"})
+    at.button(key="hwx_focus").click().run()
+    assert undo.pending() and undo.is_quiet()                             # no bar, but Cmd/Ctrl+Z still has it
+    assert undo.restore() and store.load_settings().get("home") == before
+
+
+def test_drag_saves_the_order_it_was_dropped_in(store):
+    at = app()
+    at.button(key="home_arrange").click().run()
+    order = hl.keys(hl.default())
+    order.insert(0, order.pop(order.index("review")))
+    fragment_run.trigger(at, "home_flip", "drop", {"order": order, "nonce": "x"})
     assert not at.exception
-    assert hl.keys(saved(store))[:2] == ["review", "timetable_today"]
+    assert hl.keys(saved(store)) == order
+    assert saved(store)[0] == {"w": "review", "size": "small"}           # its size goes with it
 
 
-def test_tile_supported_sizes_only(store):
+def test_reorder():
+    cells = [{"w": "a", "size": "small"}, {"w": "b", "size": "wide"}, {"w": "c", "size": "large"}]
+    assert hl.keys(hl.reorder(cells, ["c", "a", "b"])) == ["c", "a", "b"]
+    assert hl.keys(hl.reorder(cells, ["c", "zzz"])) == ["c", "a", "b"]    # unknown ignored, left-out keep order
+    assert hl.reorder(cells, ["b", "a", "c"])[0] == {"w": "b", "size": "wide"}
+
+
+def test_size_button_only_when_there_is_a_choice(store):
     at = app()
     at.button(key="home_arrange").click().run()
-    at.button(key="hwpick_focus").click().run()
-    assert sorted(b.key for b in at.button if b.key.startswith("hwsz_focus")) == ["hwsz_focus_small", "hwsz_focus_wide"]
-
-
-def test_picked_tile_gone_by_undo_isnt_still_picked(store):
-    at = app()
-    at.button(key="home_arrange").click().run()
-    at.button(key="home_add_journal").click().run()
-    at.button(key="hwpick_journal").click().run()
-    assert has(at, "hwl_journal") and at.session_state["home_picked"] == "journal"     # picked up: its arrows
-    at.button(key="undo_btn").click().run()                               # Journal leaves Home
-    assert not at.exception and "hw_journal" not in keys(at)
-    assert at.session_state["home_picked"] is None and not has(at, "home_drop_end")
-
-
-def test_arrows_off_only_when_they_would_do_nothing(store):
-    at = app()
-    at.button(key="home_arrange").click().run()
-    at.button(key="hwpick_timetable_today").click().run()
-    assert at.button(key="hwl_timetable_today").disabled                  # first: nowhere to go
-    at.button(key="hwr_timetable_today").click().run()
-    assert hl.keys(saved(store))[:2] == ["todos", "timetable_today"]
-    at.button(key="hwpick_timetable_today").click().run()                 # put it back down
-    at.button(key="hwpick_modules").click().run()
-    assert at.button(key="hwr_modules").disabled                          # last
+    assert has(at, "hwsz_focus")
+    at.button(key="hwsz_focus").click().run()
+    assert {"w": "focus", "size": "wide"} in saved(store)                 # Focus: Small or Wide
 
 
 def test_esc_leaves_edit_home(store):

@@ -6,11 +6,11 @@
 // motion: no pins, no glides (instant moves). Only changes made on Home glide: coming back to Home from another
 // page, the tiles just appear where they land. It also sizes Home's grid to the window (fit, below).
 // Out of Edit Home, a click on a tile anywhere that isn't one of its controls opens its page (presses the
-// tile's title button). In Edit Home, tapping a tile presses its pick-up / drop button, and dragging one onto
-// another moves it there (sent to Python as "drop"). Icon-only buttons get spoken names (aria-label) from Python.
+// tile's title button). In Edit Home a tile is dragged: the others make room live and it lands where it's let
+// go (the new order is sent to Python as "drop"). Icon-only buttons get spoken names (aria-label) from Python.
 export default function ({ data, setTriggerValue }) {
   window.__venatoHome = data || {};
-  window.__venatoDrop = (from, to) => setTriggerValue("drop", { from, to, nonce: Math.random().toString(36).slice(2) });
+  window.__venatoDrop = (order) => setTriggerValue("drop", { order, nonce: Math.random().toString(36).slice(2) });
   if (window.__venatoFlip) { window.__venatoFlipLabel && window.__venatoFlipLabel(); return; }
   window.__venatoFlip = true;
   const doc = document;
@@ -117,6 +117,7 @@ export default function ({ data, setTriggerValue }) {
     // idle: a run on Home finished (an edit): glide from the held boxes. Anything else that moves the tiles
     // (the window, fonts loading, the grid being fitted to the window) just puts them there.
     const from = hold; hold = null;
+    if (from && window.__venatoClearOrder) window.__venatoClearOrder();   // Python has drawn the dragged order
     unpinAll();
     const fresh = measure(), seen = new Set(), glides = [];
     for (const n of fresh) {
@@ -181,53 +182,147 @@ export default function ({ data, setTriggerValue }) {
 
   const CONTROLS = 'button, a, input, textarea, select, label, summary, [role="button"], [role="checkbox"], [role="switch"], [role="tab"], [role="radio"], [contenteditable="true"], [data-testid="stCheckbox"], [data-baseweb="select"]';
   let dragEnd = 0;         // when a drag last ended: its click is swallowed
-  // A tap on a tile (not on one of its controls): Edit Home picks it up / drops the one picked up there;
-  // otherwise it opens the tile's page.
+  // A tap on a tile (not on one of its controls) opens its page; in Edit Home it does nothing (tiles are dragged).
   doc.addEventListener("click", (e) => {
     if (!e.isTrusted) return;
     if (Date.now() - dragEnd < 350) { e.preventDefault(); e.stopPropagation(); return; }
+    if ((window.__venatoHome || {}).arranging) return;
     const path = e.composedPath();         // (into a component's shadow DOM too)
     const card = path.find((n) => n instanceof Element && n.matches(SEL)), k = card && keyOf(card);
-    if (!k) return;
-    const editing = (window.__venatoHome || {}).arranging;
-    const hit = path.find((n) => n instanceof Element && n.matches(CONTROLS));
-    if (hit && !(editing && card.querySelector(`.st-key-hwc_${CSS.escape(k.slice(3))}`)?.contains(hit))) return;
+    if (!k || path.find((n) => n instanceof Element && n.matches(CONTROLS))) return;
     const id = CSS.escape(k.slice(3));
-    const target = editing ? `.st-key-hwpick_${id} button` : `.st-key-go_tile_${id} button, .st-key-open_tile_${id} button`;
-    const b = doc.querySelector(target);
+    const b = doc.querySelector(`.st-key-go_tile_${id} button, .st-key-open_tile_${id} button`);
     if (b && !b.contains(e.target)) { e.preventDefault(); b.click(); }
   }, true);
 
-  // Edit Home: drag a tile (by anything but its buttons) onto another to move it there.
-  let drag = null;
-  const tileAt = (x, y) => doc.elementsFromPoint(x, y).map((el) => el.closest && el.closest(SEL)).find((el) => el && el !== drag?.el);
+  // Edit Home: drag a tile (by anything but its buttons). While it's in your hand the grid's order changes live
+  // (CSS order on the grid's items; the grid packs them the way Python will) and the other tiles glide to their
+  // new places, so you see where it'll land. Let go: it settles into its slot and the order is saved. The live
+  // order stays until Python has redrawn the grid in that order, then it's cleared (tick, above).
+  const SLIDE = 180, GAP_PX = 16;   // GAP_PX: closer than this to a tile counts as the gap beside it
+  const tiles = () => [...doc.querySelectorAll(`.st-key-home_grid > div > ${SEL}`)];
+  const itemOf = (t) => t.parentElement;                     // the grid item each tile sits in
+  const slides = (el) => el.getAnimations().filter((a) => a.id === "slide");
+  let drag = null, ordered = false, clearTimer = 0;
+  function clearOrder() {
+    clearTimeout(clearTimer);
+    if (!ordered || drag) return;
+    ordered = false;
+    for (const t of tiles()) itemOf(t).style.order = "";
+  }
+  window.__venatoClearOrder = clearOrder;
+  const rect = (el) => { const r = el.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
+  // Where every tile sits in the layout (ignoring slides in flight and the dragged one's own offset).
+  function layout() {
+    const out = new Map();
+    for (const t of tiles()) {
+      const run = slides(t), times = run.map((a) => a.currentTime);
+      run.forEach((a) => (a.currentTime = 1e6));
+      const tr = t.style.translate; t.style.translate = "";
+      out.set(t, rect(t));
+      t.style.translate = tr; run.forEach((a, i) => (a.currentTime = times[i]));
+    }
+    return out;
+  }
+  function applyOrder(order) {
+    const all = tiles(), seen = new Map(all.map((t) => [t, rect(t)]));   // where they are on screen now
+    for (const t of all) itemOf(t).style.order = String(order.indexOf(keyOf(t)));
+    ordered = true;
+    drag.slots = layout();
+    if (reduce.matches) return;
+    for (const t of all) {
+      if (t === drag.el) continue;
+      const a = seen.get(t), b = drag.slots.get(t);
+      if (Math.abs(a.l - b.l) < 1 && Math.abs(a.t - b.t) < 1) continue;
+      slides(t).forEach((x) => x.cancel());
+      const s = t.animate([{ transform: `translate(${a.l - b.l}px,${a.t - b.t}px)` }, { transform: "none" }],
+                          { duration: SLIDE, easing: EASE });
+      s.id = "slide";
+    }
+  }
+  function follow(e) {                                        // the dragged tile under the pointer
+    const home = drag.slots.get(drag.el);
+    drag.el.style.translate = `${e.clientX - drag.gx - home.l}px ${e.clientY - drag.gy - home.t}px`;
+  }
+  // Where the tile would go for a pointer at (x, y): the place of the tile it's over (taking it, the rest shuffle
+  // along); in open space, beside the nearest tile. Over its own slot or in the gap between tiles: no change.
+  function target(x, y) {
+    const k = drag.k, rest = drag.order.filter((o) => o !== k);
+    const inside = (r, m = 0) => x >= r.l - m && x <= r.r + m && y >= r.t - m && y <= r.b + m;
+    if (inside(drag.slots.get(drag.el))) { drag.held = null; return null; }
+    let near = null, best = Infinity;
+    for (const [t, r] of drag.slots) {
+      if (t === drag.el) continue;
+      const tk = keyOf(t);
+      if (inside(r)) {                                         // over a tile: take its place
+        if (drag.held === tk) return null;     // just swapped with it (sizes differ): wait till you leave it
+        drag.held = tk;
+        const at = rest.indexOf(tk);
+        return drag.order.indexOf(k) < drag.order.indexOf(tk) ? at + 1 : at;
+      }
+      const d = Math.hypot(Math.max(r.l - x, 0, x - r.r), Math.max(r.t - y, 0, y - r.b));
+      if (d < best) { best = d; near = { tk, r }; }
+    }
+    drag.held = null;
+    if (!near || best <= GAP_PX) return null;                  // in a gap: wait
+    const { r } = near, cy = (r.t + r.b) / 2, after = y > r.b || (y >= r.t && x > (r.l + r.r) / 2) || (y > cy && x > r.l);
+    return rest.indexOf(near.tk) + (after ? 1 : 0);
+  }
   doc.addEventListener("pointerdown", (e) => {
-    if (!(window.__venatoHome || {}).arranging || e.button !== 0) return;
+    if (!(window.__venatoHome || {}).arranging || e.button !== 0 || busy()) return;
     const el = e.target.closest && e.target.closest(SEL);
-    if (!el || e.target.closest("button, input, textarea, select")) return;
-    drag = { el, k: keyOf(el), x: e.clientX, y: e.clientY, on: false, over: null };
+    if (!el || e.target.closest("button, input, textarea, select, a")) return;
+    const r = el.getBoundingClientRect();
+    const order = tiles().sort((a, b) => (+itemOf(a).style.order || 0) - (+itemOf(b).style.order || 0)).map(keyOf);
+    drag = { el, k: keyOf(el), x: e.clientX, y: e.clientY, gx: e.clientX - r.left, gy: e.clientY - r.top,
+             on: false, order, start: order.join() };
   }, true);
   doc.addEventListener("pointermove", (e) => {
     if (!drag) return;
-    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (!drag.on && Math.hypot(dx, dy) < 8) return;
-    drag.on = true;
-    drag.el.classList.add("vn-dragging");
-    drag.el.style.translate = `${dx}px ${dy}px`;
-    const over = tileAt(e.clientX, e.clientY);
-    if (over !== drag.over) { drag.over?.classList.remove("vn-drop-target"); over?.classList.add("vn-drop-target"); drag.over = over; }
+    if (!drag.on) {
+      if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
+      drag.on = true;
+      clearTimeout(clearTimer);
+      drag.slots = layout();
+      drag.el.classList.add("vn-dragging");
+      root.classList.add("vn-drag-on");
+    }
+    e.preventDefault();
+    const i = target(e.clientX, e.clientY);
+    if (i !== null) {
+      const next = drag.order.filter((o) => o !== drag.k);
+      next.splice(i, 0, drag.k);
+      if (next.join() !== drag.order.join()) { drag.order = next; applyOrder(next); }
+    }
+    follow(e);
   }, true);
-  const endDrag = (e) => {
+  function endDrag(e) {
     if (!drag) return;
     const d = drag; drag = null;
-    d.el.classList.remove("vn-dragging"); d.el.style.translate = "";
-    d.over?.classList.remove("vn-drop-target");
+    root.classList.remove("vn-drag-on");
     if (!d.on) return;
     dragEnd = Date.now();
-    const to = d.over && keyOf(d.over);
-    if (e.type === "pointerup" && to && to !== d.k && window.__venatoDrop) window.__venatoDrop(d.k.slice(3), to.slice(3));
-  };
+    let order = d.order;
+    if (e.type !== "pointerup") {                              // cancelled (Esc, or the pointer lost): back
+      order = d.start.split(",");
+      drag = d; applyOrder(order); drag = null;
+    }
+    // settle into its slot from where it was let go
+    const tr = d.el.style.translate;
+    d.el.style.translate = "";
+    d.el.classList.remove("vn-dragging");
+    if (tr && !reduce.matches) {
+      const s = d.el.animate([{ translate: tr, zIndex: 30 }, { translate: "0px 0px", zIndex: 30 }],
+                             { duration: SLIDE, easing: EASE });
+      s.id = "slide";
+    }
+    if (order.join() !== d.start && window.__venatoDrop) {
+      window.__venatoDrop(order.map((k) => k.slice(3)));         // "hw_todos" -> "todos"
+      clearTimer = setTimeout(() => { if (!busy()) clearOrder(); }, 5000);   // in case the run is never seen
+    } else clearOrder();
+  }
   doc.addEventListener("pointerup", endDrag, true);
   doc.addEventListener("pointercancel", endDrag, true);
+  doc.addEventListener("keydown", (e) => { if (drag?.on && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); endDrag(e); } }, true);
   tick();
 }
