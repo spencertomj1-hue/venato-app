@@ -5,6 +5,11 @@ Daily log: a journal. The page leads with the selected day's journal box (today'
 and water beside it when switched on (Settings -> Daily Log). A month calendar (calendar_component.js/.css)
 marks the days that have an entry; clicking a day opens it. Habits follow.
 Habits: tick habits for a day, see streaks, add/remove habits.
+
+The journal book (journal_component.js/.css) sits above it all, closed until opened. Open, it is the
+writing page for the selected day (entries.notes, saved as you type) and the journal box steps aside;
+its left page has sleep and water (when switched on), the user's own day trackers and the day's habits.
+"Quoted" text becomes a to-do for that day and ^marked^ text one for that week (venato/journal.py).
 """
 
 import hashlib
@@ -13,6 +18,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from venato import journal
 from venato import regional
 from venato import store
 from venato import undo
@@ -25,6 +31,14 @@ _calendar_component = st.components.v2.component(
     html='<div class="cal-root"></div>',
     css=(HERE / "components" / "calendar_component.css").read_text(encoding="utf-8"),
     js=(HERE / "components" / "calendar_component.js").read_text(encoding="utf-8"),
+)
+
+
+_journal_component = st.components.v2.component(
+    "journal",
+    html='<div class="jn-root"></div>',
+    css=(HERE / "components" / "journal_component.css").read_text(encoding="utf-8"),
+    js=(HERE / "components" / "journal_component.js").read_text(encoding="utf-8"),
 )
 
 
@@ -80,8 +94,126 @@ PAGE = "Daily Log"      # page name (also what Home's habits "Manage" switches t
 
 def page_daily_log():
     st.header("Daily Log", anchor=False)
+    _journal(store.local_today())
     _day_card()
+    _manage_trackers()
     _past_entries()
+
+
+# ---------------------------------------------------------------------------
+# The journal book
+# ---------------------------------------------------------------------------
+
+def _not_future(day):
+    return bool(day) and day <= store.local_today().isoformat()
+
+
+def _on_journal_open():
+    st.session_state["journal_open"] = bool((st.session_state["journal"]["open"] or {}).get("open"))
+    st.session_state.pop("journal_notice", None)
+
+
+def _on_journal_save():
+    value = st.session_state["journal"]["save"] or {}
+    if not _not_future(value.get("date")):
+        return
+    added = journal.save(value["date"], value.get("text", ""), make_todos=bool(value.get("final")))
+    if added:
+        names = {"daily": "that day's", "weekly": "that week's"}
+        st.session_state["journal_notice"] = "Added to to-dos: " + "; ".join(
+            f"{title} ({names[period]})" for period, title in added)
+
+
+def _on_journal_log():
+    value = st.session_state["journal"]["log"] or {}
+    field = value.get("field")
+    if field in store.ENTRY_FIELDS and _not_future(value.get("date")):
+        amount = value.get("value")
+        if field == "water" and amount is not None:
+            amount = regional.water_in(amount)            # the user's unit -> litres
+        store.set_entry_field(value["date"], field, amount)
+
+
+def _on_journal_track():
+    value = st.session_state["journal"]["track"] or {}
+    if store.find_day_tracker(value.get("id")) and _not_future(value.get("date")):
+        store.set_day_value(value["date"], value["id"], value.get("value"))
+
+
+def _on_journal_habit():
+    value = st.session_state["journal"]["habit"] or {}
+    if value.get("id") is not None and _not_future(value.get("date")):
+        with store.db() as conn:
+            store.set_habit_done(conn, int(value["id"]), value["date"], bool(value.get("done")))
+
+
+def _on_journal_nav():
+    day = (st.session_state["journal"]["nav"] or {}).get("date")
+    if day:
+        _open_day(min(date.fromisoformat(day), store.local_today()))
+        st.session_state.pop("journal_notice", None)
+
+
+def _journal(today):
+    """The book, open on the selected day (never a future one)."""
+    selected = min(st.session_state.setdefault("log_day", today), today)
+    st.session_state["journal_drawn"] = selected
+    d = selected.isoformat()
+    entry = store.get_entry(d)
+    logged = store.day_values(d)
+    litres = regional.water_unit() == "litres"
+    habits = [{"id": hid, "name": name, "done": d in store.get_habit_dates(hid)} for hid, name in store.get_habits()]
+    _journal_component(
+        data={
+            "open": st.session_state.get("journal_open", False),
+            "date": d, "today": today.isoformat(),
+            "title": f"{selected:%A} {selected.day} {selected:%B %Y}",
+            "prevTitle": regional.day_month(selected - timedelta(days=1)),
+            "text": entry.get("notes") or "", "prompt": prompt_for(selected),
+            "notice": st.session_state.get("journal_notice"),
+            "showSleep": store.tracks_sleep(), "showWater": store.tracks_water(),
+            "sleep": entry.get("sleep"), "water": regional.water_out(entry.get("water")),
+            "waterUnit": regional.water_short(), "waterStep": 0.25 if litres else 4, "waterMax": 15 if litres else 500,
+            "trackers": [{**t, "value": logged.get(t["id"])} for t in store.day_trackers()],
+            "habits": habits, "sessions": [],
+        },
+        key="journal", on_open_change=_on_journal_open, on_save_change=_on_journal_save,
+        on_nav_change=_on_journal_nav, on_log_change=_on_journal_log, on_habit_change=_on_journal_habit,
+        on_track_change=_on_journal_track,
+    )
+
+
+def _manage_trackers():
+    """The user's own day trackers: numbers to log each day on the journal book's left page."""
+    trackers = store.day_trackers()
+    with st.expander("Manage trackers"):
+        st.caption("Numbers you want to log each day, e.g. *Reading · hours · 0.5* or *Coffee · cups · 1*. "
+                   "They appear on the journal book's left page.")
+        with st.form("add_tracker", clear_on_submit=True):
+            a, b, c, go = st.columns([3, 2, 1, 1], vertical_alignment="bottom")
+            name = a.text_input("New tracker")
+            unit = b.text_input("Unit", placeholder="e.g. hours, times")
+            step = c.number_input("Step", 0.25, 100.0, 1.0, 0.25, help="How much + and − change it by")
+            if go.form_submit_button("Add") and name.strip():
+                try:
+                    store.add_day_tracker(name, unit, step)
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
+        for t in trackers:
+            a, b, c, x = st.columns([3, 2, 1, 1], vertical_alignment="bottom")
+            name = a.text_input("Name", t["name"], key=f"trk_name_{t['id']}")
+            unit = b.text_input("Unit", t["unit"], key=f"trk_unit_{t['id']}")
+            step = c.number_input("Step", 0.25, 100.0, float(t["step"]), 0.25, key=f"trk_step_{t['id']}")
+            if (name, unit, step) != (t["name"], t["unit"], float(t["step"])):
+                try:
+                    store.update_day_tracker(t["id"], name=name, unit=unit, step=step)
+                except ValueError as e:
+                    st.error(str(e))
+            if x.button("Remove", key=f"trk_del_{t['id']}", help="Also deletes what's been logged for it"):
+                undo.checkpoint(f"Removed the tracker '{t['name']}' and its history")
+                store.delete_day_tracker(t["id"])
+                st.rerun()
 
 
 @st.fragment
@@ -92,6 +224,8 @@ def _day_card():
     today = store.local_today()
     selected = st.session_state.setdefault("log_day", today)
     month = st.session_state.setdefault("log_month", today.replace(day=1))
+    if st.session_state.get("journal_drawn") not in (None, min(selected, today)):
+        st.rerun(scope="app")                     # the journal book above shows another day: turn it too
     sleep_on, water_on = store.tracks_sleep(), store.tracks_water()
     d = selected.isoformat()
     entry = store.get_entry(d)
@@ -100,6 +234,8 @@ def _day_card():
     st.subheader(nice_date(selected), anchor=False)
     if selected > today:
         st.info("You can't log a day that hasn't happened yet. Pick today or an earlier day.")
+    elif st.session_state.get("journal_open"):
+        st.caption("You're writing this day in the journal book above.")
     else:
         _entry_form(selected, d, entry, sleep_on, water_on)
 

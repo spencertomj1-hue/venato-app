@@ -179,6 +179,20 @@ def init_db():
             CREATE TABLE IF NOT EXISTS tt_outlook_away (uid TEXT PRIMARY KEY);
             -- Days the user marked "I'm away" by hand (no calendar event needed): no free time for goals.
             CREATE TABLE IF NOT EXISTS away_days (date TEXT PRIMARY KEY);
+            -- To-dos the journal made from "quoted" / ^marked^ text, so re-saving never adds them twice
+            CREATE TABLE IF NOT EXISTS journal_todos (
+                date   TEXT NOT NULL,          -- the journal page
+                period TEXT NOT NULL,          -- daily / weekly
+                title  TEXT NOT NULL COLLATE NOCASE,
+                PRIMARY KEY (date, period, title)
+            );
+            -- Day trackers: the user's own numbers for each day (their list is in settings.json)
+            CREATE TABLE IF NOT EXISTS day_values (
+                date    TEXT NOT NULL,
+                tracker TEXT NOT NULL,         -- the tracker's id
+                value   REAL NOT NULL,
+                PRIMARY KEY (date, tracker)
+            );
             """
         )
         _deadlines_from_feeds(conn)
