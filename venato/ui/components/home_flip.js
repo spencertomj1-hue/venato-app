@@ -3,7 +3,8 @@
 // column, the same keyed container present twice: the new node and the stale old one). So: while the app
 // is busy, every `.st-key-hw_*` node is pinned to where that widget was before the run (an inline transform,
 // no motion); when the run ends, each one glides from there to its final box (200 ms ease-out). Reduced
-// motion: no pins, no glides (instant moves).
+// motion: no pins, no glides (instant moves). Only changes made on Home glide: coming back to Home from another
+// page, the tiles just appear where they land. It also sizes Home's grid to the window (fit, below).
 // Out of Edit Home, a click on a tile anywhere that isn't one of its controls opens its page (presses the
 // tile's title button). In Edit Home, tapping a tile presses its pick-up / drop button, and dragging one onto
 // another moves it there (sent to Python as "drop"). Icon-only buttons get spoken names (aria-label) from Python.
@@ -26,6 +27,7 @@ export default function ({ data, setTriggerValue }) {
   let last = new Map();     // key -> settled layout box, relative to the main block (scroll-proof)
   let hold = null;          // key -> box each widget is pinned to while a run is in progress
   const pinned = new Set(); // nodes we put an inline transform on
+  let arriving = true;      // the tiles are appearing (the app opening, or a page change): no glides until they've settled
 
   const box = (el, o) => { const r = el.getBoundingClientRect(); return { x: r.left - o.left, y: r.top - o.top, w: r.width, h: r.height }; };
   // Every keyed node (duplicates included) with its on-screen box and its real layout box.
@@ -65,9 +67,38 @@ export default function ({ data, setTriggerValue }) {
   }
   window.__venatoFlipLabel = label;
 
+  // On a laptop-sized window Home is one screen: the grid gets the height left under the header, less the room
+  // the page keeps at the bottom (the pinned chat bar). Its rows share it (home.py's CSS); tiles clip.
+  const GRID = ".st-key-home_grid", root = doc.documentElement;
+  function fit() {
+    const g = doc.querySelector(GRID);
+    // (Edit Home keeps Home's rows: its "Add a tile" panel beside the grid mustn't change them)
+    if (!g || !matchMedia("(min-width: 1001px)").matches || (window.__venatoHome || {}).arranging) return;
+    // what sits under the grid (the page's bottom padding, which leaves room for the chat bar, and Streamlit's
+    // spacing round the hidden bits after it)
+    const page = doc.querySelector('[data-testid="stMainBlockContainer"]');
+    const scroller = doc.querySelector('[data-testid="stMain"]');
+    const r = g.getBoundingClientRect();
+    const below = page ? page.getBoundingClientRect().bottom - r.bottom : (window.__venatoHome || {}).room ?? 20;
+    const h = Math.floor(innerHeight - (r.top + (scroller ? scroller.scrollTop : 0)) - below);
+    const was = parseFloat(root.style.getPropertyValue("--home-grid-h")) || 0;
+    if (Math.abs(was - h) >= 1) root.style.setProperty("--home-grid-h", `${h}px`);
+  }
+
   function tick() {
     label();
+    fit();
     const now = measure();
+    // Not on Home (another page, or Home is still being drawn): forget where the tiles were, so coming back
+    // to Home doesn't glide them in from old places. Only changes made on Home glide.
+    if (!now.length) { last = new Map(); hold = null; unpinAll(); arriving = true; return; }
+    if (arriving) {                          // tiles drawn by a page change: put them straight where they land
+      if (busy()) return;
+      arriving = false;
+      for (const n of now) last.set(n.k, n.lay);
+      dispatchEvent(new Event("venato:flip-settled"));
+      return;
+    }
     if (busy()) {
       if (!hold) {                           // run just started: freeze everyone where they are on screen
         hold = new Map();
@@ -83,17 +114,16 @@ export default function ({ data, setTriggerValue }) {
       }
       return;
     }
-    // idle: a run finished (glide from the held boxes), or something else moved (glide from the last boxes)
-    const from = hold || null; hold = null;
+    // idle: a run on Home finished (an edit): glide from the held boxes. Anything else that moves the tiles
+    // (the window, fonts loading, the grid being fitted to the window) just puts them there.
+    const from = hold; hold = null;
     unpinAll();
     const fresh = measure(), seen = new Set(), glides = [];
     for (const n of fresh) {
-      if (seen.has(n.k)) continue; seen.add(n.k);
-      const target = from ? from.get(n.k) : last.get(n.k);       // where it was / was heading
-      if (!target || same(target, n.lay)) continue;              // unchanged (a running glide just carries on)
-      const p = from ? target : (n.moving ? n.vis : target);     // start from where it is on screen
-      flips(n.el).forEach((a) => a.cancel());
-      const a = glide(n.el, p, n.lay);
+      if (!from || seen.has(n.k)) continue; seen.add(n.k);
+      const target = from.get(n.k);                              // where it was
+      if (!target || same(target, n.lay)) continue;              // unchanged
+      const a = glide(n.el, target, n.lay);
       if (a) glides.push(a.finished.catch(() => {}));
     }
     for (const n of fresh) last.set(n.k, n.lay);   // keep keys that vanished (a widget switched off, then on)
@@ -103,7 +133,7 @@ export default function ({ data, setTriggerValue }) {
   let queued = false;
   const schedule = () => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; tick(); }); } };
   new MutationObserver(schedule).observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "data-test-script-state"] });
-  addEventListener("resize", () => { if (!busy()) for (const n of measure()) last.set(n.k, n.lay); });
+  addEventListener("resize", () => { fit(); if (!busy()) for (const n of measure()) last.set(n.k, n.lay); });
 
   const CONTROLS = 'button, a, input, textarea, select, label, summary, [role="button"], [role="checkbox"], [role="switch"], [role="tab"], [role="radio"], [contenteditable="true"], [data-testid="stCheckbox"], [data-baseweb="select"]';
   let dragEnd = 0;         // when a drag last ended: its click is swallowed
@@ -118,7 +148,8 @@ export default function ({ data, setTriggerValue }) {
     const editing = (window.__venatoHome || {}).arranging;
     const hit = path.find((n) => n instanceof Element && n.matches(CONTROLS));
     if (hit && !(editing && card.querySelector(`.st-key-hwc_${CSS.escape(k.slice(3))}`)?.contains(hit))) return;
-    const target = editing ? `.st-key-hwpick_${CSS.escape(k.slice(3))} button` : `.st-key-go_tile_${CSS.escape(k.slice(3))} button`;
+    const id = CSS.escape(k.slice(3));
+    const target = editing ? `.st-key-hwpick_${id} button` : `.st-key-go_tile_${id} button, .st-key-open_tile_${id} button`;
     const b = doc.querySelector(target);
     if (b && !b.contains(e.target)) { e.preventDefault(); b.click(); }
   }, true);

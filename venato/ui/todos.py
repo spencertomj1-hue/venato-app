@@ -17,7 +17,7 @@ from venato.ui import kit
 
 HERE = Path(__file__).parent
 
-HOME_LIMIT = 6        # to-dos shown in a list before "N more"
+HOME_LIMIT = 3        # to-dos Home's tile shows before "+N more"
 
 _todos_component = st.components.v2.component(
     "venato_todos",

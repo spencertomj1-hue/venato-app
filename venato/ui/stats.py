@@ -193,7 +193,7 @@ def render_home():
         f'title="{d}: {"not confirmed" if p is None else f"{p}% followed"}"></i>'
         for d, p in zip(("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"), w["days"]))
     st.html(f"""<style>
-      .vn-rv {{ display: flex; align-items: flex-end; gap: 6px; height: 56px; }}
+      .vn-rv {{ display: flex; align-items: flex-end; gap: 6px; height: 36px; }}
       .vn-rv i {{ flex: 1; max-width: 18px; border-radius: 4px; }}
     </style><div class="vn-rv" role="img" aria-label="Plan followed each day this week">{bars}</div>""")
     st.caption("No days confirmed yet this week." if w["pct"] is None else f"{w['pct']}% of plan followed this week")

@@ -145,9 +145,11 @@ def _start_form(prefix):
     s = focus.settings()
     last = st.session_state.get("focus_last_label", "")
     a, b = st.columns([3, 2], vertical_alignment="bottom")
-    a.text_input("What are you focusing on?", value=last, key=f"{prefix}_label", placeholder="e.g. Essay")
-    b.button(f"Focus {s['focus_minutes']} min", key=f"{prefix}_go", type="primary", width="stretch",
-             icon=":material/play_arrow:", on_click=_start_quick, args=(prefix, s["focus_minutes"]))
+    a.text_input("What are you focusing on?", value=last, key=f"{prefix}_label", placeholder="What are you focusing on?",
+                 label_visibility="collapsed")
+    b.button(f"{s['focus_minutes']} min", key=f"{prefix}_go", type="primary", width="stretch",
+             icon=":material/play_arrow:", on_click=_start_quick, args=(prefix, s["focus_minutes"]),
+             help=f"Start a {s['focus_minutes']} minute focus timer")
 
 
 def _start_quick(prefix, minutes):

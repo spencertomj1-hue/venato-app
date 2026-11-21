@@ -569,9 +569,12 @@ def _assistant_answer(open_settings):
         st.session_state["page"] = "Settings"
 
 
-def needs_you(ctx=None):
+TILE_LIMIT = 3          # Home's Needs you tile: this many things, then "+N more"
+
+
+def needs_you(ctx=None, limit=None, heading=True):
     """
-    Home's Needs you widget, everything that wants something from you, in one card:
+    Everything that wants something from you, in one card:
       - today (once its Plan is over) and yesterday if unconfirmed: Confirm / Review / Not now
       - goals behind (or slipping, or out of reach) or short of time this week, each with its state pill,
         "N h to plan", its bar with the "should be here by today" tick, and Plan my goals
@@ -580,45 +583,99 @@ def needs_you(ctx=None):
       - once, a week in, with the assistant off: where to switch it on
       - once, two weeks in: "How's Venato treating you?" with a link to the feedback form
     Nothing: "Nothing needs you. Go touch grass."
+    limit (Home's tile): only the first `limit` things, each on one line (goals without their bar), then
+    "+N more" (a tap on the tile opens this card in full, in a dialog). Without it, all of them.
     """
     ctx = ctx or _ctx()
     items = needs_items(ctx)
-    with st.container(border=True, key="home_needs_you"):
-        kit.subhead("Needs you")
-        if not any(items.values()):
+    tile = limit is not None
+    rows = ([("day", d) for d in items["days"]] + [("goal", r) for r in items["goals"]]
+            + [("deadline", r) for r in items["deadlines"]] + [("block", (i, r)) for i, r in enumerate(items["blocks"])]
+            + [("assistant", None)] * bool(items["assistant"]) + [("feedback", None)] * bool(items["feedback"]))
+    shown = rows[:limit] if tile else rows
+    pre = "" if tile else "all_"                  # the dialog draws next to the tile: its own keys
+    with st.container(border=True, key="home_needs_you" if tile else "needs_you_all"):
+        if heading:
+            kit.subhead("Needs you")
+        if not rows:
             st.markdown(EMPTY)
             return
-        if items["days"]:
-            from venato.ui import timetable
-            for day in items["days"]:
-                timetable.end_of_day_row(day)
-        if items["goals"]:
-            _needs_goals(items["goals"], ctx)
-        for d, why in items["deadlines"]:
-            when = store.countdown(d["due"], ctx.today, d.get("due_time"), store.local_now())
-            st.markdown(f":material/event: **{md(d['title'])}** · {md(when)} · :gray[{md(why)}]")
-        for i, item in enumerate(items["blocks"]):
-            row = st.container(horizontal=True, vertical_alignment="center", gap="small")
-            row.markdown(f"{item['icon'] or ''} {md(item['text'])}".strip(), width="stretch")
-            if item.get("page"):
-                row.button("Open", key=f"needs_open_{i}_{item['block']}", type="tertiary",
-                           icon=":material/arrow_forward:", on_click=_open_page, args=(item["page"],))
-        if items["assistant"]:
-            st.markdown(":material/chat: **Want a hand?** The assistant can plan your week with you and answer "
-                        "questions about your notes. Turn it on in Settings → Assistant.")
-            row = st.container(horizontal=True, gap="small")
-            row.button("Open Settings", key="needs_ai_yes", icon=":material/settings:",
-                       on_click=_assistant_answer, args=(True,))
-            row.button("No thanks", key="needs_ai_no", type="tertiary", on_click=_assistant_answer, args=(False,),
-                       help="Hide this for good. The assistant stays in Settings if you change your mind.")
-        if items["feedback"]:
-            st.markdown(":material/rate_review: **How's Venato treating you?** Tell us what's annoying or missing. "
-                        "It opens a short form in your browser.")
-            row = st.container(horizontal=True, gap="small")
-            row.link_button("Send feedback", feedback.feedback_url(), icon=":material/open_in_new:",
-                            key="needs_fb_yes", on_click=feedback.card_done)
-            row.button("Not now", key="needs_fb_no", type="tertiary", on_click=feedback.card_done,
-                       help="Hide this for good. Send feedback stays in Settings → About.")
+        goals_shown = [r for kind, r in shown if kind == "goal"]
+        hidden = len(rows) - len(shown)
+        for n, (kind, r) in enumerate(shown):
+            if tile and hidden and n == len(shown) - 1:      # the last one shares its line with "+N more"
+                line = st.container(horizontal=True, vertical_alignment="center", gap="small")
+                box = line.container(width="stretch")
+                line.caption(f"+{hidden} more", width="content")
+                with box:
+                    _needs_row(kind, r, ctx, pre, tile, goals_shown)
+            else:
+                _needs_row(kind, r, ctx, pre, tile, goals_shown)
+
+
+def _needs_row(kind, r, ctx, pre, tile, goals_shown):
+    """One thing in Needs you (see needs_you). Goals in full are drawn together, at the first one."""
+    if kind == "day":
+        from venato.ui import timetable
+        timetable.end_of_day_row(r, prefix=pre, compact=tile)
+    elif kind == "goal" and tile:
+        _goal_line(r)
+    elif kind == "goal" and r is goals_shown[0]:
+        _needs_goals(goals_shown, ctx)
+    elif kind == "deadline":
+        d, why = r
+        when = store.countdown(d["due"], ctx.today, d.get("due_time"), store.local_now())
+        st.markdown(f":material/event: **{md(d['title'])}** · {md(when)} · :gray[{md(why)}]")
+    elif kind == "block":
+        i, item = r
+        row = st.container(horizontal=True, vertical_alignment="center", gap="small")
+        row.markdown(f"{item['icon'] or ''} {md(item['text'])}".strip(), width="stretch")
+        if item.get("page"):
+            row.button("Open", key=f"{pre}needs_open_{i}_{item['block']}", type="tertiary",
+                       icon=":material/arrow_forward:", on_click=_open_page, args=(item["page"],))
+    elif kind == "assistant":
+        _assistant_card(pre, tile)
+    elif kind == "feedback":
+        _feedback_card(pre, tile)
+
+
+def _goal_line(r):
+    """A goal in Home's tile: its pill, its name and what it needs, on one line."""
+    p, state, what = r
+    pill = NEEDS_PLAN if state == "needs_plan" else f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}]"
+    st.markdown(f"{pill} **{md(p['goal']['title'])}**" + (f" · {md(what)}" if what else ""))
+
+
+def _card_row(text, tile):
+    """The row a card's buttons go in: beside its text in the tile (one line), under it in full."""
+    if not tile:
+        st.markdown(text)
+    row = st.container(horizontal=True, gap="small", vertical_alignment="center")
+    if tile:
+        row.markdown(text, width="stretch")
+    return row
+
+
+def _assistant_card(pre, tile):
+    text = (":material/chat: **Want a hand?** Turn it on in Settings → Assistant." if tile else
+            ":material/chat: **Want a hand?** The assistant can plan your week with you and answer "
+            "questions about your notes. Turn it on in Settings → Assistant.")
+    row = _card_row(text, tile)
+    row.button("Open Settings", key=f"{pre}needs_ai_yes", icon=":material/settings:",
+               on_click=_assistant_answer, args=(True,))
+    row.button("No thanks", key=f"{pre}needs_ai_no", type="tertiary", on_click=_assistant_answer, args=(False,),
+               help="Hide this for good. The assistant stays in Settings if you change your mind.")
+
+
+def _feedback_card(pre, tile):
+    text = (":material/rate_review: **How's Venato treating you?**" if tile else
+            ":material/rate_review: **How's Venato treating you?** Tell us what's annoying or missing. "
+            "It opens a short form in your browser.")
+    row = _card_row(text, tile)
+    row.link_button("Send feedback", feedback.feedback_url(), icon=":material/open_in_new:",
+                    key=f"{pre}needs_fb_yes", on_click=feedback.card_done)
+    row.button("Not now", key=f"{pre}needs_fb_no", type="tertiary", on_click=feedback.card_done,
+               help="Hide this for good. Send feedback stays in Settings → About.")
 
 
 def _needs_goals(rows, ctx):

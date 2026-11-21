@@ -35,6 +35,7 @@ export default function ({ data, setTriggerValue }) {
     if (w.__venatoNavPopped) history.replaceState(history.state, "", u); else history.pushState({ venato: data.slug }, "", u);
   }
   w.__venatoNavPopped = false;
+  if (w.__venatoFocusTop) { w.__venatoFocusTop = false; landWhenDrawn(); }
   // Spoken names for icon-only buttons ({button key: name}).
   for (const [k, name] of Object.entries(data.labels || {}))
     for (const b of document.querySelectorAll(`.st-key-${CSS.escape(k)} button`)) b.setAttribute("aria-label", name);
@@ -43,7 +44,7 @@ export default function ({ data, setTriggerValue }) {
   addEventListener("popstate", () => {
     if (here() === (w.__venatoNav || {}).slug) return;
     w.__venatoNavPopped = true;
-    w.__venatoNavSend(here());
+    leave(here());
   });
   // Esc: back to Home (or out of Edit Home), unless something else wants it (a dialog, a menu, typing).
   document.addEventListener("keydown", (e) => {
@@ -53,8 +54,36 @@ export default function ({ data, setTriggerValue }) {
     const t = e.composedPath()[0];
     if (t instanceof Element && t.closest('input, textarea, select, [contenteditable="true"]')) return;
     if (document.querySelector('[data-testid="stDialog"], [role="dialog"], [data-baseweb="popover"]')) return;
-    w.__venatoNavSend("", true);
+    leave("", true);
   });
+}
+
+// Esc and Back change page from the keyboard / browser, not a page button: fade like a button does
+// (page_fade.py), and once the new page is drawn put focus on its heading. Otherwise focus stays on the
+// element it was on (the page itself, or a button that's gone), and the key press just made that a
+// keyboard focus, which Safari rings in grey. The heading takes focus without a ring; Tab goes on from there.
+function leave(slug, esc) {
+  const w = window;
+  if (slug !== (w.__venatoNav || {}).slug && w.__venatoFadeShow) w.__venatoFadeShow();
+  w.__venatoFocusTop = true;
+  w.__venatoNavSend(slug, esc);
+}
+
+function landWhenDrawn() {
+  const app = () => document.querySelector('[data-testid="stApp"]');
+  const busy = () => { const s = app()?.getAttribute("data-test-script-state") || ""; return /running|rerun/i.test(s) && !/not/i.test(s); };
+  let tries = 0;
+  const go = () => {
+    if (busy() && ++tries < 60) { setTimeout(go, 50); return; }
+    const h = document.querySelector('[data-testid="stMain"] h1, [data-testid="stMain"] h2');
+    const was = document.activeElement;
+    if (h) {
+      h.setAttribute("tabindex", "-1");
+      h.classList.add("venato-landing");
+      h.focus({ preventScroll: true });
+    } else if (was && was !== document.body && was.blur) was.blur();
+  };
+  requestAnimationFrame(go);
 }
 """
 

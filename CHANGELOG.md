@@ -13,9 +13,13 @@ Venato was called **Arete** up to 1.1.1.
 - Home is the only way round the app: the sidebar is gone. Every tile opens its page (click anywhere on it; ticking a to-do or starting Focus still works in place), and each tile's header has a coloured icon, its name and a short status ("4 behind", "Next: Lunch at 13:00"). Every page has a top bar with "← Home" (Esc does the same) and shortcut tiles to the other pages. Settings is the gear on Home, search / Ask is the bar at the top of Home, and pages have addresses (`?page=goals`), so links and the browser's Back button work.
 - Edit Home (was Arrange): a four-column grid of Small, Wide, Large and Tall tiles. − removes a tile (its data stays), tap or drag to move one, the picked-up tile gets a size picker and a drop slot, and "Add a tile" lists what's hidden. Your old layout is converted the first time Home draws.
 - A To-dos page with Today / This week / This month tabs (the To-dos tile opens it).
+- Home fits on one screen on a laptop (1280×800 and up): the rows share the window's height and each tile shows a summary, with the rest one click away. The timetable starts Tall (a column down the left, Large and Wide still on offer) and shows the next few hours from an hour before now, without a second date. To-dos shows 3 and "+N more" with a smaller Daily / Weekly / Monthly switch, and comes Small or Wide. Goals shows the top 3 (behind ones first), each a name and a thin bar on one line, then "and N more". Needs you shows 3 things on one line each and "+N more"; tap it for everything, with goal bars and Plan my goals. Daily log ticks habits in one line. Narrow windows and phones still scroll. Saved layouts keep their sizes; the new layout is for new installs and Reset.
+- Edit Home: each tile's title and Move button share one line, and "Drop here" adds a row under the grid instead of squeezing it.
 
 ### Fixed
 - In dark mode, red buttons have dark text (white on the light red was too faint to read).
+- No grey ring left behind after Esc. Esc (and the browser's Back) now put focus on the page's heading, without a ring; Tab carries on from there and still shows one.
+- Leaving a page with Esc or Back fades like the Home button does, instead of the old page's pieces swapping out in front of you, and coming back to Home no longer glides the tiles in from old places (only moves in Edit Home glide).
 
 ### Added
 - A blank slate. A new install has no categories, activity defaults, habits or goals; the old defaults are now examples that setup suggests. With no category, the Timetable, Goals, Focus and Review show an "Add a category" prompt, and calendar events are grey. Existing installs keep what they have.

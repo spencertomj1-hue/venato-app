@@ -25,8 +25,9 @@ ORDER = list(SPANS)                    # how the size picker lists them
 SIZE_NAMES = {"small": "Small", "wide": "Wide", "large": "Large", "tall": "Tall"}
 _OLD = {"s": "small", "m": "wide", "l": "large", "full": "wide"}     # the 12-column sizes before tiles
 
-# The starting Home: today's timetable big, to-dos and goals beside it, a row of small tiles, Needs you.
-_DEFAULT = [{"w": "timetable_today", "size": "large"}, {"w": "todos", "size": "wide"}, {"w": "goals", "size": "wide"},
+# The starting Home, on one screen (three rows): today's timetable down the left (Tall), to-dos and goals beside
+# it with Focus and Grades on the right, then Daily log, Review and Needs you along the bottom.
+_DEFAULT = [{"w": "timetable_today", "size": "tall"}, {"w": "todos", "size": "wide"}, {"w": "goals", "size": "wide"},
             {"w": "focus", "size": "small"}, {"w": "modules", "size": "small"}, {"w": "habits", "size": "small"},
             {"w": "review", "size": "small"}, {"w": "needs_you", "size": "wide"}]
 
@@ -112,6 +113,11 @@ def place(cells, columns=COLUMNS):
         taken |= {(row + dy, spot + dx) for dy in range(h) for dx in range(w)}
         out.append((row, spot))
     return out
+
+
+def rows(cells, columns=COLUMNS):
+    """How many grid rows the tiles take (0 for none): Home sizes its rows so this many fit on one screen."""
+    return max((r + span(c["size"])[1] for c, (r, _) in zip(cells, place(cells, columns))), default=0)
 
 
 def keep_unavailable(raw, new, available):

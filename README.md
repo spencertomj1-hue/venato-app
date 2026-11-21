@@ -38,7 +38,7 @@
 
 ## Features
 
-**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Review and the Daily Log, and students also get Modules. Each brings its own page, Home tiles and assistant skills. **Home is the way round the app** (there is no sidebar): every tile opens its page, and each page has "← Home" (or Esc) and small shortcut tiles to the others. Settings is the gear top right, and search / Ask is the bar at the top of Home. Press **Edit Home** to move tiles, make them Small, Wide, Large or Tall, remove them (their data stays) or add hidden ones from "Add a tile".
+**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Review and the Daily Log, and students also get Modules. Each brings its own page, Home tiles and assistant skills. **Home is the way round the app** (there is no sidebar): every tile opens its page, and each page has "← Home" (or Esc) and small shortcut tiles to the others. Settings is the gear top right, and search / Ask is the bar at the top of Home. On a laptop Home fits one screen: each tile is a summary and opens its page for the rest. Press **Edit Home** to move tiles, make them Small, Wide, Large or Tall, remove them (their data stays) or add hidden ones from "Add a tile".
 
 | Block | What it does |
 |---|---|
@@ -61,7 +61,7 @@
 **Home**
 - Today's timetable (its Actual: the Plan as locked this morning, with your changes), stretched to fill the window, and an end-of-day prompt: "Is the timetable right for today?" with **Confirm** or **Review**.
 - **Home is yours to arrange**, like a phone's home screen: press Arrange (top right), then move, resize, hide or add widgets.
-- **Needs you:** days to confirm, goals that are behind or short of time (each with its state, "N h to plan", its bar with a "should be here by today" tick, and Plan my goals), deadlines this week with no plan, and the odd one-off card. Nothing to do: "Nothing needs you."
+- **Needs you:** days to confirm, goals that are behind or short of time (each with its state, "N h to plan", its bar with a "should be here by today" tick, and Plan my goals), deadlines this week with no plan, and the odd one-off card. The tile shows the first three; tap it for all of them. Nothing to do: "Nothing needs you."
 - **To-dos** in one card with a Daily / Weekly / Monthly switch, then deadlines, habits and search. A widget with nothing to show (no habits, no marks, no deadlines…) isn't drawn.
 
 **Tracking**

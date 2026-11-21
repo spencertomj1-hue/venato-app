@@ -45,6 +45,19 @@ svg { display: block; }
 .gl-link:hover { text-decoration: underline; }
 .gl-more { display: block; margin: 2px 0 0 26px; }
 
+/* ---------- Home's tile: a summary (at most 3 to-dos, one line each), a small switch ---------- */
+
+.gl-tile .gl-top { margin-bottom: 2px; }
+.gl-tile .gl-tabs { padding: 2px; border-radius: 8px; }
+.gl-tile .gl-tab { padding: 1px 8px; font-size: 0.75rem; border-radius: 6px; }
+.gl-tile .gl-row { padding: 3px 2px 3px 0; background: transparent; }
+.gl-tile .gl-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gl-tile .gl-foot .gl-add { width: auto; }
+.gl-tile .gl-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.gl-tile .gl-notes { display: none; }
+.gl-tile .gl-add { padding: 4px 0; }
+.gl-more-tile { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+
 /* ---------- Rows ---------- */
 
 .gl-list { list-style: none; margin: 0; padding: 0; }

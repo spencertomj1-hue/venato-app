@@ -1,6 +1,7 @@
 """
 A soft transition between pages (and focus rings only for keyboard users): pressing a button that opens a page
-(a Home tile, "← Home", a shortcut tile: keys go_*) fades the page
+(a Home tile, "← Home", a shortcut tile: keys go_*), Esc or the browser's Back (nav.py calls
+window.__venatoFadeShow) fades the page
 to the page colour, and fades the new page in once Streamlit has finished drawing it
 (instead of the old page's pieces being swapped out one by one in front of you).
 """
@@ -55,6 +56,7 @@ export default function () {
     }, 120);
   }
 
+  window.__venatoFadeShow = show;               // nav.py: Esc and the browser's Back change page too
   // Start when a page button is pressed (a tile's click presses its hidden go_tile_ button for it).
   doc.addEventListener("click", (e) => {
     if (e.button !== 0) return;

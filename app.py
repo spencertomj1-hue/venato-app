@@ -33,6 +33,12 @@ st.html("""<style>
 @media (max-width: 640px) { .stMainBlockContainer { padding-left: 1rem; padding-right: 1rem; } }
 [data-stale="true"] { opacity: 1 !important; transition: none !important; }
 [data-testid="stElementContainer"]:has(#venato-ready) { display: none; }   /* no stray gap */
+/* The hidden helpers at the end (router, Home's glide, the chat bar's slot: it's pinned) take no room, so they
+   mustn't add the 1rem gap between blocks either. */
+[data-testid="stLayoutWrapper"]:has(> .st-key-home_hidden), [data-testid="stLayoutWrapper"]:has(> .st-key-venato_hidden) { display: none; }
+.stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]:has(.st-key-chat),
+.stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]:has(> .st-key-undo_bar),
+.stMainBlockContainer > [data-testid="stVerticalBlock"] > .st-key-undo_shortcut { margin-top: -1rem; }
 </style>""")
 
 

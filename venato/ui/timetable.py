@@ -349,18 +349,24 @@ def _dismiss(day):
     store.save_settings(eod_dismissed=sorted(set(gone[-30:] + [day.isoformat()])))
 
 
-def end_of_day_row(day):
-    """Home's Needs you: "Is the timetable right for today / yesterday?" with Confirm / Review / Not now."""
+def end_of_day_row(day, prefix="", compact=False):
+    """Needs you: "Is the timetable right for today / yesterday?" with Confirm / Review / Not now.
+    compact (Home's tile): one line, the question as plain bold text. prefix: keys of a second copy."""
     when = "today" if day == store.local_today() else "yesterday"
-    row = st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"eod_{day.isoformat()}")
-    kit.subhead(f"Is the timetable right for {when}?", row, width="stretch",
-                help=f"Confirm {regional.long_date(day)}'s Actual is what you really did: only confirmed "
-                     "days count in your stats and goals.")
-    row.button("Confirm", key=f"eod_ok_{day}", type="primary", icon=":material/task_alt:",
+    row = st.container(horizontal=True, gap="small", vertical_alignment="center",
+                       key=f"{prefix}eod_{day.isoformat()}")
+    ask = f"Is the timetable right for {when}?"
+    tip = (f"Confirm {regional.long_date(day)}'s Actual is what you really did: only confirmed "
+           "days count in your stats and goals.")
+    if compact:
+        row.markdown(f"**{ask}**", width="stretch", help=tip)
+    else:
+        kit.subhead(ask, row, width="stretch", help=tip)
+    row.button("Confirm", key=f"{prefix}eod_ok_{day}", type="primary", icon=":material/task_alt:",
                on_click=_confirm_all, args=(day,), help=f"Confirm {when}'s Actual is what you did")
-    row.button("Review", key=f"eod_review_{day}", icon=":material/edit_calendar:",
+    row.button("Review", key=f"{prefix}eod_review_{day}", icon=":material/edit_calendar:",
                on_click=_review, args=(day,), help=f"Open {when} on the Timetable to correct it")
-    row.button("Not now", key=f"eod_no_{day}", type="tertiary", on_click=_dismiss, args=(day,),
+    row.button("Not now", key=f"{prefix}eod_no_{day}", type="tertiary", on_click=_dismiss, args=(day,),
                help="Hide this; the day stays unconfirmed")
 
 
