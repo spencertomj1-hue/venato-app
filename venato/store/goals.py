@@ -24,6 +24,7 @@ from .grid import slot_count, slot_of
 from .history import _clean
 from .outlook import outlook_between
 from .timetable import blocks_between
+from .todos import link_goal_group, rename_goal_group
 
 
 GOAL_PERIODS = ("monthly", "yearly")
@@ -254,6 +255,8 @@ def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None,
         )
         if deadline_id:
             conn.execute("UPDATE goals SET deadline_id = ? WHERE id = ?", (deadline_id, goal_id))
+        else:
+            link_goal_group(conn, goal_id, title)       # the goal is a to-do category too (not a deadline's plan)
     return get_goal(goal_id)
 
 
@@ -301,6 +304,8 @@ def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP, cate
                     _check_tracking(conn, fields.get("habit_id", old[0]), fields.get("category_id", old[1]))
             conn.execute(f"UPDATE goals SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
                          (*fields.values(), goal_id))
+            if "title" in fields:
+                rename_goal_group(conn, goal_id, fields["title"])
 
 
 def set_goal_progress(goal_id, value):
@@ -319,6 +324,8 @@ def delete_goal(goal_id):
     with db() as conn:
         conn.execute("DELETE FROM goal_week WHERE goal_id = ?", (goal_id,))
         conn.execute("DELETE FROM goals WHERE id = ?", (goal_id,))
+        # Its to-do category stays (with its to-dos), no longer tied to a goal.
+        conn.execute("UPDATE todo_groups SET goal_id = NULL WHERE goal_id = ?", (goal_id,))
 
 
 def reorder_goals(ids):

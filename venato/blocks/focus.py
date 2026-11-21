@@ -20,7 +20,7 @@ from venato.blocks import Block, Widget
 
 KINDS = ("focus", "break", "track")
 DEFAULTS = {"focus_minutes": 25, "short_break": 5, "long_break": 15, "long_every": 4,
-            "auto_breaks": True, "to_timetable": True}
+            "auto_breaks": True, "to_timetable": True, "daily_aim": 240}   # daily_aim: minutes (Home's dial)
 MIN_FOR_TIMETABLE = 15        # minutes: shorter sessions aren't put in the timetable
 
 SCHEMA = """
@@ -459,5 +459,5 @@ def _focus_status():
 
 BLOCK = Block("focus", "Focus", ":material/timer:",
               "A Pomodoro timer with breaks and a stopwatch for tracking time; sessions go into your timetable.",
-              group="Plan", page=_page, widgets=[Widget("focus", "Focus", _home, "small", ("small", "wide"), status=_focus_status, colour="#44444C")], tools=TOOLS, prompt=PROMPT, context=_context,
+              group="Plan", page=_page, widgets=[Widget("focus", "Focus", _home, "small", ("small", "wide"), status=_focus_status, colour="#0F766E")], tools=TOOLS, prompt=PROMPT, context=_context,
               quick=[_quick], schema=SCHEMA, order=30, default=True, core=True)
