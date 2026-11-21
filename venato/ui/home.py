@@ -251,12 +251,14 @@ def _css(t, cells, cat, editing, room=PAGE_ROOM):
             touch-action: none; user-select: none; -webkit-user-select: none; }}
         .st-key-home_grid [class*="st-key-hw_"][class] {{ overflow: visible; }}
         .st-key-home_grid [class*="st-key-hwc_"] {{ pointer-events: none; }}
-        [class*="st-key-hwx_"] {{ position: absolute !important; top: -14px; left: -14px; z-index: 4; width: auto !important; }}
-        .stApp [class*="st-key-hwx_"] button {{ width: 44px; height: 44px; border-radius: 22px; padding: 0;
+        [class*="st-key-hwx_"] {{ position: absolute !important; top: -9px; left: -9px; z-index: 4; width: auto !important; }}
+        .stApp [class*="st-key-hwx_"] button {{ width: 24px; height: 24px; min-height: 24px; border-radius: 12px; padding: 0;
             background: #5F6170 !important; border: 2px solid {t['card']} !important; }}
-        [class*="st-key-hwx_"] button * {{ color: #fff !important; }}
+        /* small to look at, but a 44px target to tap: the hit area reaches past the circle */
+        .stApp [class*="st-key-hwx_"] button::before {{ content: ""; position: absolute; inset: -10px; }}
+        [class*="st-key-hwx_"] button * {{ color: #fff !important; font-size: 16px !important; }}
         [class*="st-key-hwbar_"] button {{ min-height: 44px; min-width: 44px; padding: 0; }}
-        [class*="st-key-hwbar_"] {{ padding-left: 22px; }}           /* clear of the − in the corner */
+        [class*="st-key-hwbar_"] {{ padding-left: 8px; }}            /* clear of the − in the corner */
         /* the tile in your hand: lifted, over the rest, following the pointer (no wobble, no glide) */
         .st-key-home_grid .vn-dragging {{ z-index: 30; cursor: grabbing; animation: none;
             box-shadow: 0 22px 48px rgba(0, 0, 0, 0.22); border-style: solid; border-color: {t['accent']}; }}
