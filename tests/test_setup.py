@@ -104,39 +104,7 @@ def test_settings_and_backups(store):
     assert setup_checks.list_backups() == [path]
 
 
-# --- the wizard ---
-
-def test_wizard_shows_on_a_fresh_data_folder_and_finishes(store, monkeypatch):
-    from venato import setup_checks
-    os.remove(store.DATA_DIR / "settings.json")                 # a brand-new data folder
-    monkeypatch.setattr(setup_checks, "claude_status", lambda: {
-        "found": False, "path": None, "logged_in": False, "account": None, "note": "Not installed."})
-
-    at = AppTest.from_file(APP, default_timeout=60).run()
-    assert not at.exception
-    assert at.title[0].value == "Welcome to Venato"
-    assert not at.sidebar.radio                                  # no app yet
-
-    at.button(key="wiz_next").click().run()                      # -> the assistant: optional, off to start with
-    assert at.toggle(key="wiz_ai_on").value is False and not at.text_input
-    at.toggle(key="wiz_ai_on").set_value(True).run()             # on: how to connect Claude (an API key by default)
-    assert at.text_input[0].label == "Anthropic API key"
-    at.radio(key="wiz_claude_way").set_value("Use my Claude subscription (Claude Code)").run()
-    assert any(setup_checks.INSTALL_CMD in c.value for c in at.code)
-    at.button(key="wiz_skip").click().run()                      # -> Calendar
-    assert any("Publish a calendar" in m.value for m in at.markdown)
-    at.button(key="wiz_skip").click().run()                      # -> Microphone
-    at.button(key="wiz_next").click().run()                      # -> Done
-    assert at.title[0].value == "You're all set"
-    at.button(key="wiz_finish").click().run()
-    assert not at.exception
-    assert setup_checks.load_settings()["wizard_done"] is True
-    assert at.sidebar.radio[0].value == "Home"                   # the app
-    assert setup_checks.load_settings()["blocks"] == ["timetable", "goals", "stats", "focus", "log"]   # the starter set
-
-    # Reopening the app later doesn't show it again.
-    assert AppTest.from_file(APP, default_timeout=60).run().sidebar.radio
-
+# --- the wizard (new setup tests are further down) ---
 
 def test_api_key_setup(store, monkeypatch):
     """Pasting a key: it's checked, saved in the (fake) secret store, and then Claude counts as ready."""
@@ -178,53 +146,6 @@ def test_check_api_key_messages(monkeypatch):
         monkeypatch.setattr(assistant.requests, "get", lambda *a, code=code, **k: Reply(code))
         result = assistant.check_api_key("sk-ant-x")
         assert result[0] is ok and words in result[1] and "sk-ant-x" not in result[1]
-
-
-def test_wizard_has_no_blocks_step(store):
-    from venato.ui import settings_ui
-    assert "Blocks" not in [name for name, _ in settings_ui.STEPS]
-    os.remove(store.DATA_DIR / "settings.json")
-    at = AppTest.from_file(APP, default_timeout=60).run()
-    for _ in range(2):
-        at.button(key="wiz_next").click().run()
-        assert not [t for t in at.toggle if "_block_" in (t.key or "")]
-        assert not any("Choose your blocks" in h.value for h in at.header)
-
-
-def test_wizard_saves_the_starter_blocks(store):
-    from venato import blocks, setup_checks
-    os.remove(store.DATA_DIR / "settings.json")
-    at = AppTest.from_file(APP, default_timeout=60).run()
-    at.button(key="wiz_next").click().run()
-    at.button(key="wiz_skip").click().run()
-    at.button(key="wiz_skip").click().run()
-    at.button(key="wiz_finish").click().run()
-    assert not at.exception and setup_checks.load_settings()["blocks"] == blocks.STARTER
-    assert blocks.is_on("log") and blocks.is_on("stats") and not blocks.is_on("grades")   # Grades is the student branch's
-
-
-def test_wizard_without_the_assistant(store):
-    """Leaving the assistant off: no microphone step, and no chat anywhere in the app."""
-    from venato import setup_checks
-    os.remove(store.DATA_DIR / "settings.json")
-    at = AppTest.from_file(APP, default_timeout=60).run()
-    at.button(key="wiz_next").click().run()                      # -> the assistant (left off)
-    at.button(key="wiz_next").click().run()                      # -> Calendar
-    at.button(key="wiz_next").click().run()                      # -> straight to Done (no microphone)
-    assert at.title[0].value == "You're all set"
-    at.button(key="wiz_back").click().run()                      # Back skips it too
-    assert any("Publish a calendar" in m.value for m in at.markdown)
-    at.button(key="wiz_next").click().run()
-    at.button(key="wiz_finish").click().run()
-    assert setup_checks.load_settings()["ai_enabled"] is False
-    assert not at.exception and at.sidebar.radio[0].value == "Home"
-    assert not [t for t in at.text_area if "Venato" in (t.placeholder or "")]   # no ask box
-    for page in at.sidebar.radio[0].options:
-        at.sidebar.radio[0].set_value(page).run()
-        assert not at.exception, page
-    at.sidebar.radio[0].set_value("Settings").run()
-    at.toggle(key="set_ai_on").set_value(True).run()             # switched on later in Settings
-    assert setup_checks.load_settings()["ai_enabled"] is True and not at.exception
 
 
 def test_appearance_setting(store):
@@ -304,3 +225,354 @@ def test_finish_keeps_a_saved_block_choice(store):
     settings_ui._finish()
     s = setup_checks.load_settings()
     assert s["blocks"] == ["grades"] and s["wizard_done"] is True
+
+
+# --- the setup wizard (Phase 6) ---
+
+import datetime as _dt
+
+FIXTURES = Path(__file__).parent / "fixtures"
+UNI_ICS = (FIXTURES / "uni_timetable_sample.ics").read_bytes()
+CANVAS_ICS = (FIXTURES / "canvas_sample.ics").read_bytes()
+UNI_URL = "https://outlook.office365.com/published/0000fake/1111fake/calendar.ics"
+CANVAS_URL = "https://canvas.example.edu/feeds/calendars/user_fake.ics"
+MON = _dt.date(2026, 11, 16)
+NOW = _dt.datetime(2026, 11, 16, 9, 0)
+
+
+@pytest.fixture
+def fresh(blank_store, monkeypatch):
+    """A brand-new data folder (no settings: the wizard shows), the feeds served from the fixtures, a pinned Monday."""
+    from venato import outlook as ol
+    os.remove(blank_store.DATA_DIR / "settings.json")
+    monkeypatch.setattr(ol, "fetch", lambda url: CANVAS_ICS if "canvas" in url else UNI_ICS)
+    monkeypatch.setattr(blank_store, "local_now", lambda: NOW)
+    monkeypatch.setattr(blank_store, "local_today", lambda: MON)
+    return blank_store
+
+
+def _next(at, key="wiz_next"):
+    at.button(key=key).click().run()
+    assert not at.exception, at.exception
+
+
+def _skip_to_the_end(at):
+    """Skip every step from here to the last; the headers seen on the way."""
+    seen = []
+    while not [b for b in at.button if b.key == "wiz_finish"]:
+        seen.append(at.header[0].value)
+        _next(at, "wiz_skip")
+    return seen
+
+
+def _submit(at, label="Connect"):
+    next(b for b in at.button if b.label == label).click().run()
+    assert not at.exception, at.exception
+
+
+def test_skipping_everything_lands_on_a_blank_home(fresh):
+    from venato import blocks, setup_checks
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert at.title[0].value == "Welcome to Venato" and not at.sidebar.radio
+    _next(at, "wiz_skip_all")
+    s = setup_checks.load_settings()
+    assert s["wizard_done"] is True and s["ai_enabled"] is False and "home" not in s
+    assert s["blocks"] == blocks.STARTER
+    assert at.sidebar.radio[0].value == "Home"
+    assert fresh.load_categories().empty and fresh.get_habits() == [] and fresh.deadlines() == []
+    assert fresh.goals_open() == [] and fresh.load_label_map().empty
+    for page in list(at.sidebar.radio[0].options):
+        at.sidebar.radio[0].set_value(page).run()
+        assert not at.exception, (page, at.exception)
+
+
+def test_skipping_every_step_one_by_one_adds_nothing(fresh):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at)                                                    # Get started
+    seen = _skip_to_the_end(at)
+    assert seen[0].endswith("Are you a student?") and not any(h.endswith(("Canvas", "Your modules")) for h in seen)
+    _next(at, "wiz_finish")
+    assert at.sidebar.radio[0].value == "Home"
+    assert fresh.load_categories().empty and fresh.goals_open() == [] and fresh.get_habits() == []
+
+
+def test_a_non_student_gets_no_uni_steps(fresh):
+    from venato.ui import onboarding
+    assert [k for k, *_ in onboarding.STEPS if k in ("timetable", "canvas", "modules", "hours")] == \
+        ["timetable", "canvas", "modules", "hours"]
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at)
+    at.radio(key="ob_student").set_value("No").run()
+    _next(at)
+    assert at.header[0].value.endswith("Your goals")             # straight past the four uni steps
+    names = _skip_to_the_end(at)
+    assert not any(n.endswith(("Canvas", "Your modules", "Study hours", "Your uni timetable")) for n in names)
+    _next(at, "wiz_finish")
+    from venato import blocks
+    assert not blocks.is_on("grades") and blocks.chosen_keys() == blocks.STARTER
+
+
+def test_a_student_gets_the_uni_steps_and_modules(fresh):
+    from venato import blocks
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at)
+    at.radio(key="ob_student").set_value("Yes").run()
+    _next(at)
+    assert at.header[0].value.endswith("Your uni timetable")
+    _next(at, "wiz_skip")
+    assert at.header[0].value.endswith("Canvas")
+    _next(at, "wiz_skip")
+    assert at.header[0].value.endswith("Your modules")
+    assert any("Add a module" in t.label for t in at.text_input)  # no feed: a plain box
+    _next(at, "wiz_skip")
+    assert at.header[0].value.endswith("Study hours")
+    _next(at)
+    _skip_to_the_end(at)
+    _next(at, "wiz_finish")
+    assert blocks.is_on("grades")
+
+
+def test_student_with_the_fixture_feeds_ends_up_with_everything(fresh):
+    """Timetable and Canvas links, modules, study hours, goals, tracking, categories and the first week."""
+    from venato import blocks, setup_checks
+    from venato.blocks import grades as gr
+    at = AppTest.from_file(APP, default_timeout=90).run()
+    _next(at)
+    at.radio(key="ob_student").set_value("Yes").run()
+    _next(at)
+
+    # Uni timetable: the preview counts lectures
+    at.text_input(key="ob_link_uni").set_value(UNI_URL)
+    _submit(at)
+    assert any("lecture" in s.value and "Connected" in s.value for s in at.success), [s.value for s in at.success]
+    assert fresh.outlook_between("2026-11-16", "2026-11-22")
+    _next(at)
+
+    # Canvas: the preview counts assignments
+    at.text_input(key="ob_link_canvas").set_value(CANVAS_URL)
+    _submit(at)
+    assert any("assignments due" in s.value for s in at.success), [s.value for s in at.success]
+    assert len(fresh.deadlines()) == 7
+    _next(at)
+
+    # Modules: the detected ones, a Canvas course linked to one of them
+    assert at.header[0].value.endswith("Your modules")
+    assert any("Organic Chemistry" in t.value for t in at.text_input)
+    course = next(s for s in at.selectbox if s.key.startswith("ob_course_"))
+    assert "Not linked" in course.options and course.value == "Not linked"
+    assert any(("Assignment" in s.label) or ("[" in s.label) for s in at.selectbox)
+    at.segmented_control(key="ob_target").set_value("First").run()
+    course.set_value("Organic Chemistry").run()
+    _next(at)
+    mods = gr.modules()
+    assert {"Organic Chemistry"} <= {m["name"] for m in mods} and all(m["category_id"] and m["target"] == 70 for m in mods)
+    assert {c["id"] for c in fresh.load_categories().to_dict("records")} >= {m["category_id"] for m in mods}
+    assert any(d["module_id"] for d in fresh.deadlines())                # the linked course's deadlines
+
+    # Study hours
+    at.slider(key="ob_hours").set_value(4.0).run()
+    _next(at)
+    study = [g for g in fresh.goals_open() if g["unit"] == "h"]
+    assert len(study) == len(mods) and all(g["target"] == 4 * 12 for g in study)
+
+    # Goals
+    at.text_input(key="ob_goal_0").set_value("Get a First in my degree")
+    at.text_input(key="ob_goal_1").set_value("Run a 10k")
+    at.number_input(key="ob_goal_n_1").set_value(20.0)
+    at.run()
+    _next(at)
+    mine = {g["title"]: g for g in fresh.goals_open()}
+    assert mine["Get a First in my degree"]["due"] == "2027-02-16" and mine["Run a 10k"]["due"] == "2027-05-16"
+    assert mine["Run a 10k"]["target"] == 20
+
+    # What would you track: examples, all unticked to start
+    boxes = [c for c in at.checkbox if c.key.startswith("ob_sg_")]
+    assert boxes and not any(c.value for c in boxes)
+    assert fresh.get_habits() == [] and "log_sleep" not in setup_checks.load_settings()
+    next(c for c in boxes if "Trained" in c.label).set_value(True)
+    next(c for c in boxes if "category: Study" in c.label).set_value(True)
+    at.run()
+    _next(at)
+    assert fresh.find_habit("Trained") and "study" in set(fresh.load_categories()["id"])
+    assert fresh.get_goal(mine["Run a 10k"]["id"])["habit_id"] == fresh.find_habit("Trained")[0]
+
+    # Your day: module categories and the picked one are there; add one of our own in a new group
+    assert at.header[0].value.endswith("Your day")
+    at.text_input(key="ob_cat_name").set_value("Lab work")
+    at.run()
+    at.selectbox(key="ob_cat_group").set_value("New group…").run()
+    at.text_input(key="ob_cat_newgroup").set_value("Uni").run()
+    at.button(key="ob_cat_add").click().run()
+    assert not at.exception, at.exception
+    row = fresh.load_categories().set_index("name").loc["Lab work"]
+    assert row["grp"] == "Uni"
+    _next(at)
+
+    # First week: suggested sittings go into the Plan
+    assert at.header[0].value.endswith("Your first week")
+    before = len(fresh.blocks_between("2026-11-16", "2026-11-23", "plan"))
+    at.button(key="ob_week_add").click().run()
+    assert not at.exception, at.exception
+    assert len(fresh.blocks_between("2026-11-16", "2026-11-23", "plan")) > before
+
+    # Home, then done
+    assert at.header[0].value.endswith("Home")
+    assert at.checkbox(key="ob_home_modules").value
+    _next(at, "wiz_finish")
+    s = setup_checks.load_settings()
+    assert blocks.is_on("grades") and s["wizard_done"] and s["student"] is True
+    assert any(c.get("w") == "modules" or "modules" in c.get("stack", []) for c in s["home"])
+    assert at.sidebar.radio[0].value == "Home"
+    for page in list(at.sidebar.radio[0].options):
+        at.sidebar.radio[0].set_value(page).run()
+        assert not at.exception, (page, at.exception)
+
+
+def test_running_setup_again_deletes_nothing(fresh):
+    """Setup adds: every module, deadline, goal, habit, category and block already there is still there."""
+    from venato import blocks, setup_checks
+    from venato.blocks import grades as gr
+    from venato.ui import onboarding
+    mid = gr.add_module("Organic Chemistry", code="CHEM50001")
+    did = fresh.add_deadline("Lab report", "2026-12-01", module_id=mid)
+    goal = fresh.add_goal("Read more", "monthly", MON, 4, "books")
+    fresh.add_habit("Gym")
+    fresh.save_category("music", "Music", "#112233", "Life")
+    setup_checks.save_settings(wizard_done=True, blocks=["log"], blocks_optional=True, student=True)
+    before_cats = set(fresh.load_categories()["id"])
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.session_state["wizard_open"] = True
+    at.run()
+    assert at.title[0].value == "Welcome to Venato"
+    _next(at)
+    _next(at, "wiz_skip")                                        # student step: still a student
+    names = _skip_to_the_end(at)
+    assert any(n.endswith("Your modules") for n in names)
+    _next(at, "wiz_finish")
+    assert [m["id"] for m in gr.modules()] == [mid] and fresh.get_deadline(did)["module_id"] == mid
+    assert fresh.get_goal(goal["id"]) and fresh.find_habit("Gym")
+    assert set(fresh.load_categories()["id"]) >= before_cats | {gr.get_module(mid)["category_id"]}
+    assert blocks.chosen_keys()[0] == "log" and blocks.is_on("grades")         # their choice kept; Modules added
+    # and the same pieces of setup run twice add nothing twice
+    onboarding.add_modules([{"code": "CHEM50001", "name": "Organic Chemistry"}])
+    onboarding.apply_study_hours(6, MON)
+    onboarding.apply_study_hours(6, MON)
+    assert len(gr.modules()) == 1 and len([g for g in fresh.goals_open(MON) if g["unit"] == "h"]) == 1
+
+
+def test_study_goals_respect_a_modules_own_hours(fresh):
+    from venato.blocks import grades as gr
+    from venato.ui import onboarding
+    a, b = gr.add_module("Algebra"), gr.add_module("Analysis")
+    gr.set_week_hours_goal(b, 9)
+    made = onboarding.apply_study_hours(5, MON)
+    by = {g["title"]: g for g in made}
+    assert by["Algebra study"]["target"] == 5 * 12 and by["Analysis study"]["target"] == 9 * 12
+    assert fresh.load_settings()["study_hours"] == 5
+    assert by["Algebra study"]["due"] == (MON + _dt.timedelta(weeks=12)).isoformat()
+    assert onboarding.apply_study_hours(0, MON) == []
+
+
+def test_check_feed_is_canvas_aware(fresh):
+    from venato import outlook as ol
+    from venato.ui import onboarding
+    canvas = onboarding.check_feed(CANVAS_URL, "canvas", day=MON)
+    assert canvas["kind"] == "canvas" and canvas["count"] == 6 and len(canvas["preview"]) == 3
+    assert ol.found_text(canvas) == "Found 6 assignments due."
+    uni = onboarding.check_feed(UNI_URL, "uni", day=MON)
+    assert uni["kind"] == "calendar" and uni["lectures"] > 0
+    assert {m["code"] for m in uni["modules"]} >= {"CHEM50001", "CHEM50002"}
+    with pytest.raises(ol.LinkError, match="Canvas"):
+        onboarding.check_feed(CANVAS_URL, "uni", day=MON)
+    with pytest.raises(ol.LinkError, match="isn't a Canvas"):
+        onboarding.check_feed(UNI_URL, "canvas", day=MON)
+    with pytest.raises(ol.LinkError):
+        onboarding.check_feed("not a link", "uni")
+
+
+def test_goals_save_once_and_update_in_place(fresh):
+    from venato.ui import onboarding
+    ids = onboarding.save_goals([("Get a First", None, 3), ("", None, 6), ("Run", 100, 12)], MON)
+    assert set(ids) == {0, 2} and len(fresh.goals_open(MON)) == 2
+    again = onboarding.save_goals([("Get a 2:1", None, 3), ("", None, 6), ("Run", 100, 12)], MON)
+    assert again == ids and len(fresh.goals_open(MON)) == 2
+    assert fresh.get_goal(ids[0])["title"] == "Get a 2:1"
+    onboarding.save_goals([("", None, 3), ("", None, 6), ("Run", 100, 12)], MON)
+    assert [g["title"] for g in fresh.goals_open(MON)] == ["Run"]
+    assert onboarding.months_on(_dt.date(2026, 11, 30), 3) == _dt.date(2027, 2, 28)
+
+
+def test_keyword_suggestions():
+    from venato import suggest
+    names = lambda text: {(s["kind"], s["name"]) for s in suggest.for_goal(text)}
+    assert names("Run a 10k") == {("category", "Exercise"), ("habit", "Trained")}
+    assert ("category", "Study") in names("Get a First in my exams")
+    assert names("I'm always tired") == {("sleep", "Track my sleep")}
+    assert names("prune the hedge") == set() and names("") == set()
+    assert not [s for s in suggest.for_goal("run, read, tired, drink water") if s["kind"] == "block"]
+
+
+def test_tracking_suggestions_link_and_switch(fresh):
+    from venato.ui import onboarding
+    ids = onboarding.save_goals([("Run 100 hours", 100, 3), ("Be less tired", None, 6), ("", None, 12)], MON)
+    goal = fresh.get_goal(ids[0])
+    onboarding.apply_suggestion({"kind": "category", "name": "Exercise", "cid": "exercise"}, ids[0], number=True)
+    g = fresh.get_goal(ids[0])
+    assert g["category_id"] == "exercise" and g["unit"] == "h" and goal["habit_id"] is None
+    assert "exercise" in set(fresh.load_categories()["id"]) and fresh.load_label_map().set_index("label").loc["Gym", "category_id"] == "exercise"
+    onboarding.apply_suggestion({"kind": "habit", "name": "Trained"}, ids[0])
+    g = fresh.get_goal(ids[0])
+    assert g["habit_id"] == fresh.find_habit("Trained")[0]                           # a habit wins over a category
+    assert g["category_id"] is None and g["unit"] is None
+    onboarding.apply_suggestion({"kind": "category", "name": "Exercise", "cid": "exercise"}, ids[0], number=True)
+    g = fresh.get_goal(ids[0])                                                       # either order ends the same
+    assert g["habit_id"] and g["category_id"] is None and g["unit"] is None
+    assert fresh.tracks_sleep() is False
+    onboarding.apply_suggestion({"kind": "sleep", "name": "Track my sleep"}, ids[1])
+    assert fresh.tracks_sleep() is True
+
+
+def test_add_category_needs_a_name_and_group(fresh):
+    from venato.ui import onboarding
+    cid = onboarding.add_category("Lab work", "#112233", "Uni")
+    assert fresh.groups() == ["Uni"] and cid == "lab-work"
+    with pytest.raises(ValueError):
+        onboarding.add_category("lab WORK", "#112233", "Uni")
+    with pytest.raises(ValueError):
+        onboarding.add_category("", "#112233", "Uni")
+    assert onboarding.add_category("Lab-work", "#445566", "Uni") == "lab-work-2"
+
+
+def test_first_week_suggestions_become_planned_blocks(fresh):
+    from venato import pace
+    from venato.blocks import grades as gr
+    from venato.ui import onboarding
+    gr.add_module("Organic Chemistry", code="CHEM50001")
+    onboarding.apply_study_hours(6, MON)
+    ctx = pace.Ctx(NOW)
+    sittings = onboarding.first_week(MON, ctx)
+    assert sittings and all("2026-11-16" <= s["date"] < "2026-11-23" for s in sittings)
+    n = onboarding.add_first_week(sittings)
+    assert n == len(sittings)
+    slots = lambda rows: sum(fresh.slot_of(r["end"]) - fresh.slot_of(r["start"]) for r in rows)
+    # (neighbours merge into one block; today's already started, so its sitting goes to the Actual track)
+    assert slots(fresh.blocks_between("2026-11-16", "2026-11-23")) == slots(sittings)
+    assert onboarding.add_first_week(sittings) == 0                  # the slots are taken now: nothing twice
+
+
+def test_a_wrong_link_shows_an_error_not_a_crash(fresh):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at)
+    at.radio(key="ob_student").set_value("Yes").run()
+    _next(at)
+    at.text_input(key="ob_link_uni").set_value("hello")
+    _submit(at)
+    assert at.error and not at.exception
+    at.text_input(key="ob_link_uni").set_value(CANVAS_URL)
+    _submit(at)
+    assert any("Canvas" in e.value for e in at.error)
+
+
+def test_try_link_keeps_the_calendar_message(outlook, store):
+    found = outlook.try_link(GOOD, fetcher=lambda url: FIXTURE)
+    assert found["kind"] == "calendar" and outlook.found_text(found).endswith("in the next 2 weeks.")
