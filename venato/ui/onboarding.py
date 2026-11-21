@@ -763,17 +763,19 @@ def _week():
     st.caption("Press **Edit Home** at the top of Home to change what it shows.")
     sittings = first_week()
     ob["sittings"] = sittings
+    added = ob.get("added")
+    if added is not None:
+        st.success(f"Added {added} block{'s' if added != 1 else ''} to your Plan." if added else
+                   "Nothing was added: that time is taken now.", icon=":material/check_circle:")
     if not sittings:
-        kit.empty("Nothing to suggest yet. Hours goals, like a module's study time, get sittings here, in your free time.",
-                  ":material/info:")
+        if added is None:
+            kit.empty("Nothing to suggest yet. Hours goals, like a module's study time, get sittings here, in your free time.",
+                      ":material/info:")
         return
     hours = sum(store.slot_of(s["end"]) - store.slot_of(s["start"]) for s in sittings) / 2
     st.markdown(f"Here's how your goals could fit in the next 7 days: {pace.fmt(hours)} h in free time. "
                 "Nothing already in your timetable moves.")
     _grid(sittings)
-    if (added := ob.get("added")) is not None:
-        st.success(f"Added {added} block{'s' if added != 1 else ''} to your Plan." if added else
-                   "Nothing was added: that time is taken now.", icon=":material/check_circle:")
     st.button("Add to my Plan", key="ob_week_add", type="primary", icon=":material/playlist_add:", on_click=_add_week)
 
 
@@ -820,8 +822,8 @@ def _go(index, save=None):
     st.session_state["wizard_step"] = index
 
 
-def wizard(finish):
-    """The full-screen setup: no sidebar. `finish` is called when it's done or skipped."""
+def wizard(finish, skip=None):
+    """The full-screen setup: no sidebar. `finish` is called when it's done, `skip` (default: finish) when setup is skipped."""
     st.html("<style>[data-testid='stSidebar'], [data-testid='stSidebarCollapsedControl'] { display: none; }</style>")
     listed = steps()
     step = min(st.session_state.setdefault("wizard_step", 0), len(listed) - 1)
@@ -839,7 +841,7 @@ def wizard(finish):
         st.divider()
         last = step == len(listed) - 1
         if key == "welcome":
-            st.button("Skip setup", key="wiz_skip_all", on_click=finish)
+            st.button("Skip setup", key="wiz_skip_all", on_click=skip or finish)
             return
         back, main = st.columns([1, 1])
         back.button("Back", key="wiz_back", on_click=_go, args=(step - 1,), icon=":material/arrow_back:")

@@ -414,6 +414,8 @@ def test_student_with_the_fixture_feeds_ends_up_with_everything(fresh):
     before = len(fresh.blocks_between("2026-11-16", "2026-11-23", "plan"))
     at.button(key="ob_week_add").click().run()
     assert not at.exception, at.exception
+    assert any(s.value.startswith("Added ") and "to your Plan" in s.value for s in at.success)
+    assert not any("Nothing to suggest yet" in str(m.value) for m in at.markdown)
     assert len(fresh.blocks_between("2026-11-16", "2026-11-23", "plan")) > before
 
     # Done: Home gets the Modules widget by itself
@@ -810,3 +812,19 @@ def test_picking_only_a_canvas_course_link_says_next(fresh):
     assert _main_label(at) == "Skip"
     next(s for s in at.selectbox if s.key.startswith("ob_course_")).set_value("Organic Chemistry").run()
     assert _main_label(at) == "Next"
+
+
+def test_skip_setup_leaves_home_as_it_is_even_with_data(fresh):
+    from venato import setup_checks
+    from venato.blocks import grades as gr
+    gr.add_module("Organic Chemistry")
+    fresh.add_goal("Run a 10k", "monthly", MON, 1)
+    fresh.add_habit("Stretch")
+    setup_checks.save_settings(wizard_done=True, student=True, home=[{"w": "todos", "size": "wide"}])
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.session_state["wizard_open"] = True
+    at.run()
+    _next(at, "ob_student_yes")
+    at.button(key="wiz_back").click().run()
+    _next(at, "wiz_skip_all")
+    assert setup_checks.load_settings()["home"] == [{"w": "todos", "size": "wide"}]

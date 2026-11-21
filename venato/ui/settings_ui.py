@@ -244,7 +244,7 @@ def needs_wizard():
     return st.session_state.get("wizard_open") or not setup_checks.load_settings().get("wizard_done")
 
 
-def _finish():
+def _finish(prefill_home=True):
     """Setup is over (done or skipped): the core blocks (Modules too for a student), the assistant off, no wizard again.
     Setup only adds: a block choice already made is kept, and a student's Modules block is added to it."""
     if "ai_enabled" not in setup_checks.load_settings():
@@ -256,17 +256,22 @@ def _finish():
         blocks.save(blocks.STARTER + (["grades"] if student else []))   # first setup; change them in Settings
     elif student and not blocks.is_on("grades"):
         blocks.save(blocks.chosen_keys() + ["grades"])
-    try:
-        onboarding.prefill_home([k for k, _ in onboarding.home_picks()])
-    except Exception:                                 # Home keeps its default; setup is done either way
-        logging.getLogger(__name__).warning("Setup couldn't prefill Home", exc_info=True)
+    if prefill_home:                                  # only a real finish; Skip setup leaves Home as it is
+        try:
+            onboarding.prefill_home([k for k, _ in onboarding.home_picks()])
+        except Exception:                             # Home keeps its default; setup is done either way
+            logging.getLogger(__name__).warning("Setup couldn't prefill Home", exc_info=True)
     setup_checks.save_settings(wizard_done=True)
     st.session_state["wizard_open"] = False
     onboarding.restart()
 
 
+def _skip():
+    _finish(prefill_home=False)
+
+
 def wizard():
-    onboarding.wizard(_finish)
+    onboarding.wizard(_finish, _skip)
 
 
 # ---------------------------------------------------------------------------
