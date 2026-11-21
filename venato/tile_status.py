@@ -129,7 +129,7 @@ def modules(ctx=None):
 
 def review(today=None, now=None):
     p = week_followed(today, now)["pct"]
-    return "" if p is None else f"{p}% of plan followed"
+    return "None confirmed yet" if p is None else f"{p}% of plan followed"
 
 
 def needs_you():

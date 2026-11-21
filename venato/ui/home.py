@@ -173,7 +173,8 @@ def _reset():
 # Room the page keeps below the grid (px): the pinned chat bar when it's on, else the page's own bottom padding.
 CHAT_ROOM, PAGE_ROOM = 96, 20
 GAP = 12               # px between tiles
-MIN_ROW = 132          # px: rows never get shorter than this (a very short window scrolls instead)
+MIN_ROW = 108          # px: rows never get shorter than this (a very short window scrolls instead); 108 fits
+                       # a 4-row Home (a student's, with Modules) at 1280x720
 
 
 DROP_ROW = 110         # px: a row Edit Home's "Drop here" slot adds under the fitted rows (the page scrolls a little)
@@ -228,7 +229,8 @@ def _css(t, cells, cat, editing, picked, room=PAGE_ROOM):
         padding: 0 !important; justify-content: flex-start; gap: 10px; }}
     [class*="st-key-go_tile_"] button > div, [class*="st-key-open_tile_"] button > div {{ justify-content: flex-start !important; gap: 10px; }}
     /* The tile's header already opens the page: the preview's own "See all" / "Manage" go. */
-    [class*="st-key-hwc_"] .st-key-home_goals_all, [class*="st-key-hwc_"] .st-key-home_habits_manage {{ display: none; }}
+    [class*="st-key-hwc_"] .st-key-home_goals_all, [class*="st-key-hwc_"] .st-key-home_habits_manage,
+    [class*="st-key-hwc_"] .st-key-home_journal_write, [class*="st-key-hwc_"] .st-key-home_deadlines_all {{ display: none; }}
     [class*="st-key-go_tile_"] button p, [class*="st-key-open_tile_"] button p, [class*="st-key-hwt_"] p {{
         font-size: 1.1rem; font-weight: 600 !important; color: {t['ink']} !important; white-space: nowrap; }}
     [class*="st-key-go_tile_"] button:hover p, [class*="st-key-open_tile_"] button:hover p {{ text-decoration: underline; }}

@@ -202,8 +202,9 @@ def render_home():
       .vn-rv span {{ width: 18px; height: 100%; display: flex; align-items: flex-end; }}
       .vn-rv i {{ width: 100%; border-radius: 4px; }}
       .vn-rv-days {{ display: flex; gap: 6px; margin-top: 3px; height: 10px; }}
+      @media (max-height: 800px) {{ .vn-rv {{ height: 24px; }} }}     /* short windows: Home's rows are shorter */
       .vn-rv-days b {{ width: 18px; text-align: center; font-size: 0.62rem; font-weight: 500;
         color: {t['muted']}; line-height: 1; }}
     </style><div role="img" aria-label="Plan followed each day this week (the dashed line is 100%): {said}">
       <div class="vn-rv">{bars}</div><div class="vn-rv-days" aria-hidden="true">{letters}</div></div>""")
-    st.caption("No days confirmed yet this week." if w["pct"] is None else f"{w['pct']}% of plan followed this week")
+    # The header says the week's % (or "None confirmed yet"), so no caption: the tile fits Home's shortest rows.

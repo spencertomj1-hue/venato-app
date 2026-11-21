@@ -69,6 +69,8 @@ def _logged(home, into_actual):
 
 def _draw_timer(key, compact=False):
     r = focus.running()
+    if compact and not r:                # Home with nothing running: just the start form (no empty slot above it)
+        return None
     data = {"state": "idle", "compact": compact}
     if not r and not compact:
         minutes = _chosen_minutes()
@@ -144,6 +146,10 @@ def _start_form(prefix):
     """Home: a stopwatch. What you're on (empty: "Focus"), then Start; Stop puts it in today's Actual.
     Pomodoro timers start on the Focus page."""
     last = st.session_state.get("focus_last_label", "")
+    st.html(f"""<style>      /* compact, so it fits Home's shortest rows */
+      .st-key-{prefix}_go button {{ min-height: 36px; height: 36px; padding-top: 0; padding-bottom: 0; }}
+      .st-key-{prefix}_label [data-testid="stTextInputRootElement"] {{ height: 36px; min-height: 36px; }}
+    </style>""")
     a, b = st.columns([3, 2], vertical_alignment="bottom")
     a.text_input("What are you on?", value=last, key=f"{prefix}_label", placeholder="What are you on?",
                  label_visibility="collapsed")
