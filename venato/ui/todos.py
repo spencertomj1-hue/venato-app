@@ -8,9 +8,9 @@ away; the ops it sends are saved here with the store and acknowledged in
 `acked`, the same pattern as the timetable grid.
 
 Each to-do can also have a due day, how long it takes and one of the user's own to-do categories
-(store.todo_groups). Rows show them; the row menu's "Due day, category, length…" and the page's
-"Add to-do" open pop-ups for them, and the page's "By due date" view lists every open to-do by
-when it's due, filtered by category.
+(store.todo_groups; every goal is one too, e.g. "Get a job"). Rows show them; the row menu's "Due day,
+category, length…" and the page's "Add to-do" open pop-ups for them. The page's category filter applies
+to every tab; "By due date" lists every open to-do by when it's due and "By category" under its category.
 """
 
 from datetime import timedelta
@@ -36,7 +36,7 @@ _todos_component = st.components.v2.component(
 def apply_op(op):
     """
     Save one op from a to-do list:
-      {kind: "add", goal: {id, title, period, period_start}}
+      {kind: "add", goal: {id, title, period, period_start, group_id?}}
       {kind: "toggle", id, done}        {kind: "edit", id, title | notes}
       {kind: "repeat", id, repeat}      {kind: "move", id, period}
       {kind: "delete", id}              {kind: "reorder", ids}
@@ -45,7 +45,8 @@ def apply_op(op):
     if kind == "add":
         t = op["goal"]
         if t["title"].strip():
-            store.add_todo(t["title"], t["period"], t["period_start"], todo_id=t["id"])   # idempotent per id
+            group = {"group_id": t["group_id"]} if t.get("group_id") else {}   # from a list filtered to a category
+            store.add_todo(t["title"], t["period"], t["period_start"], todo_id=t["id"], **group)   # idempotent per id
     elif kind == "toggle":
         store.set_todo_done(op["id"], op["done"])
     elif kind == "edit":
@@ -111,22 +112,48 @@ def render_home():
 # The To-dos page (Home's To-dos tile opens it): one list at a time, Today / This week / This month
 # ---------------------------------------------------------------------------
 
-TABS = {"Today": "daily", "This week": "weekly", "This month": "monthly", "By due date": "due"}
+TABS = {"Today": "daily", "This week": "weekly", "This month": "monthly", "By due date": "due",
+        "By category": "category"}
+VIEWS = ("due", "category")      # the tabs that aren't one list
 
 
-def _section(period, today, limit=None):
+def _section(period, today, limit=None, group_id=None):
+    """One list for the component; with group_id, only that category's to-dos."""
     start = store.start_of_period(period, today)
+    todos = [t for t in store.todos_for(period, start) if group_id is None or t["group_id"] == group_id]
     return {"period": period, "start": start.isoformat(), "title": store.period_title(period, start, today),
-            "goals": _with_meta(store.todos_for(period, start), today, _groups()), "limit": limit}
+            "goals": _with_meta(todos, today, _groups()), "limit": limit}
+
+
+def _page_ops(key, group_id):
+    """A list filtered to one category: what's added there goes in that category (or it would vanish)."""
+    if group_id:
+        for op in st.session_state[key]["ops"] or []:
+            if op["kind"] == "add":
+                op["goal"].setdefault("group_id", group_id)
+    _on_ops(key)
 
 
 @st.fragment
-def _page_list(period):
+def _page_list(period, group_id=None):
     today = store.local_today()
+    key = f"page_todos_{period}" + (f"_{group_id}" if group_id else "")
     with st.container(border=True, key="todos_page_card"):
-        data = {"today": today.isoformat(), "sections": [_section(period, today)], "single": True,
-                "acked": st.session_state.get("todo_acked", [])}
-        _todos_component(data=data, key=f"page_todos_{period}", on_ops_change=lambda: _on_ops(f"page_todos_{period}"))
+        data = {"today": today.isoformat(), "sections": [_section(period, today, group_id=group_id)],
+                "single": True, "acked": st.session_state.get("todo_acked", [])}
+        _todos_component(data=data, key=key, on_ops_change=lambda: _page_ops(key, group_id))
+
+
+def _filter(groups):
+    """The page's category filter (every tab): the chosen category's id, or None for all."""
+    if not groups:
+        return None
+    names = {g["id"]: g["name"] for g in groups.values()}
+    if st.session_state.get("td_filter") not in (None, "all", *names):
+        st.session_state["td_filter"] = "all"                # its category was deleted
+    pick = st.pills("Category", ["all", *names], default="all", key="td_filter", label_visibility="collapsed",
+                    format_func=lambda i: "All" if i == "all" else names[i])
+    return None if pick in (None, "all") else pick
 
 
 def render_page():
@@ -147,16 +174,19 @@ def render_page():
     period = TABS.get(tab or "Today", "daily")
     groups = _groups()
     with st.container(horizontal=True, key="todos_tools"):
-        if st.button("Add to-do", type="primary", icon=":material/add:", key="td_new"):
-            add_dialog(st.session_state.get("td_filter") if period == "due" else None,
-                       None if period == "due" else period)
+        add = st.button("Add to-do", type="primary", icon=":material/add:", key="td_new")
         _manage_groups(groups)
+    chosen = _filter(groups)
+    if add:
+        add_dialog(chosen, None if period in VIEWS else period)
     main, side = st.columns([2, 1], gap="medium")
     with main:
         if period == "due":
-            _due_view(today, groups)
+            _due_view(today, groups, chosen)
+        elif period == "category":
+            _category_view(today, groups, chosen)
         else:
-            _page_list(period)
+            _page_list(period, chosen)
     with side:
         from venato import blocks
         if blocks.is_on("goals"):
@@ -303,11 +333,13 @@ def _details_from_menu():
 
 def _manage_groups(groups):
     with st.popover("Categories", icon=":material/label:"):
-        st.caption("Your own to-do categories (separate from the timetable's). Deleting one keeps its to-dos, "
-                   "with no category.")
+        st.caption("Your own to-do categories (separate from the timetable's). Each goal you set is one too "
+                   ":material/flag:. Deleting one keeps its to-dos, with no category.")
         for g in groups.values():
             name, colour, delete = st.columns([5, 1, 1], vertical_alignment="bottom")
-            new = name.text_input("Name", g["name"], key=f"tdg_n_{g['id']}", label_visibility="collapsed")
+            new = name.text_input("Name", g["name"], key=f"tdg_n_{g['id']}", label_visibility="collapsed",
+                                  icon=":material/flag:" if g["goal_id"] else None,
+                                  help="From your goal of that name" if g["goal_id"] else None)
             col = colour.color_picker("Colour", g["colour"], key=f"tdg_c_{g['id']}", label_visibility="collapsed")
             if new.strip() != g["name"] or col != g["colour"]:
                 store.update_todo_group(g["id"], new, col)
@@ -347,15 +379,33 @@ def _row(t, today, groups, prefix, editable=True):
         details_dialog(t["id"])
 
 
-def _due_view(today, groups):
+def _hours(rows):
+    return f":gray[· {len(rows)} · about {sum(t['minutes'] or store.TODO_MINUTES for t in rows) / 60:g} h]"
+
+
+def _category_view(today, groups, chosen=None):
+    """Every open to-do (as By due date has them), under its category in the categories' order, most urgent
+    first in each; "No category" last. A goal's category says so."""
+    todos = [t for t in store.open_todos(today) if chosen is None or t["group_id"] == chosen]
+    with st.container(border=True, key="todos_cat_card"):
+        if not todos:
+            st.caption("Nothing to do here.")
+        by = {}
+        for t in todos:
+            by.setdefault(t["group_id"] if t["group_id"] in groups else None, []).append(t)
+        for gid in [*groups, None]:
+            if gid in by:
+                g = groups.get(gid)
+                name = f"**{kit.md(g['name'])}**" + (" :material/flag:" if g["goal_id"] else "") if g else \
+                    "**No category**"
+                st.markdown(f"{name} {_hours(by[gid])}")
+                for t in by[gid]:
+                    _row(t, today, groups, "tdc")
+
+
+def _due_view(today, groups, chosen=None):
     """Every open to-do from today's, this week's and this month's lists (and later ones with a due day),
-    most urgent first, in Overdue / Today / Tomorrow / This week / Later, with a category filter."""
-    chosen = None
-    if groups:
-        names = {g["id"]: g["name"] for g in groups.values()}
-        pick = st.pills("Category", ["all", *names], default="all", key="td_filter", label_visibility="collapsed",
-                        format_func=lambda i: "All" if i == "all" else names[i])
-        chosen = None if pick in (None, "all") else pick
+    most urgent first, in Overdue / Today / Tomorrow / This week / Later, in the chosen category (or all)."""
     todos = [t for t in store.open_todos(today) if chosen is None or t["group_id"] == chosen]
     with st.container(border=True, key="todos_due_card"):
         if not todos:
@@ -366,8 +416,7 @@ def _due_view(today, groups):
         for name in WHEN:
             if name in sections:
                 rows = sections[name]
-                minutes = sum(t["minutes"] or store.TODO_MINUTES for t in rows)
-                st.markdown(f"**{name}** :gray[· {len(rows)} · about {minutes / 60:g} h]")
+                st.markdown(f"**{name}** {_hours(rows)}")
                 for t in rows:
                     _row(t, today, groups, "td")
         done = [t for t in store.done_todos(today) if chosen is None or t["group_id"] == chosen]

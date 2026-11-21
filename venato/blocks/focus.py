@@ -20,7 +20,7 @@ from venato.blocks import Block, Widget
 
 KINDS = ("focus", "break", "track")
 DEFAULTS = {"focus_minutes": 25, "short_break": 5, "long_break": 15, "long_every": 4,
-            "auto_breaks": True, "to_timetable": True}
+            "auto_breaks": True, "to_timetable": True, "daily_aim": 240}   # daily_aim: minutes (Home's dial)
 MIN_FOR_TIMETABLE = 15        # minutes: shorter sessions aren't put in the timetable
 
 SCHEMA = """

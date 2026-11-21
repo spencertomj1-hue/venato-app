@@ -4,14 +4,14 @@ sessions, and time by day and by activity. The logic is in venato/blocks/focus.p
 """
 
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
-from venato import store
+from venato import regional, store
 from venato.blocks import focus
 from venato.ui import kit
 
@@ -36,7 +36,9 @@ def _on_action(key):
     name = act.get("name")
     home = key == HOME_KEY
     changed = set()
-    if name == "start":                      # the idle dial was pressed: start with the controls' choices
+    if name == "start" and home:             # Home's dial: a stopwatch named by the box beside it
+        _start_home(act.get("label"))
+    elif name == "start":                    # the idle dial was pressed: start with the controls' choices
         _start_from_controls()
     elif name == "pause":
         focus.pause()
@@ -69,17 +71,20 @@ def _logged(home, into_actual):
 
 def _draw_timer(key, compact=False):
     r = focus.running()
-    if compact and not r:                # Home with nothing running: just the start form (no empty slot above it)
-        return None
     data = {"state": "idle", "compact": compact}
-    if not r and not compact:
+    if compact:                          # Home's dial: idle it fills to today's total against the daily aim
+        today = store.local_today()
+        data.update(today=focus.totals(today, today)[1].get(today.isoformat(), 0) * 60,
+                    aim=focus.settings()["daily_aim"] * 60, last=st.session_state.get("focus_last_label", ""))
+    elif not r:
         minutes = _chosen_minutes()
         data.update(kind="track" if minutes is None else "focus",
                     planned=None if minutes is None else minutes * 60, elapsed=0)
     if r:
+        started = datetime.fromtimestamp(r["started_at"], store.tz()).strftime("%H:%M")
         data.update(state="paused" if r["paused_at"] else "running", kind=r["kind"], label=r["label"],
                     planned=None if r["planned"] is None else r["planned"] * 60,
-                    elapsed=focus.elapsed(r), drawnAt=time.time() * 1000)
+                    elapsed=focus.elapsed(r), drawnAt=time.time() * 1000, started=regional.time(started))
     _timer(data=data, key=key, on_action_change=lambda: _on_action(key))
     return r
 
@@ -142,24 +147,10 @@ def _controls():
                              help="Which category its block in the Actual column gets")
 
 
-def _start_form(prefix):
-    """Home: a stopwatch. What you're on (empty: "Focus"), then Start; Stop puts it in today's Actual.
+def _start_home(label):
+    """Home's dial: a stopwatch (empty name: "Focus"); stopping it puts it in today's Actual.
     Pomodoro timers start on the Focus page."""
-    last = st.session_state.get("focus_last_label", "")
-    st.html(f"""<style>      /* compact, so it fits Home's shortest rows */
-      .st-key-{prefix}_go button {{ min-height: 36px; height: 36px; padding-top: 0; padding-bottom: 0; }}
-      .st-key-{prefix}_label [data-testid="stTextInputRootElement"] {{ height: 36px; min-height: 36px; }}
-    </style>""")
-    a, b = st.columns([3, 2], vertical_alignment="bottom")
-    a.text_input("What are you on?", value=last, key=f"{prefix}_label", placeholder="What are you on?",
-                 label_visibility="collapsed")
-    b.button("Start", key=f"{prefix}_go", type="primary", width="stretch", icon=":material/play_arrow:",
-             on_click=_start_quick, args=(prefix,), help="Start a stopwatch; stop it to put the time in today's Actual")
-
-
-def _start_quick(prefix):
-    """Home's Start (a callback, so the fragment's own rerun draws the running stopwatch)."""
-    label = (st.session_state.get(f"{prefix}_label") or "").strip() or "Focus"
+    label = (label or "").strip() or "Focus"
     st.session_state["focus_last_label"] = label
     try:
         focus.start(label, None, "track", store.resolve_category(label=label))
@@ -246,6 +237,8 @@ def render_page():
             "long_break": c.number_input("Long break (min)", 1, 120, int(s["long_break"]), key="focus_set_l"),
             "long_every": d.number_input("Long break every", 1, 12, int(s["long_every"]), key="focus_set_n",
                                          help="focus sessions"),
+            "daily_aim": round(st.number_input("Daily aim (hours)", 0.5, 16.0, s["daily_aim"] / 60, step=0.5,
+                                               key="focus_set_aim", help="What Home's Focus dial fills up to") * 60),
             "auto_breaks": st.toggle("Start breaks automatically", s["auto_breaks"], key="focus_set_auto"),
             "to_timetable": st.toggle(f"Add sessions of {focus.MIN_FOR_TIMETABLE}+ minutes to the Actual timetable",
                                       s["to_timetable"], key="focus_set_tt"),
@@ -272,16 +265,10 @@ def _page_timer():
 @st.fragment
 def render_home():
     """Home's Focus widget: a fragment, so only it reruns, unless a session goes into today's Actual.
-    Nothing running: a stopwatch's start; running: its name, the time and Stop."""
+    A dial: idle it shows today's total against the daily aim, with a box for what you're on (press the dial
+    to start a stopwatch); running it sweeps once an hour round the time, and pressing it stops and logs."""
     _message()
     if focus.finish_if_due():                    # ran out while away: it may be in today's Actual now
         kit.rerun_app_if({"actual"})
-    today = store.local_today()
-    _, by_day = focus.totals(today, today)
-    mins = by_day.get(today.isoformat(), 0)
     kit.subhead("Focus")
-    r = _draw_timer(HOME_KEY, compact=True)
-    if not r:
-        _start_form("home_focus")
-    if mins:
-        st.caption(f"{duration(mins)} focused today")
+    _draw_timer(HOME_KEY, compact=True)

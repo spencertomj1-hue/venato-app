@@ -61,7 +61,7 @@ def test_home_widgets_with_nothing_say_so(store):
     captions = " ".join(c.value for c in at.caption)
     for empty in ("No habits yet", "No modules yet", "Nothing due", "No goals running", "Nothing yet today"):
         assert empty in captions, empty
-    assert at.button(key="home_focus_go")                         # Focus: start one from Home
+    assert any(el.proto.id.endswith("-home_focus_timer") for el in at.get("bidi_component"))   # Focus's dial
     store.add_habit("Gym")
     store.add_deadline("Essay", store.local_today())
     at.run()

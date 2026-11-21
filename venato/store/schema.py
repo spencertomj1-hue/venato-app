@@ -171,6 +171,7 @@ def init_db():
         conn.execute("""CREATE TABLE IF NOT EXISTS todo_groups (
                             id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
                             colour TEXT NOT NULL, ord INTEGER NOT NULL DEFAULT 0)""")
+        _goals_become_todo_groups(conn)
         _goals_get_deadlines(conn)
         conn.executescript(
             """
@@ -300,6 +301,24 @@ def _word_rules_to_label_map(conn):
         if word and word.strip() and word.strip().lower() not in have:
             conn.execute("INSERT INTO tt_label_map VALUES (?, ?)", (word.strip(), cid))
             have.add(word.strip().lower())
+
+
+def _goals_become_todo_groups(conn):
+    """A goal (e.g. "Get a job") is also a to-do category: todo_groups.goal_id links the two. When the
+    column is new, the goals still running get their category, once (one deleted later stays deleted)."""
+    if "goal_id" in {row[1] for row in conn.execute("PRAGMA table_info(todo_groups)")}:
+        return
+    conn.execute("ALTER TABLE todo_groups ADD COLUMN goal_id TEXT")
+    goals = {row[1] for row in conn.execute("PRAGMA table_info(goals)")}
+    if "due" not in goals:
+        return                                    # a database from before goals had deadlines: none to link
+    plan = "AND deadline_id IS NULL AND closed = 0" if "deadline_id" in goals else ""
+    from .dates import local_today
+    rows = conn.execute(f"SELECT id, title FROM goals WHERE due >= ? {plan} ORDER BY ord",
+                        (local_today().isoformat(),)).fetchall()
+    from .todos import link_goal_group
+    for goal_id, title in rows:
+        link_goal_group(conn, goal_id, title)
 
 
 def _add_column(conn, table, column, kind):
