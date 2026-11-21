@@ -17,6 +17,7 @@ import streamlit as st
 from venato import regional
 from venato import store
 from venato import undo
+from venato.ui import kit
 
 PAGE = "Goals"                                  # sidebar label (also what "See all" switches to)
 BY_HAND, BY_HABIT, BY_HOURS = "Update it myself", "Count a habit's ticks", "Count timetable hours"
@@ -397,7 +398,7 @@ def render_home():
     today = store.local_today()
     running = store.goals_active(today)
     head = st.container(horizontal=True, vertical_alignment="center")
-    head.markdown("**Goals**", width="stretch")
+    kit.subhead("Goals", head, width="stretch")
     head.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
     if not running:
         st.caption("No goals running. Set one on the Goals page.")

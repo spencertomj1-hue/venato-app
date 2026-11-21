@@ -75,8 +75,16 @@ def shifted(t, minutes):
 
 
 def main():
-    store.init_db()                                     # generic categories and activity defaults
-    store.save_settings(wizard_done=True)
+    store.init_db()                                     # a blank slate: no categories yet
+    store.save_settings(wizard_done=True, first_seen=(TODAY - timedelta(days=30)).isoformat())
+    from venato.store import categories
+    for cid, name, colour, text, grp in categories.EXAMPLE_CATEGORIES:       # what setup would suggest
+        store.save_category(cid, name, colour, grp, text)
+    for label, cid in categories.EXAMPLE_LABEL_MAP.items():
+        store.set_label_default(label, cid)
+    from venato.blocks import grades as gr
+    chem = gr.add_module("Chemistry 101", 15, "Year 1", 65, "CHEM101")       # each makes its own category
+    design = gr.add_module("Design Basics", 15, "Year 1", 70, "DES110")
 
     # --- Timetable: last week's and this week's Plan (one timeline: the user plans once) ---
     for i in range(-7, 7):
@@ -113,13 +121,15 @@ def main():
                 continue
             rows.append({"uid": f"demo-{i}-{d}", "date": day, "start": start, "end": end, "title": title,
                          "location": where, "all_day": 0, "exact": f"{start}–{end}",
-                         "description": "Demo event (not a real calendar)."})
+                         "description": "Demo event (not a real calendar).",
+                         "module_code": {"Chemistry 101": "CHEM101", "Seminar: Design basics": "DES110"}.get(title)})
     rows.append({"uid": "demo-holiday", "date": (MONDAY + timedelta(days=4)).isoformat(), "start": None,
                  "end": None, "title": "Bank holiday", "location": None, "all_day": 1, "exact": None,
                  "description": None})
     store.replace_outlook(rows)
 
-    # --- Daily log: the last 30 days ---
+    # --- Daily Log: the last 30 days of journal entries, with sleep tracked ---
+    store.set_tracking(sleep=True)
     with store.db() as conn:
         for back in range(30):
             day = TODAY - timedelta(days=back)
@@ -127,6 +137,12 @@ def main():
                 continue                                # a few days not logged
             sleep = random.choice([6.0, 6.5, 7.0, 7.0, 7.5, 8.0, 8.5])
             store.save_entry(conn, day.isoformat(), random.choice(NOTES), sleep)
+
+    # --- Deadlines: two for the modules (one with a plan), and one on its own with a time ---
+    essay = store.add_deadline("Lab report", TODAY + timedelta(days=9), due_time="17:00", module_id=chem)
+    store.add_deadline("Design brief", TODAY + timedelta(days=20), module_id=design)
+    store.add_deadline("Renew passport", TODAY + timedelta(days=5))
+    store.plan_deadline(essay, gr.get_module(chem)["category_id"], total=6)
 
     # --- Habits with streaks ---
     for name, rate in (("Read 20 pages", 0.8), ("Exercise", 0.6), ("Meditate", 0.5), ("No phone in bed", 0.4)):

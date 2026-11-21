@@ -65,7 +65,7 @@ def _deadlines(m, today, ctx_for):
 def _assessments(m, n):
     kit.section("Assessments")
     st.markdown(_needs_line(m, n))
-    page._assessments(m)
+    page.assessment_editor(m)
 
 
 def _hours(m, ctx):
@@ -124,7 +124,7 @@ def render(m):
            f'margin-right:.4em"></span>') if colour else ""
     st.html(f'<h2 style="margin:0">{dot}{escape(m["name"])}</h2>')
     st.caption(" · ".join(b for b in (m["code"], f"{m['credits']:g} credits", m["year"]) if b))
-    label, tone = page._band(n["projected"])
+    label, tone = page.band(n["projected"])
     st.markdown(f"Mark **{'–' if n['projected'] is None else f'{n['projected']:.0f}%'}**"
                 + (f" ({label})" if n["projected"] is not None else "")
                 + (f" · target {m['target']:g}%" if m["target"] is not None else ""))
@@ -143,4 +143,4 @@ def render(m):
     with d, kit.card(stretch=False):
         _blocks(m, week)
     with st.expander("Module settings", icon=":material/tune:"):
-        page._module_settings(m)
+        page.module_settings(m)

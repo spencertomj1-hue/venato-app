@@ -272,7 +272,7 @@ def render_home():
     today = store.local_today()
     _, by_day = focus.totals(today, today)
     mins = by_day.get(today.isoformat(), 0)
-    st.markdown("**Focus**")
+    kit.subhead("Focus")
     r = _draw_timer(HOME_KEY, compact=True)
     if not r:
         _start_form("home_focus")

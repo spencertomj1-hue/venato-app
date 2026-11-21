@@ -70,9 +70,12 @@ venato/                         The app's code, as a package (imported as `from 
                                daily_log, timetable, deadlines, todos, goals, journal, review, goal_time (pace and planning goal time)
   assistant.py                 Claude via claude-agent-sdk: finds the CLI, system prompt, in-process "venato" MCP server
   quick.py                     Quick commands ("drank 500ml", "tick gym"): handled without Claude via the same tools actions
+  feeds.py                     What a student's calendar feeds say (pure: no database, no network): `detect_modules` from a uni timetable's "Module:" lines, `canvas_events` / `canvas_courses` from a Canvas feed. Fixtures in tests/fixtures
+  suggest.py                   Setup's "What would you track?": a keyword map from a goal's words to habits, categories and the sleep / water switches (examples, never defaults)
+  home_layout.py               Home's grid: pure functions over settings.json `home` (cells, stacks, sizes S/M/L/Full, move, resize, hide)
+  feedback.py                  "Send feedback": `feedback_url()` is the Google Form with Version and System pre-filled (form address from `feedback_url` in venato_config.json); `card_due()` is the one-time card after 14 days (`first_seen`; `feedback_card_done` in settings.json). Nothing is sent: it only opens the browser
   pace.py                      Goals meet the timetable: capacity, budget, pace, debt, follow-through, negotiation, suggestions (§5e). No SQL, no Streamlit UI (it uses `venato.cache` for cached reads)
-  blocks/                      Blocks. Core (always on): timetable, goals, focus, grades, stats (shown as "Review"). Optional:
-                               log ("Daily Log"), money, workouts. Each has its own tables, migrations, tools, prompt, context,
+  blocks/                      Blocks. Built in (`core=True`): timetable, goals, focus, grades (shown as "Modules"), stats ("Review"), log ("Daily Log"). Each has its own tables, migrations, tools, prompt, context,
                                search, weekly-review lines and page (__init__.py: the Block shape; core.py: timetable, goals, log, stats)
   voice.py                     Microphone recording (sounddevice) and local transcription (faster-whisper)
   outlook.py                   Read-only Outlook import: link checks, Keychain, fetch, recurrence expansion, sync
@@ -92,8 +95,10 @@ venato/                         The app's code, as a package (imported as `from 
     goal_time.py               Timetable: the "Plan this week" panel (free hours per day, goal bars with Fit N h, Plan all goals, I'm away) and suggested sittings; Share hours; the Goals page's pace lines, offers and suggestions
     deadlines.py               Deadlines section (Goals page) and Home's list, with "Make time"
     review.py                  Weekly review pop-up and Review's history
+    onboarding.py              The setup wizard's steps and what each saves (feeds, modules, study goals, goals, categories, first week, Home); the page is drawn by `settings_ui.wizard`. State between steps is `st.session_state["ob"]` (calendars are parsed once and kept there)
+    module_page.py             One module's page (from the Modules page): lectures, deadlines with Plan, assessments, hours; uses grades.py's `band`, `assessment_editor`, `module_settings`
     home.py, stats.py          Home (a grid of widgets, arrange mode; layout logic in venato/home_layout.py, glides in components/home_flip.js) and Review (stats.py) pages
-    blocks_ui.py               Settings → Blocks; one page module per block (focus.py, money.py, ...)
+    blocks_ui.py               Settings → Blocks; one page module per block (focus.py, ...)
     undo_bar.py, page_fade.py  The Undo bar; the fade between pages
     chat.py                    The chat bar / Home ask box, and its flow (send → transcribe → Claude → rerun)
     settings_ui.py             First-run wizard and the Settings page
@@ -108,7 +113,7 @@ venato/                         The app's code, as a package (imported as `from 
 assets/                        Logo, app icon (icon.png, Venato.icns), splash screen (splash.html/.png),
                                sidebar background (sidebar.webp) and the README screenshots
 scripts/
-  seed_demo.py                 Demo data folder (never touches real data)
+  seed_demo.py                 Demo data folder (never touches real data): categories, two modules, a planned deadline, journal, goals; tests/test_seed_demo.py runs it
   make_icon.py                 Builds assets/icon.png, Venato.icns and splash.png from assets/Logo.jpg
   install-hooks.sh             gitleaks pre-commit hook
 tests/                         pytest + AppTest; tests/fixtures/sample.ics is a fake calendar; tests/fragment_run.py runs interactions as the browser does (§8)
@@ -116,7 +121,7 @@ tests/                         pytest + AppTest; tests/fixtures/sample.ics is a 
 
 ## 3b. Blocks: tiers and hooks (`venato/blocks/`)
 
-- **Two tiers.** `core=True` blocks are always on (`chosen_keys()` adds them even if settings.json lacks them): Timetable, Goals (also to-dos and deadlines), Focus, Grades, Review (key `stats`, in `blocks/core.py`). Optional blocks are switched on only in Settings → Blocks (the setup wizard doesn't ask): Daily Log (key `log`: habits, journal, mood), Money, Workouts. Settings.json `blocks` lists the keys switched on, in the user's priority order (review and search follow it). Home's own layout is settings.json `home` (venato/home_layout.py); blocks offer widgets with `widgets=[Widget(key, name, draw, size)]` (an old `home=` callable still works as one medium widget keyed by the block) and Needs you items with `needs`. Removed features (Food, Recipes, Cut down, Health data, Involvement, Applications, Network) have no code; their tables stay in old databases untouched and are never dropped.
+- **Every block can be switched off** (Settings → Blocks). `core=True` marks the built-in ones (Timetable, Goals with to-dos and deadlines, Focus, Modules (key `grades`), Review (key `stats`) and Daily Log (key `log`)): they are on for a new install (setup only adds Modules, for a student); extras a copy adds stay `core=False` and sit under "More blocks". A new setup saves `blocks.STARTER` (timetable, goals, stats, focus, log) and adds Modules for a student; a block choice already made is kept. Settings.json `blocks` lists the keys switched on, in the user's priority order (review and search follow it); settings saved before every block could be switched off keep the old always-on five (`_ONCE_ALWAYS_ON`). Home's own layout is settings.json `home` (venato/home_layout.py); blocks offer widgets with `widgets=[Widget(key, name, draw, size)]` (an old `home=` callable still works as one medium widget keyed by the block) and Needs you items with `needs`. Money, Workouts and the earlier removed features (Food, Recipes, Cut down, Health data, Involvement, Applications, Network) have no code; their tables stay in old databases untouched and are never dropped.
 - **Hooks on `Block`** (all optional; the shared code asks the switched-on blocks, so a block never needs an `if` somewhere else):
   - `search`: `{kind: (select, haystack[, order])}`, merged by `blocks.search_kinds()` into Home's search; `search_icons`: `{kind: Material icon}` for its results; `search_open(result, session_state)`: routes a click on a result to the block's page (`blocks.search_block(kind)` finds the owner; core kinds have none).
   - `review(first, last)` -> `{"title", "lines"}`: lines for the weekly review (`blocks.review_sections`); no lines = no section.
@@ -165,6 +170,14 @@ Notes on the schema:
 - **Views:** `render_page` is the week (editable, with the Plan / Actual switch, §5f). `render_today` is Home's single day: view only, its Actual, with rows sized to fit the window (`fitToWindow`) and the key wrapped underneath. (The old `timetable_view` setting is gone; a leftover key in settings.json is ignored.)
 - **Clicking a block** grows it and opens a details card (title, time, category, location, description), with Edit and Delete/Remove buttons except on Home. A drag paints, and a click with the eraser erases.
 - **Block text** is black or white, whichever has the higher WCAG contrast with the fill (`contrastText`).
+
+## 4b. Blank slate, modules and feeds
+
+- **Blank slate.** A new database has no categories, label defaults, habits or goals. `categories.EXAMPLE_CATEGORIES` / `EXAMPLE_LABEL_MAP` are suggestions setup offers, never saved by themselves. With no category, the Timetable, Goals (hours), Focus, Fit time and Review show an "Add a category" prompt.
+- **Modules** are `gr_modules` rows (`blocks/grades.py`), each with its own category (group "Modules", the next free colour; renamed with the module). `gr_canvas_courses` remembers each Canvas course and the module it links to. Deleting a module only clears links.
+- **Deadlines** have `due_time`, `module_id`, `source`, `uid` and the title / date the feed last gave (`source_*`). `import_canvas` upserts by uid: a student's edit stays until Canvas changes it; deleted ones are remembered in `deadlines_hidden`. `plan_deadline` makes (or changes) the deadline's hours goal (`goals.deadline_id`; `closed` once the deadline is done, so search, pace and Needs you skip it).
+- **Needs you** (`goal_time.needs_items`) gathers days, goals, deadlines with no plan, block items and two one-time cards: the assistant after 7 days and feedback after 14, both from `first_seen` in settings.json. A goal under a week old with nothing done reads "Needs a plan", not "Behind".
+- **Subheadings** use `kit.subhead(text)`; paper.py styles only that marker (`.vn-subhead`), not every paragraph with one bold run.
 
 ## 5b. To-dos and goals
 

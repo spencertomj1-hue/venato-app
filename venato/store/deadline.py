@@ -83,6 +83,14 @@ def update_deadline(did, title=KEEP, due=KEEP, notes=KEEP, due_time=KEEP, module
                     _move_plan(conn, did, row[0], fields["due"])
             conn.execute(f"UPDATE deadlines SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
                          (*fields.values(), did))
+            # Its plan goal follows: a new title shows in the goal (its label, which counts the sittings,
+            # stays so they keep counting); a new module moves the hours to that module's category.
+            if "title" in fields:
+                conn.execute("UPDATE goals SET title = ? WHERE deadline_id = ?", (fields["title"], did))
+            if fields.get("module_id"):
+                cat = conn.execute("SELECT category_id FROM gr_modules WHERE id = ?", (fields["module_id"],)).fetchone()
+                if cat and cat[0]:
+                    conn.execute("UPDATE goals SET category_id = ? WHERE deadline_id = ?", (cat[0], did))
 
 
 def set_deadline_done(did, done):
@@ -209,6 +217,8 @@ def import_canvas(events):
             if fields:
                 conn.execute(f"UPDATE deadlines SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
                              (*fields.values(), did))
+                if "title" in fields:
+                    conn.execute("UPDATE goals SET title = ? WHERE deadline_id = ?", (fields["title"], did))
                 updated += 1
     return {"added": added, "updated": updated}
 

@@ -18,11 +18,13 @@ from html import escape
 
 import streamlit as st
 
+from venato import feedback
 from venato import pace
 from venato import regional
 from venato import store
 from venato import tools
 from venato import undo
+from venato.ui import kit
 
 PENDING = "goal_time_pending"        # a tools.Pending preview from the Goals page, waiting for Confirm
 ICONS = {"done": ":material/check_circle:", "on_track": ":material/check:", "behind": ":material/warning:",
@@ -31,12 +33,7 @@ ICONS = {"done": ":material/check_circle:", "on_track": ":material/check:", "beh
 TONE = {"behind": "orange", "slipping": "orange", "unreachable": "red"}
 
 
-def md(text):
-    """Text that shows as itself in st.markdown (titles may contain [ ] * _ and so on)."""
-    text = escape(str(text))
-    for ch in "\\[]*_`$~":
-        text = text.replace(ch, "\\" + ch)
-    return text
+md = kit.md                    # text that shows as itself in st.markdown
 
 
 def _ctx():
@@ -172,7 +169,7 @@ def planner(first, ctx=None):
     ended = first + timedelta(days=6) < ctx.today            # a past week: a scorecard, nothing to plan
     confirmed, so_far = ctx.confirmed(first, first + timedelta(days=6))
     with st.container(border=True, key="tt_planner"):
-        st.markdown("**How the week went**" if ended else "**Plan this week**")
+        kit.subhead("How the week went" if ended else "Plan this week")
         st.caption(f"Free hours for goals per day · {pace.fmt(budget['capacity'])} h in all")
         st.html(_free_bars(budget["days"]))
         rows = [w for w in budget["goals"]]
@@ -467,6 +464,8 @@ def free_split(ctx=None):
 # ---------------------------------------------------------------------------
 
 PILL = {"behind": "orange", "slipping": "orange", "unreachable": "red"}
+NEW_GOAL_DAYS = 7               # a goal this young isn't "behind": it just needs time planned for it
+NEEDS_PLAN = ":blue-badge[:material/edit_calendar: Needs a plan]"
 EMPTY = "Nothing needs you. Go touch grass."
 DEADLINE_DAYS = 7               # deadlines this soon need a plan
 OFFER_AFTER_DAYS = 7            # the assistant is offered (once) this long after first using Venato
@@ -482,18 +481,28 @@ def deadline_needs_plan(d, ctx):
 
 
 def _goal_rows(ctx):
-    """[(pace, state, what it needs)] for goals behind (or slipping, or out of reach) or short of time this week."""
+    """[(pace, state, what it needs)] for goals (not a deadline's plan: its deadline row says it) behind (or slipping, or out of reach) or short of time this week."""
     rows = []
     for p in pace.pace_all(ctx):
         g, w = p["goal"], p.get("week")
+        if g.get("deadline_id"):
+            continue                       # a deadline's plan shows once, as its deadline row
         short = w["short"] if w and not w["over"] else 0.0
         if p["state"] not in PILL and short < pace.TOLERANCE:
             continue
         state = p["state"] if p["state"] in PILL else "behind"
+        if state == "behind" and _just_started(p, ctx.today):
+            state = "needs_plan"
         what = (f"{pace.fmt(pace.half_up(short))} h to plan" if short >= pace.TOLERANCE
                 else f"{pace.amount(g, p['need'])} this week" if p["need"] else "")
         rows.append((p, state, what))
     return rows
+
+
+def _just_started(p, today):
+    """An hours goal in its first week with nothing done: "behind" would only mean no time is planned yet."""
+    return (p["goal"]["kind"] == "hours" and p["value"] < pace.TOLERANCE
+            and (today - p["start"]).days < NEW_GOAL_DAYS)
 
 
 def _deadline_rows(ctx):
@@ -545,7 +554,8 @@ def needs_items(ctx=None):
             "goals": _goal_rows(ctx) if goals_on else [],
             "deadlines": _deadline_rows(ctx) if goals_on else [],
             "blocks": blocks.needs(),
-            "assistant": assistant_offer_due(ctx.today)}
+            "assistant": assistant_offer_due(ctx.today),
+            "feedback": feedback.card_due(ctx.today)}
 
 
 def _open_page(page):
@@ -568,12 +578,13 @@ def needs_you(ctx=None):
       - deadlines in the next 7 days with no plan (or behind on it)
       - the blocks' own items (Block.needs)
       - once, a week in, with the assistant off: where to switch it on
+      - once, two weeks in: "How's Venato treating you?" with a link to the feedback form
     Nothing: "Nothing needs you. Go touch grass."
     """
     ctx = ctx or _ctx()
     items = needs_items(ctx)
     with st.container(border=True, key="home_needs_you"):
-        st.markdown("**Needs you**")
+        kit.subhead("Needs you")
         if not any(items.values()):
             st.markdown(EMPTY)
             return
@@ -600,6 +611,14 @@ def needs_you(ctx=None):
                        on_click=_assistant_answer, args=(True,))
             row.button("No thanks", key="needs_ai_no", type="tertiary", on_click=_assistant_answer, args=(False,),
                        help="Hide this for good. The assistant stays in Settings if you change your mind.")
+        if items["feedback"]:
+            st.markdown(":material/rate_review: **How's Venato treating you?** Tell us what's annoying or missing. "
+                        "It opens a short form in your browser.")
+            row = st.container(horizontal=True, gap="small")
+            row.link_button("Send feedback", feedback.feedback_url(), icon=":material/open_in_new:",
+                            key="needs_fb_yes", on_click=feedback.card_done)
+            row.button("Not now", key="needs_fb_no", type="tertiary", on_click=feedback.card_done,
+                       help="Hide this for good. Send feedback stays in the sidebar and Settings → About.")
 
 
 def _needs_goals(rows, ctx):
@@ -607,8 +626,11 @@ def _needs_goals(rows, ctx):
     st.html(goals.goal_bar_css())
     for p, state, what in rows:            # each goal: its pill and what it needs, then its bar
         g = p["goal"]
-        st.markdown(f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}] **{md(g['title'])}**"
-                    f"<span style='float:right'>{escape(what)}</span>", unsafe_allow_html=True)
+        head = st.container(horizontal=True, vertical_alignment="center", gap="small")      # no float: it overlapped the bar
+        pill = NEEDS_PLAN if state == "needs_plan" else f":{PILL[state]}-badge[{ICONS[state]} {pace.STATES[state]}]"
+        head.markdown(f"{pill} **{md(g['title'])}**", width="stretch")
+        if what:
+            head.markdown(md(what), width="content")
         line = " · ".join(x for x in (f"{goals.amount(g)} {store.goal_title_due(g['due'], ctx.today)}",
                                       goals.pace_detail(p)) if x)
         st.html(goals.goal_bar(g, ctx.today, line))
@@ -633,7 +655,7 @@ def offers(ctx=None):
             continue
         with st.container(border=True, key=f"offer_card_{g['id']}"):
             p = n["pace"]
-            st.markdown(f"**:material/error: {md(g['title'])} can't be finished in time**")
+            kit.subhead(f"{g['title']} can't be finished in time", icon=":material/error:")
             st.caption(f"{md(pace.amount(g, p['remaining']))} to go, about "
                        f"{md(pace.amount(g, n['reachable'] - p['value']))} within reach.")
             for o in n["offers"]:

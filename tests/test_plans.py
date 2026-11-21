@@ -188,6 +188,18 @@ def test_a_csv_round_trip_keeps_a_plan_goal_closed_and_linked(store, gr):
     assert store.deadline_goal(did)["id"] == g["id"]
 
 
+def test_a_replace_restore_keeps_plan_links_and_old_csvs_still_load(store, gr):
+    import pandas as pd
+    _, did, g = _plan(store, gr, total=10)
+    df = store.load_goals()
+    assert {"deadline_id", "closed"} <= set(df.columns)
+    store.save_goals(df, replace=True)                           # a restore wipes the goals first
+    assert store.deadline_goal(did)["id"] == g["id"]
+    old = df.drop(columns=["deadline_id", "closed"])
+    assert store.save_goals(old, replace=True) == 1             # an older export: loads, just unlinked
+    assert store.deadline_goal(did) is None
+
+
 def test_needs_you_says_no_plan_then_behind_then_nothing(store, gr, pace):
     from venato.ui import goal_time
     mid = gr.add_module("Organic Chemistry")
@@ -279,14 +291,59 @@ def test_plan_dialog_is_pre_filled(store, gr):
     at.sidebar.radio[0].set_value("Goals").run()
     next(b for b in at.button if b.key == f"dl_plan_{did}").click().run()
     assert not at.exception
-    assert next(s for s in at.selectbox if s.key == f"plan_mod_{did}").value == mid        # pre-filled
+    assert next(s for s in at.selectbox if s.key == f"plan_cat_pick_{did}").value == gr.get_module(mid)["category_id"]
     assert next(d for d in at.date_input if d.key == f"plan_by_{did}").value == store.local_today() + timedelta(days=14)
     assert next(n for n in at.number_input if n.key == f"plan_hours_{did}_In total").value == 6   # 6 h to start
 
 
-def test_plan_dialog_without_a_module_says_what_to_do(store, gr):
+def test_plan_dialog_without_a_module_picks_any_category(store, gr):
     did = store.add_deadline("Essay", store.local_today() + timedelta(days=5))
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.sidebar.radio[0].set_value("Goals").run()
     next(b for b in at.button if b.key == f"dl_plan_{did}").click().run()
-    assert not at.exception and any("Add a module" in i.value for i in at.info)
+    assert not at.exception
+    pick = next(s for s in at.selectbox if s.key == f"plan_cat_pick_{did}")      # any category will do
+    assert set(pick.options) == {c["name"] for c in store.load_categories().to_dict("records")}
+    assert not any("Add a module" in i.value for i in at.info)
+
+
+def test_plan_dialog_pre_selects_the_plans_own_category(store, gr):
+    mid = gr.add_module("Organic Chemistry")
+    did = store.add_deadline("Lab report", store.local_today() + timedelta(days=9), module_id=mid)
+    other = next(c for c in store.load_categories()["id"] if c != gr.get_module(mid)["category_id"])
+    store.plan_deadline(did, other, total=6)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.sidebar.radio[0].set_value("Goals").run()
+    next(b for b in at.button if b.key == f"dl_plan_{did}").click().run()
+    assert not at.exception
+    pick = next(s for s in at.selectbox if s.key == f"plan_cat_pick_{did}")
+    assert pick.index == pick.options.index(next(c["name"] for c in store.load_categories().to_dict("records")
+                                                 if c["id"] == other))
+
+
+def test_plan_dialog_with_no_categories_offers_to_add_one(blank_store):
+    did = blank_store.add_deadline("Essay", blank_store.local_today() + timedelta(days=5))
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.sidebar.radio[0].set_value("Goals").run()
+    next(b for b in at.button if b.key == f"dl_plan_{did}").click().run()
+    assert not at.exception and any(b.key == f"plan_nocat_{did}" for b in at.button)
+
+
+def test_module_change_and_rename_follow_the_plan_goal(store, gr):
+    a, b = gr.add_module("Algebra"), gr.add_module("Biology")
+    did = store.add_deadline("Essay", store.local_today() + timedelta(days=9), module_id=a)
+    goal = store.plan_deadline(did, gr.get_module(a)["category_id"], total=6)
+    store.update_deadline(did, module_id=b, title="Essay v2")
+    g = store.get_goal(goal["id"])
+    assert g["category_id"] == gr.get_module(b)["category_id"] and g["title"] == "Essay v2"
+    assert g["label"] == "Essay"                                 # sittings already placed keep counting
+
+
+def test_removing_a_plan_leaves_no_week_rows(store, gr):
+    mid = gr.add_module("Algebra")
+    did = store.add_deadline("Essay", store.local_today() + timedelta(days=9), module_id=mid)
+    goal = store.plan_deadline(did, gr.get_module(mid)["category_id"], total=6)
+    store.set_goal_week_hours(MON, {goal["id"]: 2.0})
+    store.delete_goal(goal["id"])
+    with store.db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM goal_week").fetchone()[0] == 0

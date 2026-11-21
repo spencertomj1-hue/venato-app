@@ -47,7 +47,7 @@ def test_starter_only_install(store, monkeypatch):
     page = _review_page(at)
     assert not any(t in LOG_TILES for t in page) and "No entries in this period yet." not in page
     assert not any("Daily log filled in" in t for t in page)
-    assert not any(m.value == "**Habits**" or m.value.startswith("**Journal**") for m in at.markdown)
+    assert not any("vn-subhead" in m.value and ("Habits" in m.value or "Journal" in m.value) for m in at.markdown)
     s = review.summary(week)
     assert s["habits"] == [] and s["journal"] == [] and s["days_logged"] == 0
     assert "Habits:" not in review.as_text(s) and "Journal" not in review.as_text(s)

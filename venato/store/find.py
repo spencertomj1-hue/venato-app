@@ -11,7 +11,7 @@ from .database import db
 # optionally the order: "name" (by title) or "date" (newest first, the default). Blocks add their own kinds.
 _SEARCH = {
     "To-do": ("SELECT id, title, notes, period_start, period FROM todos", "title || ' ' || COALESCE(notes, '')"),
-    "Goal": ("SELECT id, title, unit, period_start, period FROM goals", "title"),
+    "Goal": ("SELECT id, title, unit, period_start, period FROM (SELECT * FROM goals WHERE closed = 0)", "title"),
     "Deadline": ("SELECT id, title, notes, due, done FROM deadlines", "title || ' ' || COALESCE(notes, '')"),
     "Timetable": ("SELECT id, label, details, date, track || ' ' || start || '-' || \"end\" FROM tt_entries",
                   "label || ' ' || COALESCE(details, '')"),

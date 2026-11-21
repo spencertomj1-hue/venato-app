@@ -114,12 +114,25 @@ def check_feed(text, kind, fetcher=None, day=None):
 def connect_feed(found, day=None):
     """Save a checked link (it stays in the system secret store) and import it: lectures go on the timetable,
     Canvas assignments become deadlines. Returns the sync's status."""
-    return outlook.add_calendar("Canvas" if found["kind"] == "canvas" else "Uni timetable",
-                                found["url"], found["data"], day)
+    status = outlook.add_calendar("Canvas" if found["kind"] == "canvas" else "Uni timetable",
+                                  found["url"], found["data"], day)
+    _forget_calendars()
+    return status
+
+
+def _forget_calendars():
+    """A calendar was connected: what setup worked out from the old ones is stale."""
+    ob = _ob()
+    ob.pop("detected", None)
+    ob.pop("canvas_events", None)
 
 
 def detected_modules(day=None):
-    """[{code, name, count}] found in the connected timetable calendars (Canvas has no module names)."""
+    """[{code, name, count}] found in the connected timetable calendars (Canvas has no module names).
+    Parsed once per run of setup (kept in `ob`, cleared when a calendar is connected); `day` is for tests."""
+    ob = _ob()
+    if day is None and "detected" in ob:
+        return ob["detected"]
     events = []
     for _, data in outlook.cached_calendars():
         if feeds.is_canvas("", data):
@@ -128,18 +141,28 @@ def detected_modules(day=None):
             events += outlook.parse(data, day)
         except Exception:                                      # a calendar that no longer parses adds nothing
             continue
-    return feeds.detect_modules(events)
+    found = feeds.detect_modules(events)
+    if day is None:
+        ob["detected"] = found
+    return found
 
 
 def canvas_courses(day=None):
-    """The connected Canvas courses: [{course_id, label, titles (a couple of its assignments), module_id}]."""
-    events = []
-    for _, data in outlook.cached_calendars():
-        if feeds.is_canvas("", data):
-            try:
-                events += feeds.canvas_events(data, store.tz())
-            except Exception:
-                continue
+    """The connected Canvas courses: [{course_id, label, titles (a couple of its assignments), module_id}].
+    The feeds are parsed once per run of setup (kept in `ob`); the module links are read fresh."""
+    ob = _ob()
+    if day is None and "canvas_events" in ob:
+        events = ob["canvas_events"]
+    else:
+        events = []
+        for _, data in outlook.cached_calendars():
+            if feeds.is_canvas("", data):
+                try:
+                    events += feeds.canvas_events(data, store.tz())
+                except Exception:
+                    continue
+        if day is None:
+            ob["canvas_events"] = events
     linked = {c["course_id"]: c["module_id"] for c in gr.canvas_courses()}
     return [{"course_id": c["course_id"], "label": c["label"], "module_id": linked.get(c["course_id"]),
              "titles": [e["title"] for e in events if e.get("course_id") == c["course_id"]][:2]}
@@ -164,6 +187,7 @@ def add_modules(picked, credits=DEFAULT_CREDITS, target=None):
         if _module_for(m.get("code"), m["name"]):
             continue
         made.append(gr.add_module(m["name"], credits, target=target, code=m.get("code")))
+    _ob().setdefault("new_modules", []).extend(made)           # the only ones Study hours touches
     return made
 
 
@@ -178,17 +202,19 @@ def link_courses(links):
 
 
 def apply_study_hours(per_week, day=None):
-    """The default hours a week for every module, and one hours goal for each module that has none yet
-    (counting its category, which also holds its lectures). A module's own number (its page) wins."""
+    """The default hours a week, and one hours goal for each module made in this run of setup that has none yet
+    (counting its category, which also holds its lectures). A module's own number (its page) wins. Modules
+    from before, and ones without a category, are left alone."""
     day = day or today()
     store.save_settings(study_hours=float(per_week))
     made = []
     if per_week <= 0:
         return made
     have = {g["category_id"] for g in store.goals_open(day) if g["category_id"] and g["unit"] == "h" and not g["deadline_id"]}
+    mine = set(_ob().get("new_modules", []))
     for m in gr.modules():
-        cid = m["category_id"] or gr.create_category(m["id"])
-        if cid in have:
+        cid = m["category_id"]
+        if m["id"] not in mine or not cid or cid in have:
             continue
         hours = gr.week_hours_goal(m)
         if hours > 0:
@@ -386,6 +412,8 @@ def _link_step(kind):
                 found = check_feed(text, kind)
                 connect_feed(found)
             ob[f"found_{kind}"] = found
+        except outlook.AlreadyAdded:
+            st.info("Already connected. Nothing more to do here.", icon=":material/check_circle:")
         except outlook.LinkError as e:
             st.error(str(e), icon=":material/error:")
         except outlook.SyncError as e:
@@ -514,7 +542,7 @@ def _goals():
         _goal_row(i, label)
     targets = [m for m in gr.modules() if m["target"] is not None]
     if is_student() and targets:
-        st.markdown("**Goals you already have**")
+        kit.subhead("Goals you already have")
         for m in targets:
             st.markdown(f":material/flag: {escape(m['name'])}: {m['target']:g}%")
 
@@ -543,7 +571,7 @@ def _track():
         kit.empty("Add a goal on the previous step and examples show up here.", ":material/info:")
     for i, g in goals:
         found = suggest.for_goal(g["title"])
-        st.markdown(f"**{escape(g['title'])}**")
+        kit.subhead(g['title'])
         if not found:
             st.caption("No examples for this one. Add your own below.")
         for j, s in enumerate(found):
@@ -582,7 +610,7 @@ def _text_on(colour):
 
 
 def _chip(name, colour):
-    colour = colour if re.fullmatch(r"#[0-9A-Fa-f]{6}", str(colour)) else "#999999"
+    colour = gr.safe_colour(colour, "#999999")
     return (f'<span style="display:inline-block;margin:.15rem .3rem .15rem 0;padding:.15rem .65rem;border-radius:1rem;'
             f'background:{colour};color:{_text_on(colour)};font-size:.9rem">{escape(name)}</span>')
 
@@ -606,16 +634,16 @@ def _day():
         kit.empty("No categories yet.", ":material/info:")
     for grp in dict.fromkeys(cats["grp"]):
         rows = cats[cats["grp"] == grp]
-        st.markdown(f"**{escape(grp)}**")
+        kit.subhead(grp)
         st.html("".join(_chip(r["name"], r["colour"]) for r in rows.to_dict("records")))
     have = set(cats["id"]) | {n.lower() for n in cats["name"]}
     examples = [e for e in store.EXAMPLE_CATEGORIES if e[0] not in have and e[1].lower() not in have]
     if examples:
-        st.markdown("**Examples: pick what you want**")
+        kit.subhead("Examples: pick what you want")
         cols = st.columns(3)
         for i, (cid, name, colour, _, grp) in enumerate(examples):
             cols[i % 3].checkbox(f"{name} ({grp})", value=False, key=f"ob_ex_{cid}")
-    st.markdown("**Add your own**")
+    kit.subhead("Add your own")
     a, b = st.columns([3, 1], vertical_alignment="bottom")
     a.text_input("Name", key="ob_cat_name", placeholder="e.g. Lab work")
     b.color_picker("Colour", "#4E79A7", key="ob_cat_colour")

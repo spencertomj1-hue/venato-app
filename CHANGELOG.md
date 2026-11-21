@@ -9,6 +9,27 @@ Venato was called **Arete** up to 1.1.1.
 
 ## [Unreleased]
 
+### Added
+- A blank slate. A new install has no categories, activity defaults, habits or goals; the old defaults are now examples that setup suggests. With no category, the Timetable, Goals, Focus and Review show an "Add a category" prompt, and calendar events are grey. Existing installs keep what they have.
+- Modules for students. Each module has its own timetable colour (group "Modules"), a card on the Modules page and a page of its own: this week's lectures, deadlines, assessments, study hours and Fit time. Deleting a module only unlinks things.
+- Canvas and uni timetable feeds. Paste a published Outlook timetable link and Venato finds your modules; paste a Canvas Calendar Feed and its assignments become deadlines with a due time and a module. A deadline you edit stays as you left it, and one you delete doesn't come back on the next sync.
+- Plan a deadline. A deadline's **Plan** books hours for it as an hours goal that finishes the day before it is due, so pace, sittings and "can't make it" all work for it.
+- The Daily Log is a journal: it leads with the day's box and prompt, and the calendar marks days you wrote. Sleep and water are optional (Settings → Daily Log). Mood, energy and productivity are gone from the page, stats, review, assistant and CSV; the old columns stay in your database, untouched.
+- Home is a grid you arrange (Arrange, top right). Needs you gathers days to confirm, goals behind or short, deadlines this week with no plan, and one-off cards, and Search is at the top of the sidebar.
+- Setup is a short wizard: Welcome, Are you a student?, (students: Uni timetable, Canvas, Your modules, Study hours), Your goals, What would you track?, Your day, Your first week, Home. Every step but Welcome can be skipped, Skip setup leaves a blank app, and running it again (Settings → About) only adds things.
+- Send feedback: a link at the bottom of the sidebar and in Settings → About opens a short form in your browser with your version and system filled in. Nothing is sent from the app. After 14 days Needs you asks once, "How's Venato treating you?" (Send feedback / Not now). The form's address is `feedback_url` in `venato_config.json`.
+- The assistant's add_deadline and edit_deadline take an optional due time (HH:MM).
+
+### Fixed
+- `scripts/seed_demo.py` runs again, on the blank-slate schema, with modules, a planned deadline and a journal; a test runs it.
+- Search no longer lists the closed plan goal of a deadline you've finished.
+- Needs you: "N h to plan" no longer overlaps the goal's bar, and a goal made in the last week with nothing done says "Needs a plan" rather than "Behind".
+- Setup reads your connected calendars once instead of on every click, and pasting a link that's already connected says "Already connected" instead of showing an error.
+- Only titles made with `kit.subhead` get the serif subheading style; before, any paragraph with one bold word in it did.
+
+### Removed
+- Money and Workouts. Their data stays in your database, untouched; nothing is deleted or dropped, it just isn't shown or searched any more.
+
 ### Changed
 - Home is a grid you arrange, like a phone's home screen. Press the Arrange button (top right), then tap a widget to pick it up and tap another to drop it there, or use each widget's bar: smaller / bigger, back / forward, hide. "Add widget" brings back hidden ones (Deadlines, Goals, Habits, Journal, Focus, Grades); Reset goes back to the start. Moves glide into place, every change saves at once and can be undone. Your Home starts as today's timetable beside Ask, Needs you and To-dos.
 - Needs you gathers everything that wants something from you: days to confirm, goals behind or short, deadlines this week with no plan yet, and (once, a week in, with the assistant off) where to switch the assistant on. Nothing to do: "Nothing needs you. Go touch grass."

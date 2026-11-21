@@ -31,7 +31,7 @@ def test_home_shows_todos_but_no_goals_card(store):
     keys = home_keys(at)
     assert "home_todos_card" in keys and "home_todos" in keys
     assert "home_goals_card" not in keys and "home_goals_all" not in keys
-    assert not [m for m in at.markdown if m.value == "**Goals**"]
+    assert not [m for m in at.markdown if "vn-subhead" in m.value and "Goals" in m.value]
 
 
 def home_keys(at):

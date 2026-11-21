@@ -235,8 +235,10 @@ def test_end_of_day_prompt_days(store, monkeypatch):
     assert timetable.prompt_days(datetime(2026, 11, 11, 18, 0)) == []
 
 
-def test_home_confirm_and_timetable(store):
-    yesterday = date.fromordinal(store.local_today().toordinal() - 1).isoformat()
+def test_home_confirm_and_timetable(store, monkeypatch):
+    monkeypatch.setattr(store, "local_today", lambda: date(2026, 11, 11))      # mid-afternoon: yesterday is over
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 11, 11, 14, 0))
+    yesterday = "2026-11-10"
     put(store, yesterday, "09:00", "10:00", "Gym", "exercise")
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception

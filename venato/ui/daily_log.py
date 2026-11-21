@@ -221,7 +221,7 @@ def render_home_habits():
     """Home's Habits widget: today's habits to tick, each with the last 7 days and its current streak."""
     accent = st.get_option("theme.primaryColor") or "#ff4b4b"
     head = st.container(horizontal=True, vertical_alignment="center")
-    head.markdown("**Habits**", width="stretch")
+    kit.subhead("Habits", head, width="stretch")
     head.button("Manage", key="home_habits_manage", type="tertiary", on_click=_open_habits)
     if not store.get_habits():
         st.caption("No habits yet. Add them on the Daily Log.")
@@ -239,7 +239,7 @@ def render_home_journal():
     """Home's Journal widget: today's entry so far (or today's prompt), and Write to open it on the Daily Log."""
     today = store.local_today()
     head = st.container(horizontal=True, vertical_alignment="center")
-    head.markdown("**Journal**", width="stretch")
+    kit.subhead("Journal", head, width="stretch")
     head.button("Write", key="home_journal_write", type="tertiary", icon=":material/edit:", on_click=_write_today)
     text = (store.get_journal(today.isoformat()) or "").strip()
     if text:

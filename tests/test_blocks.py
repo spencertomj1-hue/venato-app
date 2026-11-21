@@ -189,3 +189,46 @@ def test_one_blocks_bad_need_loses_only_its_own(store, monkeypatch):
     monkeypatch.setattr(blocks, "all_blocks", lambda: [*real, bad, good])
     blocks.save(["bad", "good"])
     assert [n["text"] for n in blocks.needs()] == ["Walk"]
+
+
+def test_only_marked_subheadings_get_the_serif_style():
+    """The CSS hits the .vn-subhead marker, not every paragraph with one bold run in it."""
+    from venato.ui import kit, paper
+    css = paper._fonts()
+    assert ".vn-subhead" in css and "only-child" not in css
+    assert kit.subhead_markdown("Needs you") == '<span class="vn-subhead">**Needs you**</span>'
+    assert kit.subhead_markdown("A *b* <b>&") == '<span class="vn-subhead">**A \\*b\\* &lt;b&gt;&amp;**</span>'
+
+
+def test_subheads_render_with_html_allowed_and_user_text_escaped(store):
+    """Streamlit only keeps the span's class when allow_html is on, so check the element itself."""
+    from streamlit.testing.v1 import AppTest
+    from pathlib import Path
+    store.add_goal("Tricky <b>&_x_", "monthly", store.local_today(), 200, "h", category_id="study")
+    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
+    assert not at.exception
+    heads = [m for m in at.markdown if "vn-subhead" in m.value]
+    assert heads and all(m.proto.allow_html for m in heads)
+    assert any("Needs you" in m.value for m in heads)
+    assert not any("<b>" in m.value for m in at.markdown if "Tricky" in m.value)    # shown as text, never as markup
+
+
+def test_module_pages_do_not_stick_and_bad_colours_are_dropped(store):
+    from pathlib import Path
+    from streamlit.testing.v1 import AppTest
+    from venato.blocks import grades as gr
+    mid = gr.add_module("Algebra")
+    cid = gr.get_module(mid)["category_id"]
+    with store.db() as conn:
+        conn.execute("UPDATE tt_categories SET colour = ? WHERE id = ?", ('red;" onmouseover="x', cid))
+    assert gr.category_colour(gr.get_module(mid)) is None
+    assert gr.safe_colour("#12abEF") == "#12abEF" and gr.safe_colour("blue", "#999999") == "#999999"
+    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
+    at.sidebar.radio[0].set_value("Modules").run()
+    at.session_state["gr_module"] = mid
+    at.run()
+    assert not at.exception
+    at.sidebar.radio[0].set_value("Home").run()
+    assert "gr_module" not in at.session_state
+    at.sidebar.radio[0].set_value("Modules").run()
+    assert not at.exception and any(m.value == "Modules" for m in at.title)         # the list, not the last module

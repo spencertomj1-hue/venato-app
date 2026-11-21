@@ -236,3 +236,28 @@ def test_auto_link_needs_the_exact_code(store):
                           "course_id": "7", "due": "2026-12-01", "due_time": None}])
     assert grades.canvas_courses()[0]["module_id"] == full
     assert short
+
+
+def test_assistant_tools_set_and_clear_the_due_time(store):
+    from venato import tools
+    from venato.tools import ToolError
+    tools.add_deadline("Lab report", "2026-11-20", due_time="9:05")
+    d = store.deadlines()[0]
+    assert d["due_time"] == "09:05"
+    tools.edit_deadline("lab", due_time="17:00")
+    assert store.deadlines()[0]["due_time"] == "17:00"
+    tools.edit_deadline("lab", title="Lab write-up")                    # left alone when not given
+    assert store.deadlines()[0]["due_time"] == "17:00"
+    tools.edit_deadline("lab", due_time="")                             # "" clears it
+    assert store.deadlines()[0]["due_time"] is None
+    for bad in ("25:00", "5pm"):
+        with pytest.raises(ToolError):
+            tools.edit_deadline("lab", due_time=bad)
+        with pytest.raises(ToolError):
+            tools.add_deadline("Other", "2026-11-21", due_time=bad)
+
+
+def test_assistant_schema_offers_due_time():
+    from venato import assistant
+    props = {t[0]: t[2] for t in assistant.TOOL_SPECS if t[0] in ("add_deadline", "edit_deadline")}
+    assert all("due_time" in str(schema) for schema in props.values())
