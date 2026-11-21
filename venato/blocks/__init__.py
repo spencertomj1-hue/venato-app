@@ -82,7 +82,7 @@ class Block:
         return out
 
 
-GROUPS = ["Plan", "Health & body", "Study & work", "Other"]
+GROUPS = ["Plan", "Health & body", "Study & work", "People & life", "Other"]
 
 # The blocks a new setup starts with: the core ones, bar Grades (setup adds that for students).
 STARTER = ["timetable", "goals", "stats", "focus", "log"]
