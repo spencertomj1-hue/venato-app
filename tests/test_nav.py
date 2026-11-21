@@ -91,7 +91,7 @@ def test_todos_page_tabs(store):
     store.add_todo("Book dentist", "monthly", today)
     at = app("to-dos")
     assert not at.exception
-    assert list(at.segmented_control(key="todos_tab").options) == ["Today", "This week", "This month"]
+    assert list(at.segmented_control(key="todos_tab").options) == ["Today", "This week", "This month", "By due date"]
     titles = lambda key: [t["title"] for s in fragment_run.component_data(at, key)["sections"] for t in s["goals"]]
     assert titles("page_todos_daily") == ["Buy milk"]
     at.segmented_control(key="todos_tab").set_value("This week").run()
