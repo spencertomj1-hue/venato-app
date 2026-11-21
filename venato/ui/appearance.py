@@ -90,6 +90,8 @@ def apply_text_colours():
        rings back on (page_fade.py sets html.venato-kbd). Text boxes keep theirs. */
     html:not(.venato-kbd) :focus:not(input):not(textarea):not([contenteditable="true"]):not([role="combobox"]) {{
         outline: none !important; }}
+    /* The heading Esc / Back puts focus on (nav.py), so Tab carries on from the top of the page: no ring. */
+    .venato-landing:focus, .venato-landing:focus-visible {{ outline: none !important; box-shadow: none !important; }}
     html:not(.venato-kbd) button:focus, html:not(.venato-kbd) [role="tab"]:focus,
     html:not(.venato-kbd) [data-testid="stMain"] [tabindex]:focus {{ box-shadow: none !important; }}{dark_buttons}
     [data-testid="stCaptionContainer"] {{ opacity: 1 !important; }}
