@@ -91,7 +91,7 @@ cut-off graphic or label, light and dark; the full suite passes
 | --- | --- |
 | 1 Column size | done |
 | 2 Whole-day timetable | done |
-| 3 Stopwatch tile | not started |
+| 3 Stopwatch tile | done |
 | 4 Glances | not started |
 | 5 Fit check, docs | not started |
 
