@@ -68,7 +68,8 @@ Files: `venato/ui/onboarding.py`, `venato/ui/settings_ui.py`, `tests/test_setup.
 #### Step 2.3: Modules and study hours on one step (M)
 - Study hours move into the Modules step as one number box per module, starting at 6 h (D6, Q2).
 - A line under them adds them up: "4 modules · 32 h a week, lectures included".
-- Credits leave setup (the default is 15, changed on the Modules page). Target grade stays as one segmented control.
+- Credits and target grade leave setup: no grade questions at all (user, 2026-11-21: "bin off grade tracking for now").
+  New modules get 15 credits and no target. The "Goals you already have" list of module targets on the Goals step goes too.
 - `apply_study_hours` uses each module's own number (`gr.set_week_hours_goal`) where it differs from the default.
 - Verify: `test_study_goals_respect_a_modules_own_hours` and `test_study_hours_leave_old_modules_alone` still pass,
   plus a new test that changing one module's box gives just that module a different goal.
@@ -129,6 +130,7 @@ Files: `venato/ui/onboarding.py`, `assets/` (onboarding image).
 | --- | --- | --- |
 | Next saves pending input | Yes, on every step | Typed-then-Next is what people do; losing it silently is the worst bug |
 | Student question | Cards on Welcome | Removes a step and stops the counter jumping |
+| Grades in setup | Removed: no credits, no target grade | User: "bin off grade tracking for now". The Modules page is untouched |
 | Credits in setup | Removed | Only matters for the weighted average; Modules page has it |
 | Groups in setup | Hidden | Power-user concept; a default group is fine |
 | Home step | Removed, widgets added automatically | Nobody knows what they want on a dashboard they haven't seen |
@@ -155,7 +157,7 @@ All answered 2026-11-21:
 ## Always / Never
 
 - Always: tests for every behaviour change; British copy; the skip-everything path stays blank.
-- Never: AI in setup (D5); deleting or rewriting existing data; asking for anything the app can work out itself;
+- Never: grade questions in setup; AI in setup (D5); deleting or rewriting existing data; asking for anything the app can work out itself;
   new blocks or widgets.
 
 ## Progress
