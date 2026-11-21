@@ -459,5 +459,5 @@ def _focus_status():
 
 BLOCK = Block("focus", "Focus", ":material/timer:",
               "A Pomodoro timer with breaks and a stopwatch for tracking time; sessions go into your timetable.",
-              group="Plan", page=_page, widgets=[Widget("focus", "Focus", _home, "small", ("small", "wide"), status=_focus_status, colour="#44444C")], tools=TOOLS, prompt=PROMPT, context=_context,
+              group="Plan", page=_page, widgets=[Widget("focus", "Focus", _home, "small", ("small", "wide"), status=_focus_status, colour="#0F766E")], tools=TOOLS, prompt=PROMPT, context=_context,
               quick=[_quick], schema=SCHEMA, order=30, default=True, core=True)

@@ -10,6 +10,7 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Changed
+- New icons for the built-in blocks (Timetable, Goals, Focus, Modules, Review, Daily Log): one stroke set, on Home's tile headers and the shortcut tiles at the top of each page. Focus is teal now, not grey. Home's tile icons are square again, not squashed.
 - To-dos: the category filter now works on every tab (Today, This week, This month too), so you can see only one category's to-dos, e.g. just Nina's. A to-do added while a filter is on goes in that category. A new **By category** tab lists every open to-do under its category.
 - Each goal you set (e.g. "Get a job") is also a to-do category, marked with a flag. Renaming the goal renames it. Deleting the goal keeps the category and its to-dos. Goals already running get their category once, on update.
 - Home's timetable shows the whole day (07:00–01:00 by default) with no scrolling, in a new **Column** tile size (one column wide, three rows tall) that it starts in. A saved Tall timetable stays Tall. Its sync and Outlook buttons sit in its title line. Short blocks are a colour bar (the name is in the tooltip).

@@ -18,7 +18,7 @@ HOME, SETTINGS = "Home", "Settings"
 KEY = "page"
 
 # Shortcut colours (the tiles' icon squares), by page.
-COLOURS = {"Timetable": "#0B4F9C", "To-dos": "#C62828", "Goals": "#146C2E", "Focus": "#44444C", "Modules": "#6B3FA0",
+COLOURS = {"Timetable": "#0B4F9C", "To-dos": "#C62828", "Goals": "#146C2E", "Focus": "#0F766E", "Modules": "#6B3FA0",
            "Daily Log": "#B45309", "Review": "#8E1C1C", SETTINGS: "#5F6170"}
 ICONS = {HOME: ":material/home:", SETTINGS: ":material/settings:", "To-dos": ":material/check:"}
 
@@ -143,7 +143,10 @@ def icon_md(icon, colour, cls="vn-tile-icon"):
     """A coloured square with a white icon in it, as markdown for st.markdown(..., unsafe_allow_html=True)
     (st.html strips SVG; markdown turns :material/x: into the icon, inside the span too)."""
     from html import escape
-    return f'<span class="{cls}" style="background:{escape(colour or "#5F6170")}" aria-hidden="true">{icon or ""}</span>'
+    from venato.ui import icons
+    glyph = icons.name(icon)
+    return (f'<span class="{cls} {glyph}" style="background:{escape(colour or "#5F6170")}" aria-hidden="true">'
+            f'{"" if glyph else icon or ""}</span>')
 
 
 def mount(page, labels=None):
@@ -158,6 +161,7 @@ def top_bar(page, all_pages):
     """A page's top bar: ← Home, the Esc hint, and small tiles to jump to the other pages. Returns
     {button key: spoken name} for the icon-only ones."""
     from venato import blocks
+    from venato.ui import icons
     labels, css = {}, []
     with st.container(key="nav_top", horizontal=True, vertical_alignment="center", gap="small"):
         st.button("Home", key="go_home", icon=":material/arrow_back:", on_click=go, args=(HOME,),
@@ -170,6 +174,7 @@ def top_bar(page, all_pages):
             icon = ICONS.get(name) or blocks.page_icon(name) or ":material/apps:"
             st.button("", key=key, icon=icon, on_click=go, args=(name,), help=name, type="primary")
             labels[key] = f"Open {name}"
+            css.append(icons.css([f".st-key-{key}"], icon, inset="0"))
             css.append(f".stApp .st-key-{key} button {{ background: {COLOURS.get(name, '#5F6170')} !important; "
                        f"border-color: transparent !important; }}")
     st.html(f"<style>{''.join(css)}</style>")
@@ -178,6 +183,7 @@ def top_bar(page, all_pages):
 
 # The look of the top bar and of every page without the sidebar. Colours come from appearance.tokens().
 def css(t):
+    from venato.ui import icons
     return f"""
     [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"],
     [data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
@@ -191,4 +197,5 @@ def css(t):
     .vn-page-icon {{ display: inline-flex; width: 64px; height: 64px; border-radius: 18px; align-items: center;
         justify-content: center; font-size: 36px; }}
     .vn-page-icon span {{ color: #fff !important; }}
+    {icons.classes_css()}
     """

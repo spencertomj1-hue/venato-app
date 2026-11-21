@@ -26,6 +26,7 @@ import streamlit as st
 from venato import home_layout as hl
 from venato import store
 from venato import undo
+from venato.ui import icons
 from venato.ui import nav
 
 _flip = st.components.v2.component(
@@ -236,7 +237,7 @@ def _css(t, cells, cat, editing, picked, room=PAGE_ROOM):
     [class*="st-key-go_tile_"] button:hover p, [class*="st-key-open_tile_"] button:hover p {{ text-decoration: underline; }}
     [class*="st-key-go_tile_"] [data-testid="stIconMaterial"], [class*="st-key-open_tile_"] [data-testid="stIconMaterial"] {{
         color: #fff !important; border-radius: 8px;
-        width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; font-size: 19px; }}
+        width: 30px; height: 30px; flex-shrink: 0; margin-right: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 19px; }}
     .vn-tile-icon {{ display: inline-flex; width: 30px; height: 30px; border-radius: 8px; vertical-align: middle;
         margin-right: 10px; align-items: center; justify-content: center; color: #fff; font-size: 19px; }}
     .vn-tile-icon span {{ color: #fff !important; }}
@@ -264,6 +265,7 @@ def _css(t, cells, cat, editing, picked, room=PAGE_ROOM):
         colour = getattr(cat.get(k), "colour", "") or "#5F6170"
         out.append(f".st-key-go_tile_{k} [data-testid='stIconMaterial'], .st-key-open_tile_{k} [data-testid='stIconMaterial'] "
                    f"{{ background: {colour}; }}")
+        out.append(icons.css([f".st-key-go_tile_{k}", f".st-key-open_tile_{k}"], getattr(cat.get(k), "icon", "")))
     if editing:
         out.append(f"""
         @keyframes venato-wobble {{ 0%, 100% {{ rotate: -0.3deg; }} 50% {{ rotate: 0.3deg; }} }}
