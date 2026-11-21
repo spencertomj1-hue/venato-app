@@ -74,14 +74,16 @@
 .fc-small:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* --- Home: small --- */
-.fc.compact { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "ring mid" "btns btns";
-              gap: 8px 14px; align-items: center; }
-.fc.compact .fc-ring { grid-area: ring; width: 64px; height: 64px; transform: rotate(-90deg); }
+/* Home: one line, so it fits Home's shortest rows: the ring, the time over the name, Stop. */
+.fc.compact { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "ring mid btns";
+              gap: 10px; align-items: center; height: 40px; }
+.fc.compact .fc-ring { grid-area: ring; width: 36px; height: 36px; transform: rotate(-90deg); }
 .fc.compact .fc-ring circle { stroke-width: 11; }
 .fc.compact .fc-mid { grid-area: mid; }
-.fc.compact .fc-time { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
-.fc.compact .fc-label { font-size: 0.82rem; margin-top: 2px; opacity: 0.8; }
-.fc.compact .fc-btns { grid-area: btns; display: flex; gap: 8px; flex-wrap: wrap; }
+.fc.compact .fc-time { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.fc.compact .fc-label { font-size: 0.78rem; margin-top: 2px; opacity: 0.8; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.fc.compact .fc-btns { grid-area: btns; display: flex; gap: 8px; }
 .fc.compact .fc-btns button {
   font: inherit; font-size: 0.78rem; padding: 4px 11px; border-radius: 999px; cursor: pointer;
   border: 1px solid color-mix(in srgb, var(--text) 25%, transparent); background: var(--bg); color: var(--text);

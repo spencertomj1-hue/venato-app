@@ -78,6 +78,22 @@ def journal(today=None):
     return "Written today" if (store.get_entry(today).get("notes") or "").strip() else "Not written yet"
 
 
+def journal_week(today=None):
+    """This week's journal at a glance: {"days": [(ISO date, written?)], first day of the week first,
+    "streak": days written in a row up to today (or yesterday, until today's is written: the Daily Log's rule)}."""
+    from venato import pace
+    today = today or store.local_today()
+    written = {e["date"] for e in store.journal_entries(last=today)}
+    week = pace.week_days(today)
+    return {"days": [(d.isoformat(), d.isoformat() in written) for d in week],
+            "streak": store.streaks(written, today)[0]}
+
+
+def habit_streak(habit_id, today=None):
+    """A habit's current streak (days, or weeks for a habit with a weekly target): the Daily Log's own rule."""
+    return store.habit_progress(habit_id, store.get_habit_dates(habit_id), today or store.local_today())[1]
+
+
 def focus(today=None):
     from venato.blocks import focus as f
     r = f.running()
@@ -88,15 +104,32 @@ def focus(today=None):
     return f"{mins:.0f} min today" if mins else ""
 
 
-def modules():
+def hours(h):
+    """3, 4.5 (hours, to the half hour)."""
+    h = round(h * 2) / 2
+    return f"{h:g}"
+
+
+def module_week(ctx=None):
+    """[(module, {"done", "planned", "goal", "term"} hours)] for every module, this week (grades.module_hours)."""
+    from venato import pace
     from venato.blocks import grades as gr
-    o = gr.overall()
-    return "No marks yet" if o["degree"] is None else f"{o['degree']:.0f}% so far"
+    ctx = ctx or pace.Ctx()
+    return [(m, gr.module_hours(m, ctx)) for m in gr.modules()]
+
+
+def modules(ctx=None):
+    """This week's study hours across the modules: "4 of 12 h this week"."""
+    rows = module_week(ctx)
+    if not rows:
+        return "No modules yet"
+    done, goal = sum(h["done"] for _, h in rows), sum(h["goal"] for _, h in rows)
+    return f"{hours(done)} of {hours(goal)} h this week"
 
 
 def review(today=None, now=None):
     p = week_followed(today, now)["pct"]
-    return "" if p is None else f"{p}% of plan followed"
+    return "None confirmed yet" if p is None else f"{p}% of plan followed"
 
 
 def needs_you():

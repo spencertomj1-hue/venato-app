@@ -1,6 +1,6 @@
 // The live Focus timer. On the Focus page it's a big stopwatch dial: press it to start, press it
 // again to stop and save. A timer counts down, the stopwatch counts up; the ring shows progress.
-// On Home it's the small version (a ring, the time, and buttons).
+// On Home it's the small version (a ring, the time, the name and Stop; pause and cancel are on the Focus page).
 //
 // Python passes { state: "idle" | "running" | "paused", kind, label, planned (seconds or null),
 // elapsed (seconds when drawn), drawnAt (ms), compact }. The time runs in the database, so
@@ -144,13 +144,11 @@ class FocusTimer {
           <div class="fc-label"></div>
         </div>
         <div class="fc-btns">
-          ${paused ? btn("resume", "Resume", true) : btn("pause", "Pause")}
-          ${isBreak ? btn("skip", "Skip break", !paused) : btn("stop", d.planned == null ? "Stop and save" : "Finish now", !paused)}
-          ${btn("cancel", "Cancel")}
+          ${isBreak ? btn("skip", "Skip break", true) : btn("stop", "Stop", true)}
         </div>
       </div>`;
     this.root.querySelector(".fc-label").textContent =
-      `${isBreak ? "" : d.planned == null ? "Tracking · " : "Focus · "}${d.label}${paused ? " · paused" : ""}`;
+      `${d.label}${paused ? " · paused" : ""}`;
     this.paint();
   }
 

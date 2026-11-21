@@ -69,6 +69,8 @@ def _logged(home, into_actual):
 
 def _draw_timer(key, compact=False):
     r = focus.running()
+    if compact and not r:                # Home with nothing running: just the start form (no empty slot above it)
+        return None
     data = {"state": "idle", "compact": compact}
     if not r and not compact:
         minutes = _chosen_minutes()
@@ -141,23 +143,26 @@ def _controls():
 
 
 def _start_form(prefix):
-    """Home: a quick timer."""
-    s = focus.settings()
+    """Home: a stopwatch. What you're on (empty: "Focus"), then Start; Stop puts it in today's Actual.
+    Pomodoro timers start on the Focus page."""
     last = st.session_state.get("focus_last_label", "")
+    st.html(f"""<style>      /* compact, so it fits Home's shortest rows */
+      .st-key-{prefix}_go button {{ min-height: 36px; height: 36px; padding-top: 0; padding-bottom: 0; }}
+      .st-key-{prefix}_label [data-testid="stTextInputRootElement"] {{ height: 36px; min-height: 36px; }}
+    </style>""")
     a, b = st.columns([3, 2], vertical_alignment="bottom")
-    a.text_input("What are you focusing on?", value=last, key=f"{prefix}_label", placeholder="What are you focusing on?",
+    a.text_input("What are you on?", value=last, key=f"{prefix}_label", placeholder="What are you on?",
                  label_visibility="collapsed")
-    b.button(f"{s['focus_minutes']} min", key=f"{prefix}_go", type="primary", width="stretch",
-             icon=":material/play_arrow:", on_click=_start_quick, args=(prefix, s["focus_minutes"]),
-             help=f"Start a {s['focus_minutes']} minute focus timer")
+    b.button("Start", key=f"{prefix}_go", type="primary", width="stretch", icon=":material/play_arrow:",
+             on_click=_start_quick, args=(prefix,), help="Start a stopwatch; stop it to put the time in today's Actual")
 
 
-def _start_quick(prefix, minutes):
-    """Home's Focus button (a callback, so the fragment's own rerun draws the running timer)."""
+def _start_quick(prefix):
+    """Home's Start (a callback, so the fragment's own rerun draws the running stopwatch)."""
     label = (st.session_state.get(f"{prefix}_label") or "").strip() or "Focus"
     st.session_state["focus_last_label"] = label
     try:
-        focus.start(label, minutes, "focus", store.resolve_category(label=label))
+        focus.start(label, None, "track", store.resolve_category(label=label))
     except focus.FocusError as e:
         st.session_state["focus_msg"] = str(e)
 
@@ -267,7 +272,7 @@ def _page_timer():
 @st.fragment
 def render_home():
     """Home's Focus widget: a fragment, so only it reruns, unless a session goes into today's Actual.
-    Nothing running: the quick start."""
+    Nothing running: a stopwatch's start; running: its name, the time and Stop."""
     _message()
     if focus.finish_if_due():                    # ran out while away: it may be in today's Actual now
         kit.rerun_app_if({"actual"})

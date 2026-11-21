@@ -23,13 +23,13 @@ _OLD_SIZES = {"s": "small", "m": "wide", "l": "large", "full": "wide"}
 @dataclass
 class Widget:
     """A tile a block offers for Home. Its key is saved in Home's layout (settings.json "home"), so it
-    stays the same; size is where it starts: "small", "wide", "large" or "tall" (the old "s" / "m" / "l" /
+    stays the same; size is where it starts: "small", "wide", "large", "tall" or "column" (the old "s" / "m" / "l" /
     "full" still work). The whole tile opens `page` (left empty: its block's page; None: no page)."""
     key: str
     name: str                        # its tile's title, and in Home's "Add a tile" list
     draw: Callable                   # the live preview under the title
     size: str = "wide"
-    sizes: tuple = ("small", "wide", "large", "tall")    # the sizes it comes in
+    sizes: tuple = ("small", "wide", "large", "tall")    # the sizes it comes in (Column only where asked for)
     page: str | None = ""            # the page the tile opens
     status: Callable | None = None   # -> a few words for the tile's header ("1 of 4 done today"), or ""
     icon: str = ""                   # a Material icon for its header (empty: its block's)
