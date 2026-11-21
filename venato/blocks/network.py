@@ -62,6 +62,8 @@ CREATE INDEX IF NOT EXISTS net_interactions_person ON net_interactions (person_i
 
 def _migrate(conn):
     store._add_column(conn, "net_groups", "parent_id", "TEXT")       # sub-groups came later
+    # The timetable block or calendar event a meeting was logged from (meetings below); NULL = typed in.
+    store._add_column(conn, "net_interactions", "source", "TEXT")
     if conn.execute("SELECT COUNT(*) FROM net_groups").fetchone()[0] == 0:
         conn.executemany("INSERT INTO net_groups (id, name, colour, ord) VALUES (?, ?, ?, ?)",
                          [(gid, name, colour, i) for i, (gid, name, colour) in enumerate(DEFAULT_NET_GROUPS)])
@@ -266,7 +268,7 @@ def add_interaction(person_id, note, day):
         raise ValueError("Say what happened.")
     iid = uuid.uuid4().hex
     with store.db() as conn:
-        conn.execute("INSERT INTO net_interactions VALUES (?, ?, ?, ?, ?)",
+        conn.execute("INSERT INTO net_interactions (id, person_id, date, note, created_at) VALUES (?, ?, ?, ?, ?)",
                      (iid, person_id, store._as_date(day).isoformat(), note, store.stamp()))
     return iid
 
@@ -620,6 +622,95 @@ def _search_open(r, ss):
 def _review(first, last):
     """The people the user saw that week."""
     return {"title": "People you saw", "lines": [f"{p['person']} · {p['note']}" for p in interactions_between(first, last)]}
+
+
+# ---------------------------------------------------------------------------
+# Meetings: a timetable category that comes with Network. Marking a Meetings block or calendar event
+# Done logs it as an interaction with the people its title names ("Call with Nina"); if it names
+# nobody, the timetable asks who it was with. Not done (or clearing the mark) takes the log back off.
+# ---------------------------------------------------------------------------
+
+MEETINGS_ID = "meetings"
+MEETINGS = ("Meetings", "#14B8A6", "People")          # name, colour, the timetable key's group
+# What makes a block or event a meeting: whole words in its name ("Call with Nina", "Coffee - Sam").
+MEETING_WORDS = ("Meeting", "Call", "Phone call", "Video call", "Coffee", "Catch up", "Catch-up", "1:1", "Interview")
+
+
+def ensure_meetings():
+    """While Network is on, the timetable has a Meetings category (made once: delete it and it stays gone;
+    switch Network off and it stays, like any category). Its words point at it unless they already mean
+    another category. A blank slate stays blank: it comes once the user has a category of their own."""
+    if store.load_settings().get("meetings_made"):
+        return
+    ids = set(store.load_categories()["id"])
+    if not ids:
+        return
+    if MEETINGS_ID not in ids:
+        store.save_category(MEETINGS_ID, *MEETINGS)
+    taken = {str(l).strip().lower() for l in store.load_label_map()["label"]}
+    for word in MEETING_WORDS:
+        if word.lower() not in taken:
+            store.set_label_default(word, MEETINGS_ID)
+    store.save_settings(meetings_made=True)
+
+
+def people_named_in(text, people=None):
+    """The people a title names, by full name or first name as whole words ("Call with Nina" -> Nina
+    Smith). A full name beats a first name that others share."""
+    want = str(text or "").lower()
+    people = net_people() if people is None else people
+    def has(phrase):
+        return bool(phrase) and re.search(rf"(?<!\w){re.escape(phrase.lower())}(?!\w)", want) is not None
+    full = [p for p in people if has(p["name"].strip())]
+    if full:
+        return full
+    firsts = {}
+    for p in people:
+        first = p["name"].split()[0] if p["name"].split() else ""
+        firsts.setdefault(first.lower(), []).append(p)
+    return [ps[0] for first, ps in firsts.items() if len(ps) == 1 and has(first)]
+
+
+def meeting_note(label):
+    return f"Meeting: {str(label or '').strip() or 'untitled'}"
+
+
+def log_meeting(source, day, label, person_ids):
+    """Log a meeting (from timetable block or event `source`) with each person, once each."""
+    with store.db() as conn:
+        done = {r[0] for r in conn.execute("SELECT person_id FROM net_interactions WHERE source = ?", (source,))}
+    for pid in dict.fromkeys(person_ids):
+        if pid not in done:
+            iid = add_interaction(pid, meeting_note(label), day)
+            with store.db() as conn:
+                conn.execute("UPDATE net_interactions SET source = ? WHERE id = ?", (source, iid))
+
+
+def unlog_meeting(source):
+    """Take back what a meeting logged (it was marked not done, or its mark was cleared)."""
+    with store.db() as conn:
+        conn.execute("DELETE FROM net_interactions WHERE source = ?", (source,))
+
+
+def meeting_logged(source):
+    with store.db() as conn:
+        return conn.execute("SELECT 1 FROM net_interactions WHERE source = ?", (source,)).fetchone() is not None
+
+
+def on_block_status(op):
+    """A timetable block or calendar event was marked done / not done (timetable.py's set_status op).
+    For a Meetings one: done logs it with the people its title names; returns the op when it names nobody
+    (the timetable then asks who it was with), else None."""
+    if op.get("status") != "done":
+        unlog_meeting(op["id"])
+        return None
+    if op.get("categoryId") != MEETINGS_ID:
+        return None
+    people = people_named_in(op.get("label"))
+    if not people:
+        return op
+    log_meeting(op["id"], op["date"], op.get("label"), [p["id"] for p in people])
+    return None
 
 
 def _page():

@@ -187,6 +187,11 @@ def _apply(op):
     elif kind == "set_status":                       # done / not done, from a block's card
         store.set_block_status(op["id"], op.get("status"), op["date"], op.get("start"), op.get("end"),
                                op.get("label"), op.get("categoryId"))
+        from venato import blocks
+        if blocks.is_on("network"):                  # a Meetings one done: logged in Network (or ask who with)
+            from venato.blocks import network
+            if network.on_block_status(op):
+                st.session_state["meeting_who"] = {k: op.get(k) for k in ("id", "date", "label")}
     elif kind == "add_suggestion":
         from venato.ui import goal_time
         goal_time.add_suggestion(op["date"], op["start"], op["end"], _block(op["block"]), new_id=op.get("newId"))
@@ -389,6 +394,13 @@ def render_today():
 def render_grid(days, key="timetable", single=False, readonly=False, suggestions=()):
     """Draw the grid for the given days; returns the categories and label map it used.
     Days that have started are locked first (their Plan copied into the Actual), so what's drawn is final."""
+    from venato import blocks
+    if blocks.is_on("network") and not readonly:     # Network brings a Meetings category
+        from venato.blocks import network
+        network.ensure_meetings()
+        if st.session_state.get("meeting_who"):
+            from venato.ui import network as network_ui
+            network_ui.meeting_dialog(st.session_state.pop("meeting_who"))
     now = store.local_now()
     store.lock_started(days[0], days[-1], now)
     status = store.day_status(days[0], days[-1])

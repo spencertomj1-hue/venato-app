@@ -232,3 +232,26 @@ def render_page():
             _new_person_dialog(edit.get("group"))
         elif kind == "new_group":
             _new_group_dialog(edit.get("parent"))
+
+
+@st.dialog("Who was the meeting with?")
+def meeting_dialog(meeting):
+    """A Meetings block or event marked done whose title names nobody in the network: pick who it was
+    with (or add them), and it's logged on their Network card."""
+    people = net.net_people()
+    names = {p["id"]: p["name"] for p in people}
+    st.markdown(f"**{meeting.get('label') or 'Meeting'}**")
+    k = f"mw_{meeting['id']}"
+    picked = st.multiselect("People", list(names), key=f"{k}_p", format_func=names.get,
+                            placeholder="Pick from your network")
+    new = st.text_input("Someone new", key=f"{k}_n", placeholder="Their name (add more with commas)")
+    save, skip = st.columns(2)
+    if save.button("Log it", type="primary", icon=":material/check:", key=f"{k}_s", width="stretch"):
+        ids = list(picked) + [net.add_person(n)["id"] for n in new.split(",") if n.strip()]
+        if not ids:
+            st.error("Pick someone, or add them.")
+            return
+        net.log_meeting(meeting["id"], meeting["date"], meeting.get("label"), ids)
+        st.rerun()
+    if skip.button("Don't log it", key=f"{k}_x", width="stretch"):
+        st.rerun()

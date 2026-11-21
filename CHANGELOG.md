@@ -10,6 +10,8 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Changed
+- Network is back as an optional block (Settings → Blocks): people, groups and who they work for, the times you met or spoke to someone, search and the weekly review.
+- With Network on, the timetable gets a **Meetings** category (once you have a category of your own). Blocks and calendar events called things like "Call with Nina", "Coffee - Sam" or "Meeting" go in it. Marking one Done logs it on that person's Network card ("Meeting: Call with Nina"). If the title names nobody in your network, a pop-up asks who it was with (pick people or add someone new). Marking it Not done, or clearing the mark, takes the log back off. Deleting Meetings is respected: it isn't made again.
 - Edit Home is plain drag and drop: drag a tile and the others make room as you go, and it lands where you let go (Esc cancels). The pick-up button, arrows and "Drop here" slot are gone; a ⤢ button on each tile steps through its sizes, and the − buttons are smaller. Home's edits no longer show the Undo bar (⌘Z / Ctrl+Z still undoes the last one).
 - New icons for the built-in blocks (Timetable, Goals, Focus, Modules, Review, Daily Log): one stroke set, on Home's tile headers and the shortcut tiles at the top of each page. Focus is teal now, not grey. Home's tile icons are square again, not squashed.
 - To-dos: the category filter now works on every tab (Today, This week, This month too), so you can see only one category's to-dos, e.g. just Nina's. A to-do added while a filter is on goes in that category. A new **By category** tab lists every open to-do under its category.
