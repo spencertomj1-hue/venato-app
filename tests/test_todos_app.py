@@ -51,7 +51,7 @@ def test_home_widgets_with_nothing_say_so(store):
     at = app()
     assert not at.exception
     shown = [m.value for m in at.markdown]
-    for title in ("**Habits**", "**Focus**", "**Grades**", "**Deadlines**", "**Goals**", "**Journal**"):
+    for title in ("**Habits**", "**Focus**", "**Modules**", "**Deadlines**", "**Goals**", "**Journal**"):
         assert title not in shown, title                          # hidden until added
     assert "home_todos_card" in home_keys(at)
     store.save_settings(home=[{"w": k, "size": "s"} for k in ("habits", "focus", "modules", "deadlines", "goals",
@@ -59,7 +59,7 @@ def test_home_widgets_with_nothing_say_so(store):
     at.run()
     assert not at.exception
     captions = " ".join(c.value for c in at.caption)
-    for empty in ("No habits yet", "No marks yet", "Nothing due", "No goals running", "Nothing yet today"):
+    for empty in ("No habits yet", "No modules yet", "Nothing due", "No goals running", "Nothing yet today"):
         assert empty in captions, empty
     assert at.button(key="home_focus_go")                         # Focus: start one from Home
     store.add_habit("Gym")

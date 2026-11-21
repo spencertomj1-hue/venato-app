@@ -184,16 +184,26 @@ def _charts():
 
 
 def render_home():
-    """Home's Review tile: this week's Plan followed, a bar a day (Monday first; grey: not confirmed yet)."""
+    """Home's Review tile: this week's Plan followed, a bar a day under a faint 100% line, each day's letter under
+    its bar (the first day of the week first; grey: not confirmed yet)."""
     from venato import tile_status
+    from venato import pace
     w = tile_status.week_followed()
-    accent = appearance.accent()
+    t = appearance.tokens()
+    names = [d.strftime("%a") for d in pace.week_days(store.local_today())]     # the first day of the week first
     bars = "".join(
-        f'<i style="height:{max(8, p or 0)}%;background:{accent if p is not None else "rgba(128,128,128,0.22)"}" '
-        f'title="{d}: {"not confirmed" if p is None else f"{p}% followed"}"></i>'
-        for d, p in zip(("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"), w["days"]))
+        f'<span><i style="height:{max(8, p or 0)}%;background:{t["accent"] if p is not None else "rgba(128,128,128,0.22)"}" '
+        f'title="{d}: {"not confirmed" if p is None else f"{p}% followed"}"></i></span>'
+        for d, p in zip(names, w["days"]))
+    letters = "".join(f"<b>{d[0]}</b>" for d in names)
+    said = "; ".join(f"{d} {'not confirmed' if p is None else f'{p}%'}" for d, p in zip(names, w["days"]))
     st.html(f"""<style>
-      .vn-rv {{ display: flex; align-items: flex-end; gap: 6px; height: 36px; }}
-      .vn-rv i {{ flex: 1; max-width: 18px; border-radius: 4px; }}
-    </style><div class="vn-rv" role="img" aria-label="Plan followed each day this week">{bars}</div>""")
+      .vn-rv {{ height: 36px; display: inline-flex; gap: 6px; align-items: flex-end; border-top: 1px dashed {t['muted']}88; }}
+      .vn-rv span {{ width: 18px; height: 100%; display: flex; align-items: flex-end; }}
+      .vn-rv i {{ width: 100%; border-radius: 4px; }}
+      .vn-rv-days {{ display: flex; gap: 6px; margin-top: 3px; height: 10px; }}
+      .vn-rv-days b {{ width: 18px; text-align: center; font-size: 0.62rem; font-weight: 500;
+        color: {t['muted']}; line-height: 1; }}
+    </style><div role="img" aria-label="Plan followed each day this week (the dashed line is 100%): {said}">
+      <div class="vn-rv">{bars}</div><div class="vn-rv-days" aria-hidden="true">{letters}</div></div>""")
     st.caption("No days confirmed yet this week." if w["pct"] is None else f"{w['pct']}% of plan followed this week")

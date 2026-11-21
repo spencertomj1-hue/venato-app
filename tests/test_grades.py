@@ -209,3 +209,26 @@ def test_no_orphan_category_when_the_module_insert_fails(gr, store, monkeypatch)
     with pytest.raises(sqlite3.IntegrityError):
         gr.add_module("B")
     assert sorted(store.load_categories()["name"]) == before                 # nothing made or renamed
+
+
+def test_modules_tile_shows_study_hours_not_marks(gr, store, monkeypatch):
+    """Home's Modules tile (was Grades): this week's hours per module against its target, up to 3, then
+    "and N more"; the header sums them. No marks."""
+    from streamlit.testing.v1 import AppTest
+    from venato import blocks, tile_status
+    assert tile_status.modules() == "No modules yet"
+    assert next(w for w in blocks.widgets() if w.key == "modules").name == "Modules"
+    ids = [gr.add_module(n) for n in ("Algebra", "Biology", "Chemistry", "Drama")]
+    gr.add_assessment(ids[0], "Exam", 100, 72)                                 # a mark: never shown
+    done = dict(zip(ids, (1, 2, 0.5, 0.5)))
+    monkeypatch.setattr(gr, "module_hours", lambda m, ctx: {"done": done[m["id"]], "planned": 3, "goal": 3, "term": 0})
+    assert tile_status.modules() == "4 of 12 h this week"
+    store.save_settings(home=[{"w": "modules", "size": "s"}])
+    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
+    assert not at.exception
+    page = " ".join(h.proto.body for h in at.get("html"))
+    assert page.count('class="vn-mh-row"') == 3 and "and 1 more" in page
+    assert "Algebra: 1 of 3 hours this week" in page and 'style="width:33%"' in page
+    tile = page.split('class="vn-mh"')[1].split("and 1 more")[0]
+    assert "72" not in tile and "%<" not in tile
+    assert any(c.value == "4 of 12 h this week" for c in at.caption)
