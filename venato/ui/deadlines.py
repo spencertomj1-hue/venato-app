@@ -133,30 +133,36 @@ def _toggle(did, key):
 
 @st.dialog("Plan this deadline")
 def _plan_dialog(did):
-    """Total hours or hours a week, the module (its category is where the hours count) and a finish-by day."""
+    """Total hours or hours a week, the category the hours count in (a module's, or any, for someone with no
+    modules) and a finish-by day."""
     from venato.blocks import grades as gr
     d = store.get_deadline(did)
     if not d or d["done"]:
         st.caption("That deadline is gone or done.")
         return
     mods = gr.modules()
-    if not mods:
-        st.info("A plan counts hours in a module's category. Add a module on the Modules page first.",
-                icon=":material/school:")
-        return
+    cats = store.load_categories().to_dict("records")
     today, due = store.local_today(), store._as_date(d["due"])
-    st.markdown(f"**{md(d['title'])}** · due {regional.day_month(due)}")
-    ids = [m["id"] for m in mods]
-    mid = st.selectbox("Module", ids, index=ids.index(d["module_id"]) if d["module_id"] in ids else 0,
-                       format_func=lambda i: next(m["name"] for m in mods if m["id"] == i), key=f"plan_mod_{did}")
-    module = gr.get_module(mid)
-    if not module["category_id"]:
+    module = gr.get_module(d["module_id"]) if d["module_id"] else None
+    if module and not module["category_id"]:
         st.info(f"{module['name']} has no category yet, and a plan needs one to count its hours.",
                 icon=":material/category:")
         if st.button("Create its category", icon=":material/add:", key=f"plan_cat_{did}", type="primary"):
-            gr.create_category(mid)
+            gr.create_category(module["id"])
             st.rerun()
         return
+    if not cats:
+        from venato.ui import timetable_tools
+        timetable_tools.no_categories(f"plan_nocat_{did}", "A plan counts its hours in a timetable category. "
+                                      "Add one first.")
+        return
+    st.markdown(f"**{md(d['title'])}** · due {regional.day_month(due)}")
+    ids = [c["id"] for c in cats]
+    start = module["category_id"] if module else None
+    cid = st.selectbox("Counts in", ids, index=ids.index(start) if start in ids else 0,
+                       format_func=lambda i: next(c["name"] for c in cats if c["id"] == i), key=f"plan_cat_pick_{did}",
+                       help="The hours count in this category. A module's category also holds its lectures.")
+    mid = next((m["id"] for m in mods if m["category_id"] == cid), None)       # a module's own category links it
     goal = store.deadline_goal(did)
     how = st.radio("Hours", ["In total", "A week"], horizontal=True, key=f"plan_how_{did}",
                    index=0, help="A week: the hours for each week from today to the finish-by day.")
@@ -170,9 +176,9 @@ def _plan_dialog(did):
     row = st.container(horizontal=True)
     if row.button("Save plan" if goal else "Plan", type="primary", key=f"plan_go_{did}"):
         try:
-            if d["module_id"] != mid:
+            if mid and d["module_id"] != mid:
                 store.update_deadline(did, module_id=mid)
-            store.plan_deadline(did, module["category_id"], total=hours if how == "In total" else None,
+            store.plan_deadline(did, cid, total=hours if how == "In total" else None,
                                 per_week=hours if how == "A week" else None, finish_by=finish)
         except ValueError as e:
             st.error(str(e))

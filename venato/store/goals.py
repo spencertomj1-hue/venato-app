@@ -317,6 +317,7 @@ def add_goal_progress(goal_id, amount):
 
 def delete_goal(goal_id):
     with db() as conn:
+        conn.execute("DELETE FROM goal_week WHERE goal_id = ?", (goal_id,))
         conn.execute("DELETE FROM goals WHERE id = ?", (goal_id,))
 
 

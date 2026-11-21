@@ -187,6 +187,7 @@ def add_modules(picked, credits=DEFAULT_CREDITS, target=None):
         if _module_for(m.get("code"), m["name"]):
             continue
         made.append(gr.add_module(m["name"], credits, target=target, code=m.get("code")))
+    _ob().setdefault("new_modules", []).extend(made)           # the only ones Study hours touches
     return made
 
 
@@ -201,17 +202,19 @@ def link_courses(links):
 
 
 def apply_study_hours(per_week, day=None):
-    """The default hours a week for every module, and one hours goal for each module that has none yet
-    (counting its category, which also holds its lectures). A module's own number (its page) wins."""
+    """The default hours a week, and one hours goal for each module made in this run of setup that has none yet
+    (counting its category, which also holds its lectures). A module's own number (its page) wins. Modules
+    from before, and ones without a category, are left alone."""
     day = day or today()
     store.save_settings(study_hours=float(per_week))
     made = []
     if per_week <= 0:
         return made
     have = {g["category_id"] for g in store.goals_open(day) if g["category_id"] and g["unit"] == "h" and not g["deadline_id"]}
+    mine = set(_ob().get("new_modules", []))
     for m in gr.modules():
-        cid = m["category_id"] or gr.create_category(m["id"])
-        if cid in have:
+        cid = m["category_id"]
+        if m["id"] not in mine or not cid or cid in have:
             continue
         hours = gr.week_hours_goal(m)
         if hours > 0:

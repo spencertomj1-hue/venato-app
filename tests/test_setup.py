@@ -457,13 +457,13 @@ def test_running_setup_again_deletes_nothing(fresh):
     onboarding.add_modules([{"code": "CHEM50001", "name": "Organic Chemistry"}])
     onboarding.apply_study_hours(6, MON)
     onboarding.apply_study_hours(6, MON)
-    assert len(gr.modules()) == 1 and len([g for g in fresh.goals_open(MON) if g["unit"] == "h"]) == 1
+    assert len(gr.modules()) == 1 and len([g for g in fresh.goals_open(MON) if g["unit"] == "h"]) == 0
 
 
 def test_study_goals_respect_a_modules_own_hours(fresh):
     from venato.blocks import grades as gr
     from venato.ui import onboarding
-    a, b = gr.add_module("Algebra"), gr.add_module("Analysis")
+    a, b = onboarding.add_modules([{"name": "Algebra"}, {"name": "Analysis"}])
     gr.set_week_hours_goal(b, 9)
     made = onboarding.apply_study_hours(5, MON)
     by = {g["title"]: g for g in made}
@@ -471,6 +471,20 @@ def test_study_goals_respect_a_modules_own_hours(fresh):
     assert fresh.load_settings()["study_hours"] == 5
     assert by["Algebra study"]["due"] == (MON + _dt.timedelta(weeks=12)).isoformat()
     assert onboarding.apply_study_hours(0, MON) == []
+
+
+def test_study_hours_leave_old_modules_alone(fresh):
+    from venato.blocks import grades as gr
+    from venato.ui import onboarding
+    old = gr.add_module("Old module")
+    with fresh.db() as conn:                                   # from before: no category, finished
+        conn.execute("UPDATE gr_modules SET category_id = NULL, final = 65 WHERE id = ?", (old,))
+    onboarding.restart()
+    new = onboarding.add_modules([{"name": "Fresh"}])
+    made = onboarding.apply_study_hours(5, MON)
+    assert [g["title"] for g in made] == ["Fresh study"]
+    assert gr.get_module(old)["category_id"] is None
+    assert not [g for g in fresh.goals_open(MON) if g["title"] == "Old module study"] and new
 
 
 def test_check_feed_is_canvas_aware(fresh):
@@ -547,7 +561,7 @@ def test_first_week_suggestions_become_planned_blocks(fresh):
     from venato import pace
     from venato.blocks import grades as gr
     from venato.ui import onboarding
-    gr.add_module("Organic Chemistry", code="CHEM50001")
+    onboarding.add_modules([{"name": "Organic Chemistry", "code": "CHEM50001"}])
     onboarding.apply_study_hours(6, MON)
     ctx = pace.Ctx(NOW)
     sittings = onboarding.first_week(MON, ctx)
