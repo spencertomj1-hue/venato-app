@@ -181,3 +181,22 @@ def test_linked_habit_updates_goal(store):
     assert not at.exception
     assert at.session_state["home_draws"] == draws + 1
     assert "1 / 12 sessions" in html(at)
+
+
+def test_add_event_dialog(store):
+    from venato import tools
+    tomorrow = store.local_today() + timedelta(days=1)
+    at = app()
+    open_page(at, "Timetable")
+    at.button(key="tt_btn_add").click().run()
+    assert not at.exception, at.exception
+    assert [t.label for t in at.text_input if t.label == "What"] == ["What"]       # the dialog is open
+    assert {"Starts", "Ends", "Category"} <= {s.label for s in at.selectbox}
+    # What its Add button does (AppTest closes a dialog on the run after a click, so call it here):
+    r = tools.add_block(tomorrow.isoformat(), "plan", "18:00", "19:30", "Gym session")
+    assert r.changed
+    got = [(b["start"], b["end"], b["category_id"]) for b in store.blocks_between(tomorrow, tomorrow, "plan")
+           if b["label"] == "Gym session"]
+    assert got == [("18:00", "19:30", "exercise")]                       # 'Gym' inside the name -> its category
+    tools.add_block(tomorrow.isoformat(), "plan", "20:00", "21:00", "Pottery", category="Social")
+    assert store.match_category("Pottery") == "social"                    # picked by hand: learnt

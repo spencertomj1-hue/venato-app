@@ -42,7 +42,7 @@ class Block:
     status: dict = field(default_factory=dict)      # word in its tools' names -> what the chat shows while one runs
 
 
-GROUPS = ["Plan", "Health & body", "Study & work", "Money", "Other"]
+GROUPS = ["Plan", "Health & body", "Study & work", "Money", "People & life", "Other"]
 
 # The blocks a new setup starts with. They used to be always on; every block can be switched off now.
 STARTER = ["timetable", "goals", "focus", "grades", "stats"]

@@ -17,20 +17,57 @@ from venato.ui import kit
 NEW_EX = "+ New exercise"
 CURRENT = "wk_current"
 UPLOAD_PENDING = "wk_upload_pending"      # a tools.Pending preview of an uploaded plan, waiting for Confirm
-EXAMPLE = """Monday - Push
-Bench press 3x8 @ 60
-Overhead press 3x10 @ 40
-Tricep pushdown 3x12
+EXAMPLE = """Week 1
+Monday - Push
+Bench press 3x8 @ 60kg
+Overhead press 3x10 @ 40kg
 
 Legs
-Squat 5x5 @ 100
-Romanian deadlift 3x8 @ 80
+Squat 5x5 @ 100kg
 Plank 3x45s
 
-Pull
-Pull-up 3x8
-Barbell row 4x8 @ 50
-Run 5 km"""
+Week 2
+Monday - Push
+Bench press 3x8 @ 62.5kg
+Overhead press 3x10 @ 42.5kg
+
+Legs
+Squat 5x5 @ 105kg
+Plank 3x50s"""
+CLAUDE_PROMPT = """Write me a workout plan with progressive overload. Reply with ONLY the plan, in exactly this plain-text format (no tables, no bold, no headings, no notes or explanations), because an app reads it line by line:
+
+- Start each week with a line on its own: Week 1, Week 2, Week 3, ...
+- Write out every week in full, with that week's own weights, sets and reps (increase them week by week; add a deload week if it suits the plan).
+- Inside a week, start each workout with a line naming it. If it must be on a set day, put the day first: Monday - Push. Otherwise just the name: Legs.
+- Use the same workout names every week (Push in week 1 is Push in week 2).
+- Then one exercise per line: name, sets x reps, then @ and the weight with its unit:
+  Bench press 3x8 @ 60kg
+  Pull-up 3x8                (bodyweight: no weight)
+  Plank 3x45s                (timed: seconds straight after the number)
+  Run 5 km                   (cardio: a distance, or minutes like 30 min)
+- One number for reps (8, not 8-10). No warm-up lines, no rest times, no comments.
+- Leave a blank line between workouts.
+
+Example of the format:
+Week 1
+Monday - Push
+Bench press 3x8 @ 60kg
+Overhead press 3x10 @ 40kg
+
+Thursday - Legs
+Squat 5x5 @ 100kg
+Plank 3x45s
+
+Week 2
+Monday - Push
+Bench press 3x8 @ 62.5kg
+Overhead press 3x10 @ 42.5kg
+
+Thursday - Legs
+Squat 5x5 @ 105kg
+Plank 3x50s
+
+About me (goal, days a week, how many weeks, equipment, current lifts): """
 
 
 def _metrics(today):
@@ -351,15 +388,27 @@ def _upload_confirm():
     return True
 
 
+def _plan_cards(days):
+    cols = st.columns(min(len(days), 4))
+    for i, d in enumerate(days):
+        with cols[i % len(cols)], st.container(border=True):
+            when = f" · {wk.WEEKDAYS[d['weekday']].title()}s" if d["weekday"] is not None else ""
+            st.markdown(f"**{d['name']}**{when}")
+            st.markdown("\n".join(f"- {it['text']}" for it in d["items"]))
+
+
 def _upload_plan():
     with st.expander("Upload a plan and fit it into your week", icon=":material/upload_file:",
                      expanded=not wk.plans() or UPLOAD_PENDING in st.session_state):
         if _upload_confirm():
             return
-        st.caption("A .txt or .csv file, or paste it below. Each workout starts with a line naming it "
-                   "(\"Push\", \"Monday - Legs\", \"Day 2: Upper\"), then one exercise per line, like "
-                   "\"Bench press 3x8 @ 60\", \"Plank 3x45s\" or \"Run 5 km\". A day in the name "
-                   "(Monday) keeps it on that day; the rest are spread through the week around your timetable.")
+        st.markdown("**1. Get Claude to write your plan.** Copy this (the button at its top right), paste it "
+                    "into Claude, fill in the last line, and Claude writes the plan in the format Venato reads.")
+        st.code(CLAUDE_PROMPT, language=None, wrap_lines=True, height=260)
+        st.markdown("**2. Paste Claude's plan here, or upload it as a .txt or .csv file.**")
+        st.caption("\"Week 1\", \"Week 2\" lines give each week its own weights (progressive overload). "
+                   "A day in a workout's name (\"Monday - Push\") keeps it on that day; the rest are spread "
+                   "through the week around your timetable.")
         f = st.file_uploader("Plan file", type=["txt", "csv", "md"], key="wk_up_file")
         text = st.text_area("Or paste the plan", key="wk_up_text", height=180, placeholder=EXAMPLE)
         if f is not None:
@@ -372,13 +421,15 @@ def _upload_plan():
             st.warning("No exercises found. Write them like \"Bench press 3x8 @ 60\", one per line.",
                        icon=":material/warning:")
             return
-        st.markdown(f"**Found {len(days)} workout{'s' if len(days) != 1 else ''} a week**")
-        cols = st.columns(min(len(days), 4))
-        for i, d in enumerate(days):
-            with cols[i % len(cols)], st.container(border=True):
-                when = f" · {wk.WEEKDAYS[d['weekday']].title()}s" if d["weekday"] is not None else ""
-                st.markdown(f"**{d['name']}**{when}")
-                st.markdown("\n".join(f"- {it['text']}" for it in d["items"]))
+        numbered = wk.plan_weeks(days)
+        if numbered:
+            st.markdown(f"**Found {len(numbered)} weeks, {len(days)} workouts in all**")
+            for n, tab in zip(numbered, st.tabs([f"Week {n}" for n in numbered])):
+                with tab:
+                    _plan_cards([d for d in days if d["week"] == n])
+        else:
+            st.markdown(f"**Found {len(days)} workout{'s' if len(days) != 1 else ''} a week**")
+            _plan_cards(days)
         if skipped:
             st.caption("Couldn't read: " + "; ".join(f"“{x}”" for x in skipped[:8]))
         today = store.local_today()
@@ -388,7 +439,11 @@ def _upload_plan():
         with st.form("wk_up_form", border=False):
             a, b, c = st.columns(3)
             first = a.date_input("Starting", value=today, format=regional.input_format())
-            weeks = b.number_input("Weeks", 1, 12, 4)
+            if numbered:
+                weeks = len(numbered)
+                b.text_input("Weeks", value=f"{numbered[-1]} (from the plan)", disabled=True)
+            else:
+                weeks = b.number_input("Weeks", 1, 12, 4, help="The same workouts repeat each week.")
             minutes = c.selectbox("Each workout", [30, 45, 60, 75, 90, 120], index=2,
                                   format_func=lambda m: f"{m // 60} h {m % 60} min".replace(" 0 min", "")
                                   .replace("0 h ", ""))
@@ -412,7 +467,7 @@ def _upload_plan():
         if save_only:
             undo.checkpoint("Saved uploaded workout plans")
             for d in days:
-                wk.save_plan(d["name"], d["items"])
+                wk.save_plan(wk.plan_name(d), d["items"])
             st.toast(f"Saved {len(days)} plan(s).", icon=":material/check_circle:")
             st.rerun()
 

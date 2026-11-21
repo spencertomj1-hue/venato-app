@@ -114,7 +114,7 @@ class Ctx:
         self.away = store.away_uids()
         self.away_days = store.away_days()
         self.inflate = inflation_on()
-        self.ocat = store.outlook_category("")
+        self.ocat = store.outlook_categorizer()       # an event's title -> its category
         self._window = None
         self._data = None
         self._day_cap = {}
@@ -224,7 +224,7 @@ class Ctx:
         for ev in rows["events"] if not store.day_started(day, self.now) else ():   # (copied into a started day's Actual)
             if ev["all_day"] or not ev["start"]:
                 continue
-            if not any(store._goal_matches(g, self.ocat, ev["title"], event=True) for g in serving):
+            if not any(store._goal_matches(g, self.ocat(ev["title"]), ev["title"], event=True) for g in serving):
                 mark(store.slot_of(ev["start"]), store.slot_of(ev["end"]))
         return fixed
 

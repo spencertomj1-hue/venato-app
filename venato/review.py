@@ -47,10 +47,11 @@ def _avg(rows, key):
 def _slot_maps(day):
     """({slot: category} for the Plan, the same for Actual) on one timetable day."""
     plan, actual = {}, {}
+    cat_of = store.outlook_categorizer()
     for ev in store.outlook_between(day, day):
         if not ev["all_day"] and ev["start"]:
             for s in range(store.slot_of(ev["start"]), min(store.slot_of(ev["end"]), store.SLOTS)):
-                plan[s] = store.outlook_category(ev["title"])
+                plan[s] = cat_of(ev["title"])
     for b in store.blocks_between(day, day):
         target = plan if b["track"] == "plan" else actual
         for s in range(store.slot_of(b["start"]), min(store.slot_of(b["end"]), store.SLOTS)):

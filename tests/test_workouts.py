@@ -158,3 +158,35 @@ def test_upload_plan_page(wk, store):
     yes.click().run()
     assert not at.exception
     assert {p["name"] for p in wk.plans()} == {"Push", "Legs", "Wednesday"}
+
+
+def test_plan_with_weeks_progresses(wk, store):
+    from datetime import datetime
+    from venato import tools
+    from venato.ui.workouts import CLAUDE_PROMPT
+    tools._now = lambda: datetime(2026, 11, 22, 20, 0)               # Sunday evening
+    days, skipped = wk.parse_plan(CLAUDE_PROMPT.split("Example of the format:\n")[1].split("\n\nAbout me")[0])
+    assert not skipped and wk.plan_weeks(days) == [1, 2]
+    assert [(wk.plan_name(d), d["weekday"]) for d in days] == [
+        ("Push · Week 1", 0), ("Legs · Week 1", 3), ("Push · Week 2", 0), ("Legs · Week 2", 3)]
+    assert days[2]["items"][0]["weight"] == 62.5
+    days, _ = wk.parse_plan("**Week 1**\nPush\nBench 3x8 @ 60kg\n\n## Week 2 (heavier)\nPush\nBench 3x8 @ 65kg")
+    assert [(d["week"], d["items"][0]["weight"]) for d in days] == [(1, 60), (2, 65)]
+    placed, missed = wk.fit_plan(days, "2026-11-23", weeks=10)       # weeks come from the plan
+    assert not missed and [(d.isoformat(), day["week"]) for d, s, e, day in placed] == [
+        ("2026-11-23", 1), ("2026-11-30", 2)]
+    wk.schedule_plan(days, "2026-11-23").pending.run()
+    assert {p["name"] for p in wk.plans()} == {"Push · Week 1", "Push · Week 2"}
+    b = [b for b in store.blocks_between("2026-11-30", "2026-11-30", "plan") if b["label"] == "Push"][0]
+    assert b["details"] == "Week 2\n- Bench 3x8 @ 65kg"
+
+
+def test_upload_page_shows_weeks(wk, store):
+    from venato.ui.workouts import EXAMPLE
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.sidebar.radio[0].set_value("Workouts").run()
+    assert any("Get Claude to write your plan" in m.value for m in at.markdown)
+    next(t for t in at.text_area if t.key == "wk_up_text").set_value(EXAMPLE).run()
+    assert not at.exception
+    assert any("Found 2 weeks, 4 workouts in all" in m.value for m in at.markdown)
+    assert [t.label for t in at.tabs if t.label.startswith("Week")] == ["Week 1", "Week 2"]

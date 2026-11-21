@@ -21,12 +21,13 @@ def _agenda():
     blocks = [{**b, "outlook": False} for b in store.blocks_between(today, today, "plan")]
     all_day = []
     if st.session_state.get("tt_show_outlook", True):
+        cat_of = store.outlook_categorizer()
         for ev in store.outlook_between(today, today):
             if ev["all_day"]:
                 all_day.append(ev["title"])
             else:
                 blocks.append({"start": ev["start"], "end": ev["end"], "label": ev["title"], "outlook": True,
-                               "category_id": store.outlook_category(ev["title"]), "exact": ev["exact"]})
+                               "category_id": cat_of(ev["title"]), "exact": ev["exact"]})
     all_day += [f"Due: {d['title']}" for d in store.deadlines() if d["due"] == today]
     blocks.sort(key=lambda b: store.slot_of(b["start"]))
     colours = dict(zip(*[store.load_categories()[c] for c in ("id", "colour")]))

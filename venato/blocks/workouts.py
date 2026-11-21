@@ -387,6 +387,7 @@ _ITEM = re.compile(rf"(?P<name>[^\d].*?)\s*[:\-–,]?\s*{_SETS}{_WEIGHT}?\s*(?:\
 _CARDIO = re.compile(rf"(?P<name>[^\d].*?)\s*[:\-–,]?\s*(?:for\s+)?(?P<num>{_NUM})\s*"
                      r"(?P<unit>km|k|kms|mi|miles?|mins?|minutes?|hrs?|hours?)\b.*", re.I)
 _BULLET = re.compile(r"^\s*(?:[-*•·]|\d{1,2}[.)])\s+")
+_WEEK = re.compile(r"[=#*_\-–—\s]*week\s*(?P<n>\d{1,2})\b[^\d]*", re.I)
 
 
 def _weekday(text):
@@ -407,7 +408,7 @@ def _heading(text):
     day, rest = _weekday(text)
     rest = re.sub(r"^(?:day|workout|session)\s*\d+\s*[:\-–—]?\s*", "", rest, flags=re.I).strip() or rest
     name = rest or (WEEKDAYS[day].title() if day is not None else text)
-    return {"name": name[:60], "weekday": day, "items": []}
+    return {"name": name[:60], "weekday": day, "week": None, "items": []}
 
 
 def _item(text):
@@ -443,7 +444,8 @@ def _parse_csv(text):
         if not ex:
             continue
         head = r.get("day") or r.get("workout") or r.get("session") or "Workout"
-        day = days.setdefault(head.lower(), _heading(head))
+        wk_no = int(re.sub(r"\D", "", r.get("week") or "") or 0) or None
+        day = days.setdefault((wk_no, head.lower()), {**_heading(head), "week": wk_no})
         try:
             sets = int(float(r.get("sets") or 1))
             reps = int(float(r["reps"])) if r.get("reps") else None
@@ -465,48 +467,64 @@ def parse_plan(text, default_name="Workout"):
     """
     Read a workout plan from text: day headings ('Monday - Push', 'Day 2: Legs', 'Upper') each followed
     by exercise lines ('Bench press 3x8 @ 60', 'Squat 5 sets of 5 100kg', 'Plank 3x45s', 'Run 5 km'),
-    or one line per day ('Mon: Bench 3x8 @60, Squat 5x5'). A CSV with an Exercise column (and Day,
-    Sets, Reps, Weight) works too. Weights without a unit are in the user's unit.
-    Returns (days, skipped lines): days are [{name, weekday (0-6 or None), items}].
+    or one line per day ('Mon: Bench 3x8 @60, Squat 5x5'). 'Week 1', 'Week 2' lines start a week of
+    its own (progressive overload: week 2's weights differ from week 1's). A CSV with an Exercise
+    column (and Week, Day, Sets, Reps, Weight) works too. Weights without a unit are in the user's unit.
+    Returns (days, skipped lines): days are [{name, weekday (0-6 or None), week (1.. or None), items}].
     """
     text = (text or "").replace("\r\n", "\n").lstrip("﻿")
     first = next((ln for ln in text.split("\n") if ln.strip()), "")
     if "," in first and re.search(r"\b(exercise|name)\b", first, re.I):
         days, skipped = _parse_csv(text)
     else:
-        days, skipped, current = [], [], None
+        days, skipped, current, week = [], [], None, None
         for raw in text.split("\n"):
-            line = _BULLET.sub("", raw).strip()
-            if not line or line.startswith("#") and not line.lstrip("#").strip():
+            line = _BULLET.sub("", raw.strip().strip("*_#=").strip()).strip().strip("*_").strip()
+            if not line:
                 continue
-            line = line.lstrip("#").strip()
+            if m := _WEEK.fullmatch(line):           # 'Week 2', '=== Week 3 (deload) ==='
+                week, current = int(m.group("n")), None
+                continue
             head, sep, rest = line.partition(":")
             parts = [p.strip() for p in re.split(r"[,;]", rest) if p.strip()] if sep else []
             inline = [_item(p) for p in parts]
             if parts and all(inline):                # 'Mon: Bench 3x8 @60, Squat 5x5': a whole day
-                current = _heading(head)
-                current["items"] = inline
+                current = {**_heading(head), "week": week, "items": inline}
                 days.append(current)
                 continue
             item = _item(line)
             if item:
                 if current is None:
-                    current = {"name": default_name, "weekday": None, "items": []}
+                    current = {"name": default_name, "weekday": None, "week": week, "items": []}
                     days.append(current)
                 current["items"].append(item)
             elif len(line) <= 60 and (line.endswith(":") or _weekday(line)[0] is not None or (
                     len(line.split()) <= 6 and re.fullmatch(r"(?:(?:day|week|workout|session)\s*\d+\b)?\D*", line, re.I))):
-                current = _heading(line)
+                current = {**_heading(line), "week": week}
                 days.append(current)
             else:
                 skipped.append(line)
     days = [d for d in days if d["items"]]
+    if any(d["week"] for d in days):                 # anything before the first 'Week' line is week 1
+        for d in days:
+            d["week"] = d["week"] or 1
     seen = {}
-    for d in days:                                   # plan names are unique: "Upper", "Upper 2"
-        n = seen[d["name"].lower()] = seen.get(d["name"].lower(), 0) + 1
+    for d in days:                                   # names are unique within a week: "Upper", "Upper 2"
+        key = (d["week"], d["name"].lower())
+        n = seen[key] = seen.get(key, 0) + 1
         if n > 1:
             d["name"] = f"{d['name']} {n}"
     return days, skipped
+
+
+def plan_name(day):
+    """The saved plan's name: 'Push', or 'Push · Week 2' in a plan with weeks."""
+    return f"{day['name']} · Week {day['week']}" if day.get("week") else day["name"]
+
+
+def plan_weeks(days):
+    """The week numbers of a plan with weeks ([1, 2, 3, ...]), or [] if every week is the same."""
+    return sorted({d["week"] for d in days if d.get("week")})
 
 
 def _fit_day(day, need, lo, hi, now):
@@ -519,57 +537,73 @@ def _fit_day(day, need, lo, hi, now):
     return None
 
 
+def _fit_week(week, days, need, lo, hi, now):
+    """Place one week's workouts: [(date, s, e, day)] and the names that didn't fit."""
+    k = len(days)
+    used, placed, missed = set(), [], []
+    fixed = [d for d in days if d["weekday"] is not None]
+    order = fixed + [d for d in days if d["weekday"] is None]
+    targets = [i * 7 // k for i in range(k)]             # evenly spread days of the week
+    for d in fixed:                                      # a fixed day takes the nearest spread day
+        pos = next(i for i, x in enumerate(week) if x.weekday() == d["weekday"])
+        targets.remove(min(targets, key=lambda t: abs(t - pos)))
+    free_targets = iter(targets)
+    for d in order:
+        if d["weekday"] is not None:
+            target = next(i for i, x in enumerate(week) if x.weekday() == d["weekday"])
+        else:
+            target = next(free_targets)
+        got = None
+        for step in range(7):
+            for i in ((target + step, target - step) if step else (target,)):
+                if 0 <= i < 7 and i not in used and (got := _fit_day(week[i], need, lo, hi, now)):
+                    used.add(i)
+                    placed.append((week[i], got[0], got[1], d))
+                    break
+            if got:
+                break
+        if not got:
+            missed.append((week[0], plan_name(d)))
+    return placed, missed
+
+
 def fit_plan(days, start, weeks=4, minutes=60, earliest="07:00", latest="21:00"):
     """
-    Pick a time for each plan day in each week (7 days from `start`): on its weekday if it has one,
+    Pick a time for each workout in each week (7 days from `start`): on its weekday if it has one,
     else spread through the week (3 days -> 1st, 3rd, 5th day), moving to the nearest free day when
-    the Plan is full. Returns ([(date, start slot, end slot, day)], [(week start, day name)] that didn't fit).
+    the Plan is full. A plan with weeks puts its week 1 into the first week, week 2 into the second
+    and so on (`weeks` is then ignored); otherwise the same workouts repeat for `weeks` weeks.
+    Returns ([(date, start slot, end slot, day)], [(week start, plan name)] that didn't fit).
     """
     from venato import tools
     if not days:
         raise WorkoutError("There are no workouts in that plan.")
-    if len(days) > 7:
-        raise WorkoutError("That plan has more than 7 workouts a week; split it into weeks.")
+    numbered = plan_weeks(days)
+    if numbered:
+        groups = [(n - 1, [d for d in days if d["week"] == n]) for n in numbered]
+    else:
+        groups = [(w, days) for w in range(max(1, int(weeks)))]
+    if any(len(g) > 7 for _, g in groups):
+        raise WorkoutError("That plan has more than 7 workouts in a week; split it into weeks.")
     start = store._as_date(start)
     need = max(1, -(-int(minutes) // 30))
     lo, hi = tools._window(earliest, latest)
     if hi - lo < need:
         raise WorkoutError("The window between those times is shorter than one workout.")
     now = tools._now()
-    k = len(days)
     placed, missed = [], []
-    for w in range(max(1, int(weeks))):
-        week = [start + timedelta(days=7 * w + i) for i in range(7)]
-        used = set()
-        fixed = [d for d in days if d["weekday"] is not None]
-        order = fixed + [d for d in days if d["weekday"] is None]
-        targets = [i * 7 // k for i in range(k)]         # evenly spread days of the week
-        for d in fixed:                                  # a fixed day takes the nearest spread day
-            pos = next(i for i, x in enumerate(week) if x.weekday() == d["weekday"])
-            targets.remove(min(targets, key=lambda t: abs(t - pos)))
-        free_targets = iter(targets)
-        for d in order:
-            if d["weekday"] is not None:
-                target = next(i for i, x in enumerate(week) if x.weekday() == d["weekday"])
-            else:
-                target = next(free_targets)
-            got = None
-            for step in range(7):
-                for i in ((target + step, target - step) if step else (target,)):
-                    if 0 <= i < 7 and i not in used and (got := _fit_day(week[i], need, lo, hi, now)):
-                        used.add(i)
-                        placed.append((week[i], got[0], got[1], d))
-                        break
-                if got:
-                    break
-            if not got:
-                missed.append((week[0], d["name"]))
+    for offset, group in groups:
+        week = [start + timedelta(days=7 * offset + i) for i in range(7)]
+        p, m = _fit_week(week, group, need, lo, hi, now)
+        placed += p
+        missed += m
     placed.sort(key=lambda p: (p[0], p[1]))
     return placed, missed
 
 
 def _plan_details(day):
-    return "\n".join(f"- {it['text']}" for it in day["items"])
+    head = f"Week {day['week']}\n" if day.get("week") else ""
+    return head + "\n".join(f"- {it['text']}" for it in day["items"])
 
 
 def schedule_plan(days, start, weeks=4, minutes=60, earliest="07:00", latest="21:00", category=None,
@@ -588,20 +622,25 @@ def schedule_plan(days, start, weeks=4, minutes=60, earliest="07:00", latest="21
     if not placed:
         raise tools.ToolError(f"There's no free {minutes}-minute gap between {earliest} and {latest} "
                               "on those days. Try a wider time window or shorter workouts.")
-    names = ", ".join(d["name"] for d in days)
-    lines = "\n".join(f"- {tools.nice_day(d.isoformat())} {store.slot_time(s)}–{store.slot_time(e)} {day['name']}"
-                      for d, s, e, day in placed)
+    numbered = plan_weeks(days)
+    if numbered:
+        kinds = ", ".join(dict.fromkeys(d["name"] for d in days))
+        names = f"{len(days)} plans ({len(numbered)} weeks of {kinds})"
+    else:
+        names = "the plans " + ", ".join(d["name"] for d in days)
+    lines = "\n".join(f"- {tools.nice_day(d.isoformat())} {store.slot_time(s)}–{store.slot_time(e)} "
+                      f"{plan_name(day)}" for d, s, e, day in placed)
     short = ""
     if missed:
         short = f"\n\n{len(missed)} didn't fit: " + "; ".join(
             f"{n} (week of {tools.nice_day(w.isoformat())})" for w, n in missed)
-    summary = (f"Save the plans {names} and add {len(placed)} workouts to your Plan "
+    summary = (f"Save {names} and add {len(placed)} workouts to your Plan "
                f"({tools._cat_names().get(cid, 'Exercise')}):\n\n{lines}{short}")
     if not confirmed:
         return tools.Result("", pending=tools.Pending(summary, lambda: schedule_plan(
             days, start, weeks, minutes, earliest, latest, category, True)))
     for d in days:
-        save_plan(d["name"], d["items"])
+        save_plan(plan_name(d), d["items"])
     now = tools._now()
     for d, s, e, day in placed:
         store.paint(d.isoformat(), store.live_track(d.isoformat(), now), s, e,

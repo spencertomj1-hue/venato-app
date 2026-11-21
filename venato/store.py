@@ -10,6 +10,7 @@ too. Nothing user-specific is kept in the project folder.
 
 import json
 import os
+import re
 import sqlite3
 import threading
 import uuid
@@ -239,6 +240,19 @@ def init_db():
         _journal_became_notes(conn)
         _add_column(conn, "tt_outlook", "description", "TEXT")
         _add_column(conn, "entries", "productivity", "INTEGER")    # 1-10, self-rated
+        # To-dos with a due day, how long they take and one of the user's own to-do categories (To-dos block).
+        _add_column(conn, "todos", "due", "TEXT")
+        _add_column(conn, "todos", "minutes", "INTEGER")
+        _add_column(conn, "todos", "group_id", "TEXT")
+        # Done / not done, ticked on a timetable block or calendar event (kept for analysis, even if the
+        # block changes or goes: a snapshot of what it was). id: the block's id, or "outlook:<uid>".
+        conn.execute("""CREATE TABLE IF NOT EXISTS tt_status (
+                            id TEXT PRIMARY KEY, date TEXT NOT NULL, start TEXT, "end" TEXT, label TEXT,
+                            category_id TEXT, status TEXT NOT NULL CHECK (status IN ('done', 'missed')),
+                            at TEXT NOT NULL)""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS todo_groups (
+                            id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                            colour TEXT NOT NULL, ord INTEGER NOT NULL DEFAULT 0)""")
         # Goals that count timetable hours: Actual time in a category (and optionally one activity label).
         _add_column(conn, "goals", "category_id", "TEXT REFERENCES tt_categories(id) ON DELETE SET NULL")
         _add_column(conn, "goals", "label", "TEXT")
@@ -285,6 +299,19 @@ def init_db():
             )
         if conn.execute("SELECT COUNT(*) FROM tt_label_map").fetchone()[0] == 0:
             conn.executemany("INSERT INTO tt_label_map VALUES (?, ?)", DEFAULT_LABEL_MAP.items())
+        _word_rules_to_label_map(conn)
+
+
+def _word_rules_to_label_map(conn):
+    """Another version of Venato kept word rules ('Rugby' -> Sports) in category_rules; since labels
+    now match activities as whole words, they become activity defaults (once, keeping any already set)."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'category_rules'").fetchone():
+        return
+    have = {r[0].lower() for r in conn.execute("SELECT label FROM tt_label_map")}
+    for word, cid in conn.execute("SELECT word, category_id FROM category_rules").fetchall():
+        if word and word.strip() and word.strip().lower() not in have:
+            conn.execute("INSERT INTO tt_label_map VALUES (?, ?)", (word.strip(), cid))
+            have.add(word.strip().lower())
 
 
 
@@ -1064,12 +1091,49 @@ def resolve_category(label=None, category=None):
             return key
         return by_name.get(key.lower())
     if label:
-        lm = load_label_map()
-        for lbl, cid in zip(lm["label"], lm["category_id"]):
-            if lbl.lower() == label.strip().lower():
-                return cid
-        return by_name.get(label.strip().lower())
+        return match_category(label)
     return None
+
+
+def match_category(label, label_map=None, categories=None):
+    """
+    The category a typed label means, or None. First an exact match (any case) with an activity's
+    default ('Boxing' -> Sports), then with a category's name ('Revision'); then the longest activity
+    or category name found as whole words inside the label ('Rugby training' -> Sports from 'Rugby',
+    'Maths revision' -> Revision). Activities beat category names. timetable_component.js mirrors this.
+    """
+    want = str(label or "").strip().lower()
+    if not want:
+        return None
+    lm = load_label_map() if label_map is None else label_map
+    cats = load_categories() if categories is None else categories
+    ids = set(cats["id"])
+    defaults = [(str(l).strip().lower(), c) for l, c in zip(lm["label"], lm["category_id"]) if c in ids]
+    names = [(str(n).strip().lower(), i) for n, i in zip(cats["name"], cats["id"])]
+    for pool in (defaults, names):
+        for phrase, cid in pool:
+            if phrase == want:
+                return cid
+    for pool in (defaults, names):                   # an activity inside the label beats a category name
+        best, best_len = None, 0
+        for phrase, cid in pool:
+            if phrase and len(phrase) > best_len and re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", want):
+                best, best_len = cid, len(phrase)
+        if best:
+            return best
+    return None
+
+
+def learn_label(label, category_id):
+    """Remember a label's category when someone saves a block with it, unless it already means that."""
+    label = str(label or "").strip()
+    if not label or not category_id:
+        return False
+    cats = load_categories()
+    if category_id not in set(cats["id"]) or match_category(label, categories=cats) == category_id:
+        return False
+    set_label_default(label, category_id)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -1356,14 +1420,63 @@ def outlook_signature():
         ).fetchone()
 
 
-def outlook_category(title):
+BLOCK_STATUSES = ("done", "missed")
+
+
+def set_block_status(block_id, status, date=None, start=None, end=None, label=None, category_id=None):
     """
-    Category for Outlook events: settings.json "outlook_category" (set by asking Claude),
-    else the default, else the first category. (The title is kept for future rules.)
+    Mark a timetable block (or "outlook:<uid>" calendar event) done or missed (not done), with a
+    snapshot of it for analysis; status None clears it. Returns the status now saved.
     """
+    with db() as conn:
+        if status is None:
+            conn.execute("DELETE FROM tt_status WHERE id = ?", (block_id,))
+            return None
+        if status not in BLOCK_STATUSES:
+            raise ValueError("status must be 'done' or 'missed'.")
+        conn.execute('INSERT OR REPLACE INTO tt_status (id, date, start, "end", label, category_id, status, at) '
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                     (block_id, _as_date(date).isoformat() if date else local_today().isoformat(),
+                      start, end, label, category_id, status, stamp()))
+    return status
+
+
+def block_statuses(first, last):
+    """{id: "done" | "missed"} for blocks and events on days first..last."""
+    with db() as conn:
+        rows = conn.execute("SELECT id, status FROM tt_status WHERE date BETWEEN ? AND ?",
+                            (_as_date(first).isoformat(), _as_date(last).isoformat())).fetchall()
+    return dict(rows)
+
+
+def status_log(first=None, last=None):
+    """Every done / missed mark (oldest first), for analysis: [{id, date, start, end, label, category_id, status, at}]."""
+    sql, args = 'SELECT id, date, start, "end", label, category_id, status, at FROM tt_status', ()
+    if first and last:
+        sql, args = sql + " WHERE date BETWEEN ? AND ?", (_as_date(first).isoformat(), _as_date(last).isoformat())
+    with db() as conn:
+        rows = conn.execute(sql + " ORDER BY date, start", args).fetchall()
+    return [dict(zip(("id", "date", "start", "end", "label", "category_id", "status", "at"), r)) for r in rows]
+
+
+def outlook_categorizer():
+    """
+    title -> category for Outlook events, reading the settings once (for loops over many events).
+    An event's title is matched like a typed label ('Boxing' -> Sports, 'Maths revision' -> Revision);
+    one that matches nothing gets the Outlook category: settings.json "outlook_category" (Timetable ->
+    Categories, or asking Claude), else the default, else the first category.
+    """
+    cats = load_categories()
+    labels = load_label_map()
+    ids = list(cats["id"])
     wanted = load_settings().get("outlook_category") or DEFAULT_OUTLOOK_CATEGORY
-    ids = list(load_categories()["id"])
-    return wanted if wanted in ids else (ids[0] if ids else wanted)
+    fallback = wanted if wanted in ids else (ids[0] if ids else wanted)
+    return lambda title: match_category(title, labels, cats) or fallback
+
+
+def outlook_category(title=""):
+    """The category of one Outlook event by its title (the Outlook category for an empty title)."""
+    return outlook_categorizer()(title)
 
 
 def free_runs(day, first=0, last=None, now=None):
@@ -1613,7 +1726,10 @@ def day_ended(day, now=None):
 # ---------------------------------------------------------------------------
 
 TODO_PERIODS = ("daily", "weekly", "monthly")
-TODO_COLS = 'id, title, notes, period, period_start, done, done_at, "repeat", ord, created_at'
+TODO_BASE = 'id, title, notes, period, period_start, done, done_at, "repeat", ord, created_at'   # what an insert sets
+TODO_COLS = TODO_BASE + ', due, minutes, group_id'
+TODO_MINUTES = 30                      # how long a to-do takes when the user didn't say
+TODO_GROUP_COLOURS = ("#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#F87171", "#2DD4BF", "#FB923C")
 
 
 def _as_date(day):
@@ -1720,21 +1836,23 @@ def _insert_todo(conn, title, period, start, notes=None, repeat=False, todo_id=N
     """Add a to-do at the end of its list. Idempotent for a given id (the to-do list replays ops)."""
     todo_id = todo_id or uuid.uuid4().hex
     conn.execute(
-        f"INSERT OR IGNORE INTO todos ({TODO_COLS}) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)",
+        f"INSERT OR IGNORE INTO todos ({TODO_BASE}) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)",
         (todo_id, title, notes, period, start, int(bool(repeat)), _next_ord(conn, period, start),
          stamp()),
     )
     return todo_id
 
 
-def add_todo(title, period, day, notes=None, repeat=False, todo_id=None):
-    """Add a to-do to the period containing `day`; returns it."""
+def add_todo(title, period, day, notes=None, repeat=False, todo_id=None, **details):
+    """Add a to-do to the period containing `day` (details: due, minutes, group_id); returns it."""
     title = str(title).strip()
     if not title:
         raise ValueError("A todo needs a title.")
     start = start_of_period(period, day).isoformat()
     with db() as conn:
         todo_id = _insert_todo(conn, title, period, start, notes or None, repeat, todo_id)
+    if details:
+        update_todo(todo_id, **details)
     return get_todo(todo_id)
 
 
@@ -1748,8 +1866,13 @@ def set_todo_done(todo_id, done):
 
 
 def update_todo(todo_id, **changes):
-    """Change a to-do's title, notes and/or repeat flag."""
-    fields = {k: v for k, v in changes.items() if k in ("title", "notes", "repeat")}
+    """Change a to-do's title, notes, repeat flag, or details: due (a new due day moves it to today's
+    list if it's due by today, else this week's), minutes and group_id (its to-do category)."""
+    if changes.get("due") is not None:
+        changes["due"] = _as_date(changes["due"]).isoformat()
+    if "minutes" in changes:
+        changes["minutes"] = int(changes["minutes"]) if changes["minutes"] else None
+    fields = {k: v for k, v in changes.items() if k in ("title", "notes", "repeat", "due", "minutes", "group_id")}
     if "title" in fields:
         fields["title"] = str(fields["title"]).strip()
         if not fields["title"]:
@@ -1763,6 +1886,108 @@ def update_todo(todo_id, **changes):
     sets = ", ".join(f'"{k}" = ?' for k in fields)
     with db() as conn:
         conn.execute(f"UPDATE todos SET {sets} WHERE id = ?", (*fields.values(), todo_id))
+        if fields.get("due"):
+            period = list_for_due(fields["due"])
+            conn.execute("UPDATE todos SET period = ?, period_start = ? WHERE id = ? AND period IN ('daily', 'weekly')",
+                         (period, start_of_period(period, local_today()).isoformat(), todo_id))
+
+
+# --- The To-dos page: due days, how long, the user's own to-do categories ---
+
+def list_for_due(due, today=None):
+    """The list a to-do due on `due` belongs in: today's if it's due today or earlier, else this week's."""
+    today = today or local_today()
+    return "daily" if due is not None and _as_date(due) <= today else "weekly"
+
+
+def todo_due(todo):
+    """The day a to-do should be done by: its own date, else the last day of its list's period."""
+    if todo.get("due"):
+        return date.fromisoformat(todo["due"])
+    return end_of_period(todo["period"], date.fromisoformat(todo["period_start"]))
+
+
+def add_detailed_todo(title, due=None, group_id=None, minutes=None, notes=None):
+    """A to-do from the To-dos page: it goes in today's or this week's list, by when it's due."""
+    today = local_today()
+    return add_todo(title, list_for_due(due, today), today, notes=notes, due=due, group_id=group_id,
+                    minutes=minutes)
+
+
+def bring_forward_todos(today=None):
+    """
+    Unticked daily to-dos from earlier days move to today, and unticked weekly ones from earlier
+    weeks to this week, so a to-do stays until it's done (unless that list already has the title).
+    """
+    today = today or local_today()
+    moved = 0
+    with db() as conn:
+        for period in ("daily", "weekly"):
+            start = start_of_period(period, today).isoformat()
+            existing = _titles(conn, period, start)
+            for tid, title in conn.execute("SELECT id, title FROM todos WHERE period = ? AND period_start < ? "
+                                           "AND done = 0 ORDER BY period_start DESC, ord", (period, start)).fetchall():
+                if title.lower() in existing:
+                    continue
+                conn.execute("UPDATE todos SET period_start = ?, ord = ? WHERE id = ?",
+                             (start, _next_ord(conn, period, start), tid))
+                existing.add(title.lower())
+                moved += 1
+    return moved
+
+
+def all_open_todos(today=None):
+    """Every unticked to-do in today's and this week's lists, most urgent first (by due day, then list order)."""
+    today = today or local_today()
+    bring_forward_todos(today)
+    todos = todos_for("daily", today) + todos_for("weekly", today)
+    return sorted((t for t in todos if not t["done"]), key=lambda t: (todo_due(t), t["period"], t["ord"]))
+
+
+def done_todos(today=None):
+    """Ticked to-dos from today's and this week's lists, most recently ticked first."""
+    today = today or local_today()
+    todos = todos_for("daily", today) + todos_for("weekly", today)
+    return sorted((t for t in todos if t["done"]), key=lambda t: t["done_at"] or "", reverse=True)
+
+
+def todo_groups():
+    """The user's to-do categories in order: [{id, name, colour}]."""
+    with db() as conn:
+        rows = conn.execute("SELECT id, name, colour FROM todo_groups ORDER BY ord, name").fetchall()
+    return [{"id": r[0], "name": r[1], "colour": r[2]} for r in rows]
+
+
+def add_todo_group(name, colour=None):
+    """Add a to-do category (or return the one already called that); returns it."""
+    name = str(name).strip()
+    if not name:
+        raise ValueError("A category needs a name.")
+    with db() as conn:
+        row = conn.execute("SELECT id FROM todo_groups WHERE name = ?", (name,)).fetchone()
+        if row:
+            group_id = row[0]
+        else:
+            count = conn.execute("SELECT COUNT(*) FROM todo_groups").fetchone()[0]
+            group_id = uuid.uuid4().hex[:8]
+            conn.execute("INSERT INTO todo_groups VALUES (?, ?, ?, ?)",
+                         (group_id, name, colour or TODO_GROUP_COLOURS[count % len(TODO_GROUP_COLOURS)], count))
+    return next(g for g in todo_groups() if g["id"] == group_id)
+
+
+def update_todo_group(group_id, name=None, colour=None):
+    with db() as conn:
+        if name is not None and str(name).strip():
+            conn.execute("UPDATE todo_groups SET name = ? WHERE id = ?", (str(name).strip(), group_id))
+        if colour:
+            conn.execute("UPDATE todo_groups SET colour = ? WHERE id = ?", (colour, group_id))
+
+
+def delete_todo_group(group_id):
+    """Delete a to-do category; its to-dos stay, with no category."""
+    with db() as conn:
+        conn.execute("UPDATE todos SET group_id = NULL WHERE group_id = ?", (group_id,))
+        conn.execute("DELETE FROM todo_groups WHERE id = ?", (group_id,))
 
 
 def move_target(todo, period, today=None):
@@ -1887,7 +2112,7 @@ def save_todos(df, replace=False):
             done = _is_ticked(row.get("done"))
             ord_ = _clean(row.get("ord"), int)
             conn.execute(
-                f"INSERT OR REPLACE INTO todos ({TODO_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT OR REPLACE INTO todos ({TODO_BASE}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (_clean(row.get("id"), str) or uuid.uuid4().hex, title.strip(), _clean(row.get("notes"), str),
                  period, start, int(done), _clean(row.get("done_at"), str) if done else None,
                  int(_is_ticked(row.get("repeat"))),
@@ -1980,9 +2205,9 @@ def goal_hours(goal, first, last, track, data=None, window=None):
     events = [ev for ev in data.get("events") or []
               if track in ("plan", "live") and not ev["all_day"] and ev["start"] and first <= ev["date"] <= last]
     if events:
-        cat = data.get("outlook_category") or outlook_category("")     # (a Ctx already looked it up once)
+        cat_of = data.get("outlook_category") or outlook_categorizer()     # (a Ctx already made one)
         for ev in events:
-            if _goal_matches(goal, cat, ev["title"], event=True):
+            if _goal_matches(goal, cat_of(ev["title"]), ev["title"], event=True):
                 total += slots(ev["date"], slot_of(ev["start"]), slot_of(ev["end"]))
     return total / 2
 

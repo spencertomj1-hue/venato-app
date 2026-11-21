@@ -121,7 +121,8 @@ def test_bad_calendar_keeps_previous_cache(outlook, store):
 
 def test_category_and_overlaps(outlook, store):
     outlook.sync(TODAY, fetcher=lambda url: FIXTURE)
-    assert store.outlook_category("Chemistry 101") == "classes"   # Outlook events use one category
+    assert store.outlook_category("Chemistry 101") == "classes"   # no activity in the title: the Outlook category
+    assert store.outlook_category("Gym with Sam") == "exercise"   # an activity in the title: its category
     assert store.outlook_category("Night owl") == "classes"
     assert "Outlook" not in set(store.load_categories()["name"])   # no separate category
     assert [r["title"] for r in store.outlook_overlaps("2026-10-29", 4, 5)] == ["Tutorial"]   # 09:00-09:30
