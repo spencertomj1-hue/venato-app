@@ -27,7 +27,7 @@ const SWIPE_THRESHOLD = 120;      // px of sideways scroll that flips a week
 const RAIL = 4;                   // px: the Plan's strip down the left of a locked day's Actual column
 const SWAP_MS = 380;              // ms: the Plan / Actual cross-fade
 const SHOW_MISSED = true;         // also hatch Plan time where nothing was done (set false to drop it)
-const HOME_MIN_ROW = 10;          // the smallest row Home's tile shrinks to (fitHome)
+const HOME_MIN_ROW = 8;           // the smallest row Home's tile shrinks to (fitHome)
 const PREVIEW_EASE = 0.35;        // share of the gap the resize preview closes each frame (it glides, lagging a few ms)
 
 // ---------- Small helpers ----------
@@ -512,7 +512,7 @@ class Timetable {
         <div class="tt-outlook">
           <button class="tt-sync" title="Sync Outlook now"><span class="msr">sync</span></button>
           <span class="tt-synced"></span>
-          <button class="tt-ol-toggle" title="Show or hide Outlook events">${CAL_ICON}Outlook</button>
+          <button class="tt-ol-toggle" title="Show or hide Outlook events" aria-label="Outlook">${CAL_ICON}${this.data.readonly ? "" : "Outlook"}</button>
         </div>
         <div class="tt-tools">
           <datalist id="tt-labels"></datalist>
@@ -646,6 +646,14 @@ class Timetable {
         : st.locked ? `<button class="confirm" tabindex="-1" data-confirm="${esc(date)}" title="This is what I actually did: confirm the day">Confirm</button>`
         : `<span class="ptag" title="Hasn't started: this is still the Plan">Plan</span>`;
     });
+    // Home: no all-day chip and no day state leaves the header row empty, so it goes (more room for the rows).
+    if (this.data.readonly) {
+      const bare = [...this.root.querySelectorAll("th.day .chips, th.day .dstate")].every((b) => !b.innerHTML.trim());
+      if (bare !== this.root.classList.contains("bare-head")) {
+        this.root.classList.toggle("bare-head", bare);
+        if (this.attached) requestAnimationFrame(() => this.fitToWindow());
+      }
+    }
     this.root.querySelectorAll("[data-mode]").forEach((b) => {
       b.classList.toggle("on", b.dataset.mode === this.mode);
       b.setAttribute("aria-pressed", String(b.dataset.mode === this.mode));

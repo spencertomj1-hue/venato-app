@@ -35,8 +35,8 @@ Verified when: `pytest tests/test_home_layout.py` passes with new cases.
 
 ### Phase 2: timetable fits the whole day (Size: S)
 Verified when: the Playwright check below shows 07:00 to 01:00 in the tile, no scrollbar, at 1440×900 and
-1280×720; at Tall too (rows just get smaller, min 10px).
-- Acceptance: `fitHome` sizes rows as (tile height − header) / SLOTS, min 10px, no scroll; drops the
+1280×720; at Tall too (rows just get smaller, min 8px).
+- Acceptance: `fitHome` sizes rows as (tile height − header) / SLOTS, min 8px, no scroll; drops the
   HOME_HOURS window and the scroll-to-now; narrow windows (Home scrolls) keep a fixed 18px row.
   Labels hide under ~2 rows of height, the time line under ~3.
 - Files: `venato/ui/components/timetable_component.js`, `timetable_component.css`.
@@ -76,6 +76,7 @@ cut-off graphic or label, light and dark; the full suite passes
 | Students' extra tile | allowed: Home grows to 4 rows | user's call |
 | Column's height | fixed 3 rows (Home's default height), not "every row" | a span that depends on the row count is circular; 3 is the one-screen default |
 | How to draw | inline HTML/CSS via `st.html` (as Review and Goals already do) | no new library, theme tokens |
+| Home's minimum row | 8px (was 10px), plus the header trim above | a student's 4-row Home at 1280×720 fits the whole day |
 | Animation | none, bar the existing now-line and the running stopwatch | a screen of moving tiles is noise |
 
 ## Not yet specified
@@ -89,16 +90,19 @@ cut-off graphic or label, light and dark; the full suite passes
 | Phase | Status |
 | --- | --- |
 | 1 Column size | done |
-| 2 Whole-day timetable | built; blocked: a 4-row Home at 1280×720 clips the last ~4 h (see note) |
+| 2 Whole-day timetable | done |
 | 3 Stopwatch tile | not started |
 | 4 Glances | not started |
 | 5 Fit check, docs | not started |
 
 ### Phase 2 note (measured on seed_demo data, Playwright)
+First build (Column 3 rows, 10px minimum) didn't fit: a 3-row Home at 1280×720 was 6px short, a student's
+4-row Home at 1280×720 78px short. User's call: trim the tile's fixed costs and let rows go to 8px. The sync
+and Outlook buttons now sit in the tile's title line (Outlook as an icon), the day header row goes when it has
+no all-day chip or state. After:
 | Home | Window | Row | Fits 07:00–01:00? |
 |---|---|---|---|
-| 3 rows | 1440×900 | 14px | yes |
-| 3 rows | 1280×720 | 10px (min) | no: 6px short (last half hour clipped) |
-| 4 rows (student) | 1440×900 | 10px (min) | yes, just |
-| 4 rows (student) | 1280×720 | 10px (min) | no: 78px short (about 3.5 h clipped) |
-Fixed cost above the rows: the sync / Outlook bar (32px) and the day header (36px). Waiting on the user.
+| 3 rows | 1440×900 | 16px | yes |
+| 3 rows | 1280×720 | 11px | yes |
+| 4 rows (student) | 1440×900 | 11px | yes |
+| 4 rows (student) | 1280×720 | 9px | yes |

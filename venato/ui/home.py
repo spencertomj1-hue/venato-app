@@ -217,6 +217,9 @@ def _css(t, cells, cat, editing, picked, room=PAGE_ROOM):
     [class*="st-key-hwt_"] p {{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
     [class*="st-key-hwh_"] [data-testid="stCaptionContainer"] p {{ text-align: right; white-space: nowrap; }}
     [class*="st-key-hwh_"] [data-testid="stCaptionContainer"] {{ overflow: hidden; text-overflow: ellipsis; }}
+    /* The timetable's sync and Outlook buttons sit at the right of its title line (timetable_component.css). */
+    .st-key-hwh_timetable_today [data-testid="stCaptionContainer"] {{ padding-right: 66px; }}
+    .st-key-hwc_timetable_today .st-key-timetable_today {{ position: static; }}    /* so they place by the tile */
     [class*="st-key-go_tile_"] button, [class*="st-key-open_tile_"] button, [class*="st-key-hwt_"] p {{ min-height: 44px;
         padding: 0 !important; justify-content: flex-start; gap: 10px; }}
     [class*="st-key-go_tile_"] button > div, [class*="st-key-open_tile_"] button > div {{ justify-content: flex-start !important; gap: 10px; }}

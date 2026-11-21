@@ -367,7 +367,14 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 .tt-root.readonly .tt-title { display: none; }   /* Home's header already says the date */
 /* Home: the whole day, no scrolling (fitHome sizes the rows to the tile). */
 .tt-root.readonly .tt-card { overflow: hidden; }
-.tt-root.readonly .tt-head { gap: 6px; flex-wrap: nowrap; }
+/* Home: the sync and Outlook buttons sit in the tile's own title line, top right (home.py leaves room by the
+   status), so the day gets the height; and an empty day header goes. */
+.tt-root.readonly .tt-head { gap: 6px; flex-wrap: nowrap; position: absolute; top: 12px; right: 14px; margin: 0; z-index: 7; }
+.tt-root.readonly .tt-ol-toggle { width: 28px; height: 28px; padding: 0; justify-content: center; }
+.tt-root.readonly .tt-ol-toggle .cal-ic { width: 14px; height: 14px; }
+.tt-root.readonly.bare-head thead { display: none; }
+.tt-root.readonly.bare-head .tt-wrap { padding-top: 6px; }               /* room for 07:00 on its line */
+.tt-root.readonly.bare-head tr:first-child td.t span { transform: translateY(-50%); }
 .tt-root.readonly .tt-synced:not(.warn) { display: none; }   /* Home: on one line; it's in the sync button's tooltip */
 
 /* Clicked block: grows slightly while its details card is open. */
