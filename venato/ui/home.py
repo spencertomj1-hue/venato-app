@@ -1,6 +1,6 @@
 """
 Home: the whole app on one screen, and the only way round it. A grid of tiles (four columns; each tile
-Small, Wide, Large or Tall): a card header with the module's coloured icon, its name and a short status
+Small, Wide, Large, Tall or Column, 1 × 3, which the Timetable starts in): a card header with the module's coloured icon, its name and a short status
 ("1 of 4 done today", "2 behind"), then a live preview. Clicking a tile anywhere that isn't one of its own
 controls opens its module's page (ticking a to-do or starting Focus works in place). Which tiles, in what
 order and size is Home's layout (venato/home_layout.py, saved in settings.json "home").
@@ -13,7 +13,7 @@ Above the grid: the date, the search / Ask bar, Edit Home, and the Settings gear
 remove your way out of the app).
 
 Edit Home: the tiles wobble; − takes a tile off Home (its data stays), tapping or dragging a tile picks it up
-and tapping (or dropping on) another moves it there, the picked-up tile gets a Small / Wide / Large / Tall
+and tapping (or dropping on) another moves it there, the picked-up tile gets a Small / Wide / Large / Tall / Column
 picker and a "Drop here" slot, and the "Add a tile" panel lists what's hidden. Every change is saved straight
 away, with Undo; Reset goes back to the start. Moves glide (components/home_flip.js), not with reduced motion.
 """
@@ -173,7 +173,8 @@ def _reset():
 # Room the page keeps below the grid (px): the pinned chat bar when it's on, else the page's own bottom padding.
 CHAT_ROOM, PAGE_ROOM = 96, 20
 GAP = 12               # px between tiles
-MIN_ROW = 132          # px: rows never get shorter than this (a very short window scrolls instead)
+MIN_ROW = 108          # px: rows never get shorter than this (a very short window scrolls instead); 108 fits
+                       # a 4-row Home (a student's, with Modules) at 1280x720
 
 
 DROP_ROW = 110         # px: a row Edit Home's "Drop here" slot adds under the fitted rows (the page scrolls a little)
@@ -217,11 +218,19 @@ def _css(t, cells, cat, editing, picked, room=PAGE_ROOM):
     [class*="st-key-hwt_"] p {{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
     [class*="st-key-hwh_"] [data-testid="stCaptionContainer"] p {{ text-align: right; white-space: nowrap; }}
     [class*="st-key-hwh_"] [data-testid="stCaptionContainer"] {{ overflow: hidden; text-overflow: ellipsis; }}
+    /* The timetable's sync and Outlook buttons sit at the right of its title line (timetable_component.css). */
+    .st-key-hwh_timetable_today {{ padding-right: 66px; box-sizing: border-box; }}
+    .st-key-hwh_timetable_today [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) {{ min-width: 0; flex-shrink: 1; }}
+    .st-key-hwh_timetable_today [data-testid="stCaptionContainer"] p {{ overflow: hidden; text-overflow: ellipsis; }}
+    .st-key-hwc_timetable_today .st-key-timetable_today {{ position: static; }}    /* so they place by the tile */
+    .st-key-hwh_timetable_today [class*="st-key-hwt_"], .st-key-hwh_timetable_today [class*="st-key-go_tile_"],
+    .st-key-hwh_timetable_today [class*="st-key-open_tile_"] {{ min-width: max-content; }}   /* the status gives way, not the name */
     [class*="st-key-go_tile_"] button, [class*="st-key-open_tile_"] button, [class*="st-key-hwt_"] p {{ min-height: 44px;
         padding: 0 !important; justify-content: flex-start; gap: 10px; }}
     [class*="st-key-go_tile_"] button > div, [class*="st-key-open_tile_"] button > div {{ justify-content: flex-start !important; gap: 10px; }}
     /* The tile's header already opens the page: the preview's own "See all" / "Manage" go. */
-    [class*="st-key-hwc_"] .st-key-home_goals_all, [class*="st-key-hwc_"] .st-key-home_habits_manage {{ display: none; }}
+    [class*="st-key-hwc_"] .st-key-home_goals_all, [class*="st-key-hwc_"] .st-key-home_habits_manage,
+    [class*="st-key-hwc_"] .st-key-home_journal_write, [class*="st-key-hwc_"] .st-key-home_deadlines_all {{ display: none; }}
     [class*="st-key-go_tile_"] button p, [class*="st-key-open_tile_"] button p, [class*="st-key-hwt_"] p {{
         font-size: 1.1rem; font-weight: 600 !important; color: {t['ink']} !important; white-space: nowrap; }}
     [class*="st-key-go_tile_"] button:hover p, [class*="st-key-open_tile_"] button:hover p {{ text-decoration: underline; }}

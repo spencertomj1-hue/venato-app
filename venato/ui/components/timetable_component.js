@@ -27,7 +27,7 @@ const SWIPE_THRESHOLD = 120;      // px of sideways scroll that flips a week
 const RAIL = 4;                   // px: the Plan's strip down the left of a locked day's Actual column
 const SWAP_MS = 380;              // ms: the Plan / Actual cross-fade
 const SHOW_MISSED = true;         // also hatch Plan time where nothing was done (set false to drop it)
-const HOME_HOURS = 6;             // hours Home's tile aims to show (fitHome)
+const HOME_MIN_ROW = 8;           // the smallest row Home's tile shrinks to (fitHome)
 const PREVIEW_EASE = 0.35;        // share of the gap the resize preview closes each frame (it glides, lagging a few ms)
 
 // ---------- Small helpers ----------
@@ -512,7 +512,7 @@ class Timetable {
         <div class="tt-outlook">
           <button class="tt-sync" title="Sync Outlook now"><span class="msr">sync</span></button>
           <span class="tt-synced"></span>
-          <button class="tt-ol-toggle" title="Show or hide Outlook events">${CAL_ICON}Outlook</button>
+          <button class="tt-ol-toggle" title="Show or hide Outlook events" aria-label="Outlook">${CAL_ICON}${this.data.readonly ? "" : "Outlook"}</button>
         </div>
         <div class="tt-tools">
           <datalist id="tt-labels"></datalist>
@@ -646,6 +646,14 @@ class Timetable {
         : st.locked ? `<button class="confirm" tabindex="-1" data-confirm="${esc(date)}" title="This is what I actually did: confirm the day">Confirm</button>`
         : `<span class="ptag" title="Hasn't started: this is still the Plan">Plan</span>`;
     });
+    // Home: no all-day chip and no day state leaves the header row empty, so it goes (more room for the rows).
+    if (this.data.readonly) {
+      const bare = [...this.root.querySelectorAll("th.day .chips, th.day .dstate")].every((b) => !b.innerHTML.trim());
+      if (bare !== this.root.classList.contains("bare-head")) {
+        this.root.classList.toggle("bare-head", bare);
+        if (this.attached) requestAnimationFrame(() => this.fitToWindow());
+      }
+    }
     this.root.querySelectorAll("[data-mode]").forEach((b) => {
       b.classList.toggle("on", b.dataset.mode === this.mode);
       b.setAttribute("aria-pressed", String(b.dataset.mode === this.mode));
@@ -742,7 +750,7 @@ class Timetable {
 
   // Shrink (or grow) the rows so the whole day fits in the window without scrolling (runs again on
   // every window resize): the Timetable page, 10px rows (still big enough to drag in) to 18px.
-  // Home (view only) shows a window of the day instead: fitHome.
+  // Home (view only) fits the whole day into its tile instead: fitHome.
   fitToWindow() {
     if (!this.wrapEl || !this.cells || !this.cells[0]) return;
     // On Home, while its widget is pinned or gliding to a new place (home_flip.js) the boxes measured here are
@@ -767,31 +775,28 @@ class Timetable {
   }
 
 
-  // Home's tile: the next few hours, not the whole day. The grid scrolls inside a box as tall as the tile has
-  // room for (its rows sized so about HOME_HOURS fit), starting an hour before now. On a narrow window, where
-  // Home scrolls and the tile is as tall as what's in it, the box is a fixed height instead.
+  // Home's tile: the whole day, no scrolling. The rows share the height the tile has room for (min 10px; a
+  // tile too short even for that clips the end of the day rather than scroll). On a narrow window, where Home
+  // scrolls and the tile is as tall as what's in it, the rows are a fixed 18px.
   fitHome() {
     const box = this.root.querySelector(".tt-card");
     const host = this.root.getRootNode().host || this.root;
     const tile = host.closest && host.closest('[class*="st-key-hwc_"]');
     const clip = tile && tile.parentElement && tile.parentElement.dataset.testid === "stLayoutWrapper" ? tile.parentElement : tile;
-    const head = this.root.querySelector("thead")?.getBoundingClientRect().height || 0;
-    const slots = 2 * HOME_HOURS;
-    const fits = clip && matchMedia("(min-width: 1001px)").matches;
-    const room = fits ? Math.floor(clip.getBoundingClientRect().bottom - box.getBoundingClientRect().top - 2) : head + slots * 22;
+    box.style.height = "";
+    box.scrollTop = 0;
+    if (!(clip && matchMedia("(min-width: 1001px)").matches)) { this.root.style.setProperty("--row-h", "18px"); return; }
+    const room = Math.floor(clip.getBoundingClientRect().bottom - box.getBoundingClientRect().top - 2);
     if (room < 40) return;
-    const row = Math.max(12, Math.min(32, Math.floor((room - head) / slots)));
-    this.root.style.setProperty("--row-h", `${row}px`);
+    const head = this.root.querySelector("thead")?.getBoundingClientRect().height || 0;
+    let row = Math.max(HOME_MIN_ROW, Math.floor((room - head) / SLOTS));
+    for (let i = 0; i < 3; i++) {        // a few times: borders make the first guess a little off
+      this.root.style.setProperty("--row-h", `${row}px`);
+      const over = this.wrapEl.getBoundingClientRect().height - room;
+      if (over <= 0 || row === HOME_MIN_ROW) break;
+      row = Math.max(HOME_MIN_ROW, row - Math.ceil(over / SLOTS));
+    }
     box.style.height = `${room}px`;
-    // Start an hour before now (today only; another day starts at the top).
-    const now = this.data.nowMin == null ? null : this.nowAt.min + (Date.now() - this.nowAt.ms) / 60000;
-    let m = now == null ? 0 : now - FIRST_MIN;
-    if (m < 0) m += 24 * 60;
-    const first = Math.max(0, Math.min(SLOTS - 1, Math.floor(m / 30) - 2));
-    const cell = this.cells[0].plan[first];
-    if (!cell) return;
-    const top = cell.getBoundingClientRect().top - this.wrapEl.getBoundingClientRect().top - head;
-    box.scrollTop = Math.max(0, Math.min(top, box.scrollHeight - box.clientHeight));
   }
 
   // Home only: a thin red line across today at the current time, moving down as time passes.
@@ -886,20 +891,24 @@ class Timetable {
         const cat = this.cats.get(en.categoryId);
         const bg = cat ? cat.colour : "#9e9e9e";
         const fg = (cat && cat.textColour) || contrastText(bg);
-        const tall = last.bottom - first.top >= 30;   // room for the time line under the title
+        // Room for the time line under the title. Home's small rows: the name from 2 rows, the time from 3;
+        // shorter blocks are colour only (their name in the tooltip).
+        const rows = e - s, home = this.data.readonly;
+        const tall = last.bottom - first.top >= 30 && (!home || rows >= 3);
+        const named = !home || rows >= 2;
         if (ghost) {          // a suggested sitting: dashed, "+ Study 2 h"
           const h = (e - s) / 2;
           return `<div data-di="${di}" class="blk ghost ${tall ? "tall" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}--fill:${esc(bg)}">` +
             `<b>+ ${esc(en.label)} ${h} h</b>${tall ? `<span>Suggested · click to add</span>` : ""}</div>`;
         }
         if (outlook) {
-          return `<div data-di="${di}" class="blk outlook plan ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin)}` +
+          return `<div data-di="${di}" class="blk outlook plan ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${this.focusId === "outlook:" + en.id ? "focus" : ""}${this.hovered === "outlook:" + en.id ? " hover" : ""}${this.picked.has("outlook:" + en.id) ? " picked" : ""}" data-id="outlook:${esc(en.id)}"${named ? "" : ` title="${esc(en.title)} ${esc(en.exact)}"`} style="${this.boxStyle(firstTd, lastTd, origin)}` +
             `--fill:${esc(bg)}">` +
-            `<b>${CAL_ICON}${esc(en.title)}</b>${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
+            `${named ? `<b>${CAL_ICON}${esc(en.title)}</b>` : ""}${tall ? `<span>${esc(en.exact)}</span>` : ""}</div>`;
         }
-        return `<div data-di="${di}" class="blk ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${plan ? "plan" : "act"} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}" style="${this.boxStyle(firstTd, lastTd, origin, inset)}` +
+        return `<div data-di="${di}" class="blk ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${plan ? "plan" : "act"} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}"${named ? "" : ` title="${esc(en.label)} ${esc(fmtRange(en.start, en.end))}"`} style="${this.boxStyle(firstTd, lastTd, origin, inset)}` +
           (plan ? `--fill:${esc(bg)}">` : `background:${esc(bg)};color:${fg}">`) +
-          `<b>${esc(en.label)}</b>${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
+          `${named ? `<b>${esc(en.label)}</b>` : ""}${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
       .join("");
     this.syncResizePreview();              // keep the preview on its cells if the grid moved

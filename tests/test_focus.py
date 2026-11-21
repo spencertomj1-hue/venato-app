@@ -131,3 +131,37 @@ def test_focus_pause_reruns_fragment_only(focus, store):
     assert not at.exception
     assert focus.running()["paused_at"]
     assert at.session_state["home_draws"] == draws
+
+
+def test_home_tile_is_a_stopwatch(focus, store, monkeypatch):
+    """Home's Focus tile: type what you're on, Start makes a stopwatch (no length); empty is "Focus". Stop puts
+    it in today's Actual. No Pomodoro button on the tile (that's on the Focus page)."""
+    from datetime import datetime, time as clock
+    import fragment_run
+    today = store.local_today()
+    at_ = lambda hh, mm: datetime.combine(today, clock(hh, mm), tzinfo=store.tz()).timestamp()
+    store.save_settings(home=HOME)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.exception
+    assert [b.label for b in at.button if b.key and b.key.startswith("home_focus")] == ["Start"]
+    assert not any("min" in (b.label or "") for b in at.button if b.key and b.key.startswith("home_focus"))
+    at.text_input(key="home_focus_label").set_value("Essay")
+    at.button(key="home_focus_go").click().run()
+    assert not at.exception
+    r = focus.running()
+    assert (r["label"], r["planned"], r["kind"]) == ("Essay", None, "track")
+    focus.cancel()
+    at.run()
+    at.text_input(key="home_focus_label").set_value("  ")
+    at.button(key="home_focus_go").click().run()
+    assert focus.running()["label"] == "Focus" and focus.running()["planned"] is None
+    focus.cancel()
+    # Stop: a stopwatch from 10:00, stopped at 10:30, is in today's Actual.
+    monkeypatch.setattr(focus, "_now", lambda: at_(10, 30))
+    focus.start("Essay", None, "track", category_id="study", now=at_(10, 0))
+    with fragment_run.recording():
+        at = AppTest.from_file(APP, default_timeout=60).run()
+        fragment_run.trigger(at, "home_focus_timer", "action", {"name": "stop", "at": 1})
+    assert not at.exception and focus.running() is None
+    blocks = store.blocks_between(today.isoformat(), today.isoformat(), "actual")
+    assert [(b["start"], b["end"], b["label"]) for b in blocks] == [("10:00", "10:30", "Essay")]

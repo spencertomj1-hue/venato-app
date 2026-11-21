@@ -72,8 +72,8 @@ venato/                         The app's code, as a package (imported as `from 
   quick.py                     Quick commands ("drank 500ml", "tick gym"): handled without Claude via the same tools actions
   feeds.py                     What a student's calendar feeds say (pure: no database, no network): `detect_modules` from a uni timetable's "Module:" lines, `canvas_events` / `canvas_courses` from a Canvas feed. Fixtures in tests/fixtures
   suggest.py                   Setup's "What would you track?": a keyword map from a goal's words to habits, categories and the sleep / water switches (examples, never defaults)
-  home_layout.py               Home's tile grid: pure functions over settings.json `home` (4 columns; sizes small/wide/large/tall; normalise migrates old s/m/l/full sizes and stacks; place, move, step, resize, hide, add)
-  tile_status.py               The short status in each Home tile's header ("4 behind", "Next: Lunch at 13:00"), and week_followed()
+  home_layout.py               Home's tile grid: pure functions over settings.json `home` (4 columns; sizes small/wide/large/tall/column, Column being 1 × 3 rows, the Timetable's start; normalise migrates old s/m/l/full sizes and stacks; place, move, step, resize, hide, add)
+  tile_status.py               The short status in each Home tile's header ("4 behind", "Next: Lunch at 13:00"), and the tiles' glance data: week_followed(), journal_week(), habit_streak(), module_week()
   feedback.py                  "Send feedback": `feedback_url()` is the Google Form with Version and System pre-filled (form address from `feedback_url` in venato_config.json); `card_due()` is the one-time card after 14 days (`first_seen`; `feedback_card_done` in settings.json). Nothing is sent: it only opens the browser
   pace.py                      Goals meet the timetable: capacity, budget, pace, debt, follow-through, negotiation, suggestions (§5e). No SQL, no Streamlit UI (it uses `venato.cache` for cached reads)
   blocks/                      Blocks. Built in (`core=True`): timetable, goals, focus, grades (shown as "Modules"), stats ("Review"), log ("Daily Log"). Each has its own tables, migrations, tools, prompt, context,
@@ -99,6 +99,8 @@ venato/                         The app's code, as a package (imported as `from 
     review.py                  Weekly review pop-up and Review's history
     onboarding.py              The setup wizard's steps and what each saves (feeds, modules, study goals, goals, categories, first week, Home); the page is drawn by `settings_ui.wizard`. State between steps is `st.session_state["ob"]` (calendars are parsed once and kept there)
     module_page.py             One module's page (from the Modules page): lectures, deadlines with Plan, assessments, hours; uses grades.py's `band`, `assessment_editor`, `module_settings`
+    components/home_flip.js    Home's glides, grid fit, tile clicks, and the row trim: a row crossing a tile's bottom edge is hidden whole (no half-cut lines)
+    glance.py                  Home tiles' small graphics: dots() (a week of days) and pill() (a coloured badge, markdown so it works in buttons). Fixed height, an aria-label, light and dark
     home.py, stats.py          Home (a grid of tiles, each opening its page; Edit Home; layout logic in venato/home_layout.py, glides in components/home_flip.js) and Review (stats.py) pages
     blocks_ui.py               Settings → Blocks; one page module per block (focus.py, ...)
     undo_bar.py, page_fade.py  The Undo bar; the fade between pages (on presses of `go_*` buttons)
@@ -169,7 +171,7 @@ Notes on the schema:
   - Python applies them in `timetable.apply_grid_op` and acknowledges them in `data.acked`. The JS replays unacknowledged ops on top of incoming data, so a slow rerun never makes the grid flicker.
   - An op Python can't save (a started day's locked Plan, or an error while saving) is acknowledged too, with the reason in `data.rejected` (`{opId: why}`, session state `tt_rejected`). The JS drops it, so the grid shows what was saved (the block goes back), and shows the reason in a note over the grid (`.tt-error`) for a few seconds.
   - A paint carries the new block's id (`newId`), so both sides agree on it.
-- **Views:** `render_page` is the week (editable, with the Plan / Actual switch, §5f). `render_today` is Home's single day: view only, its Actual, with rows sized to fit the window (`fitToWindow`) and the key wrapped underneath. (The old `timetable_view` setting is gone; a leftover key in settings.json is ignored.)
+- **Views:** `render_page` is the week (editable, with the Plan / Actual switch, §5f). `render_today` is Home's single day: view only, its Actual, the whole day (07:00–01:00 by default) with no scrolling: `fitHome` sizes the rows to the tile (min 8px; narrow windows, where Home scrolls, a fixed 18px). On Home the sync / Outlook buttons sit in the tile's title line (`home.py` leaves room by the status), the day header row goes when it has no chip or state, and a block shows its name from 2 rows tall and its times from 3 (shorter: colour, with the name in its tooltip). (The old `timetable_view` setting is gone; a leftover key in settings.json is ignored.)
 - **Clicking a block** grows it and opens a details card (title, time, category, location, description), with Edit and Delete/Remove buttons except on Home. A drag paints, and a click with the eraser erases.
 - **Block text** is black or white, whichever has the higher WCAG contrast with the fill (`contrastText`).
 

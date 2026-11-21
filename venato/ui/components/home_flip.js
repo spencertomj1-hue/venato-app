@@ -131,9 +131,53 @@ export default function ({ data, setTriggerValue }) {
     if (from || glides.length) Promise.all(glides).then(() => dispatchEvent(new Event("venato:flip-settled")));
   }
   let queued = false;
-  const schedule = () => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; tick(); }); } };
+  const schedule = () => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; tick(); scheduleTrim(); }); } };
   new MutationObserver(schedule).observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "data-test-script-state"] });
   addEventListener("resize", () => { fit(); if (!busy()) for (const n of measure()) last.set(n.k, n.lay); });
+
+  // Tiles clip rather than grow. So no row shows half cut off, a row crossing a tile's bottom edge is hidden
+  // whole (visibility only: nothing moves). "A row" is the smallest thing that crosses the edge: a button,
+  // a checkbox, a line of text, a glance's row; containers are looked into (shadow roots too). The timetable
+  // fits itself (timetable_component.js). Only where tiles clip (laptop-sized windows).
+  const TRIMMED = new Set(), watched = new WeakSet();
+  const ATOM = 'button, input, textarea, select, svg, img, canvas, p, li, label, h1, h2, h3, h4, h5, h6, ' +
+    '[data-testid="stCheckbox"], [data-testid="stButton"], [data-testid="stCaptionContainer"], [role="img"], [role="progressbar"]';
+  const kidsOf = (el) => [...el.children, ...(el.shadowRoot ? el.shadowRoot.children : [])]
+    .filter((c) => !/^(STYLE|SCRIPT|LINK|TEMPLATE)$/.test(c.tagName))
+    .flatMap((c) => (getComputedStyle(c).display === "contents" ? kidsOf(c) : [c]));
+  const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+  function trim() {
+    for (const el of TRIMMED) el.style.visibility = el.dataset.vnTrimWas || "";
+    for (const el of TRIMMED) delete el.dataset.vnTrimWas;
+    TRIMMED.clear();
+    if (!matchMedia("(min-width: 1001px)").matches || busy()) return;
+    for (const c of doc.querySelectorAll('[class*="st-key-hwc_"]')) {
+      if (c.matches(".st-key-hwc_timetable_today")) continue;
+      const tile = c.closest(SEL);
+      if (!tile || tile.style.transform || flips(tile).length) continue;
+      const clip = c.parentElement?.dataset.testid === "stLayoutWrapper" ? c.parentElement : c;
+      const edge = clip.getBoundingClientRect().bottom + 0.5;
+      const visit = (el) => {
+        if (el.shadowRoot && !watched.has(el.shadowRoot)) {
+          watched.add(el.shadowRoot);
+          new MutationObserver(scheduleTrim).observe(el.shadowRoot, { childList: true, subtree: true });
+        }
+        const r = el.getBoundingClientRect();
+        const below = r.height && r.top >= edge - 0.5;     // cut off already (hidden too: a tick may stick up)
+        const kids = kidsOf(el);
+        const crosses = r.height && r.bottom > edge;
+        if (below || (crosses && (el.matches(ATOM) || ownText(el) || !kids.length))) {   // a row: hide it whole
+          el.dataset.vnTrimWas = el.style.visibility; el.style.visibility = "hidden"; TRIMMED.add(el); return;
+        }
+        kids.forEach(visit);   // fits: a child may still stick out (a positioned tick); crossing: find its rows
+      };
+      kidsOf(c).forEach(visit);
+    }
+  }
+  let trimTimer = 0;
+  function scheduleTrim() { clearTimeout(trimTimer); trimTimer = setTimeout(() => requestAnimationFrame(trim), 60); }
+  addEventListener("venato:flip-settled", scheduleTrim);
+  addEventListener("resize", scheduleTrim);
 
   const CONTROLS = 'button, a, input, textarea, select, label, summary, [role="button"], [role="checkbox"], [role="switch"], [role="tab"], [role="radio"], [contenteditable="true"], [data-testid="stCheckbox"], [data-baseweb="select"]';
   let dragEnd = 0;         // when a drag last ended: its click is swallowed

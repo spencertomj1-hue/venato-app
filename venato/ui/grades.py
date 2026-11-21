@@ -311,15 +311,31 @@ def render_page():
 
 
 def render_home():
-    """Home's Grades widget: the degree so far and the next assessment due."""
-    o = gr.overall()
-    kit.subhead("Grades")
-    if o["degree"] is None:
-        st.caption("No marks yet. Add them on the Modules page.")
+    """Home's Modules widget: this week's study hours per module, done (the Actual) against its hours-a-week
+    target, a thin bar each, up to 3 then "and N more". No marks (grade tracking is off for now)."""
+    from venato import tile_status
+    from venato.ui import appearance
+    kit.subhead("Modules")
+    rows = tile_status.module_week()
+    if not rows:
+        st.caption("No modules yet. Add them on the Modules page.")
         return
-    text = gr.describe(o["degree"], o["gpa"])
-    due = sorted((a["due"], a["name"], m["name"]) for m in gr.modules() for a in gr.assessments(m["id"])
-                 if a["due"] and a["mark"] is None and a["due"] >= store.local_today().isoformat())
-    if due:
-        text += f" · next: {due[0][2]} {due[0][1]} ({store.fmt_day(store._as_date(due[0][0]), '%-d %b')})"
-    st.caption(text)
+    t = appearance.tokens()
+    h = tile_status.hours
+    lines = "".join(
+        f'<div class="vn-mh-row" role="img" aria-label="{escape(m["name"])}: {h(x["done"])} of {h(x["goal"])} hours this week">'
+        f'<span class="n">{escape(m["name"])}</span>'
+        f'<span class="bar"><i style="width:{min(100, round(100 * x["done"] / x["goal"])) if x["goal"] else 0}%"></i></span>'
+        f'<span class="v">{h(x["done"])}/{h(x["goal"])} h</span></div>'
+        for m, x in rows[:3])
+    more = f'<div class="vn-mh-more">and {len(rows) - 3} more</div>' if len(rows) > 3 else ""
+    st.html(f"""<style>
+      .vn-mh-row {{ display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto; gap: 8px;
+        align-items: center; height: 20px; font-size: 0.82rem; color: {t['ink']}; }}
+      .vn-mh-row .n {{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+      .vn-mh-row .bar {{ height: 6px; border-radius: 3px; background: {t['track']}; overflow: hidden; }}
+      .vn-mh-row .bar i {{ display: block; height: 100%; background: {t['accent']}; border-radius: 3px; }}
+      .vn-mh-row .v {{ font-size: 0.75rem; color: {t['muted']}; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+      .vn-mh-more {{ font-size: 0.75rem; color: {t['muted']}; height: 16px; line-height: 16px; }}
+    </style><div class="vn-mh">{lines}{more}</div>""")
+

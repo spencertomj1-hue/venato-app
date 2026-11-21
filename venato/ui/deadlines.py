@@ -16,7 +16,7 @@ from venato import regional
 from venato import store
 from venato import undo
 from venato.ui.goal_time import md
-from venato.ui import kit
+from venato.ui import glance, kit
 
 HOME_LIMIT = 5
 
@@ -69,8 +69,14 @@ def _when(d, today):
     return store.countdown(d["due"], today, d.get("due_time"), store.local_now())
 
 
+def _pill_tone(d, today):
+    """Home's countdown pill: red overdue or due today, amber within 3 days, grey later."""
+    days = (store._as_date(d["due"]) - today).days
+    return "red" if days <= 0 or store.deadline_overdue(d) else "amber" if days <= 3 else "grey"
+
+
 def render_home():
-    """Home's Deadlines widget: what's due, soonest first, with a countdown."""
+    """Home's Deadlines widget: what's due, soonest first, each with its countdown in a coloured pill."""
     today = store.local_today()
     rows = store.deadlines()
     head = st.container(horizontal=True, vertical_alignment="center")
@@ -86,9 +92,7 @@ def render_home():
     </style>""")
     with st.container(key="dl_home", gap="xxsmall"):
         for d in rows[:HOME_LIMIT]:
-            colour = {"over": "red", "soon": "orange"}.get(_tone(d, today))
-            when = _when(d, today)
-            label = f"{md(d['title'])}  ·  " + (f":{colour}[{when}]" if colour else when)
+            label = f"{md(d['title'])}  " + glance.pill(_when(d, today), _pill_tone(d, today))
             if d["module_id"] and _modules_on():
                 st.button(label, key=f"dl_home_{d['id']}", type="tertiary", on_click=open_module, args=(d["module_id"],),
                           help="Open its module")

@@ -16,7 +16,7 @@ import streamlit as st
 from venato import regional
 from venato import store
 from venato import undo
-from venato.ui import kit
+from venato.ui import glance, kit
 
 HERE = Path(__file__).parent
 
@@ -235,11 +235,22 @@ def _write_today():
 
 
 def render_home_journal():
-    """Home's Journal widget: today's entry so far (or today's prompt), and Write to open it on the Daily Log."""
+    """Home's Journal widget: the week's days written (dots, the first day of the week first) and the streak from
+    2 days, then today's entry so far (or today's prompt); Write opens it on the Daily Log."""
     today = store.local_today()
     head = st.container(horizontal=True, vertical_alignment="center")
     kit.subhead("Journal", head, width="stretch")
     head.button("Write", key="home_journal_write", type="tertiary", icon=":material/edit:", on_click=_write_today)
+    from venato import tile_status
+    w = tile_status.journal_week(today)
+    flags = [written for _, written in w["days"]]
+    n = w["streak"]
+    a, b = st.columns([3, 2], vertical_alignment="center", gap="small")
+    with a:
+        st.html(glance.dots(flags, f"Written {sum(flags)} of 7 days this week",
+                            [store._as_date(d).strftime("%a")[0] for d, _ in w["days"]]))
+    if n >= 2:
+        b.caption(f"{n}-day streak")
     text = (store.get_journal(today.isoformat()) or "").strip()
     if text:
         st.caption(text if len(text) <= 280 else text[:280].rsplit(" ", 1)[0] + "…")
@@ -249,16 +260,17 @@ def render_home_journal():
 
 @st.fragment
 def _home_habit_rows():
-    """Home's habit ticks, side by side (a fragment: ticking one reruns just these). A summary: the streaks and
-    the last 7 days are on the Daily Log."""
+    """Home's habit ticks, side by side (a fragment: ticking one reruns just these), each with its current streak
+    after its name ("Exercise · 5"; the Daily Log's own rule, in days or weeks). The rest is on the Daily Log."""
     today = store.local_today()
     d = today.isoformat()
     box = st.container(key="home_habits", horizontal=True, gap="small")
     for habit_id, name in store.get_habits():
         done = store.get_habit_dates(habit_id)
+        streak = store.habit_progress(habit_id, done, today)[1]
         key = f"home_habit_{habit_id}_{d}"
-        box.checkbox(name, value=d in done, key=key, on_change=_toggle_habit, args=(habit_id, d, key, True),
-                     width="content")
+        box.checkbox(f"{name} · {streak}" if streak else name, value=d in done, key=key, on_change=_toggle_habit,
+                     args=(habit_id, d, key, True), width="content")
 
 
 @st.fragment
