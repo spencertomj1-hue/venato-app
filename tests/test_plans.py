@@ -307,6 +307,20 @@ def test_plan_dialog_without_a_module_picks_any_category(store, gr):
     assert not any("Add a module" in i.value for i in at.info)
 
 
+def test_plan_dialog_pre_selects_the_plans_own_category(store, gr):
+    mid = gr.add_module("Organic Chemistry")
+    did = store.add_deadline("Lab report", store.local_today() + timedelta(days=9), module_id=mid)
+    other = next(c for c in store.load_categories()["id"] if c != gr.get_module(mid)["category_id"])
+    store.plan_deadline(did, other, total=6)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.sidebar.radio[0].set_value("Goals").run()
+    next(b for b in at.button if b.key == f"dl_plan_{did}").click().run()
+    assert not at.exception
+    pick = next(s for s in at.selectbox if s.key == f"plan_cat_pick_{did}")
+    assert pick.index == pick.options.index(next(c["name"] for c in store.load_categories().to_dict("records")
+                                                 if c["id"] == other))
+
+
 def test_plan_dialog_with_no_categories_offers_to_add_one(blank_store):
     did = blank_store.add_deadline("Essay", blank_store.local_today() + timedelta(days=5))
     at = AppTest.from_file(APP, default_timeout=60).run()
