@@ -15,6 +15,7 @@ from datetime import timedelta
 from html import escape
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from venato import feeds
 from venato import home_layout as hl
@@ -1012,6 +1013,8 @@ def wizard(finish, skip=None):
     justify-content, so a tall step is never clipped at the top). */
     [data-testid='stMainBlockContainer'] {{ min-height: 100vh; display: flex; flex-direction: column; }}
     [data-testid='stMainBlockContainer'] > [data-testid='stVerticalBlock'] {{ flex-grow: 0; margin-block: auto; }}
+    /* Pills wrap onto more lines rather than scrolling sideways (and clipping the last one). */
+    [data-testid='stButtonGroup'], [data-testid='stButtonGroup'] > div {{ flex-wrap: wrap !important; overflow: visible !important; }}
     [data-testid='stImage'] img {{ border-radius: .5rem; border: 1px solid {ink['border']}; }}
     </style>""")
     listed = steps()
@@ -1027,6 +1030,12 @@ def wizard(finish, skip=None):
             _welcome()
         else:
             STEP_BODY[key]()
+        if st.session_state.get("wizard_drawn") != step:
+            # A new step opens at the top, not wherever the last (longer) one was scrolled to.
+            st.session_state["wizard_drawn"] = step
+            components.html("<script>const d = window.parent.document;"
+                            "d.querySelector('[data-testid=\"stMain\"]')?.scrollTo(0, 0); window.parent.scrollTo(0, 0);</script>",
+                            height=0)
         st.divider()
         last = step == len(listed) - 1
         if key == "welcome":
