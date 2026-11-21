@@ -747,3 +747,39 @@ def test_welcome_and_home_copy(fresh):
     _next(at, "ob_student_no")
     _skip_to_the_end(at)
     assert any("**Edit Home**" in c.value for c in at.caption) and not any("Arrange" in c.value for c in at.caption)
+
+
+def test_a_click_on_a_stale_skip_button_still_saves_what_was_just_typed(fresh):
+    """Typing and clicking at once sends both in one run; the click lands on the button drawn before the typing."""
+    from venato.blocks import grades as gr
+    at = _student_at(fresh)
+    at.text_input(key="ob_link_uni").set_value(UNI_URL)
+    at.button(key="wiz_skip").click().run()
+    assert at.header[0].value.endswith("Canvas") and fresh.outlook_between("2026-11-16", "2026-11-22")
+
+
+def test_a_stale_skip_click_on_the_modules_step_still_adds_the_typed_module(fresh):
+    from venato.blocks import grades as gr
+    at = _student_at(fresh)
+    _next(at, "wiz_skip")
+    _next(at, "wiz_skip")
+    assert at.header[0].value.endswith("Your modules")
+    at.text_input(key="ob_new_module").set_value("Algebra")
+    at.button(key="wiz_skip").click().run()
+    assert [m["name"] for m in gr.modules()] == ["Algebra"] and at.header[0].value.endswith("Study hours")
+
+
+def test_picking_only_a_canvas_course_link_says_next(fresh):
+    from venato.blocks import grades as gr
+    gr.add_module("Organic Chemistry")
+    at = _student_at(fresh)
+    at.text_input(key="ob_link_uni").set_value(UNI_URL).run()
+    _next(at)
+    at.text_input(key="ob_link_canvas").set_value(CANVAS_URL).run()
+    _next(at)
+    for c in [c for c in at.checkbox if c.key.startswith("ob_keep_")]:
+        c.set_value(False)
+    at.run()
+    assert _main_label(at) == "Skip"
+    next(s for s in at.selectbox if s.key.startswith("ob_course_")).set_value("Organic Chemistry").run()
+    assert _main_label(at) == "Next"

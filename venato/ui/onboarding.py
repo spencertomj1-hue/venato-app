@@ -791,7 +791,8 @@ def _filled(key):
         return _typed(f"ob_link_{kind}") or bool(ob.get(f"found_{kind}"))
     if key == "modules":
         return (_typed("ob_new_module") or any(ss.get(f"ob_keep_{_cand_key(c)}", True) for c in ob.get("cands", []))
-                or bool(ob.get("new_modules")))
+                or bool(ob.get("new_modules"))
+                or any(v not in (None, "Not linked") for k, v in ss.items() if k.startswith("ob_course_")))
     if key == "hours":
         saved = float(store.load_settings().get("study_hours", gr.DEFAULT_WEEK_HOURS))
         return bool(ob.get("new_modules")) or float(ss.get("ob_hours", saved)) != saved
@@ -851,4 +852,6 @@ def wizard(finish):
             main.button("Next", key="wiz_next", type="primary", on_click=_go, args=(step + 1, key if key in SAVE else None),
                         width="stretch", icon=":material/arrow_forward:")
         else:
-            main.button("Skip", key="wiz_skip", on_click=_go, args=(step + 1,), width="stretch")
+            # Same save as Next: a click can arrive from the previous run's button, drawn before the text was typed.
+            main.button("Skip", key="wiz_skip", on_click=_go, args=(step + 1, key if key in SAVE else None),
+                        width="stretch")
