@@ -2,11 +2,14 @@
 The setup wizard's steps. A new install starts blank; setup only ever adds things, so running it again
 never deletes anything. Every step but Welcome can be skipped, and "Skip setup" leaves the app as it is.
 
-  Welcome -> Are you a student? -> (students: Uni timetable -> Canvas -> Your modules -> Study hours)
-  -> Your goals -> What would you track? -> Your day -> Your first week -> Home
+  Students: Welcome ("Are you at uni?") -> Connect your calendars -> Your modules (with hours a week)
+            -> Your goals -> What would you track? (and the timetable colours) -> Your first week
+  Others:   Welcome -> Your goals -> What would you track? -> Your first week
 
-What a step writes happens when its Next is pressed, and writing again changes the same thing rather than
-adding a second (goals made in this setup are remembered by id in st.session_state["ob"]).
+What a step writes happens when its Next or Skip is pressed (the same save: a click can come from the previous
+run's button, so Skip must save what was just typed). Connect, Add, the student buttons and Add to my Plan write
+too. Writing again changes the same thing rather than adding a second (goals made in this setup are remembered
+by id in st.session_state["ob"]).
 settings_ui.wizard() draws the page; settings_ui._finish() turns on the core blocks.
 """
 
@@ -15,6 +18,7 @@ from datetime import timedelta
 from html import escape
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from venato import feeds
 from venato import home_layout as hl
@@ -23,27 +27,25 @@ from venato import pace
 from venato import store
 from venato import suggest
 from venato.blocks import grades as gr
-from venato.ui import kit
+from venato.ui import appearance, kit
 
 # (key, name, icon, only for students)
 STEPS = [
     ("welcome", "Welcome", ":material/waving_hand:", False),
-    ("student", "Are you a student?", ":material/school:", False),
-    ("timetable", "Uni timetable", ":material/calendar_month:", True),
-    ("canvas", "Canvas", ":material/assignment:", True),
-    ("modules", "Your modules", ":material/menu_book:", True),
-    ("hours", "Study hours", ":material/schedule:", True),
-    ("goals", "Your goals", ":material/flag:", False),
-    ("track", "What would you track?", ":material/checklist:", False),
-    ("day", "Your day", ":material/view_day:", False),
-    ("week", "Your first week", ":material/event_available:", False),
-    ("home", "Home", ":material/home:", False),
+    ("calendars", "Calendars", ":material/calendar_month:", True),
+    ("modules", "Modules", ":material/menu_book:", True),
+    ("goals", "Goals", ":material/flag:", False),
+    ("track", "Track", ":material/checklist:", False),
+    ("week", "First week", ":material/event_available:", False),
 ]
-GOAL_SLOTS = [("In 3 months", 3), ("In 6 months", 6), ("In 1 year", 12)]
-TARGET_GRADES = {"First": 70.0, "2:1": 60.0, "2:2": 50.0}
+GOAL_MAX = 5                           # goal rows on the goals step
+GOAL_PLACEHOLDERS = ["e.g. Run a 10k", "e.g. Read 12 books", "e.g. Get a 2:1", "e.g. Learn to cook 10 meals",
+                     "e.g. Save £500"]
+GOAL_WHEN = {"1 month": 1, "3 months": 3, "6 months": 6, "1 year": 12}
+GOAL_HOW = {"Tick it off": "tick", "Hours a week": "hours", "A number": "number"}
+OWN_COLOUR = "#4E79A7"                 # a new category's colour when none is picked
 STUDY_WEEKS = 12                       # a study goal runs this many weeks; its hours are the weekly hours times this
 DEFAULT_CREDITS = 15
-NEW_GROUP = "New group…"
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +63,8 @@ def _ob():
 
 def restart():
     """Start setup from Welcome with nothing remembered."""
-    st.session_state.pop("ob", None)
+    for key in ("ob", "wizard_drawn", "ob_cats", "ob_error"):
+        st.session_state.pop(key, None)
     st.session_state["wizard_step"] = 0
 
 
@@ -71,7 +74,7 @@ def is_student():
 
 
 def steps():
-    """The steps for this person: [(key, name, icon)]. Students get the four uni steps."""
+    """The steps for this person: [(key, name, icon)]. Students get the two uni steps."""
     student = is_student()
     return [(k, n, i) for k, n, i, uni in STEPS if student or not uni]
 
@@ -179,15 +182,15 @@ def _module_for(code, name):
     return None
 
 
-def add_modules(picked, credits=DEFAULT_CREDITS, target=None):
-    """Add the picked modules ([{code, name}]): each gets its own timetable category. One already in Venato is
-    left alone. Returns the ids of the ones just made."""
+def add_modules(picked):
+    """Add the picked modules ([{code, name}]): each gets its own timetable category, the default credits and no
+    target (setup asks no grade questions). One already in Venato is left alone. Returns the ids of the ones just made."""
     made = []
     for m in picked:
         if _module_for(m.get("code"), m["name"]):
             continue
-        made.append(gr.add_module(m["name"], credits, target=target, code=m.get("code")))
-    _ob().setdefault("new_modules", []).extend(made)           # the only ones Study hours touches
+        made.append(gr.add_module(m["name"], DEFAULT_CREDITS, code=m.get("code")))
+    _ob().setdefault("new_modules", []).extend(made)           # the only ones the study goals touch
     return made
 
 
@@ -225,36 +228,91 @@ def apply_study_hours(per_week, day=None):
 
 def save_goals(rows, day=None):
     """
-    rows: [(text, number or None, months)] in the order of GOAL_SLOTS. Each filled one is a goal due in that
-    many months (without a number, a goal of 1 to tick off). Saving again changes the goal this setup made
-    for that row; a row emptied removes only that goal. Returns {row: goal id}.
+    rows: [(row, text, how, number or None, months)], `how` one of "tick", "hours", "number". Each filled
+    row is a goal due in that many months: "tick" is a goal of 1 to tick off, "number" a target of the number,
+    "hours" an hours goal (unit "h") of the hours a week times the weeks to its due date, with a category so
+    its sittings can be planned. Hours or a number left empty make a goal to tick off. Saving again changes
+    the goal this setup made for that row (its tracking only if the row's choice changed); a row emptied
+    removes only that goal. Returns {row: goal id}.
     """
     day = day or today()
-    ids = _ob().setdefault("goal_ids", {})
-    for i, (text, number, months) in enumerate(rows):
-        text, gid = (text or "").strip(), ids.get(i)
-        if gid and not store.get_goal(gid):
-            gid = ids.pop(i, None)
+    ob = _ob()
+    ids, hows = ob.setdefault("goal_ids", {}), ob.setdefault("goal_how", {})
+    for row, text, how, number, months in rows:
+        text, gid = (text or "").strip(), ids.get(row)
+        if gid and not store.get_goal(gid):                # deleted since: make a new one
+            ids.pop(row, None)
+            gid = None
         if not text:
             if gid:
-                store.delete_goal(gid)
-                ids.pop(i, None)
+                forget_goal_row(row)
             continue
-        target = float(number) if number and number > 0 else 1.0
-        if gid:
-            store.update_goal(gid, title=text, target=target, due=months_on(day, months))
+        number = float(number) if number is not None and number > 0 else None
+        how = how if number is not None else "tick"
+        due = months_on(day, months)
+        if how == "hours":
+            target = number * max(1, round((due - day).days / 7))
         else:
-            ids[i] = store.add_goal(text, None, day, target, due=months_on(day, months))["id"]
-        _ob().setdefault("goal_nums", {})[i] = bool(number and number > 0)
+            target = number if how == "number" else 1.0
+        if gid:
+            store.update_goal(gid, title=text, target=target, due=due)
+            if hows.get(row) != how:                    # changed: the tracking changes too
+                if how == "hours":
+                    if not store.get_goal(gid)["category_id"]:
+                        store.update_goal(gid, category_id=_hours_category(text), unit="h")
+                    else:
+                        store.update_goal(gid, unit="h")
+                else:
+                    store.update_goal(gid, unit=None, category_id=None)
+        else:
+            extra = {"unit": "h", "category_id": _hours_category(text)} if how == "hours" else {}
+            ids[row] = store.add_goal(text, None, day, target, due=due, **extra)["id"]
+        hows[row] = how
+        ob.setdefault("goal_nums", {})[row] = how in ("hours", "number")
+        ob.setdefault("goal_meta", {})[row] = {"number": number, "months": months}
     return dict(ids)
+
+
+def forget_goal_row(row):
+    """A goal row removed (or emptied): delete the goal this setup made for it, and nothing else."""
+    ob = _ob()
+    gid = ob.get("goal_ids", {}).pop(row, None)
+    if gid and store.get_goal(gid):
+        store.delete_goal(gid)
+    for k in ("goal_how", "goal_nums", "goal_meta"):
+        ob.get(k, {}).pop(row, None)
+
+
+def _example_category(cid):
+    """Make an example category if it isn't there, and return the id it has (one of the same name counts)."""
+    ensure_category(cid)
+    cats = store.load_categories()
+    if cid in set(cats["id"]):
+        return cid
+    name = next(n for i, n, *_ in store.EXAMPLE_CATEGORIES if i == cid)
+    return next(i for i, n in zip(cats["id"], cats["name"]) if n.lower() == name.lower())
+
+
+def _hours_category(text):
+    """The category an hours goal counts: its first example category, else Study for a student, else one
+    named after the goal (in the default group; one of that name already there is used)."""
+    cid = next((s["cid"] for s in suggest.for_goal(text) if s["kind"] == "category"), None)
+    if cid or is_student():
+        return _example_category(cid or "study")
+    cats = store.load_categories()
+    same = [i for i, n in zip(cats["id"], cats["name"]) if n.lower() == text.lower()]
+    return same[0] if same else add_category(text, OWN_COLOUR, default_group())
 
 
 def ensure_category(cid):
     """Make one of the example categories (and the activity names that default to it) if it isn't there yet."""
-    if cid in set(store.load_categories()["id"]):
+    cats = store.load_categories()
+    if cid in set(cats["id"]):
         return
     for ex_id, name, colour, text, grp in store.EXAMPLE_CATEGORIES:
         if ex_id == cid:
+            if name.lower() in {n.lower() for n in cats["name"]}:      # already there under another id
+                return
             store.save_category(ex_id, name, colour, grp, text)
             for label, target in store.EXAMPLE_LABEL_MAP.items():
                 if target == cid and not any(r["label"].lower() == label.lower() for r in store.load_label_map().to_dict("records")):
@@ -278,6 +336,14 @@ def apply_suggestion(s, goal_id=None, number=False):
             store.update_goal(goal_id, category_id=s["cid"], unit="h")
     elif kind in ("sleep", "water"):
         store.set_tracking(**{kind: True})
+
+
+def default_group():
+    """The group an own category goes in: the one with the fewest categories (not Modules), else Life."""
+    cats = store.load_categories()
+    counts = cats[cats["grp"] != store.MODULES_GROUP]["grp"].value_counts()
+    counts = counts.reindex([g for g in store.groups() if g in counts.index])
+    return counts.idxmin() if len(counts) else "Life"
 
 
 def add_category(name, colour, group):
@@ -307,9 +373,76 @@ def first_week(day=None, ctx=None):
     return sorted(out, key=lambda s: (s["date"], s["start"]))
 
 
+def _matching_category(goal):
+    """A goal's own category, else an existing category one of its suggestions names, else None."""
+    if goal["category_id"]:
+        return goal["category_id"]
+    cats = store.load_categories()
+    ids, by_name = set(cats["id"]), {n.lower(): i for i, n in zip(cats["id"], cats["name"])}
+    names = {i: n for i, n, *_ in store.EXAMPLE_CATEGORIES}
+    for s in suggest.for_goal(goal["title"]):
+        if s["kind"] == "category":
+            if s["cid"] in ids:
+                return s["cid"]
+            if names.get(s["cid"], "").lower() in by_name:
+                return by_name[names[s["cid"]].lower()]
+    return None
+
+
+FALLBACK_DAYS = (1, 3, 5, 2, 4, 6)     # days after today to try, spread out first
+
+
+def fallback_sittings(goals, day=None, taken=()):
+    """
+    For each goal with no hours unit (they get no sittings from first_week): 3 sittings of 1 h on 3 different
+    days, from tomorrow until the end of the 7 days, each the first free hour between 09:00 and 21:00 that
+    day. Free means nothing in the timetable and nothing in `taken` (other sittings) or given to an earlier
+    goal. A goal whose sittings Add to my Plan already added in this setup gets none. Same shape as
+    first_week, labelled with the goal, sorted by date and start.
+    """
+    day = day or today()
+    hi, lo = min(store.slot_of("21:00"), store.slot_count()), store.slot_of("09:00")
+    lo = lo if lo < hi else 0                          # a timetable day that starts after 09:00 (09:00 wraps)
+    days = [(day + timedelta(days=n)).isoformat() for n in FALLBACK_DAYS]
+    done = set(_ob().get("fallback_added", []))
+    used = {}
+    for s in taken:
+        used.setdefault(s["date"], set()).update(range(store.slot_of(s["start"]), store.slot_of(s["end"])))
+    free, out = {}, []
+    for g in goals:
+        if g["unit"] == "h" or g["id"] in done:
+            continue
+        cid, got = _matching_category(g), 0
+        for d in days:
+            if got >= 3:
+                break
+            runs = free.setdefault(d, store.free_runs(d, lo, hi))
+            busy = used.setdefault(d, set())
+            start = next((i for a, b in runs for i in range(a, b - 1) if not {i, i + 1} & busy), None)
+            if start is None:
+                continue
+            busy.update((start, start + 1))
+            got += 1
+            out.append({"id": f"fb:{d}:{store.slot_time(start)}", "date": d, "start": store.slot_time(start),
+                        "end": store.slot_time(start + 2), "label": g["title"], "categoryId": cid, "goal": g["title"],
+                        "goal_id": g["id"]})
+    return sorted(out, key=lambda s: (s["date"], s["start"]))
+
+
+def week_sittings(goals, day=None, ctx=None):
+    """Your first week: the hours goals' sittings (first_week) and the fallback ones for the other goals."""
+    ctx = ctx or pace.Ctx()                            # one clock for both
+    planned = first_week(day, ctx)
+    return sorted(planned + fallback_sittings(goals, day or ctx.today, planned),
+                  key=lambda s: (s["date"], s["start"]))
+
+
 def add_first_week(sittings):
-    """Add the suggested sittings to the Plan (only into free time; nothing is overwritten). Returns how many went in."""
+    """Add the suggested sittings to the Plan (only into free time; nothing is overwritten). Returns how many went in.
+    Goals whose fallback sittings were added are remembered, so they aren't offered again."""
     from venato.ui import goal_time
+    done = _ob().setdefault("fallback_added", [])
+    done += [s["goal_id"] for s in sittings if s.get("goal_id") and s["goal_id"] not in done]
     return sum(goal_time.add_suggestion(s["date"], s["start"], s["end"],
                                         {"label": s["label"], "category_id": s["categoryId"], "details": None})
                for s in sittings)
@@ -325,10 +458,6 @@ def home_picks():
     if store.goals_open():
         picks.append(("goals", "Goals"))
     return picks
-
-
-def chosen_home_keys():
-    return [k for k, _ in home_picks() if st.session_state.get(f"ob_home_{k}", False)]
 
 
 def prefill_home(keys):
@@ -351,33 +480,63 @@ def prefill_home(keys):
 # Steps: drawing, and what Next saves
 # ---------------------------------------------------------------------------
 
+def _empty(text, icon=":material/inbox:"):
+    """kit.empty at body size: inside the wizard an empty state is the step's message, not a footnote."""
+    st.markdown(f"{icon} {text}")
+
+
+# Plan vs Actual in one picture: the same day twice, Actual a bit off from the Plan. Plain HTML (st.html drops
+# SVG). Colours are the example categories' (Study, Exercise, Reading); the rest uses the theme's text colour.
+def _bar(label, hours, blocks, strong=False):
+    """One row: (name, width, background, text colour, share of its slot it fills). No background: dashed, skipped."""
+    def cell(name, w, bg, fg, part=1):
+        look = f"background:{bg};color:{fg}" if bg else "border:1.5px dashed currentColor;opacity:.45"
+        return (f'<div style="flex:{w};min-width:0"><div style="width:{part * 100:g}%;height:2rem;border-radius:.45rem;'
+                f'padding:0 .55rem;display:flex;align-items:center;font-size:.8rem;white-space:nowrap;overflow:hidden;'
+                f'box-sizing:border-box;{look}">{name}</div></div>')
+    cells = "".join(cell(*b) for b in blocks)
+    return (f'<div style="display:flex;align-items:center;gap:.5rem">'
+            f'<div style="width:3.4rem;font-size:.8rem;opacity:.7">{label}</div>'
+            f'<div style="flex:1;display:flex;gap:.4rem">{cells}</div>'
+            f'<div style="width:2.6rem;text-align:right;font-size:.8rem;{"font-weight:600" if strong else "opacity:.7"}">'
+            f'{hours}</div></div>')
+
+
+_PLAN_ACTUAL = ('<div role="img" aria-label="A planned day above the day that really happened" '
+                'style="display:flex;flex-direction:column;gap:.45rem;margin:.25rem 0 .75rem;max-width:34rem">'
+                + _bar("Plan", "6 h", [("Study", 5, "#00B050", "#fff"), ("Gym", 3, "#FFC000", "#1a1a1a"),
+                                       ("Reading", 4, "#7030A0", "#fff")])
+                + _bar("Actual", "3.5 h", [("Study", 5, "#00B050", "#fff", .65), ("Gym", 3, "#FFC000", "#1a1a1a"),
+                                           ("skipped", 4, None, None)], strong=True)
+                + '</div>')
+
+
 def _welcome():
     from venato import system
     st.title("Welcome to Venato", anchor=False)
-    st.markdown(
-        "Venato keeps track of your days:\n\n"
-        "- :material/calendar_view_week: a **timetable** of what you planned and what you actually did\n"
-        "- :material/checklist: **to-dos** and **deadlines**, and **goals** with a pace to keep\n"
-        "- :material/timer: **focus** sessions and a **weekly review** to see how it went\n\n"
-        f":material/lock: **Your data stays on your {system.COMPUTER}.** Nothing is uploaded.\n\n"
-        "Setup takes about two minutes and you can skip any step. **Skip setup** leaves Venato blank, ready for "
-        "you to add things yourself.")
+    st.markdown("Plan your week, log what really happened, and see the gap.")
+    st.html(_PLAN_ACTUAL)
+    st.caption(f":material/lock: Everything stays on your {system.COMPUTER}. Nothing is uploaded.")
+    st.subheader("Are you at uni?", anchor=False)
+    st.caption("Students also connect their timetable and Canvas, and get a Modules page.")
+    ob = _ob()
+    saved = ob["student"] if "student" in ob else store.load_settings().get("student")
+    yes, no = st.columns(2)
+    yes.button("I'm at uni", key="ob_student_yes", type="primary" if saved is True else "secondary",
+               icon=":material/school:", width="stretch", on_click=_answer_student, args=(True,))
+    no.button("Not a student", key="ob_student_no", type="primary" if saved is False else "secondary",
+              icon=":material/person:", width="stretch", on_click=_answer_student, args=(False,))
 
 
-def _student():
-    st.header("Are you a student?", anchor=False)
-    st.markdown("Students get a **Modules** page and a few extra steps: your uni timetable, Canvas deadlines "
-                "and study hours.")
-    now = _ob().get("student", store.load_settings().get("student"))
-    st.radio("Are you a student?", ["Yes", "No"], index=None if now is None else 0 if now else 1,
-             key="ob_student", horizontal=True, label_visibility="collapsed")
+def _save_student(answer):
+    _ob()["student"] = answer
+    store.save_settings(student=answer)
 
 
-def _save_student():
-    answer = st.session_state.get("ob_student")
-    if answer:
-        _ob()["student"] = answer == "Yes"
-        store.save_settings(student=answer == "Yes")
+def _answer_student(answer):
+    """Save the answer and go on to the next step (the list of steps depends on it)."""
+    _save_student(answer)
+    st.session_state["wizard_step"] = st.session_state.get("wizard_step", 0) + 1
 
 
 GUIDES = {
@@ -391,35 +550,87 @@ GUIDES = {
 }
 
 
-def _link_step(kind):
+def _connect_link(kind):
+    """Connect the link typed in the box (nothing if it's empty). Returns "connected", "already" or None.
+    Raises ValueError with a message to show when the link is no good."""
+    text = (st.session_state.get(f"ob_link_{kind}") or "").strip()
+    if not text:
+        return None
+    try:
+        with st.spinner("Checking the link…"):
+            found = check_feed(text, kind)
+            connect_feed(found)
+    except outlook.AlreadyAdded:
+        return "already"
+    except outlook.LinkError as e:
+        raise ValueError(str(e))
+    except outlook.SyncError as e:
+        raise ValueError(outlook.friendly(e).replace("Outlook", "the calendar"))
+    except Exception as e:
+        raise ValueError(f"That link didn't give a calendar Venato can read ({type(e).__name__}).")
+    _ob()[f"found_{kind}"] = found
+    return "connected"
+
+
+def _connect_button(kind):
+    """The Connect button: the same as Next, but it stays on the step."""
+    try:
+        result = _connect_link(kind)
+    except ValueError as e:
+        st.session_state["ob_error"] = str(e)
+        return
+    if not result and not (st.session_state.get(f"ob_link_{kind}") or "").strip():
+        st.session_state["ob_error"] = "Paste a link first."
+        return
+    if result == "already":
+        _ob()[f"link_note_{kind}"] = "Already connected. Nothing more to do here."
+    if result:
+        st.session_state[f"ob_link_{kind}"] = ""
+
+
+def _save_calendars():
+    """Connect whatever is typed in either box. Both are tried; if either link is no good the step stays."""
+    problems = []
+    for kind in ("uni", "canvas"):
+        try:
+            if _connect_link(kind):
+                st.session_state[f"ob_link_{kind}"] = ""
+        except ValueError as e:
+            problems.append(str(e))
+    if problems:
+        raise ValueError(" ".join(problems))
+
+
+def _calendars():
+    st.header("Connect your calendars", anchor=False)
+    st.markdown("Both are optional. Venato only reads them.")
+    st.info("Anyone with a calendar link can see that calendar. Venato keeps yours in your system's secret store, "
+            "never in a file.", icon=":material/visibility:")
+    for kind in ("uni", "canvas"):
+        with st.container(border=True):
+            _link_card(kind)
+
+
+def _link_card(kind):
     ob = _ob()
     if kind == "uni":
-        st.header("Your uni timetable", anchor=False)
-        st.markdown("Your lectures appear in the timetable, and Venato finds your modules from them. Venato only reads it.")
+        st.subheader("Uni timetable", anchor=False)
+        st.markdown("Your lectures appear in the timetable, and Venato finds your modules from them.")
     else:
-        st.header("Canvas", anchor=False)
-        st.markdown("Your Canvas assignments become deadlines. Venato only reads the feed.")
+        st.subheader("Canvas", anchor=False)
+        st.markdown("Your Canvas assignments become deadlines.")
     st.markdown(GUIDES[kind])
-    st.info("Anyone with this link can see your calendar. Venato keeps it in your system's secret store, never in a file.",
-            icon=":material/visibility:")
-    with st.form(f"ob_form_{kind}", clear_on_submit=True, border=False):
-        text = st.text_input("Calendar link", type="password", key=f"ob_link_{kind}", placeholder="https://…",
-                             help="Hidden so the link isn't shown on screen.")
-        go = st.form_submit_button("Connect", type="primary", icon=":material/link:")
-    if go:
-        try:
-            with st.spinner("Checking the link…"):
-                found = check_feed(text, kind)
-                connect_feed(found)
-            ob[f"found_{kind}"] = found
-        except outlook.AlreadyAdded:
-            st.info("Already connected. Nothing more to do here.", icon=":material/check_circle:")
-        except outlook.LinkError as e:
-            st.error(str(e), icon=":material/error:")
-        except outlook.SyncError as e:
-            st.error(outlook.friendly(e).replace("Outlook", "the calendar"), icon=":material/error:")
-        except Exception as e:
-            st.error(f"That link didn't give a calendar Venato can read ({type(e).__name__}).", icon=":material/error:")
+    if kind == "uni":
+        with st.expander("Not using Outlook?"):
+            st.markdown("- **Google Calendar** gives you a link in Settings → your calendar → "
+                        "**Secret address in iCal format**.\n"
+                        "- Other uni timetable sites usually have a **Subscribe** or **iCal/ICS** link.\n"
+                        "- Paste any link that ends in **.ics**.")
+    st.text_input("Calendar link", key=f"ob_link_{kind}", placeholder="https://…")
+    st.button("Connect", key=f"ob_connect_{kind}", type="primary", icon=":material/link:",
+              on_click=_connect_button, args=(kind,))
+    if note := ob.pop(f"link_note_{kind}", None):
+        st.info(note, icon=":material/check_circle:")
     found = ob.get(f"found_{kind}")
     if found:
         if kind == "uni":
@@ -458,22 +669,11 @@ def _modules():
         if on and typed.strip():
             names.append(typed.strip())
     if not cands and not existing:
-        kit.empty("No modules found yet. Add them below, or connect your timetable on the earlier step.", ":material/info:")
-    a, b = st.columns(2)
-    a.number_input("Credits for each new module", 1, 200, DEFAULT_CREDITS, key="ob_credits",
-                   help="You can change a module's credits later on the Modules page.")
-    b.segmented_control("Target grade", list(TARGET_GRADES), key="ob_target",
-                        help="Your target for every new module. You can change it for each one later.")
-    with st.form("ob_add_module", clear_on_submit=True, border=False):
-        x, y = st.columns([4, 1], vertical_alignment="bottom")
-        new = x.text_input("Add a module", placeholder="e.g. Organic Chemistry")
-        if y.form_submit_button("Add", icon=":material/add:") and new.strip():
-            try:
-                add_modules([{"name": new.strip()}], st.session_state.get("ob_credits") or DEFAULT_CREDITS,
-                            TARGET_GRADES.get(st.session_state.get("ob_target")))
-                st.rerun()
-            except gr.GradeError as e:
-                st.error(str(e), icon=":material/error:")
+        _empty("No modules found yet. Add them below, or connect your timetable on the earlier step.", ":material/info:")
+    x, y = st.columns([4, 1], vertical_alignment="bottom")
+    x.text_input("Add a module", key="ob_new_module", placeholder="e.g. Organic Chemistry")
+    y.button("Add", key="ob_add_module", icon=":material/add:", on_click=_add_module_button)
+    _hours_boxes(existing, cands)
     courses = canvas_courses()
     if courses:
         st.subheader("Your Canvas courses", anchor=False)
@@ -487,69 +687,138 @@ def _modules():
                          index=options.index(current) if current in options else 0)
 
 
-def _save_modules():
+def _default_hours():
+    return float(store.load_settings().get("study_hours", gr.DEFAULT_WEEK_HOURS))
+
+
+def _hours_key(c=None, m=None):
+    return f"ob_hours_{_cand_key(c)}" if c is not None else f"ob_hours_{m['id']}"
+
+
+def _hours_boxes(existing, cands):
+    """One hours-a-week box per module that will exist after Next, and what they add up to."""
     ob = _ob()
-    picked = []
-    for c in ob.get("cands", []):
+    start, total = {}, 0.0
+    ob["hours_start"] = start
+    rows = [(m["name"], _hours_key(m=m), min(gr.week_hours_goal(m), 80.0)) for m in existing]
+    for c in cands:
         name = (st.session_state.get(f"ob_name_{_cand_key(c)}") or c["name"]).strip()
         if st.session_state.get(f"ob_keep_{_cand_key(c)}", True) and name:
-            picked.append({"code": c["code"], "name": name})
-    add_modules(picked, st.session_state.get("ob_credits") or DEFAULT_CREDITS,
-                TARGET_GRADES.get(st.session_state.get("ob_target")))
+            rows.append((name, _hours_key(c), min(_default_hours(), 80.0)))
+    if not rows:
+        return
+    kit.subhead("Hours a week")
+    for name, key, value in rows:
+        start[key] = value
+        total += st.number_input(name, 0.0, 80.0, value, 0.5, key=key, help="Lectures count too. You can change it "
+                                 "for one module on its page.")
+    st.caption(f"{len(rows)} module{'s' if len(rows) != 1 else ''} · {pace.fmt(total)} h a week, lectures included")
+
+
+def _add_typed_module():
+    """Add the module typed in the box (the Add button, and Next). Raises ValueError if it can't be added."""
+    name = (st.session_state.get("ob_new_module") or "").strip()
+    if not name:
+        return
+    add_modules([{"name": name}])
+    st.session_state["ob_new_module"] = ""
+
+
+def _add_module_button():
+    try:
+        _add_typed_module()
+    except ValueError as e:
+        st.session_state["ob_error"] = str(e)
+
+
+def _save_modules():
+    """Add the modules, set the hours boxes that were changed, then give the new modules their study goals."""
+    ob, ss = _ob(), st.session_state
+    start = ob.get("hours_start", {})
+    _add_typed_module()
+    for m in gr.modules():                                     # one from before: its box, if it was drawn and changed
+        key = _hours_key(m=m)
+        if key in ss and key in start and float(ss[key]) != start[key]:
+            gr.set_week_hours_goal(m["id"], ss[key])
+    default = _default_hours()
+    for c in ob.get("cands", []):
+        name = (ss.get(f"ob_name_{_cand_key(c)}") or c["name"]).strip()
+        if ss.get(f"ob_keep_{_cand_key(c)}", True) and name:
+            add_modules([{"code": c["code"], "name": name}])
+            key = _hours_key(c)
+            if key in ss and float(ss[key]) != default and (m := _module_for(c["code"], name)):
+                gr.set_week_hours_goal(m["id"], ss[key])
     links = {}
     for c in canvas_courses():
         choice = st.session_state.get(f"ob_course_{c['course_id']}")
         if choice is not None:
             links[c["course_id"]] = None if choice == "Not linked" else choice
     link_courses(links)
+    apply_study_hours(default)
 
 
-def _hours():
-    st.header("Study hours", anchor=False)
-    mods = gr.modules()
-    st.markdown("How many hours a week do you want to spend on each module? Lectures count too. "
-                "You can change it for one module on its page.")
-    st.slider("Hours a week for each module", 0.0, 20.0, float(store.load_settings().get("study_hours", gr.DEFAULT_WEEK_HOURS)),
-              0.5, key="ob_hours")
-    if mods:
-        st.caption(f"Each of your {len(mods)} module{'s' if len(mods) != 1 else ''} gets a goal for the next "
-                   f"{STUDY_WEEKS} weeks.")
-    else:
-        kit.empty("You haven't added a module yet, so there's nothing to set. The hours are kept for when you do.",
-                  ":material/info:")
+def _goal_rows():
+    """The goal rows' ids, in order (ids stay put when a row is removed, so its boxes don't shift)."""
+    return _ob().setdefault("goal_rows", [0])
 
 
-def _save_hours():
-    apply_study_hours(st.session_state.get("ob_hours", gr.DEFAULT_WEEK_HOURS))
-
-
-def _goal_row(i, label):
+def _goal_row(n, row):
     ob = _ob()
-    gid = ob.get("goal_ids", {}).get(i)
+    gid = ob.get("goal_ids", {}).get(row)
     goal = store.get_goal(gid) if gid else None
-    a, b = st.columns([4, 1], vertical_alignment="bottom")
-    a.text_input(label, value=goal["title"] if goal else "", key=f"ob_goal_{i}", placeholder="e.g. Get a First")
-    b.number_input("Number", 0.0, 100000.0, float(goal["target"]) if goal and ob.get("goal_nums", {}).get(i) else None,
-                   key=f"ob_goal_n_{i}", placeholder="optional", help="A number to reach, like 100 for 100 hours. "
-                   "Leave it empty for a goal you just tick off.", label_visibility="collapsed")
+    meta = ob.get("goal_meta", {}).get(row, {})
+    how_saved = ob.get("goal_how", {}).get(row, "tick")
+    with st.container(border=True):
+        a, b = st.columns([6, 1], vertical_alignment="bottom")
+        a.text_input(f"Goal {n + 1}", value=goal["title"] if goal else "", key=f"ob_goal_{row}",
+                     placeholder=GOAL_PLACEHOLDERS[n % len(GOAL_PLACEHOLDERS)])
+        if n:
+            b.button("Remove", key=f"ob_goal_rm_{row}", icon=":material/close:", type="tertiary",
+                     on_click=_remove_goal_row, args=(row,), help="Remove this goal")
+        when, how = st.columns(2)
+        months = meta.get("months", 3)
+        when.segmented_control("By when", list(GOAL_WHEN), key=f"ob_goal_when_{row}", required=True,
+                               default=next((k for k, v in GOAL_WHEN.items() if v == months), "3 months"))
+        picked = how.segmented_control("How you'll track it", list(GOAL_HOW), key=f"ob_goal_how_{row}", required=True,
+                                       default=next(k for k, v in GOAL_HOW.items() if v == how_saved))
+        if GOAL_HOW.get(picked) == "hours":
+            st.number_input("Hours a week", 0.0, 80.0, meta.get("number") if how_saved == "hours" else None, 0.5,
+                            key=f"ob_goal_n_{row}", placeholder="e.g. 3")
+        elif GOAL_HOW.get(picked) == "number":
+            st.number_input("Number to reach", 0.0, 100000.0, meta.get("number") if how_saved == "number" else None,
+                            key=f"ob_goal_n_{row}", placeholder="e.g. 12")
+
+
+def _add_goal_row():
+    rows = _goal_rows()
+    if len(rows) < GOAL_MAX:
+        rows.append(max(rows) + 1)
+
+
+def _remove_goal_row(row):
+    rows = _goal_rows()
+    if row in rows and len(rows) > 1:
+        rows.remove(row)
+    forget_goal_row(row)
+    for k in ("ob_goal_", "ob_goal_when_", "ob_goal_how_", "ob_goal_n_"):
+        st.session_state.pop(f"{k}{row}", None)
 
 
 def _goals():
     st.header("Your goals", anchor=False)
-    st.markdown("What do you want to have done in 3 months, 6 months and a year? A few words is enough, "
-                "and a number if there is one.")
-    for i, (label, _) in enumerate(GOAL_SLOTS):
-        _goal_row(i, label)
-    targets = [m for m in gr.modules() if m["target"] is not None]
-    if is_student() and targets:
-        kit.subhead("Goals you already have")
-        for m in targets:
-            st.markdown(f":material/flag: {escape(m['name'])}: {m['target']:g}%")
+    st.markdown("What do you want to get done? A few words is enough. Pick a date and how you'll know you're there.")
+    rows = _goal_rows()
+    for n, row in enumerate(rows):
+        _goal_row(n, row)
+    if len(rows) < GOAL_MAX:
+        st.button("Add another goal", key="ob_goal_add", icon=":material/add:", type="tertiary", on_click=_add_goal_row)
 
 
 def _save_goals():
-    save_goals([(st.session_state.get(f"ob_goal_{i}"), st.session_state.get(f"ob_goal_n_{i}"), months)
-                for i, (_, months) in enumerate(GOAL_SLOTS)])
+    ss = st.session_state
+    save_goals([(row, ss.get(f"ob_goal_{row}"), GOAL_HOW.get(ss.get(f"ob_goal_how_{row}"), "tick"),
+                 ss.get(f"ob_goal_n_{row}"), GOAL_WHEN.get(ss.get(f"ob_goal_when_{row}"), 3))
+                for row in _goal_rows()])
 
 
 def _my_goals():
@@ -565,10 +834,10 @@ def _suggestion_label(s):
 def _track():
     ob = _ob()
     st.header("What would you track?", anchor=False)
-    st.markdown("These are examples based on your goals: pick what you want. Nothing is switched on until you tick it.")
+    st.markdown("These are examples based on your goals: pick what you want.")
     goals = _my_goals()
     if not goals:
-        kit.empty("Add a goal on the previous step and examples show up here.", ":material/info:")
+        _empty("Add a goal on the previous step and examples show up here.", ":material/info:")
     for i, g in goals:
         found = suggest.for_goal(g["title"])
         kit.subhead(g['title'])
@@ -578,18 +847,27 @@ def _track():
             st.checkbox(_suggestion_label(s), value=False, key=f"ob_sg_{i}_{j}")
     for name, _ in ob.get("own", []):
         st.markdown(f":material/check: Your own habit: **{escape(name)}**")
-    with st.form("ob_own", clear_on_submit=True, border=False):
-        a, b, c = st.columns([3, 3, 1], vertical_alignment="bottom")
-        name = a.text_input("Add your own habit", placeholder="e.g. Stretch")
-        titles = ["No goal"] + [g["title"] for _, g in goals]
-        link = b.selectbox("Count it towards", titles)
-        if c.form_submit_button("Add", icon=":material/add:") and name.strip():
-            ob.setdefault("own", []).append((name.strip(), None if link == "No goal" else link))
-            st.rerun()
+    a, b, c = st.columns([3, 3, 1], vertical_alignment="bottom")
+    a.text_input("Add your own habit", key="ob_own_name", placeholder="e.g. Stretch")
+    a_titles = ["No goal"] + [g["title"] for _, g in goals]
+    b.selectbox("Count it towards", a_titles, key="ob_own_link")
+    c.button("Add", key="ob_own_add", icon=":material/add:", on_click=_add_own_habit)
+    _colours()
+
+
+def _add_own_habit():
+    """Keep the habit typed in the box to add when Next is pressed (the Add button, and Next)."""
+    name = (st.session_state.get("ob_own_name") or "").strip()
+    if not name:
+        return
+    link = st.session_state.get("ob_own_link")
+    _ob().setdefault("own", []).append((name, None if link in (None, "No goal") else link))
+    st.session_state["ob_own_name"] = ""
 
 
 def _save_track():
     ob = _ob()
+    _add_own_habit()
     goals = _my_goals()
     for i, g in goals:
         for j, s in enumerate(suggest.for_goal(g["title"])):
@@ -599,6 +877,10 @@ def _save_track():
         gid = next((g["id"] for _, g in goals if g["title"] == goal_title), None)
         apply_suggestion({"kind": "habit", "name": name}, gid)
     ob["own"] = []
+    for cid, name, *_ in _colour_options():                    # setup only adds: a category left off is not removed
+        if name in (st.session_state.get("ob_cats") or []):
+            ensure_category(cid)
+    _make_own_category()
 
 
 def _text_on(colour):
@@ -615,50 +897,55 @@ def _chip(name, colour):
             f'background:{colour};color:{_text_on(colour)};font-size:.9rem">{escape(name)}</span>')
 
 
+def _colour_options():
+    """[(id, name, colour)] for the colour chips: every example, then categories that aren't one of them."""
+    cats = store.load_categories().to_dict("records")
+    have = {c["id"]: c for c in cats}
+    by_name = {c["name"].lower(): c for c in cats}
+    out = []
+    for cid, name, colour, *_ in store.EXAMPLE_CATEGORIES:
+        mine = have.get(cid) or by_name.get(name.lower())
+        out.append((cid, name, mine["colour"] if mine else colour))
+    shown = {o[0] for o in out} | {n.lower() for _, n, _ in out}
+    out += [(c["id"], c["name"], c["colour"]) for c in cats if c["id"] not in shown and c["name"].lower() not in shown]
+    return out
+
+
+def _colours():
+    """Colour your timetable: a chip to switch on for each category, and a box to add your own."""
+    options = _colour_options()
+    names = [n for _, n, _ in options]
+    existing = {n.lower() for n in store.load_categories()["name"]}
+    if "ob_cats" not in st.session_state:                      # seeded here, so the pills take no default
+        st.session_state["ob_cats"] = [n for n in names if n.lower() in existing]
+    on = st.session_state["ob_cats"]
+    kit.subhead("Colour your timetable")
+    st.caption("Tap a category to switch it on. Your modules are already there.")
+    st.html("".join(_chip(n, c) for _, n, c in options if n in on) or "<i>None switched on yet.</i>")
+    st.pills("Categories", names, selection_mode="multi", key="ob_cats",
+             label_visibility="collapsed")
+    a, b, c = st.columns([3, 1, 1], vertical_alignment="bottom")
+    a.text_input("Add your own category", key="ob_cat_name", placeholder="e.g. Lab work")
+    b.color_picker("Colour", "#4E79A7", key="ob_cat_colour")
+    c.button("Add", key="ob_cat_add", icon=":material/add:", on_click=_add_own_category)
+
+
+def _make_own_category(required=False):
+    """Add the category typed in the box (nothing if the name is empty, unless `required`), in the smallest
+    group. Raises ValueError if it can't be added."""
+    if not required and not (st.session_state.get("ob_cat_name") or "").strip():
+        return
+    name = st.session_state.get("ob_cat_name")
+    add_category(name, st.session_state.get("ob_cat_colour") or OWN_COLOUR, default_group())
+    st.session_state["ob_cat_name"] = ""
+    st.session_state["ob_cats"] = [*(st.session_state.get("ob_cats") or []), name.strip()]
+
+
 def _add_own_category():
-    group = st.session_state.get("ob_cat_group")
-    group = st.session_state.get("ob_cat_newgroup") if group in (None, NEW_GROUP) else group
     try:
-        add_category(st.session_state.get("ob_cat_name"), st.session_state.get("ob_cat_colour") or "#4E79A7", group)
-        st.session_state["ob_cat_name"] = ""
+        _make_own_category(required=True)
     except ValueError as e:
         st.session_state["ob_error"] = str(e)
-
-
-def _day():
-    st.header("Your day", anchor=False)
-    st.markdown("Categories colour your timetable. Your modules and anything you picked are already there. "
-                "Tick any examples you'd like, or add your own.")
-    cats = store.load_categories()
-    if cats.empty:
-        kit.empty("No categories yet.", ":material/info:")
-    for grp in dict.fromkeys(cats["grp"]):
-        rows = cats[cats["grp"] == grp]
-        kit.subhead(grp)
-        st.html("".join(_chip(r["name"], r["colour"]) for r in rows.to_dict("records")))
-    have = set(cats["id"]) | {n.lower() for n in cats["name"]}
-    examples = [e for e in store.EXAMPLE_CATEGORIES if e[0] not in have and e[1].lower() not in have]
-    if examples:
-        kit.subhead("Examples: pick what you want")
-        cols = st.columns(3)
-        for i, (cid, name, colour, _, grp) in enumerate(examples):
-            cols[i % 3].checkbox(f"{name} ({grp})", value=False, key=f"ob_ex_{cid}")
-    kit.subhead("Add your own")
-    a, b = st.columns([3, 1], vertical_alignment="bottom")
-    a.text_input("Name", key="ob_cat_name", placeholder="e.g. Lab work")
-    b.color_picker("Colour", "#4E79A7", key="ob_cat_colour")
-    groups = store.groups()
-    c, d = st.columns(2, vertical_alignment="bottom")
-    group = c.selectbox("Group", groups + [NEW_GROUP], key="ob_cat_group")
-    if group == NEW_GROUP:
-        d.text_input("New group name", value="Life", key="ob_cat_newgroup")
-    st.button("Add category", key="ob_cat_add", icon=":material/add:", on_click=_add_own_category)
-
-
-def _save_day():
-    for cid, *_ in store.EXAMPLE_CATEGORIES:
-        if st.session_state.get(f"ob_ex_{cid}"):
-            ensure_category(cid)
 
 
 def _grid(sittings):
@@ -679,18 +966,23 @@ def _grid(sittings):
 
 def _add_week():
     added = add_first_week(_ob().get("sittings", []))
-    st.session_state["ob_added"] = added
-    st.session_state["wizard_step"] = st.session_state.get("wizard_step", 0) + 1
+    _ob()["added"] = added
 
 
 def _week():
     ob = _ob()
     st.header("Your first week", anchor=False)
-    sittings = first_week()
+    st.caption("Press **Edit Home** at the top of Home to change what it shows.")
+    sittings = week_sittings([g for _, g in _my_goals()])
     ob["sittings"] = sittings
+    added = ob.get("added")
+    if added is not None:
+        st.success(f"Added {added} block{'s' if added != 1 else ''} to your Plan." if added else
+                   "Nothing was added: that time is taken now.", icon=":material/check_circle:")
     if not sittings:
-        kit.empty("Nothing to suggest yet. Hours goals, like a module's study time, get sittings here, in your free time.",
-                  ":material/info:")
+        if added is None:
+            _empty("Nothing to suggest yet. Add a goal and it gets sittings here, in your free time.",
+                      ":material/info:")
         return
     hours = sum(store.slot_of(s["end"]) - store.slot_of(s["start"]) for s in sittings) / 2
     st.markdown(f"Here's how your goals could fit in the next 7 days: {pace.fmt(hours)} h in free time. "
@@ -699,21 +991,32 @@ def _week():
     st.button("Add to my Plan", key="ob_week_add", type="primary", icon=":material/playlist_add:", on_click=_add_week)
 
 
-def _home():
-    st.header("Home", anchor=False)
-    picks = home_picks()
-    st.markdown("Home shows what you want to see first. These are added from what you picked:")
-    if not picks:
-        kit.empty("Nothing extra yet. Home starts with your timetable, to-dos and what needs you.", ":material/info:")
-    for key, name in picks:
-        st.checkbox(f"Show {name} on Home", value=True, key=f"ob_home_{key}")
-    st.caption("Press **Arrange** at the top of Home to move, resize or hide anything.")
+STEP_BODY = {"calendars": _calendars, "modules": _modules, "goals": _goals, "track": _track, "week": _week}
+SAVE = {"calendars": _save_calendars, "modules": _save_modules, "goals": _save_goals, "track": _save_track}
 
 
-STEP_BODY = {"student": _student, "modules": _modules, "hours": _hours, "goals": _goals, "track": _track, "day": _day,
-             "week": _week, "home": _home}
-SAVE = {"student": _save_student, "modules": _save_modules, "hours": _save_hours, "goals": _save_goals,
-        "track": _save_track, "day": _save_day}
+def _typed(key):
+    return bool((st.session_state.get(key) or "").strip())
+
+
+def _filled(key):
+    """Has this step got something in it this run: typed, ticked or connected? (Cheap checks, no writing.)
+    The main button says Next if so, and Skip if not."""
+    ss, ob = st.session_state, _ob()
+    if key == "calendars":
+        return any(_typed(f"ob_link_{k}") or bool(ob.get(f"found_{k}")) for k in ("uni", "canvas"))
+    if key == "modules":
+        return (_typed("ob_new_module") or any(ss.get(f"ob_keep_{_cand_key(c)}", True) for c in ob.get("cands", []))
+                or bool(ob.get("new_modules"))
+                or any(k in ss and float(ss[k]) != v for k, v in ob.get("hours_start", {}).items())
+                or any(v not in (None, "Not linked") for k, v in ss.items() if k.startswith("ob_course_")))
+    if key == "goals":
+        return any(_typed(f"ob_goal_{row}") for row in _goal_rows())
+    if key == "track":
+        return (_typed("ob_own_name") or _typed("ob_cat_name") or bool(ob.get("own"))
+                or any(v for k, v in ss.items() if k.startswith("ob_sg_"))
+                or bool(set(ss.get("ob_cats") or []) - set(store.load_categories()["name"])))
+    return False
 
 
 def _go(index, save=None):
@@ -727,36 +1030,54 @@ def _go(index, save=None):
     st.session_state["wizard_step"] = index
 
 
-def wizard(finish):
-    """The full-screen setup: no sidebar. `finish` is called when it's done or skipped."""
-    st.html("<style>[data-testid='stSidebar'], [data-testid='stSidebarCollapsedControl'] { display: none; }</style>")
+def wizard(finish, skip=None):
+    """The full-screen setup: no sidebar. `finish` is called when it's done, `skip` (default: finish) when setup is skipped."""
+    ink = appearance.tokens()
+    st.html(f"""<style>
+    [data-testid='stSidebar'], [data-testid='stSidebarCollapsedControl'] {{ display: none; }}
+    /* Progress is not an error: ink, not the red accent. */
+    [data-testid='stProgress'] [role='progressbar'] > div {{ background-color: {ink['track']} !important; }}
+    [data-testid='stProgress'] [role='progressbar'] > div > div {{ background-color: {ink['ink']} !important; }}
+    /* A short step sits in the middle of the window; a long one scrolls as usual (auto margins, not
+    justify-content, so a tall step is never clipped at the top). */
+    [data-testid='stMainBlockContainer'] {{ min-height: 100vh; display: flex; flex-direction: column; }}
+    [data-testid='stMainBlockContainer'] > [data-testid='stVerticalBlock'] {{ flex-grow: 0; margin-block: auto; }}
+    /* Pills wrap onto more lines rather than scrolling sideways (and clipping the last one). */
+    [data-testid='stButtonGroup'], [data-testid='stButtonGroup'] > div {{ flex-wrap: wrap !important; overflow: visible !important; }}
+    </style>""")
     listed = steps()
     step = min(st.session_state.setdefault("wizard_step", 0), len(listed) - 1)
     key = listed[step][0]
     _, mid, _ = st.columns([1, 3, 1])
     with mid:
-        st.caption(f"Setup · step {step + 1} of {len(listed)}")
-        st.progress((step + 1) / len(listed))
+        if key != "welcome":                          # the steps aren't known until the uni question is answered
+            st.caption(" · ".join(f"**{n}**" if i == step else n for i, (_, n, _) in enumerate(listed)))
+            st.progress((step + 1) / len(listed))
         if error := st.session_state.pop("ob_error", None):
             st.error(error, icon=":material/error:")
         if key == "welcome":
             _welcome()
-        elif key in ("timetable", "canvas"):
-            _link_step("uni" if key == "timetable" else "canvas")
         else:
             STEP_BODY[key]()
-        st.divider()
-        back, skip, nxt = st.columns([1, 1, 1])
+        if st.session_state.get("wizard_drawn") != step:
+            # A new step opens at the top, not wherever the last (longer) one was scrolled to.
+            st.session_state["wizard_drawn"] = step
+            components.html(f"<script>/* step {step} */ const d = window.parent.document;"
+                            "d.querySelector('[data-testid=\"stMain\"]')?.scrollTo(0, 0); window.parent.scrollTo(0, 0);</script>",
+                            height=0)
         last = step == len(listed) - 1
-        if step > 0:
-            back.button("Back", key="wiz_back", on_click=_go, args=(step - 1,), icon=":material/arrow_back:")
+        if key == "welcome":
+            st.button("Skip setup and start blank", key="wiz_skip_all", type="tertiary", on_click=skip or finish)
+            return
+        st.divider()
+        back, main = st.columns([1, 1])
+        back.button("Back", key="wiz_back", on_click=_go, args=(step - 1,), icon=":material/arrow_back:")
         if last:
-            nxt.button("Start using Venato", key="wiz_finish", type="primary", on_click=finish, width="stretch")
-        elif key == "welcome":
-            skip.button("Skip setup", key="wiz_skip_all", on_click=finish)
-            nxt.button("Get started", key="wiz_next", type="primary", on_click=_go, args=(step + 1,),
-                       width="stretch", icon=":material/arrow_forward:")
+            main.button("Start using Venato", key="wiz_finish", type="primary", on_click=finish, width="stretch")
+        elif _filled(key):
+            main.button("Next", key="wiz_next", type="primary", on_click=_go, args=(step + 1, key if key in SAVE else None),
+                        width="stretch", icon=":material/arrow_forward:")
         else:
-            skip.button("Skip for now", key="wiz_skip", on_click=_go, args=(step + 1,))
-            nxt.button("Next", key="wiz_next", type="primary", on_click=_go, args=(step + 1, key if key in SAVE else None),
-                       width="stretch", icon=":material/arrow_forward:")
+            # Same save as Next: a click can arrive from the previous run's button, drawn before the text was typed.
+            main.button("Skip", key="wiz_skip", on_click=_go, args=(step + 1, key if key in SAVE else None),
+                        width="stretch")
