@@ -157,6 +157,13 @@ def init_db():
         _add_column(conn, "goals", "category_id", "TEXT REFERENCES tt_categories(id) ON DELETE SET NULL")
         _add_column(conn, "goals", "label", "TEXT")
         _add_column(conn, "weekly_reviews", "kept", "TEXT")       # did they do last week's "to change"? yes/partly/no
+        # Done / not done, marked on a timetable block or calendar event (kept for analysis, even if the
+        # block changes or goes: a snapshot of what it was). id: the block's id, or "outlook:<uid>".
+        conn.execute("""CREATE TABLE IF NOT EXISTS tt_status (
+                            id TEXT PRIMARY KEY, date TEXT NOT NULL, start TEXT, "end" TEXT, label TEXT,
+                            category_id TEXT, status TEXT NOT NULL CHECK (status IN ('done', 'missed')),
+                            at TEXT NOT NULL)""")
+        _word_rules_to_label_map(conn)
         # To-dos: a due day, how long it takes and one of the user's own to-do categories (todo_groups).
         _add_column(conn, "todos", "due", "TEXT")
         _add_column(conn, "todos", "minutes", "INTEGER")
@@ -281,6 +288,18 @@ def _deadlines_from_feeds(conn):
     _add_column(conn, "goals", "closed", "INTEGER NOT NULL DEFAULT 0")
     _add_column(conn, "tt_outlook", "module_code", "TEXT")      # the code the event names (feeds.event_code)
     _add_column(conn, "tt_outlook", "module_id", "TEXT")        # the module with that code, if there is one
+
+
+def _word_rules_to_label_map(conn):
+    """Another version of Venato kept word rules ('Rugby' -> Sports) in category_rules; since labels
+    match activities as whole words, they become activity defaults (once, keeping any already set)."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'category_rules'").fetchone():
+        return
+    have = {r[0].lower() for r in conn.execute("SELECT label FROM tt_label_map")}
+    for word, cid in conn.execute("SELECT word, category_id FROM category_rules").fetchall():
+        if word and word.strip() and word.strip().lower() not in have:
+            conn.execute("INSERT INTO tt_label_map VALUES (?, ?)", (word.strip(), cid))
+            have.add(word.strip().lower())
 
 
 def _add_column(conn, table, column, kind):
