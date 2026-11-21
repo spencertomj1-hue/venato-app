@@ -10,6 +10,7 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Changed
+- Edit Home is plain drag and drop: drag a tile and the others make room as you go, and it lands where you let go (Esc cancels). The pick-up button, arrows and "Drop here" slot are gone; a ⤢ button on each tile steps through its sizes, and the − buttons are smaller. Home's edits no longer show the Undo bar (⌘Z / Ctrl+Z still undoes the last one).
 - New icons for the built-in blocks (Timetable, Goals, Focus, Modules, Review, Daily Log): one stroke set, on Home's tile headers and the shortcut tiles at the top of each page. Focus is teal now, not grey. Home's tile icons are square again, not squashed.
 - To-dos: the category filter now works on every tab (Today, This week, This month too), so you can see only one category's to-dos, e.g. just Nina's. A to-do added while a filter is on goes in that category. A new **By category** tab lists every open to-do under its category.
 - Each goal you set (e.g. "Get a job") is also a to-do category, marked with a flag. Renaming the goal renames it. Deleting the goal keeps the category and its to-dos. Goals already running get their category once, on update.
