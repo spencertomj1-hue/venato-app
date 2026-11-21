@@ -14,7 +14,7 @@ import fragment_run
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 # What a full install offers: every tile key with its default size.
-ALL = {"timetable_today": "large", "ask": "wide", "needs_you": "wide", "todos": "wide", "deadlines": "small",
+ALL = {"timetable_today": "tall", "ask": "wide", "needs_you": "wide", "todos": "wide", "deadlines": "small",
        "goals": "wide", "habits": "small", "journal": "small", "focus": "small", "modules": "small", "review": "small"}
 
 # The layout every install had before tiles: a timetable ⅔ wide, then a stack, in the 12-column sizes.
@@ -26,7 +26,7 @@ OLD_DEFAULT = [{"w": "timetable_today", "size": "l"}, {"stack": ["ask", "needs_y
 def test_default_layout():
     d = hl.default()
     assert hl.keys(d) == ["timetable_today", "todos", "goals", "focus", "modules", "habits", "review", "needs_you"]
-    assert d[0] == {"w": "timetable_today", "size": "large"}
+    assert d[0] == {"w": "timetable_today", "size": "tall"}          # narrow: a column down the left
     assert hl.normalise(None, ALL) == d                                  # no saved key: the default
     assert hl.normalise("rubbish", ALL) == d
     assert hl.hidden(d, ALL) == ["ask", "deadlines", "journal"]           # the rest wait in "Add a tile"
@@ -46,7 +46,7 @@ def test_sizes_a_tile_doesnt_come_in_fall_back():
     sizes = {"focus": ("small", "wide"), "timetable_today": ("wide", "large", "tall")}
     saved = [{"w": "focus", "size": "large"}, {"w": "timetable_today", "size": "s"}, {"w": "todos", "size": "huge"}]
     assert hl.normalise(saved, ALL, sizes) == [{"w": "focus", "size": "small"},            # its default
-                                               {"w": "timetable_today", "size": "large"},
+                                               {"w": "timetable_today", "size": "tall"},    # its default
                                                {"w": "todos", "size": "wide"}]
 
 
@@ -64,9 +64,29 @@ def test_junk_list_gives_the_default_but_empty_stays_empty():
     assert hl.normalise([{"w": "money", "size": "m"}], ALL) == []        # well formed, just not on offer
 
 
+def test_default_fits_three_rows():
+    """The starting Home is three rows (Home sizes its rows from the window, so it fits one screen)."""
+    assert hl.rows(hl.default()) == 3
+    assert hl.rows([]) == 0
+    assert hl.rows([{"w": "a", "size": "large"}, {"w": "b", "size": "wide"}, {"w": "c", "size": "small"}]) == 2
+    assert hl.rows([{"w": "a", "size": "large"}, {"w": "b", "size": "wide"}, {"w": "c", "size": "tall"}]) == 3
+
+
+def test_an_old_saved_layout_still_normalises():
+    """A layout saved before this Home (the old default: a Large timetable first, in the 12-column sizes or
+    the tile sizes) keeps its own sizes: the new default is only for installs that never saved one, and Reset."""
+    before = [{"w": "timetable_today", "size": "large"}, {"w": "todos", "size": "wide"}, {"w": "goals", "size": "wide"},
+              {"w": "focus", "size": "small"}, {"w": "modules", "size": "small"}, {"w": "habits", "size": "small"},
+              {"w": "review", "size": "small"}, {"w": "needs_you", "size": "wide"}]
+    assert hl.normalise(before, ALL) == before
+    sizes = {"todos": ("small", "wide"), "timetable_today": ("wide", "large", "tall")}
+    assert hl.normalise([{"w": "todos", "size": "large"}, {"w": "timetable_today", "size": "l"}], ALL, sizes) == \
+        [{"w": "todos", "size": "wide"}, {"w": "timetable_today", "size": "large"}]   # To-dos no longer comes Large
+
+
 def test_place_fills_gaps():
     """Each tile takes the first place it fits, left to right, top to bottom (like the browser's dense grid)."""
-    assert hl.place(hl.default()) == [(0, 0), (0, 2), (1, 2), (2, 0), (2, 1), (2, 2), (2, 3), (3, 0)]
+    assert hl.place(hl.default()) == [(0, 0), (0, 1), (1, 1), (0, 3), (1, 3), (2, 0), (2, 1), (2, 2)]
     cells = [{"w": "a", "size": "wide"}, {"w": "b", "size": "large"}, {"w": "c", "size": "small"},
              {"w": "d", "size": "small"}, {"w": "e", "size": "tall"}, {"w": "f", "size": "small"}]
     assert hl.place(cells) == [(0, 0), (0, 2), (1, 0), (1, 1), (2, 0), (2, 1)]
@@ -159,11 +179,14 @@ def test_blank_install_renders_the_default(blank_store):
 
 def test_grid_spans_follow_sizes(store):
     store.save_settings(home=[{"w": "timetable_today", "size": "large"}, {"w": "focus", "size": "small"},
-                              {"w": "todos", "size": "tall"}, {"w": "goals", "size": "wide"}])
+                              {"w": "needs_you", "size": "tall"}, {"w": "goals", "size": "wide"}])
     css = " ".join(h.proto.body for h in app().get("html"))
     for k, span in (("timetable_today", "span 2; grid-row: span 2"), ("focus", "span 1; grid-row: span 1"),
-                    ("todos", "span 1; grid-row: span 2"), ("goals", "span 2; grid-row: span 1")):
+                    ("needs_you", "span 1; grid-row: span 2"), ("goals", "span 2; grid-row: span 1")):
         assert f".st-key-home_grid > div:has(> .st-key-hw_{k}) {{ grid-column: {span}; }}" in css
+    # The rows share the window's height: as many as the layout uses (goals drops to a third row), tiles clip.
+    assert "grid-template-rows: repeat(3, var(--home-row))" in css and "var(--home-grid-h" in css
+    assert '[class*="st-key-hw_"] { overflow: hidden; }' in css
 
 
 def test_old_layout_migrates_on_home(store):
@@ -218,11 +241,12 @@ def test_edit_home(store):
     # Tap to pick up: highlighted, with sizes, ← / → and a drop slot.
     at.button(key="hwpick_todos").click().run()
     assert at.session_state["home_picked"] == "todos"
-    assert {"hwsz_todos_small", "hwsz_todos_wide", "hwsz_todos_large", "hwsz_todos_tall", "hwl_todos", "hwr_todos",
+    assert {"hwsz_todos_small", "hwsz_todos_wide", "hwl_todos", "hwr_todos",
             "home_drop_end"} <= {b.key for b in at.button}
+    assert not has(at, "hwsz_todos_large") and not has(at, "hwsz_todos_tall")   # To-dos: Small or Wide
     assert [b.key for b in at.button if b.key.startswith("hwsz_focus")] == []
-    at.button(key="hwsz_todos_large").click().run()                       # resize to a named size
-    assert saved(store)[1] == {"w": "todos", "size": "large"}
+    at.button(key="hwsz_todos_small").click().run()                       # resize to a named size
+    assert saved(store)[1] == {"w": "todos", "size": "small"}
     at.button(key="hwpick_timetable_today").click().run()                 # tap another: moved there
     assert hl.keys(saved(store))[:2] == ["todos", "timetable_today"] and at.session_state["home_picked"] is None
     assert at.button(key="undo_btn")
@@ -262,10 +286,10 @@ def test_picked_tile_gone_by_undo_isnt_still_picked(store):
     at.button(key="home_arrange").click().run()
     at.button(key="home_add_journal").click().run()
     at.button(key="hwpick_journal").click().run()
-    assert any("picked up" in m.value for m in at.caption)
+    assert has(at, "hwl_journal") and at.session_state["home_picked"] == "journal"     # picked up: its arrows
     at.button(key="undo_btn").click().run()                               # Journal leaves Home
     assert not at.exception and "hw_journal" not in keys(at)
-    assert not any("picked up" in m.value for m in at.caption)
+    assert at.session_state["home_picked"] is None and not has(at, "home_drop_end")
 
 
 def test_arrows_off_only_when_they_would_do_nothing(store):
@@ -378,3 +402,50 @@ def test_existing_install_without_first_seen(store):
     assert not goal_time.assistant_offer_due() and not has(at, "needs_ai_yes")
     assert goal_time.assistant_offer_due(today + timedelta(days=7))
     assert not goal_time.assistant_offer_due(today + timedelta(days=6))
+
+
+# --- Tiles show a summary (Home fits one screen); the rest is a tap away ---
+
+def test_todos_tile_shows_three(store):
+    """The To-dos tile: at most 3 to-dos a list, then "+N more" (drawn by the component from `limit`)."""
+    today = store.local_today()
+    for i in range(9):
+        store.add_todo(f"Task {i}", "daily", today)
+    at = app()
+    data = fragment_run.component_data(at, "home_todos")
+    assert data["tile"] and [s["limit"] for s in data["sections"]] == [3, 3, 3]
+    assert len(data["sections"][0]["goals"]) == 9                         # all sent: the count and "+6 more"
+
+
+def test_goals_tile_top_three_behind_first(store):
+    """The Goals tile: the top 3 goals, ones behind first, each a name and a bar on one line; "and N more"."""
+    from venato.ui import goals
+    today = store.local_today()
+    for name in ("Books", "Films"):                                       # done: on track, listed first
+        store.add_goal(name, "yearly", today, 1, name.lower())
+        store.set_goal_progress(next(g["id"] for g in store.goals_in("yearly", today) if g["title"] == name), 1)
+    for name in ("Essays", "Sketches"):                                   # ten days in, nothing done: behind
+        store.add_goal(name, None, today - timedelta(days=10), 10, name.lower(), due=today + timedelta(days=10))
+    order = [(g["title"], p["state"]) for g, p in goals.home_goals()]
+    assert [t for t, _ in order[:2]] == ["Essays", "Sketches"] and {s for _, s in order[:2]} == {"behind"}
+    store.save_settings(home=[{"w": "goals", "size": "wide"}])
+    html = " ".join(h.proto.body for h in app().get("html"))
+    assert html.count('class="hg-row"') == 3 and "and 1 more" in html
+    assert html.index(">Essays<") < html.index(">Sketches<") < html.index(">Books<")
+    assert "hg-line" not in html.split("hg-rows", 1)[1]                    # no second line of text
+
+
+def test_needs_you_tile_shows_three_then_more(store):
+    """Needs you: the first 3 things, the last sharing its line with "+N more"; a tap on the tile opens a dialog
+    with all of them (and their buttons, under their own keys)."""
+    today = store.local_today()
+    for i in range(5):
+        store.add_deadline(f"Deadline {i}", today + timedelta(days=i + 1))
+    store.save_settings(home=[{"w": "needs_you", "size": "wide"}])
+    at = app()
+    assert not at.exception
+    shown = [m.value for m in at.markdown if "Deadline" in m.value]
+    assert len(shown) == 3 and any(c.value == "+2 more" for c in at.caption)
+    at.button(key="open_tile_needs_you").click().run()
+    assert not at.exception
+    assert len([m.value for m in at.markdown if "Deadline" in m.value]) == 3 + 5   # the tile, and the dialog

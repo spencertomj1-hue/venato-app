@@ -102,7 +102,7 @@ def review(today=None, now=None):
 def needs_you():
     from venato.ui import goal_time
     items = goal_time.needs_items()
-    n = sum(len(items[k]) for k in ("days", "goals", "deadlines", "blocks"))
+    n = sum(len(items[k]) for k in ("days", "goals", "deadlines", "blocks")) + bool(items["assistant"]) + bool(items["feedback"])
     return f"{n} thing{'s' * (n != 1)}" if n else "All clear"
 
 

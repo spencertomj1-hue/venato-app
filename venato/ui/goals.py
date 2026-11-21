@@ -393,25 +393,46 @@ def goal_bar(g, today, line=""):
             + (f'<div class="hg-line">{escape(line)}</div>' if line else ""))
 
 
+HOME_LIMIT = 3          # goals Home's tile shows before "and N more"
+_BEHIND_FIRST = {"unreachable": 0, "behind": 0, "slipping": 1}     # the rest keep their list order after these
+
+
+def home_goals(ctx=None):
+    """The goals running now as Home lists them: [(goal, pace)], the ones behind (or out of reach, or slipping)
+    first, the rest in their usual order."""
+    from venato import pace
+    ctx = ctx or pace.Ctx()
+    rows = [(p["goal"], p) for p in pace.pace_all(ctx)]
+    return sorted(rows, key=lambda r: _BEHIND_FIRST.get(r[1]["state"], 2))
+
+
 def render_home():
-    """Home's Goals widget: the goals running now, each with its bar and the "should be here by today" tick."""
+    """Home's Goals tile: the top three goals (behind ones first), each its name and a thin bar with the
+    "should be here by today" tick on one line, then "and N more". Everything else is on the Goals page."""
     today = store.local_today()
-    running = store.goals_active(today)
+    rows = home_goals()
     head = st.container(horizontal=True, vertical_alignment="center")
     kit.subhead("Goals", head, width="stretch")
     head.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
-    if not running:
+    if not rows:
         st.caption("No goals running. Set one on the Goals page.")
         return
-    st.html(goal_bar_css())
-    for g in running[:HOME_LIMIT]:
-        st.html(f'<div class="hg-title">{escape(g["title"])}</div>'
-                + goal_bar(g, today, f"{amount(g)} {store.goal_title_due(g['due'], today)}"))
-    if len(running) > HOME_LIMIT:
-        st.caption(f"and {len(running) - HOME_LIMIT} more")
-
-
-HOME_LIMIT = 5
+    lines = []
+    for g, p in rows[:HOME_LIMIT]:
+        say = f"{g['title']}: {amount(g)} {store.goal_title_due(g['due'], today)}, {status_line(p)}"
+        lines.append(f'<div class="hg-row" title="{escape(say)}"><span class="hg-name">{escape(g["title"])}</span>'
+                     f'<div class="hg-track" role="img" aria-label="{escape(say)}"><div class="hg-bar">{_fill(g)}</div>'
+                     f'{_marker(g, today)}</div></div>')
+    st.html(goal_bar_css() + """<style>
+      .hg-rows { display: flex; flex-direction: column; gap: 8px; }
+      .hg-row { display: grid; grid-template-columns: minmax(0, 38%) minmax(0, 1fr); align-items: center; gap: 12px; }
+      .hg-name { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .hg-row .hg-bar { height: 5px; }
+      .hg-row .hg-mark { top: -3px; height: 11px; }
+      .hg-more { font-size: 0.875rem; opacity: 0.85; }
+    </style>""" + f'<div class="hg-rows">{"".join(lines)}'
+            + (f'<div class="hg-more">and {len(rows) - HOME_LIMIT} more</div>' if len(rows) > HOME_LIMIT else "")
+            + "</div>")
 
 
 def goal_bar_css():

@@ -27,6 +27,7 @@ const SWIPE_THRESHOLD = 120;      // px of sideways scroll that flips a week
 const RAIL = 4;                   // px: the Plan's strip down the left of a locked day's Actual column
 const SWAP_MS = 380;              // ms: the Plan / Actual cross-fade
 const SHOW_MISSED = true;         // also hatch Plan time where nothing was done (set false to drop it)
+const HOME_HOURS = 6;             // hours Home's tile aims to show (fitHome)
 const PREVIEW_EASE = 0.35;        // share of the gap the resize preview closes each frame (it glides, lagging a few ms)
 
 // ---------- Small helpers ----------
@@ -740,8 +741,8 @@ class Timetable {
   }
 
   // Shrink (or grow) the rows so the whole day fits in the window without scrolling (runs again on
-  // every window resize). Home (view only): 9px to 40px rows, so the day fills the column's height;
-  // the Timetable page: 10px (still big enough to drag in) to 18px.
+  // every window resize): the Timetable page, 10px rows (still big enough to drag in) to 18px.
+  // Home (view only) shows a window of the day instead: fitHome.
   fitToWindow() {
     if (!this.wrapEl || !this.cells || !this.cells[0]) return;
     // On Home, while its widget is pinned or gliding to a new place (home_flip.js) the boxes measured here are
@@ -749,7 +750,8 @@ class Timetable {
     const SEL = '[class*="st-key-hw_"]';
     const card = this.root.closest(SEL) || this.root.getRootNode().host?.closest(SEL);
     if (card && (card.style.transform || card.getAnimations().some((a) => a.id === "flip"))) return;
-    const [min, max] = this.data.readonly ? [9, 40] : [10, 18];
+    if (this.data.readonly) { this.fitHome(); return; }
+    const [min, max] = [10, 18];
     const main = document.querySelector(".stMainBlockContainer");
     const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24;
     const bottom = () => Math.max(...[".tt-card", ".tt-legend"].map((sel) => {
@@ -764,6 +766,33 @@ class Timetable {
     }
   }
 
+
+  // Home's tile: the next few hours, not the whole day. The grid scrolls inside a box as tall as the tile has
+  // room for (its rows sized so about HOME_HOURS fit), starting an hour before now. On a narrow window, where
+  // Home scrolls and the tile is as tall as what's in it, the box is a fixed height instead.
+  fitHome() {
+    const box = this.root.querySelector(".tt-card");
+    const host = this.root.getRootNode().host || this.root;
+    const tile = host.closest && host.closest('[class*="st-key-hwc_"]');
+    const clip = tile && tile.parentElement && tile.parentElement.dataset.testid === "stLayoutWrapper" ? tile.parentElement : tile;
+    const head = this.root.querySelector("thead")?.getBoundingClientRect().height || 0;
+    const slots = 2 * HOME_HOURS;
+    const fits = clip && matchMedia("(min-width: 1001px)").matches;
+    const room = fits ? Math.floor(clip.getBoundingClientRect().bottom - box.getBoundingClientRect().top - 2) : head + slots * 22;
+    if (room < 40) return;
+    const row = Math.max(12, Math.min(32, Math.floor((room - head) / slots)));
+    this.root.style.setProperty("--row-h", `${row}px`);
+    box.style.height = `${room}px`;
+    // Start an hour before now (today only; another day starts at the top).
+    const now = this.data.nowMin == null ? null : this.nowAt.min + (Date.now() - this.nowAt.ms) / 60000;
+    let m = now == null ? 0 : now - FIRST_MIN;
+    if (m < 0) m += 24 * 60;
+    const first = Math.max(0, Math.min(SLOTS - 1, Math.floor(m / 30) - 2));
+    const cell = this.cells[0].plan[first];
+    if (!cell) return;
+    const top = cell.getBoundingClientRect().top - this.wrapEl.getBoundingClientRect().top - head;
+    box.scrollTop = Math.max(0, Math.min(top, box.scrollHeight - box.clientHeight));
+  }
 
   // Home only: a thin red line across today at the current time, moving down as time passes.
   drawNow() {

@@ -222,7 +222,7 @@ class GoalLists {
         ${this.data.tile ? "" : '<span class="gl-heading">To-dos</span>'}
         <div class="gl-tabs" role="tablist" aria-label="To-do lists">${sections.map((s) => this.tabHtml(s)).join("")}</div>
       </header>`;
-    this.root.innerHTML = `<div class="gl-one ${this.data.single ? "gl-page" : "compact"}">${head}
+    this.root.innerHTML = `<div class="gl-one ${this.data.single ? "gl-page" : "compact"}${this.data.tile ? " gl-tile" : ""}">${head}
       ${this.sectionHtml(this.section(this.tab))}</div>`;
     this.rendering = false;
     this.restoreEditor();
@@ -262,11 +262,15 @@ class GoalLists {
     return `<section class="gl-card" id="gl-panel" role="${this.data.single ? "region" : "tabpanel"}" data-period="${sec.period}"
       aria-label="${NAMES[sec.period]} to-dos: ${finished} of ${all.length} done, ${esc(sec.title)}">
       <ul class="gl-list" data-list="${sec.period}" aria-label="${NAMES[sec.period]} to-dos">${shown.map((g) => this.rowHtml(g)).join("")}</ul>
-      ${hidden > 0 ? `<button class="gl-link gl-more" data-more>${hidden} more</button>` : ""}
+      ${hidden > 0 && !this.data.tile ? `<button class="gl-link gl-more" data-more>${hidden} more</button>` : ""}
+      ${this.data.tile && !adding ? '<div class="gl-foot">' : ""}
       ${adding ? `<div class="gl-add editing"><span class="gl-tick ghost"></span>
           <input class="gl-input" data-editor placeholder="New to-do" aria-label="New to-do"></div>`
                : `<button class="gl-add" data-add>${ICONS.plus}<span>New to-do</span></button>`}
-      ${done.length ? `
+      ${this.data.tile && !adding ? `${hidden > 0
+        // Home's tile: plain text beside New to-do (a tap on it opens the To-dos page, like anywhere on the tile)
+        ? `<span class="gl-more-tile">+${hidden} more</span>` : ""}</div>` : ""}
+      ${done.length && !this.data.tile ? `
         <button class="gl-done-head${open ? " open" : ""}" data-toggle-done>${ICONS.chevron}Completed (${done.length})</button>
         ${open ? `<ul class="gl-list gl-done-list">${done.map((g) => this.rowHtml(g)).join("")}</ul>` : ""}` : ""}
     </section>`;

@@ -359,12 +359,17 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 .tt-pop.outlook-info .ol-note { font-size: 0.75rem; color: var(--muted); }
 .tt-title, .tt-synced { white-space: nowrap; }
 
-/* Home (view only, one day): the title already says which day, so the header keeps
-   just PLAN / ACTUAL (and any all-day chips), leaving more room for the rows. */
+/* Home (view only, one day): Home's own header says which day, so the grid's header keeps just the
+   day's state and any all-day chips, leaving more room for the rows. */
 .tt-root.readonly th.day { padding-top: 4px; padding-bottom: 4px; }
 .tt-root.readonly th.day .dn, .tt-root.readonly th.day .dd { display: none; }
 .tt-root.readonly .tt-head { margin-bottom: 4px; }
-.tt-root.readonly .tt-title { font-size: 1.5rem; margin-right: 0; }
+.tt-root.readonly .tt-title { display: none; }   /* Home's header already says the date */
+/* Home: a window of the day (fitHome sets its height and where it starts); it scrolls, without a scrollbar,
+   and the day's header (all-day chips) stays at the top. */
+.tt-root.readonly .tt-card { overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
+.tt-root.readonly .tt-card::-webkit-scrollbar { display: none; }
+.tt-root.readonly thead th { position: sticky; top: 0; z-index: 6; background: var(--bg); }
 .tt-root.readonly .tt-head { gap: 6px; flex-wrap: nowrap; }
 .tt-root.readonly .tt-synced:not(.warn) { display: none; }   /* Home: on one line; it's in the sync button's tooltip */
 

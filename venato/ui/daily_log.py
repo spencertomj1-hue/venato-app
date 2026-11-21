@@ -219,14 +219,13 @@ def _open_habits():
 
 def render_home_habits():
     """Home's Habits widget: today's habits to tick, each with the last 7 days and its current streak."""
-    accent = st.get_option("theme.primaryColor") or "#ff4b4b"
     head = st.container(horizontal=True, vertical_alignment="center")
     kit.subhead("Habits", head, width="stretch")
     head.button("Manage", key="home_habits_manage", type="tertiary", on_click=_open_habits)
     if not store.get_habits():
         st.caption("No habits yet. Add them on the Daily Log.")
         return
-    _home_habit_rows(accent)
+    _home_habit_rows()
 
 
 def _write_today():
@@ -249,35 +248,17 @@ def render_home_journal():
 
 
 @st.fragment
-def _home_habit_rows(accent):
-    """Home's habit ticks (a fragment: ticking one reruns just these rows)."""
+def _home_habit_rows():
+    """Home's habit ticks, side by side (a fragment: ticking one reruns just these). A summary: the streaks and
+    the last 7 days are on the Daily Log."""
     today = store.local_today()
-    days = [today - timedelta(days=i) for i in range(6, -1, -1)]
-    habits = store.get_habits()
-    st.html(f"""<style>
-      .hb-week {{ display: flex; gap: 4px; justify-content: flex-end; }}
-      .hb-week i {{ width: 11px; height: 11px; border-radius: 3px; background: rgba(128, 128, 128, 0.18); }}
-      .hb-week i.on {{ background: {accent}; }}
-      .hb-week i.today {{ outline: 1.5px solid rgba(128, 128, 128, 0.6); outline-offset: 1px; }}
-      .st-key-home_habits {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); column-gap: 28px; }}
-    </style>""")
     d = today.isoformat()
-    box = st.container(key="home_habits")     # two habits a row when wide, to keep Home short
-    for habit_id, name in habits:
+    box = st.container(key="home_habits", horizontal=True, gap="small")
+    for habit_id, name in store.get_habits():
         done = store.get_habit_dates(habit_id)
-        _, current, per_week = store.habit_progress(habit_id, done, today)
         key = f"home_habit_{habit_id}_{d}"
-        tick, week, streak = box.columns([5, 3, 2], vertical_alignment="center")
-        tick.checkbox(name, value=d in done, key=key, on_change=_toggle_habit, args=(habit_id, d, key, True))
-        cells = "".join(
-            f'<i class="{"on" if x.isoformat() in done else ""}{" today" if x == today else ""}" '
-            f'title="{x:%a} {x.day} {x:%b}"></i>' for x in days)
-        week.html(f'<div class="hb-week" title="Last 7 days">{cells}</div>')
-        if per_week:      # a weekly target: this week's count, and the streak in weeks
-            streak.caption(f"{store.week_ticks(done, today)}/{per_week} this wk"
-                           + (f" · :material/local_fire_department: {current}w" if current else ""))
-        else:
-            streak.caption(f":material/local_fire_department: {current}" if current else "–")   # current streak
+        box.checkbox(name, value=d in done, key=key, on_change=_toggle_habit, args=(habit_id, d, key, True),
+                     width="content")
 
 
 @st.fragment
