@@ -151,6 +151,33 @@ def _fit_dialog(day, label="", last=None, category=None, hours=6.0):
                       max_block_hours=longest, weekdays_only=weekdays)
 
 
+@st.dialog("Add an event", width="large")
+def _add_dialog(day):
+    st.caption("Goes into the day's Plan (its Actual once the day has started). Anything already there "
+               "at those times is shown to you before it's replaced.")
+    if _confirm_box("Add it"):
+        return
+    with st.form("tt_add_form", border=False):
+        a, b = st.columns([2, 1])
+        label = a.text_input("What", placeholder="e.g. Boxing")
+        when = b.date_input("Day", value=day, format=regional.input_format())
+        starts, ends = _times(0, store.SLOTS - 1), _times(1, store.SLOTS)
+        a, b, c = st.columns(3)
+        start = a.selectbox("Starts", starts, index=_at(starts, "18:00"), format_func=regional.time)
+        end = b.selectbox("Ends", ends, index=_at(ends, "19:00", len(ends) - 1), format_func=regional.time)
+        options = [AUTO] + _category_names()
+        category = c.selectbox("Category", options, key="tt_add_cat")
+        details = st.text_area("Description (optional)", height=68)
+        if st.form_submit_button("Add", type="primary", icon=":material/add:"):
+            if not label.strip():
+                st.error("Say what it is, e.g. Boxing.")
+            elif store.slot_of(end) <= store.slot_of(start):
+                st.error("It has to end after it starts.")
+            elif (cat := _category_choice(label, category)) is not False:
+                _call(tools.add_block, when.isoformat(), "plan", start, end, label.strip(), category=cat,
+                      details=details)
+
+
 # ---------------------------------------------------------------------------
 # Categories, activity defaults and Outlook's colour
 # ---------------------------------------------------------------------------
@@ -236,7 +263,9 @@ def _activity_defaults():
     kit.subhead("Outlook events")
     current = store.outlook_category("")
     ids = list(names)
-    pick = st.selectbox("Colour Outlook events as", ids, index=ids.index(current) if current in ids else 0,
+    st.caption("An event whose title has an activity or category in it (\"Boxing\", \"Maths revision\") "
+               "gets that category. The rest use this one.")
+    pick = st.selectbox("Other Outlook events", ids, index=ids.index(current) if current in ids else 0,
                         format_func=names.get, key="tt_outlook_cat")
     if pick != current:
         store.save_settings(outlook_category=pick)
@@ -352,6 +381,10 @@ def toolbar(day, row=None):
                               help="Only confirmed days count in stats and goals: confirm that each day's Actual is what you did"):
         st.session_state.pop(PENDING, None)
         _confirm_week_dialog(first, first + timedelta(days=6))
+    if b.button("Add event", icon=":material/add:", key="tt_btn_add",
+                help="Add something at times you type, e.g. Boxing 18:00–19:30 on Thursday"):
+        st.session_state.pop(PENDING, None)
+        _add_dialog(max(day, store.local_today()))
     if b.button("Fit time", icon=":material/event_available:", key="tt_btn_fit",
                 help="Fit hours of something (e.g. 6 h of revision) into your free time"):
         st.session_state.pop(PENDING, None)

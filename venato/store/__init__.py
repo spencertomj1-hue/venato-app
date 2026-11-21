@@ -18,6 +18,7 @@ re-exports every submodule's public names. Each module only imports from the one
     history      the whole log as one table (History, CSV import / export)
     deadline     deadlines
     todos        to-dos per day / week / month
+    status       done / not done marks on timetable blocks and events
     goals        goals, the week's goal hours, away days
     review       weekly reviews
     stats        the Review page's numbers
@@ -38,8 +39,8 @@ from .dates import (WEEK_START, _as_date, computer_zone_name, end_of_period, fmt
 from .grid import (BLOCK_COLS, TRACKS, apply_block_ops, blocks_for, first_min, get_block_in, plan_paint,
     slot_count, slot_of, slot_time)
 from .categories import (EXAMPLE_CATEGORIES, EXAMPLE_LABEL_MAP, DEFAULT_OUTLOOK_CATEGORY, MODULE_COLOURS,
-    MODULES_GROUP, add_module_category, event_category, groups, load_categories, load_label_map, next_free_colour,
-    outlook_category, remove_label_default, rename_category, resolve_category, save_category, set_label_default)
+    MODULES_GROUP, add_module_category, event_category, groups, learn_label, load_categories, load_label_map,
+    match_category, next_free_colour, outlook_category, remove_label_default, rename_category, resolve_category, save_category, set_label_default)
 from .outlook import (OUTLOOK_COLS, _as_block, detach_outlook, get_outlook, hide_outlook, outlook_between,
     outlook_details, outlook_overlaps, outlook_signature, replace_outlook, tag_outlook_modules)
 from .timetable import (blocks_between, delete_block, get_block, move_block, paint, preview_paint,
@@ -55,6 +56,7 @@ from .habits import (HABIT_PREFIX, add_habit, delete_habit, find_habit, get_habi
     habit_progress, habit_targets, habit_ticks_between, rename_habit, set_habit_done, set_habit_target,
     streaks, week_ticks, weekly_streaks)
 from .history import load_all_data, save_all_data
+from .status import BLOCK_STATUSES, block_statuses, set_block_status, status_log
 from .deadline import (DEADLINE_COLS, add_deadline, countdown, deadline_overdue, deadlines, delete_deadline,
     get_deadline, import_canvas, plan_deadline, set_deadline_done, update_deadline)
 from .todos import (TODO_BASE, TODO_COLS, TODO_GROUP_COLOURS, TODO_MINUTES, TODO_PERIODS, add_detailed_todo,

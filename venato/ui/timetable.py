@@ -66,6 +66,9 @@ def _checkpoint(op):
         undo.checkpoint(f"Edited {op['entry'].get('label') or 'a block'}", quiet=True)
     elif kind == "hide_outlook":
         undo.checkpoint("Removed an Outlook event from the timetable", quiet=True)
+    elif kind == "set_status":
+        undo.checkpoint(f"Marked {op.get('label') or 'a block'} " + {"done": "done", "missed": "not done"}
+                        .get(op.get("status"), "as not marked"), quiet=True)
     elif kind == "add_suggestion":                       # nothing is overwritten, but Cmd/Ctrl+Z takes it back
         undo.checkpoint(f"Added a suggested sitting of {op['block']['label']}", quiet=True)
     elif kind in ("skip", "replace", "retime"):          # corrections on the one timeline
@@ -100,6 +103,8 @@ def apply_grid_op(op):
       {kind: "confirm_day", date}                         this is what I did
       {kind: "unconfirm_day", date}                       undo that
       {kind: "add_suggestion", date, start, end, block}   one suggested sitting, added to the Plan if still free
+      {kind: "set_status", id, status, date, start, end, label, categoryId}   done / "missed" (not done) / null,
+                                                          on a block or "outlook:<uid>", any day (locked too)
     Painting over an Outlook event detaches it first (store.paint), so it's trimmed like any block.
     Every day an op touches is locked first if it has started, and a started day's Plan is never changed:
     such an op (from a grid drawn before the day started) is dropped; the redraw shows the Actual.
@@ -179,10 +184,13 @@ def _apply(op):
         store.confirm_day(op["date"])
     elif kind == "unconfirm_day":
         store.unconfirm_day(op["date"])
+    elif kind == "set_status":                       # done / not done, from a block's card
+        store.set_block_status(op["id"], op.get("status"), op["date"], op.get("start"), op.get("end"),
+                               op.get("label"), op.get("categoryId"))
     elif kind == "add_suggestion":
         from venato.ui import goal_time
         goal_time.add_suggestion(op["date"], op["start"], op["end"], _block(op["block"]), new_id=op.get("newId"))
-    if kind in ("skip", "replace", "retime", "confirm_day", "unconfirm_day", "add_suggestion"):
+    if kind in ("skip", "replace", "retime", "confirm_day", "unconfirm_day", "add_suggestion", "set_status"):
         return
     if op["kind"] == "paint":
         s, e = store.slot_of(op["start"]), store.slot_of(op["end"])
@@ -190,10 +198,13 @@ def _apply(op):
         if block:
             block = {"label": block["label"], "category_id": block["categoryId"], "details": block.get("details")}
         store.paint(op["date"], op["track"], s, e, block, new_id=op.get("newId"))
+        if block and op.get("learn"):              # named in the new-event box: remember its category
+            store.learn_label(block["label"], block["category_id"])
     elif op["kind"] == "upsert":
         e = op["entry"]
         store.upsert_blocks([{**{k: e[k] for k in ("id", "date", "track", "start", "end", "label")},
                               "category_id": e["categoryId"], "details": e.get("details") or None}])
+        store.learn_label(e["label"], e["categoryId"])     # saved "Football" as Sports: it defaults to Sports
     elif op["kind"] == "delete":
         store.delete_block(op["id"])
     elif op["kind"] == "move":                       # dragged: moved and/or resized
@@ -387,7 +398,6 @@ def render_grid(days, key="timetable", single=False, readonly=False, suggestions
     show_outlook = st.session_state.setdefault("tt_show_outlook", True)
     events = store.outlook_between(days[0].isoformat(), days[-1].isoformat()) if show_outlook else []
     outlook_cat = store.outlook_category("")      # each event's own: its module's category, else this
-
     data = {
         "days": [d.isoformat() for d in days],
         "today": store.local_today().isoformat(),
@@ -404,6 +414,7 @@ def render_grid(days, key="timetable", single=False, readonly=False, suggestions
             for e in entries
         ],
         "labelMap": dict(zip(label_map["label"], label_map["category_id"])),
+        "status": store.block_statuses(days[0], days[-1]),     # id -> "done" | "missed"
         "acked": st.session_state.get("tt_acked", []),
         "rejected": st.session_state.get("tt_rejected", {}),     # opId -> why it wasn't saved
         "single": single,
