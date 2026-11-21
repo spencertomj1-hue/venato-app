@@ -2,8 +2,8 @@
 The setup wizard's steps. A new install starts blank; setup only ever adds things, so running it again
 never deletes anything. Every step but Welcome can be skipped, and "Skip setup" leaves the app as it is.
 
-  Welcome -> Are you a student? -> (students: Uni timetable -> Canvas -> Your modules -> Study hours)
-  -> Your goals -> What would you track? -> Your day -> Your first week -> Home
+  Welcome (are you a student?) -> (students: Connect your calendars -> Your modules -> Study hours)
+  -> Your goals -> What would you track? -> Your day -> Your first week
 
 What a step writes happens when its Next is pressed, and writing again changes the same thing rather than
 adding a second (goals made in this setup are remembered by id in st.session_state["ob"]).
@@ -28,16 +28,13 @@ from venato.ui import kit
 # (key, name, icon, only for students)
 STEPS = [
     ("welcome", "Welcome", ":material/waving_hand:", False),
-    ("student", "Are you a student?", ":material/school:", False),
-    ("timetable", "Uni timetable", ":material/calendar_month:", True),
-    ("canvas", "Canvas", ":material/assignment:", True),
-    ("modules", "Your modules", ":material/menu_book:", True),
-    ("hours", "Study hours", ":material/schedule:", True),
-    ("goals", "Your goals", ":material/flag:", False),
-    ("track", "What would you track?", ":material/checklist:", False),
-    ("day", "Your day", ":material/view_day:", False),
-    ("week", "Your first week", ":material/event_available:", False),
-    ("home", "Home", ":material/home:", False),
+    ("calendars", "Calendars", ":material/calendar_month:", True),
+    ("modules", "Modules", ":material/menu_book:", True),
+    ("hours", "Hours", ":material/schedule:", True),
+    ("goals", "Goals", ":material/flag:", False),
+    ("track", "Track", ":material/checklist:", False),
+    ("day", "Day", ":material/view_day:", False),
+    ("week", "First week", ":material/event_available:", False),
 ]
 GOAL_SLOTS = [("In 3 months", 3), ("In 6 months", 6), ("In 1 year", 12)]
 TARGET_GRADES = {"First": 70.0, "2:1": 60.0, "2:2": 50.0}
@@ -71,7 +68,7 @@ def is_student():
 
 
 def steps():
-    """The steps for this person: [(key, name, icon)]. Students get the four uni steps."""
+    """The steps for this person: [(key, name, icon)]. Students get the three uni steps."""
     student = is_student()
     return [(k, n, i) for k, n, i, uni in STEPS if student or not uni]
 
@@ -327,10 +324,6 @@ def home_picks():
     return picks
 
 
-def chosen_home_keys():
-    return [k for k, _ in home_picks() if st.session_state.get(f"ob_home_{k}", False)]
-
-
 def prefill_home(keys):
     """Put these widgets on Home if they aren't there (the blocks must be on: setup's _finish does that first).
     Nothing is moved or hidden."""
@@ -362,17 +355,16 @@ def _welcome():
         f":material/lock: **Your data stays on your {system.COMPUTER}.** Nothing is uploaded.\n\n"
         "Setup takes a few minutes and you can skip any step. **Skip setup** leaves Venato blank, ready for "
         "you to add things yourself.")
-
-
-def _student():
-    st.header("Are you a student?", anchor=False)
+    st.subheader("Are you a student?", anchor=False)
     st.markdown("Students get a **Modules** page and a few extra steps: your uni timetable, Canvas deadlines "
                 "and study hours.")
+    ob = _ob()
+    saved = ob["student"] if "student" in ob else store.load_settings().get("student")
     yes, no = st.columns(2)
-    yes.button("I'm at uni", key="ob_student_yes", type="primary", icon=":material/school:", width="stretch",
-               on_click=_answer_student, args=(True,))
-    no.button("Not a student", key="ob_student_no", icon=":material/person:", width="stretch",
-              on_click=_answer_student, args=(False,))
+    yes.button("I'm at uni", key="ob_student_yes", type="primary" if saved is True else "secondary",
+               icon=":material/school:", width="stretch", on_click=_answer_student, args=(True,))
+    no.button("Not a student", key="ob_student_no", type="primary" if saved is False else "secondary",
+              icon=":material/person:", width="stretch", on_click=_answer_student, args=(False,))
 
 
 def _save_student(answer):
@@ -432,24 +424,45 @@ def _connect_button(kind):
         st.session_state[f"ob_link_{kind}"] = ""
 
 
-def _save_link(kind):
-    if _connect_link(kind):
-        st.session_state[f"ob_link_{kind}"] = ""
+def _save_calendars():
+    """Connect whatever is typed in either box. Both are tried; if either link is no good the step stays."""
+    problems = []
+    for kind in ("uni", "canvas"):
+        try:
+            if _connect_link(kind):
+                st.session_state[f"ob_link_{kind}"] = ""
+        except ValueError as e:
+            problems.append(str(e))
+    if problems:
+        raise ValueError(" ".join(problems))
 
 
-def _link_step(kind):
+def _calendars():
+    st.header("Connect your calendars", anchor=False)
+    st.markdown("Both are optional. Venato only reads them.")
+    st.info("Anyone with a calendar link can see that calendar. Venato keeps yours in your system's secret store, "
+            "never in a file.", icon=":material/visibility:")
+    for kind in ("uni", "canvas"):
+        with st.container(border=True):
+            _link_card(kind)
+
+
+def _link_card(kind):
     ob = _ob()
     if kind == "uni":
-        st.header("Your uni timetable", anchor=False)
-        st.markdown("Your lectures appear in the timetable, and Venato finds your modules from them. Venato only reads it.")
+        st.subheader("Uni timetable", anchor=False)
+        st.markdown("Your lectures appear in the timetable, and Venato finds your modules from them.")
     else:
-        st.header("Canvas", anchor=False)
-        st.markdown("Your Canvas assignments become deadlines. Venato only reads the feed.")
+        st.subheader("Canvas", anchor=False)
+        st.markdown("Your Canvas assignments become deadlines.")
     st.markdown(GUIDES[kind])
-    st.info("Anyone with this link can see your calendar. Venato keeps it in your system's secret store, never in a file.",
-            icon=":material/visibility:")
-    st.text_input("Calendar link", type="password", key=f"ob_link_{kind}", placeholder="https://…",
-                  help="Hidden so the link isn't shown on screen.")
+    if kind == "uni":
+        with st.expander("Not using Outlook?"):
+            st.markdown("- **Google Calendar** gives you a link in Settings → your calendar → "
+                        "**Secret address in iCal format**.\n"
+                        "- Other uni timetable sites usually have a **Subscribe** or **iCal/ICS** link.\n"
+                        "- Paste any link that ends in **.ics**.")
+    st.text_input("Calendar link", key=f"ob_link_{kind}", placeholder="https://…")
     st.button("Connect", key=f"ob_connect_{kind}", type="primary", icon=":material/link:",
               on_click=_connect_button, args=(kind,))
     if note := ob.pop(f"link_note_{kind}", None):
@@ -741,13 +754,13 @@ def _grid(sittings):
 
 def _add_week():
     added = add_first_week(_ob().get("sittings", []))
-    st.session_state["ob_added"] = added
-    st.session_state["wizard_step"] = st.session_state.get("wizard_step", 0) + 1
+    _ob()["added"] = added
 
 
 def _week():
     ob = _ob()
     st.header("Your first week", anchor=False)
+    st.caption("Press **Edit Home** at the top of Home to change what it shows.")
     sittings = first_week()
     ob["sittings"] = sittings
     if not sittings:
@@ -758,23 +771,15 @@ def _week():
     st.markdown(f"Here's how your goals could fit in the next 7 days: {pace.fmt(hours)} h in free time. "
                 "Nothing already in your timetable moves.")
     _grid(sittings)
+    if (added := ob.get("added")) is not None:
+        st.success(f"Added {added} block{'s' if added != 1 else ''} to your Plan." if added else
+                   "Nothing was added: that time is taken now.", icon=":material/check_circle:")
     st.button("Add to my Plan", key="ob_week_add", type="primary", icon=":material/playlist_add:", on_click=_add_week)
 
 
-def _home():
-    st.header("Home", anchor=False)
-    picks = home_picks()
-    st.markdown("Home shows what you want to see first. These are added from what you picked:")
-    if not picks:
-        kit.empty("Nothing extra yet. Home starts with your timetable, to-dos and what needs you.", ":material/info:")
-    for key, name in picks:
-        st.checkbox(f"Show {name} on Home", value=True, key=f"ob_home_{key}")
-    st.caption("Press **Edit Home** at the top of Home to move, resize or hide anything.")
-
-
-STEP_BODY = {"student": _student, "modules": _modules, "hours": _hours, "goals": _goals, "track": _track, "day": _day,
-             "week": _week, "home": _home}
-SAVE = {"timetable": lambda: _save_link("uni"), "canvas": lambda: _save_link("canvas"), "modules": _save_modules, "hours": _save_hours, "goals": _save_goals,
+STEP_BODY = {"calendars": _calendars, "modules": _modules, "hours": _hours, "goals": _goals, "track": _track,
+             "day": _day, "week": _week}
+SAVE = {"calendars": _save_calendars, "modules": _save_modules, "hours": _save_hours, "goals": _save_goals,
         "track": _save_track, "day": _save_day}
 
 
@@ -786,9 +791,8 @@ def _filled(key):
     """Has this step got something in it this run: typed, ticked or connected? (Cheap checks, no writing.)
     The main button says Next if so, and Skip if not."""
     ss, ob = st.session_state, _ob()
-    if key in ("timetable", "canvas"):
-        kind = "uni" if key == "timetable" else "canvas"
-        return _typed(f"ob_link_{kind}") or bool(ob.get(f"found_{kind}"))
+    if key == "calendars":
+        return any(_typed(f"ob_link_{k}") or bool(ob.get(f"found_{k}")) for k in ("uni", "canvas"))
     if key == "modules":
         return (_typed("ob_new_module") or any(ss.get(f"ob_keep_{_cand_key(c)}", True) for c in ob.get("cands", []))
                 or bool(ob.get("new_modules"))
@@ -824,30 +828,23 @@ def wizard(finish):
     key = listed[step][0]
     _, mid, _ = st.columns([1, 3, 1])
     with mid:
-        st.caption(f"Setup · step {step + 1} of {len(listed)}")
+        st.caption(" · ".join(f"**{n}**" if i == step else n for i, (_, n, _) in enumerate(listed)))
         st.progress((step + 1) / len(listed))
         if error := st.session_state.pop("ob_error", None):
             st.error(error, icon=":material/error:")
         if key == "welcome":
             _welcome()
-        elif key in ("timetable", "canvas"):
-            _link_step("uni" if key == "timetable" else "canvas")
         else:
             STEP_BODY[key]()
         st.divider()
         last = step == len(listed) - 1
         if key == "welcome":
-            _, skip, nxt = st.columns([1, 1, 1])
-            skip.button("Skip setup", key="wiz_skip_all", on_click=finish)
-            nxt.button("Get started", key="wiz_next", type="primary", on_click=_go, args=(step + 1,),
-                       width="stretch", icon=":material/arrow_forward:")
+            st.button("Skip setup", key="wiz_skip_all", on_click=finish)
             return
         back, main = st.columns([1, 1])
         back.button("Back", key="wiz_back", on_click=_go, args=(step - 1,), icon=":material/arrow_back:")
         if last:
             main.button("Start using Venato", key="wiz_finish", type="primary", on_click=finish, width="stretch")
-        elif key == "student":
-            pass                                              # the two buttons above are the way on
         elif _filled(key):
             main.button("Next", key="wiz_next", type="primary", on_click=_go, args=(step + 1, key if key in SAVE else None),
                         width="stretch", icon=":material/arrow_forward:")

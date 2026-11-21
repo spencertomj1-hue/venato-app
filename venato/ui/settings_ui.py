@@ -257,7 +257,7 @@ def _finish():
     elif student and not blocks.is_on("grades"):
         blocks.save(blocks.chosen_keys() + ["grades"])
     try:
-        onboarding.prefill_home(onboarding.chosen_home_keys())
+        onboarding.prefill_home([k for k, _ in onboarding.home_picks()])
     except Exception:                                 # Home keeps its default; setup is done either way
         logging.getLogger(__name__).warning("Setup couldn't prefill Home", exc_info=True)
     setup_checks.save_settings(wizard_done=True)
