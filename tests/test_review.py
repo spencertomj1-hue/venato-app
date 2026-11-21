@@ -8,6 +8,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 import fragment_run
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -74,7 +75,7 @@ def test_popup_until_done_and_history(store, monkeypatch):
     assert not at.exception and store.get_review(week).get("seen_at") and review.should_show() is None
     at = AppTest.from_file(APP, default_timeout=60).run()                      # opened again: not shown again
     assert not shown(at)
-    at.sidebar.radio[0].set_value("Review").run()
+    goto(at, "Review")
     assert not at.exception and any(b.key == f"review_{week.isoformat()}_plan" for b in at.button)
 
 
@@ -126,7 +127,7 @@ def test_review_page_draws_everything(store, monkeypatch):
     store.save_review(week - timedelta(days=7), to_change="Sleep earlier")
     monkeypatch.setattr(review, "should_show", lambda now=None: None)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Review").run()
+    goto(at, "Review")
     assert not at.exception
     assert any("Sleep earlier" in m.value for m in at.markdown)
     assert at.button(key="rv_next").disabled                                   # can't go past this week
@@ -135,12 +136,12 @@ def test_review_page_draws_everything(store, monkeypatch):
     assert any(b.key == f"review_{(week - timedelta(days=7)).isoformat()}_plan" for b in at.button)
     at.button(key=f"review_{(week - timedelta(days=7)).isoformat()}_plan").click().run()   # Plan next week
     assert not at.exception and at.session_state["page"] == "Timetable" and at.session_state["tt_day"] == week
-    at.sidebar.radio[0].set_value("Review").run()
+    goto(at, "Review")
     assert at.session_state["rv_week"] == week - timedelta(days=7)            # still that week
     at.segmented_control(key="rv_view_w").set_value("Trends").run()
     assert not at.exception and any(s.value.startswith("Last 8 weeks") for s in at.subheader)
-    at.sidebar.radio[0].set_value("Home").run()
-    at.sidebar.radio[0].set_value("Review").run()
+    goto(at, "Home")
+    goto(at, "Review")
     assert at.session_state["rv_view"] == "Trends"                            # the choice is remembered
 
 

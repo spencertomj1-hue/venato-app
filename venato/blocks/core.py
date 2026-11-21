@@ -35,6 +35,24 @@ def _goals_home():
     goals.render_home()
 
 
+def _todos_page():
+    from venato.ui import todos
+    todos.render_page()
+
+
+def _review_home():
+    from venato.ui import stats
+    stats.render_home()
+
+
+def _st(name):
+    """A tile's status line, from venato/tile_status.py."""
+    def status():
+        from venato import tile_status
+        return getattr(tile_status, name)()
+    return status
+
+
 def _log_page():
     from venato.ui import daily_log
     daily_log.page_daily_log()
@@ -67,20 +85,30 @@ BLOCKS = [
     Block("timetable", "Timetable", ":material/calendar_view_week:",
           "Your week, with a Plan / Actual switch, Outlook events and Fit time.",
           group="Plan", page=_timetable_page, order=10, default=True, core=True,
-          widgets=[Widget("timetable_today", "Today's timetable", _timetable_today, "l")]),
+          widgets=[Widget("timetable_today", "Timetable", _timetable_today, "large", ("wide", "large", "tall"),
+                          status=_st("timetable"), colour="#0B4F9C")]),
     Block("goals", "Goals", ":material/flag:",
           "To-dos for the day, week and month, goals with progress bars, and deadlines.",
           group="Plan", page=_goals_page, order=20, default=True, core=True,
-          widgets=[Widget("todos", "To-dos", _todos_home, "s"), Widget("deadlines", "Deadlines", _deadlines_home, "s"),
-                   Widget("goals", "Goals", _goals_home, "m")]),
+          pages={"To-dos": _todos_page},
+          widgets=[Widget("todos", "To-dos", _todos_home, "wide", page="To-dos", status=_st("todos"),
+                          icon=":material/check:", colour="#C62828"),
+                   Widget("deadlines", "Deadlines", _deadlines_home, "small", ("small", "wide", "tall"),
+                          status=_st("deadlines"), icon=":material/event:", colour="#5F6170"),
+                   Widget("goals", "Goals", _goals_home, "wide", status=_st("goals"), icon=":material/flag:",
+                          colour="#146C2E")]),
     Block("log", "Daily Log", ":material/edit_calendar:",
           "A journal for each day, habits with streaks, and optional sleep and water.",
           group="Health & body", page=_log_page, order=60, default=True, core=True,
-          widgets=[Widget("habits", "Habits", _habits_home, "m"), Widget("journal", "Journal", _journal_home, "s")],
+          widgets=[Widget("habits", "Daily log", _habits_home, "small", status=_st("habits"), colour="#B45309"),
+                   Widget("journal", "Journal", _journal_home, "small", status=_st("journal"), icon=":material/edit_note:",
+                          colour="#B45309")],
           search={"Habit": ("SELECT id, name, NULL, NULL, per_week FROM habits", "name", "name"),
                   "Journal": ("SELECT date, notes, NULL, date, NULL FROM entries", "COALESCE(notes, '')")},
           search_icons={"Habit": "repeat", "Journal": "edit_note"}, search_open=_log_search_open),
     Block("stats", "Review", ":material/monitoring:",
           "Time planned vs done, your past weekly reviews, and sleep charts if you track it.",
-          group="Plan", page=_stats_page, order=50, default=True, core=True),
+          group="Plan", page=_stats_page, order=50, default=True, core=True,
+          widgets=[Widget("review", "Review", _review_home, "small", ("small", "wide"), status=_st("review"),
+                          colour="#8E1C1C")]),
 ]

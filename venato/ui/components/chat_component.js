@@ -231,7 +231,7 @@ class ChatBar {
 
   // ---------- Placement ----------
 
-  // Pin the bar to the bottom of the main content column (not over the sidebar).
+  // Pin the bar to the bottom of the main content column (clear of the page edges).
   place() {
     if (this.data && this.data.inline) {
       this.dock.style.left = this.dock.style.width = "";

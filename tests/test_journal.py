@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -73,8 +74,8 @@ def test_daily_log_journal(store):
     store.save_journal(today, "Wrote some code.")
     store.save_journal("2026-01-02", "New year, new me")
     at = AppTest.from_file(APP, default_timeout=60).run()
-    assert "Journal" not in at.sidebar.radio[0].options                    # it lives in the Daily Log now
-    at.sidebar.radio[0].set_value("Daily Log").run()
+    assert "Journal" not in page_names()                    # it lives in the Daily Log now
+    goto(at, "Daily Log")
     box = next(t for t in at.text_area if t.label == "Journal")
     assert box.value == "Wrote some code."
     box.set_value("Wrote some code. Then slept.")

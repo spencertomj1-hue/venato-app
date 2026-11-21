@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -60,7 +61,7 @@ def test_weekly_habits_follow_week_start(store):
 
 def test_region_settings_page(store):
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Settings").run()
+    goto(at, "Settings")
     at.segmented_control(key="region_clock").set_value("12-hour").run()
     at.segmented_control(key="region_week").set_value("Sunday").run()
     at.selectbox(key="region_date").set_value("MM/DD/YYYY").run()
@@ -69,7 +70,7 @@ def test_region_settings_page(store):
     assert not at.exception and (s["clock"], s["week_start"], s["date_format"], s["water_unit"]) == \
         ("12-hour", "Sunday", "MM/DD/YYYY", "US fl oz")
     for page in ("Home", "Timetable", "Daily Log", "Review", "Goals"):
-        at.sidebar.radio[0].set_value(page).run()
+        goto(at, page)
         assert not at.exception, page
 
 
@@ -95,11 +96,11 @@ def test_timetable_hours(store):
 
 def test_timetable_hours_setting_page(store):
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Settings").run()
+    goto(at, "Settings")
     at.selectbox(key="region_day_start").set_value(6).run()
     at.selectbox(key="region_day_end").set_value(0).run()
     assert not at.exception and store.day_hours() == (6, 0) and store.SLOTS == 36
     at.selectbox(key="region_day_end").set_value(8).run()               # 2 hours: refused
     assert any("at least 6 hours" in e.value for e in at.error) and store.day_hours() == (6, 0)
-    at.sidebar.radio[0].set_value("Timetable").run()
+    goto(at, "Timetable")
     assert not at.exception

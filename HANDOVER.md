@@ -30,7 +30,7 @@ VENATO_DATA_DIR=<folder> .venv/bin/streamlit run app.py   # run against any data
 ## 3. Files
 
 ```
-app.py                         Streamlit entry: global CSS, wizard gate, sidebar nav, Home/Review pages, chat bar, Outlook autosync
+app.py                         Streamlit entry: global CSS, wizard gate, the router (nav.py), top bar, chat bar, Outlook autosync
 desktop.py                     Native window launcher with a splash screen (pywebview); what Venato.app / the Windows shortcut runs
 setup.sh                       One-command install on macOS (venv, packages, Venato.app)
 setup.ps1                      One-command install on Windows (venv, packages, Start menu + desktop shortcuts)
@@ -72,7 +72,8 @@ venato/                         The app's code, as a package (imported as `from 
   quick.py                     Quick commands ("drank 500ml", "tick gym"): handled without Claude via the same tools actions
   feeds.py                     What a student's calendar feeds say (pure: no database, no network): `detect_modules` from a uni timetable's "Module:" lines, `canvas_events` / `canvas_courses` from a Canvas feed. Fixtures in tests/fixtures
   suggest.py                   Setup's "What would you track?": a keyword map from a goal's words to habits, categories and the sleep / water switches (examples, never defaults)
-  home_layout.py               Home's grid: pure functions over settings.json `home` (cells, stacks, sizes S/M/L/Full, move, resize, hide)
+  home_layout.py               Home's tile grid: pure functions over settings.json `home` (4 columns; sizes small/wide/large/tall; normalise migrates old s/m/l/full sizes and stacks; place, move, step, resize, hide, add)
+  tile_status.py               The short status in each Home tile's header ("4 behind", "Next: Lunch at 13:00"), and week_followed()
   feedback.py                  "Send feedback": `feedback_url()` is the Google Form with Version and System pre-filled (form address from `feedback_url` in venato_config.json); `card_due()` is the one-time card after 14 days (`first_seen`; `feedback_card_done` in settings.json). Nothing is sent: it only opens the browser
   pace.py                      Goals meet the timetable: capacity, budget, pace, debt, follow-through, negotiation, suggestions (§5e). No SQL, no Streamlit UI (it uses `venato.cache` for cached reads)
   blocks/                      Blocks. Built in (`core=True`): timetable, goals, focus, grades (shown as "Modules"), stats ("Review"), log ("Daily Log"). Each has its own tables, migrations, tools, prompt, context,
@@ -85,11 +86,12 @@ venato/                         The app's code, as a package (imported as `from 
   undo.py                      Undo: whole-database snapshot before deletes / overwrites (ui/undo_bar.py offers it)
   setup_checks.py              Logic behind the wizard/Settings: Claude status, mic test, backups, Finder
   ui/                          One module per page or section (imported as `from venato.ui import goals`, ...)
-    search.py                  Search at the top of the sidebar: store.search (every word, any case, per kind) and Open (sets page + day)
+    nav.py                     The router: session_state["page"] mirrored as ?page=<slug> (deep links, Back via a hidden component), Esc, go(), the top bar ("← Home" + shortcut tiles), icon_md()
+    search.py                  The search / Ask bar at the top of Home: store.search (every word, any case, per kind) and Open (sets page + day)
     timetable.py               Timetable page and the week/day grid's Python side
     timetable_tools.py         Buttons above the grid: Add block, Fit time, Categories (dialogs calling the same tools functions as Claude)
     daily_log.py               Daily Log page (month calendar, day card, the day's habits, entry form with the journal box, past entries) and Home's habits
-    todos.py                   Home's to-do cards
+    todos.py                   Home's To-dos tile and the To-dos page (Today / This week / This month tabs)
     goals.py                   Goals page (cards in two columns per section, side panel) and Home's goal bars (with the "by today" tick)
     goal_chart.py              The Goals page's pace chart: an SVG drawn as an <img> (st.html strips inline SVG), alt text with the numbers; legend() once per page
     goal_time.py               Timetable: the "Plan this week" panel (free hours per day, goal bars with Fit N h, Plan all goals, I'm away) and suggested sittings; Share hours; the Goals page's pace lines, offers and suggestions
@@ -97,13 +99,13 @@ venato/                         The app's code, as a package (imported as `from 
     review.py                  Weekly review pop-up and Review's history
     onboarding.py              The setup wizard's steps and what each saves (feeds, modules, study goals, goals, categories, first week, Home); the page is drawn by `settings_ui.wizard`. State between steps is `st.session_state["ob"]` (calendars are parsed once and kept there)
     module_page.py             One module's page (from the Modules page): lectures, deadlines with Plan, assessments, hours; uses grades.py's `band`, `assessment_editor`, `module_settings`
-    home.py, stats.py          Home (a grid of widgets, arrange mode; layout logic in venato/home_layout.py, glides in components/home_flip.js) and Review (stats.py) pages
+    home.py, stats.py          Home (a grid of tiles, each opening its page; Edit Home; layout logic in venato/home_layout.py, glides in components/home_flip.js) and Review (stats.py) pages
     blocks_ui.py               Settings → Blocks; one page module per block (focus.py, ...)
-    undo_bar.py, page_fade.py  The Undo bar; the fade between pages
+    undo_bar.py, page_fade.py  The Undo bar; the fade between pages (on presses of `go_*` buttons)
     chat.py                    The chat bar / Home ask box, and its flow (send → transcribe → Claude → rerun)
     settings_ui.py             First-run wizard and the Settings page
     appearance.py              Light / dark / system: syncs settings.json "theme" into Streamlit's own theme choice (localStorage), is_dark()
-    sidebar_theme.py           The sidebar's look: marble background, no title, narrow, a box per menu item
+    paper.py                   Serif headings; light mode's paper background and buttons; dark mode's dark text on red buttons
     components/                Front ends (Streamlit components v2, shadow root), read once at import:
       timetable_component.*    the week/day grid
       todos_component.*        the Reminders-style to-do lists
@@ -111,7 +113,7 @@ venato/                         The app's code, as a package (imported as `from 
       chat_component.*         the chat bar
 
 assets/                        Logo, app icon (icon.png, Venato.icns), splash screen (splash.html/.png),
-                               sidebar background (sidebar.webp) and the README screenshots
+                               and the README screenshots
 scripts/
   seed_demo.py                 Demo data folder (never touches real data): categories, two modules, a planned deadline, journal, goals; tests/test_seed_demo.py runs it
   make_icon.py                 Builds assets/icon.png, Venato.icns and splash.png from assets/Logo.jpg
@@ -182,7 +184,7 @@ Notes on the schema:
 ## 5b. To-dos and goals
 
 Two different things:
-- **To-dos** are tick-off lists for a day, a week or a month, shown only on Home.
+- **To-dos** are tick-off lists for a day, a week or a month, on Home's To-dos tile and the To-dos page.
 - **Goals** are measurable targets with a deadline (`period_start` .. `due`), with progress bars, on the Goals page and on Home.
 
 **Periods (shared):** all period maths is in `store/dates.py` (`start_of_period`, `shift_period`, `end_of_period`, `period_title`), on dates in the user's time zone (`local_today()`). Weeks run Monday to Sunday, like the timetable.
@@ -199,7 +201,7 @@ Two different things:
 - **Value:** `goals_in` / `get_goal` add `value` (current progress), `kind` (`hours` / `habit` / `count`), `habit` and `category` (names). Linked to a habit, `value` is the number of days that habit was ticked within the period; counting timetable hours, it's the Actual hours of that category (and label) in the period, from `store.goal_hours`; otherwise it's the hand-kept `progress`. Deleting the habit or category unlinks the goal (back to `progress`).
 - **Goals page:** one bordered section of the goals not past their deadline (`store.goals_open`), and a "Past goals" expander (`goals_past`). The deadline field is `goals.due_picker` (component `due_picker_component.*`): a scrolling calendar with markers from `handy_deadlines` and "End of the year" / "In a year" shortcuts. Each goal shows `value / target unit`, a percentage and a bar. Hand-kept goals have − / + (via `add_goal_progress`); every goal has a ⋯ popover to edit it (including the "Update it myself" / "Count a habit's ticks" choice) or delete it. "New goal" is a popover with the same form.
 - **Bars:** HTML in the theme's primary colour (`st.progress` uses a different one), the same on both pages.
-- **Home:** this month's and this year's goals as bars in a card, with "See all" (a button whose callback sets the sidebar radio, `page`), the "by today" tick and one status line each (`goals.status_line`). Above the to-dos, `goal_time.needs_you` lists only goals behind or short this week ("N h to plan") with Plan my goals; both share one `pace.Ctx` (`blocks/core._goals_home`).
+- **Home:** this month's and this year's goals as bars in a card, with "See all" (a button whose callback sets `page`; hidden inside the tile, whose header opens Goals), the "by today" tick and one status line each (`goals.status_line`). Above the to-dos, `goal_time.needs_you` lists only goals behind or short this week ("N h to plan") with Plan my goals; both share one `pace.Ctx` (`blocks/core._goals_home`).
 
 ## 5d. Journal and reminders
 
@@ -283,7 +285,7 @@ Two different things:
 
 - **Two windows:** `desktop.py` shows the splash at once, then loads the app in a **hidden** window. When the page renders its `#venato-ready` marker (and at least 2 seconds have passed), it shows the app window and closes the splash.
 - **Marker placement:** the marker comes before the Outlook autosync, so the network never delays startup.
-- **Global CSS first:** `app.py` sends all global CSS as its first element (top padding, sidebar nav, no stale-element dimming, and hiding the marker's gap). Pages must not inject their own top padding.
+- **Global CSS first:** `app.py` sends all global CSS as its first element (top padding, no stale-element dimming, and hiding the marker's gap). Pages must not inject their own top padding.
 - **Toolbar:** `.streamlit/config.toml` sets `client.toolbarMode = "minimal"`, along with `server.address = 127.0.0.1`, XSRF protection and no usage statistics.
 
 - **Fragments:** busy widgets are `@st.fragment`s, so a click reruns just that widget: Home's to-dos (`todos.render_home`), habit ticks (`daily_log._home_habit_rows`, `_habit_ticks`), the Daily Log's day card (`_day_card`: calendar, card, habits, form), the Focus timer (`focus.render_home`, `_page_timer`), Review's charts (`stats._charts`) and weekly reviews (`review.history`).
@@ -312,7 +314,7 @@ Two different things:
 - **Timetable hours:** `store.SLOTS` / `FIRST_MIN` come from settings.json `day_start` / `day_end`: they're read through `slot_count()` / `first_min()` on every access (re-read from the file after any write, via `data_version()`); never hard-code 36 or 07:00, and don't use them as default arguments (they'd be frozen at import). Blocks outside the hours stay in the database, hidden.
 - **Week start:** weekly to-dos are stored under the week's first day, so `store.set_week_start` moves them (±1 day) when it changes. Use `store.week_start_of(day)`, never `day.weekday()`, for week maths.
 - **Time zone:** never use `date.today()` / `datetime.now()` for the user's day: use `store.local_today()` / `store.local_now()` / `store.stamp()`. The zone is settings.json "timezone" (Settings → Region) or the computer's (`tzlocal`). The tests pin Europe/London in conftest.
-- **Keyboard:** every page is checked by tabbing through it: each stop must show focus (Streamlit's controls draw their own; `appearance.apply_text_colours()` adds rings for the scrollable main area, links and `[tabindex]`; components have their own `:focus-visible`). Streamlit's "Skip to main content" link is the first stop. Headings use `anchor=False` (otherwise each adds an invisible "link to heading" stop). Dialogs close with Esc; the sidebar menu is one radio group (arrow keys).
+- **Keyboard:** every page is checked by tabbing through it: each stop must show focus (Streamlit's controls draw their own; `appearance.apply_text_colours()` adds rings for the scrollable main area, links and `[tabindex]`; components have their own `:focus-visible`). Streamlit's "Skip to main content" link is the first stop. Headings use `anchor=False` (otherwise each adds an invisible "link to heading" stop). Dialogs close with Esc; Esc on any other page goes back to Home (and leaves Edit Home).
 - **Contrast (WCAG AA):** text must be 4.5:1. Colours for each mode are in `.streamlit/config.toml` (`[theme.light]` / `[theme.dark]`: accent, red/orange/grey text). Components use `--muted` (mixed from the text colour, fine in both modes) rather than fixed greys; captions are overridden in `appearance.apply_text_colours()` (Streamlit fades them to 3.7:1). Don't fade text below `opacity: 0.72`. Check with axe-core's `color-contrast` rule in both modes after UI changes.
 
 - **Always read and write text files as UTF-8** (`read_text(encoding="utf-8")`). Windows defaults to cp1252, which garbles the components' `›`, `…`, `×` etc.
@@ -320,7 +322,7 @@ Two different things:
 - **Accessibility in the components:** the custom parts are keyboard-usable and labelled: to-do titles are focusable (Enter edits, Menu key / Shift+F10 opens the menu, Alt+↑/↓ reorders), the timetable has a hidden-until-focused list of its blocks (`renderBlockList`). Keep new interactive bits focusable with an `aria-label`, and keep focus where it was across redraws.
 - **OS differences go in `venato/system.py`** (data folder, opening folders, UI words), so the rest of the code stays the same everywhere.
 
-- **The sidebar radio has `key="page"`.** Home's "See all" sets it from a component callback, which runs before the radio is drawn; don't set it anywhere after that.
+- **The router is `st.session_state["page"]`** (venato/ui/nav.py). Set it only in a callback (`nav.go`), which runs before the page is drawn; `nav.current` reads `?page=` on a fresh session. There is no sidebar: a new page is reached from a Home tile and the top bar's shortcut tiles.
 - **NaN breaks components.** pandas turns SQL NULLs into NaN, which is invalid JSON. `store._read()` converts them to `None`; do the same for anything passed in a component's `data`.
 - **`@font-face` doesn't work inside a component's shadow root.** Document-level fonts (like Streamlit's Material Symbols) do apply.
 - **Fixed positioning:** the chat bar is `position: fixed` inside a component. That works because Streamlit's containers have no `transform`; a future Streamlit version could break it.

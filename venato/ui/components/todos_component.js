@@ -216,11 +216,13 @@ class GoalLists {
     const onTab = inside && had.matches("[data-tab]");
     this.refocus = null;
     this.rendering = true;
-    this.root.innerHTML = `<div class="gl-one compact">
-      <header class="gl-top">
-        <span class="gl-heading">To-dos</span>
+    // single: the To-dos page, which has its own Today / This week / This month tabs; no header here.
+    // tile: Home's To-dos tile, whose own header names it; just the switch here
+    const head = this.data.single ? "" : `<header class="gl-top">
+        ${this.data.tile ? "" : '<span class="gl-heading">To-dos</span>'}
         <div class="gl-tabs" role="tablist" aria-label="To-do lists">${sections.map((s) => this.tabHtml(s)).join("")}</div>
-      </header>
+      </header>`;
+    this.root.innerHTML = `<div class="gl-one ${this.data.single ? "gl-page" : "compact"}">${head}
       ${this.sectionHtml(this.section(this.tab))}</div>`;
     this.rendering = false;
     this.restoreEditor();
@@ -257,7 +259,7 @@ class GoalLists {
     const hidden = active.length - shown.length;
     const open = this.openDone.has(sec.period);
     const adding = this.editing && this.editing.kind === "add" && this.editing.period === sec.period;
-    return `<section class="gl-card" id="gl-panel" role="tabpanel" data-period="${sec.period}"
+    return `<section class="gl-card" id="gl-panel" role="${this.data.single ? "region" : "tabpanel"}" data-period="${sec.period}"
       aria-label="${NAMES[sec.period]} to-dos: ${finished} of ${all.length} done, ${esc(sec.title)}">
       <ul class="gl-list" data-list="${sec.period}" aria-label="${NAMES[sec.period]} to-dos">${shown.map((g) => this.rowHtml(g)).join("")}</ul>
       ${hidden > 0 ? `<button class="gl-link gl-more" data-more>${hidden} more</button>` : ""}

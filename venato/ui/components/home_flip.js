@@ -4,10 +4,12 @@
 // is busy, every `.st-key-hw_*` node is pinned to where that widget was before the run (an inline transform,
 // no motion); when the run ends, each one glides from there to its final box (200 ms ease-out). Reduced
 // motion: no pins, no glides (instant moves).
-// Also, in arrange mode: tapping a widget anywhere that isn't a control presses its pick-up / drop button,
-// and the icon-only buttons get spoken names (aria-label) from Python.
-export default function ({ data }) {
+// Out of Edit Home, a click on a tile anywhere that isn't one of its controls opens its page (presses the
+// tile's title button). In Edit Home, tapping a tile presses its pick-up / drop button, and dragging one onto
+// another moves it there (sent to Python as "drop"). Icon-only buttons get spoken names (aria-label) from Python.
+export default function ({ data, setTriggerValue }) {
   window.__venatoHome = data || {};
+  window.__venatoDrop = (from, to) => setTriggerValue("drop", { from, to, nonce: Math.random().toString(36).slice(2) });
   if (window.__venatoFlip) { window.__venatoFlipLabel && window.__venatoFlipLabel(); return; }
   window.__venatoFlip = true;
   const doc = document;
@@ -103,16 +105,54 @@ export default function ({ data }) {
   new MutationObserver(schedule).observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "data-test-script-state"] });
   addEventListener("resize", () => { if (!busy()) for (const n of measure()) last.set(n.k, n.lay); });
 
-  // Arrange mode: a tap on a widget (not on one of its controls) picks it up, or drops the one picked up there.
+  const CONTROLS = 'button, a, input, textarea, select, label, summary, [role="button"], [role="checkbox"], [role="switch"], [role="tab"], [role="radio"], [contenteditable="true"], [data-testid="stCheckbox"], [data-baseweb="select"]';
+  let dragEnd = 0;         // when a drag last ended: its click is swallowed
+  // A tap on a tile (not on one of its controls): Edit Home picks it up / drops the one picked up there;
+  // otherwise it opens the tile's page.
   doc.addEventListener("click", (e) => {
-    if (!(window.__venatoHome || {}).arranging || !e.isTrusted) return;
-    const CONTROLS = 'button, a, input, textarea, select, label, summary, [role="button"], [role="checkbox"], [role="switch"], [role="tab"], [contenteditable="true"]';
+    if (!e.isTrusted) return;
+    if (Date.now() - dragEnd < 350) { e.preventDefault(); e.stopPropagation(); return; }
     const path = e.composedPath();         // (into a component's shadow DOM too)
-    if (path.some((n) => n instanceof Element && n.matches(CONTROLS))) return;
     const card = path.find((n) => n instanceof Element && n.matches(SEL)), k = card && keyOf(card);
     if (!k) return;
-    const pick = doc.querySelector(`.st-key-hwpick_${CSS.escape(k.slice(3))} button`);
-    if (pick) pick.click();
+    const editing = (window.__venatoHome || {}).arranging;
+    const hit = path.find((n) => n instanceof Element && n.matches(CONTROLS));
+    if (hit && !(editing && card.querySelector(`.st-key-hwc_${CSS.escape(k.slice(3))}`)?.contains(hit))) return;
+    const target = editing ? `.st-key-hwpick_${CSS.escape(k.slice(3))} button` : `.st-key-go_tile_${CSS.escape(k.slice(3))} button`;
+    const b = doc.querySelector(target);
+    if (b && !b.contains(e.target)) { e.preventDefault(); b.click(); }
   }, true);
+
+  // Edit Home: drag a tile (by anything but its buttons) onto another to move it there.
+  let drag = null;
+  const tileAt = (x, y) => doc.elementsFromPoint(x, y).map((el) => el.closest && el.closest(SEL)).find((el) => el && el !== drag?.el);
+  doc.addEventListener("pointerdown", (e) => {
+    if (!(window.__venatoHome || {}).arranging || e.button !== 0) return;
+    const el = e.target.closest && e.target.closest(SEL);
+    if (!el || e.target.closest("button, input, textarea, select")) return;
+    drag = { el, k: keyOf(el), x: e.clientX, y: e.clientY, on: false, over: null };
+  }, true);
+  doc.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.on && Math.hypot(dx, dy) < 8) return;
+    drag.on = true;
+    drag.el.classList.add("vn-dragging");
+    drag.el.style.translate = `${dx}px ${dy}px`;
+    const over = tileAt(e.clientX, e.clientY);
+    if (over !== drag.over) { drag.over?.classList.remove("vn-drop-target"); over?.classList.add("vn-drop-target"); drag.over = over; }
+  }, true);
+  const endDrag = (e) => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    d.el.classList.remove("vn-dragging"); d.el.style.translate = "";
+    d.over?.classList.remove("vn-drop-target");
+    if (!d.on) return;
+    dragEnd = Date.now();
+    const to = d.over && keyOf(d.over);
+    if (e.type === "pointerup" && to && to !== d.k && window.__venatoDrop) window.__venatoDrop(d.k.slice(3), to.slice(3));
+  };
+  doc.addEventListener("pointerup", endDrag, true);
+  doc.addEventListener("pointercancel", endDrag, true);
   tick();
 }

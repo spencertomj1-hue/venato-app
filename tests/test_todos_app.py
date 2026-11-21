@@ -6,6 +6,7 @@ the to-do list component sends. Uses the throwaway data folder from the `store` 
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -15,23 +16,22 @@ def app():
 
 
 def open_page(at, name):
-    at.sidebar.radio[0].set_value(name).run()
+    goto(at, name)
     assert not at.exception, at.exception
 
 
-def test_home_shows_todos_but_no_goals_card(store):
-    """Home ("Essentials"): one To-dos card; no separate Goals card (Needs you shows the goals that need you)."""
+def test_home_shows_todos_and_goals_tiles(store):
+    """The default Home: a To-dos tile and a Goals tile, each opening its own page."""
     today = store.local_today()
     for i in range(9):                                       # more than a list shows at first
         store.add_todo(f"Task {i}", "daily", today)
     store.add_goal("Gym", "monthly", today, 12, "sessions")
     at = app()
     assert not at.exception
-    assert at.sidebar.radio[0].value == "Home"
+    assert at.session_state["page"] == "Home"
     keys = home_keys(at)
     assert "home_todos_card" in keys and "home_todos" in keys
-    assert "home_goals_card" not in keys and "home_goals_all" not in keys
-    assert not [m for m in at.markdown if "vn-subhead" in m.value and "Goals" in m.value]
+    assert {"hw_todos", "hw_goals", "go_tile_todos", "go_tile_goals"} <= keys
 
 
 def home_keys(at):
@@ -149,7 +149,7 @@ def test_home_habits_tick_today(store):
     assert not at.exception
     assert date.today().isoformat() in store.get_habit_dates(hid)
     at.button(key="home_habits_manage").click().run()
-    assert at.sidebar.radio[0].value == "Daily Log"
+    assert at.session_state["page"] == "Daily Log"
 
 
 def test_deadlines_read_as_numbers(store):

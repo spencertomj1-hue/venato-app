@@ -341,7 +341,7 @@ def _confirm_all(day):
 def _review(day):
     st.session_state["tt_day"] = day
     st.session_state["tt_force_mode"] = "actual"      # once: the grid opens on the Actual
-    st.session_state["page"] = "Timetable"         # the sidebar radio's key; callbacks run before it's drawn
+    st.session_state["page"] = "Timetable"         # the router (nav.py); set in a callback, before the page is drawn
 
 
 def _dismiss(day):

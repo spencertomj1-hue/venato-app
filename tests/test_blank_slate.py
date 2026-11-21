@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -74,14 +75,14 @@ def test_settings_listing_chopped_blocks_load(store):
     b = _blocks()
     store.save_settings(blocks=["timetable", "money", "workouts", "goals"], blocks_optional=True)
     assert b.chosen_keys() == ["timetable", "goals"]
-    assert list(b.pages()) == ["Timetable", "Goals"]
+    assert list(b.pages()) == ["Timetable", "To-dos", "Goals"]       # Goals brings the To-dos page
     settings = store.load_settings()
     settings.pop("blocks_optional")
     (store.DATA_DIR / "settings.json").write_text(json.dumps({**settings, "blocks": ["money", "workouts"]}))   # an older list
     assert b.chosen_keys() == ["timetable", "goals", "focus", "grades", "stats"]
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    at.sidebar.radio[0].set_value("Settings").run()
+    goto(at, "Settings")
     assert not at.exception
 
 
@@ -98,12 +99,12 @@ def test_every_page_draws_with_zero_categories(store):
     assert len(store.load_categories()) == 0
     at = AppTest.from_file(APP, default_timeout=90).run()
     assert not at.exception, at.exception
-    pages = list(at.sidebar.radio[0].options)
+    pages = page_names()
     assert "Timetable" in pages and "Review" in pages and "Settings" in pages
     for page in pages[1:]:
-        at.sidebar.radio[0].set_value(page).run()
+        goto(at, page)
         assert not at.exception, (page, at.exception)
-    at.sidebar.radio[0].set_value("Review").run()
+    goto(at, "Review")
     at.session_state["rv_view_w"] = "Trends"                  # the charts view
     at.run()
     assert not at.exception, at.exception
@@ -119,14 +120,14 @@ def test_pages_with_zero_categories_and_some_data(store):
     store.add_habit("Gym")
     at = AppTest.from_file(APP, default_timeout=90).run()
     assert not at.exception, at.exception
-    for page in list(at.sidebar.radio[0].options)[1:]:
-        at.sidebar.radio[0].set_value(page).run()
+    for page in page_names()[1:]:
+        goto(at, page)
         assert not at.exception, (page, at.exception)
 
 
 def test_timetable_says_how_to_add_a_category(store):
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Timetable").run()
+    goto(at, "Timetable")
     assert not at.exception, at.exception
     assert at.button(key="tt_addcat").label == "Add a category"
     assert at.button(key="tt_btn_cats").label == "Adjust categories"
@@ -156,15 +157,15 @@ def test_add_a_category_button_takes_you_to_the_editor(store):
     b = _blocks()
     store.save_settings(wizard_done=True, blocks=[x.key for x in b.all_blocks()], blocks_optional=True)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Focus").run()
+    goto(at, "Focus")
     assert not at.exception, at.exception
     for page in ("Review", "Goals"):
-        at.sidebar.radio[0].set_value(page).run()
+        goto(at, page)
         assert not at.exception, (page, at.exception)
-    at.sidebar.radio[0].set_value("Review").run()
+    goto(at, "Review")
     next(b for b in at.button if (b.key or "").endswith("_addcat")).click().run()
     assert not at.exception, at.exception
-    assert at.sidebar.radio[0].value == "Timetable"
+    assert at.session_state["page"] == "Timetable"
     assert "tt_open_categories" not in at.session_state              # used up
     assert any(t.label == "Name" for t in at.text_input)             # the "Adjust categories" dialog is open
     assert not store.load_categories().shape[0]

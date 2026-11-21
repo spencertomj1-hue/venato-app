@@ -1,5 +1,5 @@
-"""Home's hidden grid (venato/home_layout.py): the default, packing into rows, skipping, the arrange
-operations and undo; then Home itself (AppTest): a blank install, every widget hidden, arrange mode,
+"""Home's tile grid (venato/home_layout.py): the default, migrating old layouts, placing tiles, the edit
+operations and undo; then Home itself (AppTest): a blank install, every tile hidden, Edit Home,
 Needs you and its one-time assistant card."""
 
 import json
@@ -9,102 +9,92 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 from venato import home_layout as hl
+import fragment_run
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
-# What a full install offers: every widget key with its default size.
-ALL = {"timetable_today": "l", "ask": "s", "needs_you": "s", "todos": "s", "deadlines": "s", "goals": "m",
-       "habits": "m", "journal": "s", "focus": "s", "modules": "m"}
+# What a full install offers: every tile key with its default size.
+ALL = {"timetable_today": "large", "ask": "wide", "needs_you": "wide", "todos": "wide", "deadlines": "small",
+       "goals": "wide", "habits": "small", "journal": "small", "focus": "small", "modules": "small", "review": "small"}
+
+# The layout every install had before tiles: a timetable ⅔ wide, then a stack, in the 12-column sizes.
+OLD_DEFAULT = [{"w": "timetable_today", "size": "l"}, {"stack": ["ask", "needs_you", "todos"], "size": "s"}]
 
 
 # --- the layout itself (pure) ---
 
-def test_default_layout_is_essentials():
-    assert hl.default() == [{"w": "timetable_today", "size": "l"}, {"stack": ["ask", "needs_you", "todos"], "size": "s"}]
-    assert hl.normalise(None, ALL) == hl.default()                       # no saved key: the default
-    assert hl.normalise("rubbish", ALL) == hl.default()
-    rows = hl.pack(hl.default())
-    assert [hl.widths(r) for r in rows] == [[8, 4]]                       # timetable ⅔ | the stack ⅓
-    assert "deadlines" not in hl.keys(hl.default())                       # the rest are hidden until added
-    assert hl.hidden(hl.default(), ALL) == ["deadlines", "goals", "habits", "journal", "focus", "modules"]
+def test_default_layout():
+    d = hl.default()
+    assert hl.keys(d) == ["timetable_today", "todos", "goals", "focus", "modules", "habits", "review", "needs_you"]
+    assert d[0] == {"w": "timetable_today", "size": "large"}
+    assert hl.normalise(None, ALL) == d                                  # no saved key: the default
+    assert hl.normalise("rubbish", ALL) == d
+    assert hl.hidden(d, ALL) == ["ask", "deadlines", "journal"]           # the rest wait in "Add a tile"
+    assert hl.reset() == d and hl.reset() is not hl.reset()
 
 
-def test_custom_list_packs_into_rows_and_widths():
-    cells = [{"w": "todos", "size": "s"}, {"w": "goals", "size": "m"}, {"w": "habits", "size": "s"},
-             {"w": "journal", "size": "full"}, {"w": "focus", "size": "l"}]
-    rows = hl.pack(cells)
-    assert [[c.get("w") for c in r] for r in rows] == [["todos", "goals"], ["habits"], ["journal"], ["focus"]]
-    assert [hl.widths(r) for r in rows] == [[4, 6], [4], [12], [8]]
-    assert [hl.spec(r) for r in rows] == [[4, 6, 2], [4, 8], [12], [8, 4]]   # a short row gets a spacer
+def test_old_default_migrates():
+    """Old 12-column sizes become tile sizes and stacks are flattened, in order; nothing is lost."""
+    assert hl.normalise(OLD_DEFAULT, ALL) == [{"w": "timetable_today", "size": "large"}, {"w": "ask", "size": "small"},
+                                              {"w": "needs_you", "size": "small"}, {"w": "todos", "size": "small"}]
+    old = [{"w": "goals", "size": "m"}, {"w": "habits", "size": "full"}, {"w": "focus", "size": "s"}]
+    assert hl.normalise(old, ALL) == [{"w": "goals", "size": "wide"}, {"w": "habits", "size": "wide"},
+                                      {"w": "focus", "size": "small"}]
 
 
-def test_over_wide_rows_wrap():
-    cells = [{"w": k, "size": "m"} for k in ("todos", "goals", "habits")] + [{"w": "focus", "size": "l"},
-                                                                              {"w": "journal", "size": "s"}]
-    assert [[c["w"] for c in r] for r in hl.pack(cells)] == [["todos", "goals"], ["habits"], ["focus", "journal"]]
-    assert [[c["w"] for c in r] for r in hl.pack([{"w": "a", "size": "l"}, {"w": "b", "size": "m"}])] == [["a"], ["b"]]
+def test_sizes_a_tile_doesnt_come_in_fall_back():
+    sizes = {"focus": ("small", "wide"), "timetable_today": ("wide", "large", "tall")}
+    saved = [{"w": "focus", "size": "large"}, {"w": "timetable_today", "size": "s"}, {"w": "todos", "size": "huge"}]
+    assert hl.normalise(saved, ALL, sizes) == [{"w": "focus", "size": "small"},            # its default
+                                               {"w": "timetable_today", "size": "large"},
+                                               {"w": "todos", "size": "wide"}]
 
 
-def test_unknown_or_disabled_widgets_skipped():
-    saved = [{"w": "money", "size": "m"}, {"w": "todos", "size": "huge"}, {"w": "todos", "size": "s"},
-             {"stack": ["ask", "gone", "needs_you"], "size": "s"}, {"stack": ["gone"], "size": "m"},
-             {"nonsense": 1}, "todos", {"stack": ["habits"], "size": "m"}]
+def test_unknown_disabled_and_repeated_tiles_skipped():
+    saved = [{"w": "money", "size": "m"}, {"w": "todos", "size": "small"}, {"w": "todos", "size": "large"},
+             {"stack": ["ask", "gone", "needs_you", "needs_you"], "size": "s"}, {"nonsense": 1}, "todos"]
     available = {k: v for k, v in ALL.items() if k != "ask"}              # e.g. the assistant is off
-    assert hl.normalise(saved, available) == [{"w": "todos", "size": "s"},          # bad size: its default
-                                              {"w": "needs_you", "size": "s"},       # a stack of one is a widget
-                                              {"w": "habits", "size": "m"}]
-    assert hl.normalise([], ALL) == []                                    # every widget hidden stays so
+    assert hl.normalise(saved, available) == [{"w": "todos", "size": "small"}, {"w": "needs_you", "size": "small"}]
 
 
-def test_move_and_swap():
-    cells = [{"w": "a", "size": "s"}, {"w": "b", "size": "m"}, {"w": "c", "size": "l"}]
-    assert hl.keys(hl.move(cells, "a", "c")) == ["b", "c", "a"]           # forward: it takes c's place
-    assert hl.keys(hl.move(cells, "c", "a")) == ["c", "a", "b"]           # back
-    assert hl.move(cells, "a", "c")[2] == {"w": "a", "size": "s"}         # sizes go with the widget
-    assert cells == [{"w": "a", "size": "s"}, {"w": "b", "size": "m"}, {"w": "c", "size": "l"}]   # new lists
-    assert hl.keys(hl.swap(cells, "a", "c")) == ["c", "b", "a"]
+def test_junk_list_gives_the_default_but_empty_stays_empty():
+    assert hl.normalise(["junk"], ALL) == hl.default()
+    assert hl.normalise([{"nonsense": 1}, 3], ALL) == hl.default()
+    assert hl.normalise([], ALL) == []
+    assert hl.normalise([{"w": "money", "size": "m"}], ALL) == []        # well formed, just not on offer
+
+
+def test_place_fills_gaps():
+    """Each tile takes the first place it fits, left to right, top to bottom (like the browser's dense grid)."""
+    assert hl.place(hl.default()) == [(0, 0), (0, 2), (1, 2), (2, 0), (2, 1), (2, 2), (2, 3), (3, 0)]
+    cells = [{"w": "a", "size": "wide"}, {"w": "b", "size": "large"}, {"w": "c", "size": "small"},
+             {"w": "d", "size": "small"}, {"w": "e", "size": "tall"}, {"w": "f", "size": "small"}]
+    assert hl.place(cells) == [(0, 0), (0, 2), (1, 0), (1, 1), (2, 0), (2, 1)]
+    assert hl.place([{"w": "a", "size": "large"}], columns=1) == [(0, 0)]   # never wider than the grid
+
+
+def test_move_step_resize_hide_add():
+    cells = [{"w": "a", "size": "small"}, {"w": "b", "size": "wide"}, {"w": "c", "size": "large"}]
+    assert hl.keys(hl.move(cells, "a", "c")) == ["b", "c", "a"]           # forward: lands after c
+    assert hl.keys(hl.move(cells, "c", "a")) == ["c", "a", "b"]           # back: lands before a
+    assert hl.keys(hl.move(cells, "a", None)) == ["b", "c", "a"]          # to the end
+    assert hl.move(cells, "a", "c")[2] == {"w": "a", "size": "small"}     # its size goes with it
     assert hl.move(cells, "a", "a") == cells and hl.move(cells, "a", "zzz") == cells
-    # Dropping onto a stacked widget joins the stack; leaving a stack of two leaves a widget.
-    d = hl.default()
-    joined = hl.move(d, "timetable_today", "needs_you")
-    assert joined == [{"stack": ["ask", "needs_you", "timetable_today", "todos"], "size": "s"}]
-    left = hl.move(d, "todos", "timetable_today")
-    assert left == [{"w": "todos", "size": "s"}, {"w": "timetable_today", "size": "l"},
-                    {"stack": ["ask", "needs_you"], "size": "s"}]
+    assert hl.keys(hl.step(cells, "b", -1)) == ["b", "a", "c"] and hl.step(cells, "a", -1) == cells
+    assert hl.resize(cells, "a", "tall")[0] == {"w": "a", "size": "tall"}
+    assert hl.resize(cells, "a", "huge") == cells                         # only the four sizes
+    assert hl.keys(hl.hide(cells, "b")) == ["a", "c"]
+    assert hl.add(cells, "d", "s")[-1] == {"w": "d", "size": "small"} and hl.add(cells, "a") == cells
+    assert cells == [{"w": "a", "size": "small"}, {"w": "b", "size": "wide"}, {"w": "c", "size": "large"}]   # new lists
 
 
-def test_step_resize_hide_add():
-    d = hl.default()
-    assert hl.keys(hl.step(d, "needs_you", -1)) == ["timetable_today", "needs_you", "ask", "todos"]   # within a stack
-    out = hl.step(d, "ask", -1)                                           # off the top of a stack: out in front of it
-    assert out == [{"w": "timetable_today", "size": "l"}, {"w": "ask", "size": "s"},
-                   {"stack": ["needs_you", "todos"], "size": "s"}]
-    assert hl.step(d, "timetable_today", -1) == d                         # already first
-    assert hl.keys(hl.step(d, "timetable_today", 1)) == ["ask", "needs_you", "todos", "timetable_today"]
-    assert hl.resize(d, "timetable_today", 1)[0]["size"] == "full"
-    assert hl.resize(d, "timetable_today", 5)[0]["size"] == "full"       # no bigger than the page
-    assert hl.resize(d, "todos", -1)[1]["size"] == "s"                    # a stack resizes as one
-    assert hl.resize(d, "todos", 1)[1]["size"] == "m"
-    hidden = hl.hide(hl.hide(d, "ask"), "needs_you")
-    assert hidden == [{"w": "timetable_today", "size": "l"}, {"w": "todos", "size": "s"}]
-    assert hl.hide(hl.hide(hidden, "todos"), "timetable_today") == []
-    assert hl.add(hidden, "habits", "m")[-1] == {"w": "habits", "size": "m"}   # added at the end
-    assert hl.add(hidden, "todos", "m") == hidden                          # already there
-
-
-def test_reset_restores_the_default():
-    assert hl.reset() == hl.default()
-    assert hl.reset() is not hl.reset()
-
-
-def test_unavailable_widgets_are_kept_when_saving():
-    """A widget whose block is off right now keeps a place at the end, so it comes back when it's on again."""
-    raw = [{"w": "focus", "size": "s"}, {"w": "todos", "size": "s"}, {"stack": ["ask", "needs_you"], "size": "s"}]
+def test_unavailable_tiles_are_kept_when_saving():
+    """A tile whose block is off right now keeps a place at the end, so it comes back when it's on again."""
+    raw = [{"w": "focus", "size": "small"}, {"w": "todos", "size": "small"}, {"stack": ["ask", "needs_you"], "size": "s"}]
     available = {k: v for k, v in ALL.items() if k not in ("focus", "ask")}
-    shown = hl.normalise(raw, available)
-    new = hl.hide(shown, "todos")
-    assert hl.keep_unavailable(raw, new, available) == [{"w": "needs_you", "size": "s"}, {"w": "focus", "size": "s"},
-                                                         {"w": "ask", "size": "s"}]
+    new = hl.hide(hl.normalise(raw, available), "todos")
+    assert hl.keep_unavailable(raw, new, available) == [{"w": "needs_you", "size": "small"},
+                                                         {"w": "focus", "size": "small"}, {"w": "ask", "size": "small"}]
 
 
 # --- saving, with undo ---
@@ -114,7 +104,7 @@ def test_undo_reverts_a_move(blank_store):
     before = hl.default()
     blank_store.save_settings(home=before)
     undo.checkpoint_settings("Moved To-dos", home=hl.move(before, "todos", "timetable_today"))
-    assert blank_store.load_settings()["home"][0] == {"w": "todos", "size": "s"}
+    assert blank_store.load_settings()["home"][0] == {"w": "todos", "size": "wide"}
     assert undo.pending() == "Moved To-dos"
     assert undo.restore() == "Moved To-dos"
     assert blank_store.load_settings()["home"] == before
@@ -123,11 +113,11 @@ def test_undo_reverts_a_move(blank_store):
 
 def test_undo_settings_change_not_after_another_change(blank_store):
     from venato import undo
-    undo.checkpoint_settings("Hid To-dos", home=[])
+    undo.checkpoint_settings("Removed To-dos", home=[])
     assert blank_store.load_settings()["home"] == []
     blank_store.save_settings(home=hl.default())                          # changed again since
     assert undo.pending() is None and undo.restore() is None
-    undo.checkpoint_settings("Hid Ask", home=[{"w": "todos", "size": "s"}])
+    undo.checkpoint_settings("Removed Ask", home=[{"w": "todos", "size": "small"}])
     undo.restore()
     assert blank_store.load_settings()["home"] == hl.default()
 
@@ -151,19 +141,46 @@ def keys(at):
     return out - {None}
 
 
+def saved(store):
+    return store.load_settings()["home"]
+
+
 def test_blank_install_renders_the_default(blank_store):
     at = app()
     assert not at.exception
     k = keys(at)
-    assert {"hw_timetable_today", "hw_ask", "hw_needs_you", "hw_todos"} <= k
-    assert not {"hw_deadlines", "hw_habits", "hw_focus"} & k
+    assert {"hw_timetable_today", "hw_todos", "hw_goals", "hw_needs_you", "home_grid"} <= k
+    assert not {"hw_deadlines", "hw_journal", "hw_ask"} & k
     assert any(m.value == "Nothing needs you. Go touch grass." for m in at.markdown)
-    assert at.button(key="home_arrange")
+    assert at.button(key="home_arrange").label == "Edit Home"
+    assert at.button(key="home_settings")                                 # the gear
     assert blank_store.load_settings()["first_seen"] == blank_store.local_today().isoformat()
 
 
+def test_grid_spans_follow_sizes(store):
+    store.save_settings(home=[{"w": "timetable_today", "size": "large"}, {"w": "focus", "size": "small"},
+                              {"w": "todos", "size": "tall"}, {"w": "goals", "size": "wide"}])
+    css = " ".join(h.proto.body for h in app().get("html"))
+    for k, span in (("timetable_today", "span 2; grid-row: span 2"), ("focus", "span 1; grid-row: span 1"),
+                    ("todos", "span 1; grid-row: span 2"), ("goals", "span 2; grid-row: span 1")):
+        assert f".st-key-home_grid > div:has(> .st-key-hw_{k}) {{ grid-column: {span}; }}" in css
+
+
+def test_old_layout_migrates_on_home(store):
+    store.save_settings(home=OLD_DEFAULT, ai_enabled=True)
+    at = app()
+    assert not at.exception
+    assert {"hw_timetable_today", "hw_ask", "hw_needs_you", "hw_todos"} <= keys(at)
+    assert saved(store) == OLD_DEFAULT                                    # only read, until the next change
+    at.button(key="home_arrange").click().run()
+    at.button(key="hwx_ask").click().run()
+    assert saved(store) == [{"w": "timetable_today", "size": "large"},
+                            {"w": "needs_you", "size": "wide"},               # it doesn't come in small
+                            {"w": "todos", "size": "small"}]
+
+
 def test_nothing_on_at_all_still_renders(blank_store):
-    """No blocks, the assistant off: Home is just Needs you (the timetable and to-dos are gone with their blocks)."""
+    """No blocks, the assistant off: Home is just Needs you (the other tiles are gone with their blocks)."""
     blank_store.save_settings(blocks=[], blocks_optional=True, ai_enabled=False)
     at = app()
     assert not at.exception
@@ -171,49 +188,109 @@ def test_nothing_on_at_all_still_renders(blank_store):
     assert "hw_needs_you" in k and not {"hw_timetable_today", "hw_ask", "hw_todos"} & k
 
 
-def test_every_widget_hidden_shows_an_empty_state(blank_store):
+def test_every_tile_hidden_shows_the_gear_and_add_a_tile(blank_store):
     blank_store.save_settings(home=[])
     at = app()
     assert not at.exception
     assert not [x for x in keys(at) if x.startswith("hw_")]
     assert any("Home is empty" in m.value for m in at.markdown)
-    assert at.button(key="home_add_needs_you")                            # + Add widget, straight away
+    assert at.button(key="home_settings")                                 # you can't remove your way out
+    at.button(key="home_add_prompt").click().run()                        # "Add a tile": into Edit Home
+    assert at.session_state["home_arranging"] is True
     at.button(key="home_add_needs_you").click().run()
     assert not at.exception
-    assert blank_store.load_settings()["home"] == [{"w": "needs_you", "size": "s"}]
+    assert saved(blank_store) == [{"w": "needs_you", "size": "wide"}]
     assert "hw_needs_you" in keys(at)
+    at.button(key="home_settings").click().run()
+    assert at.session_state["page"] == "Settings"
 
 
-def test_arrange_mode(store):
+def test_edit_home(store):
     at = app()
     at.button(key="home_arrange").click().run()
     assert not at.exception
+    assert at.title[0].value == "Edit Home"
     assert at.button(key="home_done") and at.button(key="home_reset") and not has(at, "home_arrange")
-    assert at.button(key="hwpick_todos") and at.button(key="hwbig_todos") and at.button(key="hwx_todos")
-    assert "home_todos" in keys(at)                                       # real content while arranging
-    assert at.button(key="hwl_timetable_today").disabled                  # already first
-    # Tap to pick up, tap another to drop it there: saved straight away, with undo.
+    assert at.button(key="hwpick_todos") and at.button(key="hwx_todos") and not has(at, "go_tile_todos")
+    assert "home_todos" in keys(at) and "home_add_panel" in keys(at)      # real content, and "Add a tile"
+    assert has(at, "home_add_deadlines") and not has(at, "home_add_todos")  # only hidden tiles are offered
+    assert not has(at, "hwsz_todos_small")                                # sizes only on the picked-up tile
+    # Tap to pick up: highlighted, with sizes, ← / → and a drop slot.
     at.button(key="hwpick_todos").click().run()
     assert at.session_state["home_picked"] == "todos"
-    at.button(key="hwpick_timetable_today").click().run()
-    saved = store.load_settings()["home"]
-    assert hl.keys(saved)[:2] == ["todos", "timetable_today"] and at.session_state["home_picked"] is None
+    assert {"hwsz_todos_small", "hwsz_todos_wide", "hwsz_todos_large", "hwsz_todos_tall", "hwl_todos", "hwr_todos",
+            "home_drop_end"} <= {b.key for b in at.button}
+    assert [b.key for b in at.button if b.key.startswith("hwsz_focus")] == []
+    at.button(key="hwsz_todos_large").click().run()                       # resize to a named size
+    assert saved(store)[1] == {"w": "todos", "size": "large"}
+    at.button(key="hwpick_timetable_today").click().run()                 # tap another: moved there
+    assert hl.keys(saved(store))[:2] == ["todos", "timetable_today"] and at.session_state["home_picked"] is None
     assert at.button(key="undo_btn")
-    at.button(key="hwbig_todos").click().run()                            # size +
-    assert store.load_settings()["home"][0] == {"w": "todos", "size": "m"}
-    at.button(key="hwr_todos").click().run()                              # → one step forward
-    assert hl.keys(store.load_settings()["home"])[:2] == ["timetable_today", "todos"]
-    at.button(key="hwx_ask").click().run()                                # ✕ hide
-    assert "ask" not in hl.keys(store.load_settings()["home"]) and "hw_ask" not in keys(at)
-    at.button(key="home_add_ask").click().run()                           # + Add widget: at the end
-    assert hl.keys(store.load_settings()["home"])[-1] == "ask"
+    at.button(key="hwpick_todos").click().run()
+    at.button(key="home_drop_end").click().run()                          # Drop here: to the end
+    assert hl.keys(saved(store))[-1] == "todos"
+    at.button(key="hwx_focus").click().run()                              # − remove
+    assert "focus" not in hl.keys(saved(store)) and "hw_focus" not in keys(at)
+    at.button(key="home_add_focus").click().run()                         # + Add: at the end, its own size
+    assert saved(store)[-1] == {"w": "focus", "size": "small"}
     at.button(key="undo_btn").click().run()                               # undo the add
-    assert "ask" not in hl.keys(store.load_settings()["home"])
+    assert "focus" not in hl.keys(saved(store))
     at.button(key="home_reset").click().run()
-    assert store.load_settings()["home"] == hl.default()
+    assert saved(store) == hl.default()
     at.button(key="home_done").click().run()
     assert not at.exception and at.button(key="home_arrange") and not has(at, "home_done")
     assert not [b for b in at.button if b.key and b.key.startswith("hwpick_")]
+
+
+def test_drag_onto_another_tile_moves_it(store):
+    at = app()
+    at.button(key="home_arrange").click().run()
+    fragment_run.trigger(at, "home_flip", "drop", {"from": "review", "to": "timetable_today", "nonce": "x"})
+    assert not at.exception
+    assert hl.keys(saved(store))[:2] == ["review", "timetable_today"]
+
+
+def test_tile_supported_sizes_only(store):
+    at = app()
+    at.button(key="home_arrange").click().run()
+    at.button(key="hwpick_focus").click().run()
+    assert sorted(b.key for b in at.button if b.key.startswith("hwsz_focus")) == ["hwsz_focus_small", "hwsz_focus_wide"]
+
+
+def test_picked_tile_gone_by_undo_isnt_still_picked(store):
+    at = app()
+    at.button(key="home_arrange").click().run()
+    at.button(key="home_add_journal").click().run()
+    at.button(key="hwpick_journal").click().run()
+    assert any("picked up" in m.value for m in at.caption)
+    at.button(key="undo_btn").click().run()                               # Journal leaves Home
+    assert not at.exception and "hw_journal" not in keys(at)
+    assert not any("picked up" in m.value for m in at.caption)
+
+
+def test_arrows_off_only_when_they_would_do_nothing(store):
+    at = app()
+    at.button(key="home_arrange").click().run()
+    at.button(key="hwpick_timetable_today").click().run()
+    assert at.button(key="hwl_timetable_today").disabled                  # first: nowhere to go
+    at.button(key="hwr_timetable_today").click().run()
+    assert hl.keys(saved(store))[:2] == ["todos", "timetable_today"]
+    at.button(key="hwpick_timetable_today").click().run()                 # put it back down
+    at.button(key="hwpick_needs_you").click().run()
+    assert at.button(key="hwr_needs_you").disabled                        # last
+
+
+def test_esc_leaves_edit_home(store):
+    at = app()
+    at.button(key="home_arrange").click().run()
+    fragment_run.trigger(at, "venato_nav", "go", {"slug": "", "esc": True, "nonce": "x"})
+    assert not at.exception and at.session_state["home_arranging"] is False and at.session_state["page"] == "Home"
+
+
+def test_repeated_tile_renders(store):
+    store.save_settings(home=[{"stack": ["todos", "todos"], "size": "s"}, {"w": "todos", "size": "m"}])
+    at = app()
+    assert not at.exception
 
 
 # --- Needs you ---
@@ -245,7 +322,7 @@ def test_block_needs_items(store, monkeypatch):
     text = " ".join(m.value for m in at.markdown)
     assert "Feed the cat" in text and "Water the plants" in text
     next(b for b in at.button if b.key and b.key.startswith("needs_open_")).click().run()
-    assert at.sidebar.radio[0].value == "Settings"
+    assert at.session_state["page"] == "Settings"
 
 
 def test_assistant_card_after_a_week(blank_store, monkeypatch):
@@ -277,7 +354,7 @@ def test_assistant_card_opens_settings_and_never_shows_when_on(blank_store):
     blank_store.save_settings(ai_enabled=False)
     at = app()
     at.button(key="needs_ai_yes").click().run()
-    assert not at.exception and at.sidebar.radio[0].value == "Settings"
+    assert not at.exception and at.session_state["page"] == "Settings"
     assert blank_store.load_settings()["assistant_offer_done"] is True
 
 
@@ -286,48 +363,6 @@ def test_existing_install_gets_first_seen_once(store):
     app()
     assert store.load_settings()["first_seen"] == "2026-01-01"
     assert json.loads((store.DATA_DIR / "settings.json").read_text())["first_seen"] == "2026-01-01"
-
-
-# --- fix round 1 ---
-
-def test_repeats_inside_a_stack_and_across_cells_are_dropped():
-    saved = [{"stack": ["ask", "ask", "todos"], "size": "s"}, {"w": "todos", "size": "m"},
-             {"stack": ["ask", "habits", "habits"], "size": "m"}]
-    assert hl.normalise(saved, ALL) == [{"stack": ["ask", "todos"], "size": "s"}, {"w": "habits", "size": "m"}]
-
-
-def test_repeated_widget_renders(store):
-    store.save_settings(home=[{"stack": ["ask", "ask", "todos"], "size": "s"}, {"w": "todos", "size": "m"}])
-    at = app()
-    assert not at.exception
-
-
-def test_junk_list_gives_the_default_but_empty_stays_empty():
-    assert hl.normalise(["junk"], ALL) == hl.default()
-    assert hl.normalise([{"nonsense": 1}, 3], ALL) == hl.default()
-    assert hl.normalise([], ALL) == []
-    assert hl.normalise([{"w": "money", "size": "m"}], ALL) == []        # well formed, just not on offer
-
-
-def test_picked_widget_gone_by_undo_isnt_still_picked(store):
-    at = app()
-    at.button(key="home_arrange").click().run()
-    at.button(key="home_add_habits").click().run()
-    at.button(key="hwpick_habits").click().run()
-    assert any("picked up" in m.value for m in at.markdown)
-    at.button(key="undo_btn").click().run()                               # Habits leaves Home
-    assert not at.exception and "hw_habits" not in keys(at)
-    assert not any("picked up" in m.value for m in at.markdown)
-
-
-def test_arrows_off_only_when_they_would_do_nothing(store):
-    at = app()
-    at.button(key="home_arrange").click().run()
-    assert at.button(key="hwl_timetable_today").disabled                  # first: nowhere to go
-    assert not at.button(key="hwr_todos").disabled                        # last, but it can leave its stack
-    at.button(key="hwr_todos").click().run()
-    assert store.load_settings()["home"][-1] == {"w": "todos", "size": "s"}
-    assert at.button(key="hwr_todos").disabled
 
 
 def test_existing_install_without_first_seen(store):

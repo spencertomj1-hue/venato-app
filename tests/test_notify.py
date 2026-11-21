@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -84,7 +85,7 @@ def test_real_notification_command_runs():
 
 def test_settings_tab(store):
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Settings").run()
+    goto(at, "Settings")
     at.toggle(key="remind_on").set_value(False).run()
     assert not at.exception and store.load_settings()["reminders"] is False
     at.toggle(key="remind_on").set_value(True).run()

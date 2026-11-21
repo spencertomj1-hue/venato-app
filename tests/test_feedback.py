@@ -59,8 +59,12 @@ def test_card_never_before_first_use(blank_store):
     assert not feedback.card_due()
 
 
-def test_sidebar_and_about_links(blank_store):
+def test_about_link(blank_store):
+    """Send feedback lives in Settings → About (there's no sidebar any more)."""
+    from nav_helpers import goto
     at = _app()
     assert not at.exception
-    links = [e for e in at.sidebar if getattr(e, "type", "") == "link_button"]
-    assert any("Send feedback" in str(e.proto.label) for e in links)
+    assert not any("Send feedback" in str(e.proto.label) for e in at.get("link_button"))   # not on Home
+    goto(at, "Settings")
+    assert not at.exception
+    assert any("Send feedback" in str(e.proto.label) for e in at.get("link_button"))

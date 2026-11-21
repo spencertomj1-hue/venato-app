@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 OLD = ("mood", "energy", "productiv")
@@ -18,7 +19,7 @@ def _no_old_words(texts):
 def _log_page(store):
     store.save_settings(blocks=["log"])
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Daily Log").run()
+    goto(at, "Daily Log")
     assert not at.exception
     return at
 
@@ -168,7 +169,7 @@ def test_import_replace_keeps_old_scores(blank_store):
 
 def test_settings_page_has_the_switches(blank_store):
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Settings").run()
+    goto(at, "Settings")
     assert not at.exception
     sleep = next(t for t in at.toggle if t.key == "log_sleep_on")
     water = next(t for t in at.toggle if t.key == "log_water_on")

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -61,7 +62,7 @@ def test_pages(store):
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
     assert any("Essay" in m.value and "in 3 days" in m.value for m in at.markdown)       # Home
-    at.sidebar.radio[0].set_value("Goals").run()
+    goto(at, "Goals")
     assert not at.exception and any("Deadlines" in s.value for s in at.subheader)
     box = next(t for t in at.text_input if t.label == "New deadline")
     box.set_value("Lab report")

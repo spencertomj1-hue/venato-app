@@ -618,7 +618,7 @@ def needs_you(ctx=None):
             row.link_button("Send feedback", feedback.feedback_url(), icon=":material/open_in_new:",
                             key="needs_fb_yes", on_click=feedback.card_done)
             row.button("Not now", key="needs_fb_no", type="tertiary", on_click=feedback.card_done,
-                       help="Hide this for good. Send feedback stays in the sidebar and Settings → About.")
+                       help="Hide this for good. Send feedback stays in Settings → About.")
 
 
 def _needs_goals(rows, ctx):

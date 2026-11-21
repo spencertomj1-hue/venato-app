@@ -10,6 +10,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from conftest import MemoryKeyring
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 FIXTURE = (Path(__file__).parent / "fixtures" / "sample.ics").read_bytes()
@@ -118,7 +119,7 @@ def test_api_key_setup(store, monkeypatch):
     checked = []
     monkeypatch.setattr(assistant, "check_api_key", lambda key: (checked.append(key) or key.endswith("good"), "nope"))
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Settings").run()
+    goto(at, "Settings")
     at.text_input[[t.label for t in at.text_input].index("Anthropic API key")].input("sk-ant-bad")
     at.button[[b.label for b in at.button].index("Save key")].click().run()
     assert checked == ["sk-ant-bad"] and not assistant.saved_api_key()
@@ -152,7 +153,7 @@ def test_appearance_setting(store):
     from venato.ui import appearance
     assert appearance.mode() == "System"
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Settings").run()
+    goto(at, "Settings")
     at.segmented_control(key="set_theme").set_value("Dark").run()
     assert not at.exception and store.load_settings()["theme"] == "Dark" and appearance.mode() == "Dark"
     store.save_settings(theme="Purple")                         # anything odd falls back to System
@@ -192,7 +193,7 @@ def test_text_size_setting(store):
     from venato.ui import appearance
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not any("font-size: 20px" in h.value for h in at.get("html"))
-    at.sidebar.radio[0].set_value("Settings").run()
+    goto(at, "Settings")
     at.segmented_control(key="set_text_size").set_value("Extra large").run()
     assert not at.exception and appearance.text_size() == "Extra large"
     assert any("html { font-size: 20px !important; }" in h.value for h in at.get("html"))
@@ -210,7 +211,7 @@ def test_time_zone(store, monkeypatch):
     assert store.zone_name() == "Asia/Tokyo"
     store.save_settings(timezone=None)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Settings").run()
+    goto(at, "Settings")
     assert not at.exception and at.toggle(key="region_tz_auto").value is True
     at.toggle(key="region_tz_auto").set_value(False).run()
     at.selectbox(key="region_tz").set_value("Australia/Sydney").run()
@@ -273,16 +274,16 @@ def _submit(at, label="Connect"):
 def test_skipping_everything_lands_on_a_blank_home(fresh):
     from venato import blocks, setup_checks
     at = AppTest.from_file(APP, default_timeout=60).run()
-    assert at.title[0].value == "Welcome to Venato" and not at.sidebar.radio
+    assert at.title[0].value == "Welcome to Venato" and "page" not in at.session_state
     _next(at, "wiz_skip_all")
     s = setup_checks.load_settings()
     assert s["wizard_done"] is True and s["ai_enabled"] is False and "home" not in s
     assert s["blocks"] == blocks.STARTER
-    assert at.sidebar.radio[0].value == "Home"
+    assert at.session_state["page"] == "Home"
     assert fresh.load_categories().empty and fresh.get_habits() == [] and fresh.deadlines() == []
     assert fresh.goals_open() == [] and fresh.load_label_map().empty
-    for page in list(at.sidebar.radio[0].options):
-        at.sidebar.radio[0].set_value(page).run()
+    for page in page_names():
+        goto(at, page)
         assert not at.exception, (page, at.exception)
 
 
@@ -292,7 +293,7 @@ def test_skipping_every_step_one_by_one_adds_nothing(fresh):
     seen = _skip_to_the_end(at)
     assert seen[0].endswith("Are you a student?") and not any(h.endswith(("Canvas", "Your modules")) for h in seen)
     _next(at, "wiz_finish")
-    assert at.sidebar.radio[0].value == "Home"
+    assert at.session_state["page"] == "Home"
     assert fresh.load_categories().empty and fresh.goals_open() == [] and fresh.get_habits() == []
 
 
@@ -422,9 +423,9 @@ def test_student_with_the_fixture_feeds_ends_up_with_everything(fresh):
     s = setup_checks.load_settings()
     assert blocks.is_on("grades") and s["wizard_done"] and s["student"] is True
     assert any(c.get("w") == "modules" or "modules" in c.get("stack", []) for c in s["home"])
-    assert at.sidebar.radio[0].value == "Home"
-    for page in list(at.sidebar.radio[0].options):
-        at.sidebar.radio[0].set_value(page).run()
+    assert at.session_state["page"] == "Home"
+    for page in page_names():
+        goto(at, page)
         assert not at.exception, (page, at.exception)
 
 

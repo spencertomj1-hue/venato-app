@@ -38,7 +38,7 @@
 
 ## Features
 
-**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Review and the Daily Log, and students also get Modules. Each brings its own page, Home widgets and assistant skills. Home is a grid of widgets you arrange yourself: press the Arrange button (top right), then move, resize, hide or add them.
+**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Review and the Daily Log, and students also get Modules. Each brings its own page, Home tiles and assistant skills. **Home is the way round the app** (there is no sidebar): every tile opens its page, and each page has "← Home" (or Esc) and small shortcut tiles to the others. Settings is the gear top right, and search / Ask is the bar at the top of Home. Press **Edit Home** to move tiles, make them Small, Wide, Large or Tall, remove them (their data stays) or add hidden ones from "Add a tile".
 
 | Block | What it does |
 |---|---|
@@ -142,8 +142,8 @@ Both links are read only, and are kept in your system's secret store, never in a
 **After setup.**
 - **Modules** (students): a card per module; click one for its lectures, deadlines, marks and hours. On a deadline, press **Plan** to book hours for it: Venato makes an hours goal that finishes the day before it's due.
 - **Plan.** Put what you intend to do on the timetable (Plan). When the day starts the Plan is locked and copied into Actual; change the Actual as the day goes, then confirm it.
-- **Home.** Press Arrange (top right) to move, resize, hide or add widgets. Reset puts them back.
-- **Send feedback.** The link at the bottom of the sidebar (and in Settings → About) opens a short form in your browser with your version and system filled in. Nothing is sent from the app. After two weeks, Needs you asks once how it's going.
+- **Home.** Click any tile to open its page; "← Home" or Esc brings you back. Press Edit Home to move, resize, remove or add tiles. Reset puts them back.
+- **Send feedback.** The link in Settings → About opens a short form in your browser with your version and system filled in. Nothing is sent from the app. After two weeks, Needs you asks once how it's going.
 
 ## Setting up the optional bits
 

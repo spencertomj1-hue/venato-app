@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 NOW = datetime(2026, 11, 11, 10, 0)          # Wednesday 11 Nov, 10:00
@@ -247,7 +248,7 @@ def test_home_confirm_and_timetable(store, monkeypatch):
     ok[0].click().run()
     assert yesterday in store.confirmed_days(yesterday, yesterday)
     assert actual(store, yesterday) == [("09:00", "10:00", "Gym")]
-    at.sidebar.radio[0].set_value("Timetable").run()
+    goto(at, "Timetable")
     assert not at.exception
 
 
@@ -298,7 +299,7 @@ def test_timetable_confirm_all_button(store):
     old = date.fromordinal(store.local_today().toordinal() - 20).isoformat()
     put(store, old, "09:00", "10:00", "Gym", "exercise")
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Timetable").run()
+    goto(at, "Timetable")
     btn = [b for b in at.button if b.key == "tt_btn_confirm_all"]
     assert btn and btn[0].label == "Confirm all (1 day)"
     btn[0].click().run()                            # the dialog's preview (clicking inside it: checked in a browser)

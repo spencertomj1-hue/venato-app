@@ -19,7 +19,7 @@ from venato import store
 from venato import undo
 from venato.ui import kit
 
-PAGE = "Goals"                                  # sidebar label (also what "See all" switches to)
+PAGE = "Goals"                                  # page name (also what "See all" switches to)
 BY_HAND, BY_HABIT, BY_HOURS = "Update it myself", "Count a habit's ticks", "Count timetable hours"
 
 
@@ -37,7 +37,7 @@ def fraction(g):
 
 
 def _go_to_goals():
-    st.session_state["page"] = PAGE        # the sidebar radio's key; button callbacks run before it's drawn
+    st.session_state["page"] = PAGE        # the router (nav.py); set in a callback, before the page is drawn
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +312,7 @@ def _section(today, ctx):
 
 def render_page():
     st.header("Goals", anchor=False)
-    st.caption("Measurable targets, each with a deadline, and deadlines for work. Day-to-day to-dos live on Home.")
+    st.caption("Measurable targets, each with a deadline, and deadlines for work. Day-to-day to-dos live on the To-dos page.")
     today = store.local_today()
     from venato import pace
     from venato.ui import goal_time

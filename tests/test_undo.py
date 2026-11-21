@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -38,7 +39,7 @@ def test_undo_restores_and_expires(store, monkeypatch):
 def test_undo_bar_on_the_page(store):
     g = store.add_goal("Read 20 books", "yearly", store.local_today(), 20)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Goals").run()
+    goto(at, "Goals")
     from venato import undo
     undo.checkpoint("Deleted the goal 'Read 20 books'")           # what the Delete button does first
     store.delete_goal(g["id"])

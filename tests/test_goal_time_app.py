@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -15,7 +16,7 @@ def app():
 
 
 def open_page(at, name):
-    at.sidebar.radio[0].set_value(name).run()
+    goto(at, name)
     assert not at.exception, at.exception
 
 
@@ -144,7 +145,7 @@ def test_home_needs_you_lists_only_goals_that_need_something(store):
     assert "Books" not in text                                                     # on track: only on the Goals page
     html = " ".join(h.proto.body for h in at.get("html"))
     assert 'class="hg-bar"' in html and "/ 200 h by " in html                      # its bar and "0 / 200 h by …"
-    assert "Books" not in html and "Agenda" not in html                            # no Goals card, no Agenda
+    assert "Agenda" not in html                                                    # no Agenda
     assert at.button(key="home_plan_goals")
     assert behind["id"]
 

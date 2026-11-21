@@ -75,7 +75,7 @@ def _on_month():
     st.session_state["log_month"] = shifted.replace(day=1)
 
 
-PAGE = "Daily Log"      # sidebar label (also what Home's habits "Manage" switches to)
+PAGE = "Daily Log"      # page name (also what Home's habits "Manage" switches to)
 
 
 def page_daily_log():
@@ -214,7 +214,7 @@ def _toggle_habit(habit_id, day, key, home=False):
 
 
 def _open_habits():
-    st.session_state["page"] = PAGE         # the sidebar radio's key; button callbacks run before it's drawn
+    st.session_state["page"] = PAGE         # the router (nav.py); set in a callback, before the page is drawn
 
 
 def render_home_habits():

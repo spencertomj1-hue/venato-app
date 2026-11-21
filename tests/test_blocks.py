@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -41,7 +42,7 @@ def test_every_block_can_be_switched_off(store):
     store.search("anything")                                        # no built-in kinds without their blocks
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    assert list(at.sidebar.radio[0].options) == ["Home", "Settings"]
+    assert page_names() == ["Home", "Settings"]
 
 
 def test_app_follows_the_choice(store):
@@ -49,23 +50,23 @@ def test_app_follows_the_choice(store):
     b.save(["grades"])
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    assert list(at.sidebar.radio[0].options) == ["Home", "Modules", "Settings"]
+    assert page_names() == ["Home", "Modules", "Settings"]
 
 
 def test_settings_tab_switches_blocks(store):
     b = _blocks()
     b.save(b.STARTER)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Settings").run()
+    goto(at, "Settings")
     at.toggle(key="set_block_grades").set_value(True).run()
     assert not at.exception and b.is_on("grades")
-    assert "Modules" in at.sidebar.radio[0].options
+    assert "Modules" in page_names()
     at.toggle(key="set_block_grades").set_value(False).run()
     assert not at.exception and not b.is_on("grades")
-    assert "Modules" not in at.sidebar.radio[0].options
+    assert "Modules" not in page_names()
     at.toggle(key="set_block_timetable").set_value(False).run()       # nothing is always on
     assert not at.exception and not b.is_on("timetable")
-    assert "Timetable" not in at.sidebar.radio[0].options
+    assert "Timetable" not in page_names()
     assert not any(c.value == "Always on" for c in at.caption)
     at.button(key="set_down_goals").click().run()                    # priority order
     assert b.chosen_keys()[:2] == ["stats", "goals"]
@@ -152,19 +153,19 @@ def test_old_saved_order_keeps_its_order(store):
 def test_core_blocks_bring_home_widgets(store):
     b = _blocks()
     offered = {w.key: w.size for w in b.widgets()}
-    assert {"timetable_today": "l", "todos": "s", "deadlines": "s", "goals": "m", "habits": "m", "journal": "s",
-            "focus": "s", "modules": "m"}.items() <= offered.items()
+    assert {"timetable_today": "large", "todos": "wide", "deadlines": "small", "goals": "wide", "habits": "small",
+            "journal": "small", "focus": "small", "modules": "small", "review": "small"}.items() <= offered.items()
     b.save(["goals"])
     assert [w.key for w in b.widgets()] == ["todos", "deadlines", "goals"]      # only the switched-on blocks'
 
 
 def test_block_with_old_home_is_one_widget(store, monkeypatch):
-    """A block from another copy that still sets `home` (no widgets): one widget keyed by the block, medium."""
+    """A block from another copy that still sets `home` (no widgets): one widget keyed by the block, wide."""
     drawn = []
     blocks, fake = _install(monkeypatch, home=lambda: drawn.append(1))
     blocks.save(["fake"])
     (w,) = blocks.widgets()
-    assert (w.key, w.name, w.size) == ("fake", "Fake", "m")
+    assert (w.key, w.name, w.size) == ("fake", "Fake", "wide")
     store.save_settings(home=[{"w": "fake", "size": "full"}])
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception and drawn
@@ -224,11 +225,11 @@ def test_module_pages_do_not_stick_and_bad_colours_are_dropped(store):
     assert gr.category_colour(gr.get_module(mid)) is None
     assert gr.safe_colour("#12abEF") == "#12abEF" and gr.safe_colour("blue", "#999999") == "#999999"
     at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Modules").run()
+    goto(at, "Modules")
     at.session_state["gr_module"] = mid
     at.run()
     assert not at.exception
-    at.sidebar.radio[0].set_value("Home").run()
+    goto(at, "Home")
     assert "gr_module" not in at.session_state
-    at.sidebar.radio[0].set_value("Modules").run()
+    goto(at, "Modules")
     assert not at.exception and any(m.value == "Modules" for m in at.title)         # the list, not the last module
