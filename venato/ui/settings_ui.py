@@ -256,7 +256,7 @@ def _finish(prefill_home=True):
         blocks.save(blocks.STARTER + (["grades"] if student else []))   # first setup; change them in Settings
     elif student and not blocks.is_on("grades"):
         blocks.save(blocks.chosen_keys() + ["grades"])
-    if prefill_home:                                  # only a real finish; Skip setup leaves Home as it is
+    if prefill_home and "home" not in done:           # only a real finish, and only if Home was never arranged
         try:
             onboarding.prefill_home([k for k, _ in onboarding.home_picks()])
         except Exception:                             # Home keeps its default; setup is done either way

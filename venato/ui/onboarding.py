@@ -2,17 +2,21 @@
 The setup wizard's steps. A new install starts blank; setup only ever adds things, so running it again
 never deletes anything. Every step but Welcome can be skipped, and "Skip setup" leaves the app as it is.
 
-  Welcome (are you a student?) -> (students: Connect your calendars -> Your modules, with their study hours)
-  -> Your goals -> What would you track? (and the timetable colours) -> Your first week
+  Students: Welcome ("Are you at uni?") -> Connect your calendars -> Your modules (with hours a week)
+            -> Your goals -> What would you track? (and the timetable colours) -> Your first week
+  Others:   Welcome -> Your goals -> What would you track? -> Your first week
 
-What a step writes happens when its Next is pressed, and writing again changes the same thing rather than
-adding a second (goals made in this setup are remembered by id in st.session_state["ob"]).
+What a step writes happens when its Next or Skip is pressed (the same save: a click can come from the previous
+run's button, so Skip must save what was just typed). Connect, Add, the student buttons and Add to my Plan write
+too. Writing again changes the same thing rather than adding a second (goals made in this setup are remembered
+by id in st.session_state["ob"]).
 settings_ui.wizard() draws the page; settings_ui._finish() turns on the core blocks.
 """
 
 import re
 from datetime import timedelta
 from html import escape
+from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -60,7 +64,8 @@ def _ob():
 
 def restart():
     """Start setup from Welcome with nothing remembered."""
-    st.session_state.pop("ob", None)
+    for key in ("ob", "wizard_drawn", "ob_cats", "ob_error"):
+        st.session_state.pop(key, None)
     st.session_state["wizard_step"] = 0
 
 
@@ -485,7 +490,7 @@ def _welcome():
     from venato import system
     st.title("Welcome to Venato", anchor=False)
     st.markdown("Plan your week, log what really happened, and see the gap.")
-    st.image("assets/onboarding-timetable.png")
+    st.image(str(Path(__file__).parents[2] / "assets" / "onboarding-timetable.png"))
     st.markdown(
         f":material/lock: **Your data stays on your {system.COMPUTER}.** Nothing is uploaded.\n\n"
         "Setup takes a few minutes and you can skip any step. **Skip setup** leaves Venato blank, ready for "
@@ -552,6 +557,9 @@ def _connect_button(kind):
         result = _connect_link(kind)
     except ValueError as e:
         st.session_state["ob_error"] = str(e)
+        return
+    if not result and not (st.session_state.get(f"ob_link_{kind}") or "").strip():
+        st.session_state["ob_error"] = "Paste a link first."
         return
     if result == "already":
         _ob()[f"link_note_{kind}"] = "Already connected. Nothing more to do here."
@@ -777,7 +785,7 @@ def _remove_goal_row(row):
 
 def _goals():
     st.header("Your goals", anchor=False)
-    st.markdown("What do you want to get done? A few words is enough. Pick when by, and how you'll know you're there.")
+    st.markdown("What do you want to get done? A few words is enough. Pick a date and how you'll know you're there.")
     rows = _goal_rows()
     for n, row in enumerate(rows):
         _goal_row(n, row)
@@ -805,7 +813,7 @@ def _suggestion_label(s):
 def _track():
     ob = _ob()
     st.header("What would you track?", anchor=False)
-    st.markdown("These are examples based on your goals: pick what you want. Nothing is switched on until you tick it.")
+    st.markdown("These are examples based on your goals: pick what you want.")
     goals = _my_goals()
     if not goals:
         _empty("Add a goal on the previous step and examples show up here.", ":material/info:")
@@ -891,7 +899,7 @@ def _colours():
         st.session_state["ob_cats"] = [n for n in names if n.lower() in existing]
     on = st.session_state["ob_cats"]
     kit.subhead("Colour your timetable")
-    st.caption("Tap a category to switch it on. Your modules and anything you picked above are already there.")
+    st.caption("Tap a category to switch it on. Your modules are already there.")
     st.html("".join(_chip(n, c) for _, n, c in options if n in on) or "<i>None switched on yet.</i>")
     st.pills("Categories", names, selection_mode="multi", key="ob_cats",
              label_visibility="collapsed")
@@ -1033,7 +1041,7 @@ def wizard(finish, skip=None):
         if st.session_state.get("wizard_drawn") != step:
             # A new step opens at the top, not wherever the last (longer) one was scrolled to.
             st.session_state["wizard_drawn"] = step
-            components.html("<script>const d = window.parent.document;"
+            components.html(f"<script>/* step {step} */ const d = window.parent.document;"
                             "d.querySelector('[data-testid=\"stMain\"]')?.scrollTo(0, 0); window.parent.scrollTo(0, 0);</script>",
                             height=0)
         st.divider()

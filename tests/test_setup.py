@@ -277,11 +277,6 @@ def _skip_to_the_end_after(at, habit_key, habit):
     _skip_to_the_end(at)
 
 
-def _submit(at, label="Connect"):
-    next(b for b in at.button if b.label == label).click().run()
-    assert not at.exception, at.exception
-
-
 def test_skipping_everything_lands_on_a_blank_home(fresh):
     from venato import blocks, setup_checks
     at = AppTest.from_file(APP, default_timeout=60).run()
@@ -843,7 +838,6 @@ def test_the_calendars_step_explains_other_calendars(fresh):
 
 def test_finishing_with_a_goal_and_a_habit_puts_goals_and_habits_on_home(fresh):
     from venato import setup_checks
-    setup_checks.save_settings(home=[{"w": "todos", "size": "wide"}])     # a Home with neither on it
     at = _student_at(fresh, student=False)
     at.text_input(key="ob_goal_0").set_value("Run a 10k").run()
     _skip_to_the_end_after(at, "ob_own_name", "Stretch")
@@ -1039,3 +1033,18 @@ def test_a_plan_block_named_like_the_goal_does_not_hide_its_sittings(fresh):
     assert len(out) == 3 and len({s["date"] for s in out}) == 3
     onboarding.add_first_week(out)
     assert onboarding.fallback_sittings([fresh.get_goal(ids[0])], MON) == []      # added once: not offered again
+
+
+def test_a_rerun_puts_back_no_home_tile_the_user_removed(fresh):
+    from venato import setup_checks
+    fresh.add_goal("Run a 10k", "monthly", MON, 1)
+    fresh.add_habit("Stretch")
+    cells = [{"w": "todos", "size": "wide"}]                     # a saved Home without Habits or Goals
+    setup_checks.save_settings(wizard_done=True, home=cells)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.session_state["wizard_open"] = True
+    at.run()
+    _next(at, "ob_student_no")
+    _skip_to_the_end(at)
+    _next(at, "wiz_finish")
+    assert setup_checks.load_settings()["home"] == cells
