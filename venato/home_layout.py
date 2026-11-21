@@ -4,7 +4,8 @@ Home's grid of tiles: which tiles are on Home, in what order and what size. No S
 
 The layout is one ordered list of cells, saved in settings.json as "home":
     [{"w": "timetable_today", "size": "large"}, {"w": "todos", "size": "wide"}, ...]
-Home is a grid four columns wide. A tile is Small (1 x 1), Wide (2 x 1), Large (2 x 2) or Tall (1 x 2), and
+Home is a grid four columns wide. A tile is Small (1 x 1), Wide (2 x 1), Large (2 x 2), Tall (1 x 2) or
+Column (1 x 3: the height of the starting Home, for today's whole timetable), and
 the tiles fill the grid left to right, top to bottom, each taking the first place it fits (so a small tile
 can fill a gap left by a big one).
 
@@ -20,16 +21,17 @@ from copy import deepcopy
 
 COLUMNS = 4
 # size -> (columns, rows) it spans
-SPANS = {"small": (1, 1), "wide": (2, 1), "large": (2, 2), "tall": (1, 2)}
+SPANS = {"small": (1, 1), "wide": (2, 1), "large": (2, 2), "tall": (1, 2), "column": (1, 3)}
 ORDER = list(SPANS)                    # how the size picker lists them
-SIZE_NAMES = {"small": "Small", "wide": "Wide", "large": "Large", "tall": "Tall"}
+SIZE_NAMES = {"small": "Small", "wide": "Wide", "large": "Large", "tall": "Tall", "column": "Column"}
 _OLD = {"s": "small", "m": "wide", "l": "large", "full": "wide"}     # the 12-column sizes before tiles
 
-# The starting Home, on one screen (three rows): today's timetable down the left (Tall), to-dos and goals beside
-# it with Focus and Grades on the right, then Daily log, Review and Needs you along the bottom.
-_DEFAULT = [{"w": "timetable_today", "size": "tall"}, {"w": "todos", "size": "wide"}, {"w": "goals", "size": "wide"},
-            {"w": "focus", "size": "small"}, {"w": "modules", "size": "small"}, {"w": "habits", "size": "small"},
-            {"w": "review", "size": "small"}, {"w": "needs_you", "size": "wide"}]
+# The starting Home, on one screen (three rows): today's whole timetable down the left (Column); To-dos and Focus,
+# Goals and Review, then Daily log and Needs you beside it. Modules (students) comes last, so it starts a fourth
+# row: Home's rows then share the screen four ways rather than a tile being left off.
+_DEFAULT = [{"w": "timetable_today", "size": "column"}, {"w": "todos", "size": "wide"}, {"w": "focus", "size": "small"},
+            {"w": "goals", "size": "wide"}, {"w": "review", "size": "small"}, {"w": "habits", "size": "small"},
+            {"w": "needs_you", "size": "wide"}, {"w": "modules", "size": "small"}]
 
 
 def default():
@@ -65,7 +67,7 @@ def _readable(layout):
 
 def normalise(layout, available, sizes=None):
     """The saved layout as it can be drawn now. available: {tile key: its default size} for the tiles on offer
-    (their block is on, and so on); sizes: {tile key: the sizes it comes in} (missing: all four).
+    (their block is on, and so on); sizes: {tile key: the sizes it comes in} (missing: all of them).
     No saved list, or one with nothing that reads as a cell, gives the default (a deliberately empty list stays
     empty); unknown, switched-off and repeated tiles are skipped; old layouts are converted (see the top)."""
     sizes = sizes or {}
@@ -170,7 +172,7 @@ def step(cells, key, delta):
 
 
 def resize(cells, key, size):
-    """Give a tile one of the four sizes."""
+    """Give a tile one of the sizes."""
     out = deepcopy(cells)
     i = find(cells, key)
     if i is not None and size in SPANS:
