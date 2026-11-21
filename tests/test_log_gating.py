@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 LOG_TILES = ("Avg sleep", "Avg water", "Habits on target")
@@ -23,13 +24,13 @@ def _texts(at):
 
 def _review_page(at, view="Trends"):
     at.session_state["rv_view"] = view
-    at.sidebar.radio[0].set_value("Review").run()
+    goto(at, "Review")
     assert not at.exception
     return _texts(at)
 
 
 def _search(store, at, q):
-    at.sidebar.radio[0].set_value("Home").run()
+    goto(at, "Home")
     at.text_input(key="global_search").set_value(q).run()
     assert not at.exception
     return at
@@ -73,7 +74,7 @@ def test_log_on_shows_it(store, monkeypatch):
     _search(store, at, "stretch")
     assert [b for b in at.button if b.key and "Habit" in b.key]
     next(b for b in at.button if b.key and "Habit" in b.key).click().run()
-    assert at.sidebar.radio[0].value == "Daily Log"
+    assert at.session_state["page"] == "Daily Log"
 
 
 def test_log_on_with_nothing_logged_says_so(store):

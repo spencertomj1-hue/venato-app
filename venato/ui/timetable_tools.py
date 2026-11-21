@@ -26,7 +26,7 @@ OPEN_CATEGORIES = "tt_open_categories"   # set by "Add a category" elsewhere: th
 
 
 def _go_add_category():
-    st.session_state["page"] = "Timetable"        # the sidebar radio's key; callbacks run before it's drawn
+    st.session_state["page"] = "Timetable"        # the router (nav.py); set in a callback, before the page is drawn
     st.session_state[OPEN_CATEGORIES] = True
 
 

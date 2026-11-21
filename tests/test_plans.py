@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 MON = date(2026, 11, 16)                      # a Monday
@@ -223,7 +224,7 @@ def test_module_without_a_category_offers_to_create_one(store, gr):
         conn.execute("INSERT INTO gr_modules (id, name, credits, created_at) VALUES ('old', 'Old module', 10, 'x')")
     assert gr.get_module("old")["category_id"] is None and gr.category_colour(gr.get_module("old")) is None
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Modules").run()
+    goto(at, "Modules")
     assert not at.exception
     next(b for b in at.button if b.key == "gr_cat_old").click().run()
     cid = gr.get_module("old")["category_id"]
@@ -233,12 +234,12 @@ def test_module_without_a_category_offers_to_create_one(store, gr):
 
 def test_modules_page_lists_each_module_and_opens_one(store, gr):
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Modules").run()
+    goto(at, "Modules")
     assert not at.exception and any("No modules yet" in c.value for c in at.caption)      # empty state
     mid = gr.add_module("Organic Chemistry", code="CHEM50001", target=70)
     store.add_deadline("Lab report", "2026-11-30", module_id=mid)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Modules").run()
+    goto(at, "Modules")
     assert any("Next: Lab report" in c.value for c in at.caption)
     assert any("This week: 0 done / 0 planned / 6 h goal" in c.value for c in at.caption)  # the 6 h default
     next(b for b in at.button if b.key == f"gr_open_btn_{mid}").click().run()
@@ -252,7 +253,7 @@ def test_modules_page_lists_each_module_and_opens_one(store, gr):
 def test_a_deadline_row_opens_its_module_and_plan_shows_progress(store, gr, pace):
     mid, did, g = _plan(store, gr, total=15)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Goals").run()
+    goto(at, "Goals")
     assert not at.exception
     mod = next(b for b in at.button if b.key == f"dl_mod_{did}")
     assert "Organic Chemistry" in mod.label and "0 / 15 h" in mod.label
@@ -288,7 +289,7 @@ def test_plan_dialog_is_pre_filled(store, gr):
     mid = gr.add_module("Organic Chemistry")
     did = store.add_deadline("Lab report", store.local_today() + timedelta(days=15), module_id=mid)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Goals").run()
+    goto(at, "Goals")
     next(b for b in at.button if b.key == f"dl_plan_{did}").click().run()
     assert not at.exception
     assert next(s for s in at.selectbox if s.key == f"plan_cat_pick_{did}").value == gr.get_module(mid)["category_id"]
@@ -299,7 +300,7 @@ def test_plan_dialog_is_pre_filled(store, gr):
 def test_plan_dialog_without_a_module_picks_any_category(store, gr):
     did = store.add_deadline("Essay", store.local_today() + timedelta(days=5))
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Goals").run()
+    goto(at, "Goals")
     next(b for b in at.button if b.key == f"dl_plan_{did}").click().run()
     assert not at.exception
     pick = next(s for s in at.selectbox if s.key == f"plan_cat_pick_{did}")      # any category will do
@@ -313,7 +314,7 @@ def test_plan_dialog_pre_selects_the_plans_own_category(store, gr):
     other = next(c for c in store.load_categories()["id"] if c != gr.get_module(mid)["category_id"])
     store.plan_deadline(did, other, total=6)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Goals").run()
+    goto(at, "Goals")
     next(b for b in at.button if b.key == f"dl_plan_{did}").click().run()
     assert not at.exception
     pick = next(s for s in at.selectbox if s.key == f"plan_cat_pick_{did}")
@@ -324,7 +325,7 @@ def test_plan_dialog_pre_selects_the_plans_own_category(store, gr):
 def test_plan_dialog_with_no_categories_offers_to_add_one(blank_store):
     did = blank_store.add_deadline("Essay", blank_store.local_today() + timedelta(days=5))
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Goals").run()
+    goto(at, "Goals")
     next(b for b in at.button if b.key == f"dl_plan_{did}").click().run()
     assert not at.exception and any(b.key == f"plan_nocat_{did}" for b in at.button)
 

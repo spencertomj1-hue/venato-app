@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 T0 = 1_800_000_000.0          # a fixed "now" (Unix seconds)
@@ -85,7 +86,7 @@ def test_tools_and_quick_commands(focus, store):
 
 def test_page_renders(focus, store):
     at = AppTest.from_file(APP, default_timeout=60).run()
-    at.sidebar.radio[0].set_value("Focus").run()
+    goto(at, "Focus")
     assert not at.exception
     focus.start("Essay", 25, "focus")
     at.run()

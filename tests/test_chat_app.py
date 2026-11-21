@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from nav_helpers import goto, page_names
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -34,8 +35,8 @@ def fake_claude(store, monkeypatch):
 
 def test_every_page_renders_with_chat_bar(store):
     at = AppTest.from_file(APP, default_timeout=60).run()
-    for page in at.sidebar.radio[0].options:
-        at.sidebar.radio[0].set_value(page).run()
+    for page in page_names():
+        goto(at, page)
         assert not at.exception, (page, at.exception)
         assert at.session_state["chat_busy"] is None
 
@@ -43,9 +44,10 @@ def test_every_page_renders_with_chat_bar(store):
 def test_home_ask_widget_or_the_bar(store):
     """Home's Ask widget is the chat box; with it hidden (or arranged away) Home gets the pinned bar instead."""
     import fragment_run
+    store.save_settings(home=[{"w": "ask", "size": "wide"}, {"w": "todos", "size": "small"}])
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert fragment_run.component_data(at, "chat")["inline"] is True
-    store.save_settings(home=[{"w": "todos", "size": "s"}])
+    store.save_settings(home=[{"w": "todos", "size": "small"}])
     at.run()
     assert not at.exception and fragment_run.component_data(at, "chat")["inline"] is False
     store.save_settings(ai_enabled=False)

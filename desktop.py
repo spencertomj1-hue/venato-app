@@ -129,10 +129,12 @@ def check():
         sys.exit(1)
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file(str(APP_DIR / "app.py"), default_timeout=180).run()
-    pages = at.sidebar.radio[0].options if at.sidebar.radio else []
+    from venato.ui import nav
+    pages = list(nav.pages())
     problems = [f"Home: {e.message}" for e in at.exception]
     for page in pages[1:]:
-        at.sidebar.radio[0].set_value(page).run()
+        at.session_state["page"] = page
+        at.run()
         problems += [f"{page}: {e.message}" for e in at.exception]
     if problems or not pages:
         print("Venato check FAILED:\n" + ("\n".join(problems) or "the app didn't draw its menu"))

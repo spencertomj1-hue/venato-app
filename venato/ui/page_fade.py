@@ -1,5 +1,6 @@
 """
-A soft transition between pages (and focus rings only for keyboard users): clicking another page in the sidebar fades the main area
+A soft transition between pages (and focus rings only for keyboard users): pressing a button that opens a page
+(a Home tile, "← Home", a shortcut tile: keys go_*) fades the page
 to the page colour, and fades the new page in once Streamlit has finished drawing it
 (instead of the old page's pieces being swapped out one by one in front of you).
 """
@@ -32,9 +33,7 @@ export default function () {
 
   function show() {
     if (shown) return;
-    const sb = doc.querySelector('[data-testid="stSidebar"]');
-    const r = sb && sb.getBoundingClientRect();
-    veil.style.left = (r && r.width > 40 && r.right > 0 ? r.right : 0) + "px";   // keep the sidebar visible
+    veil.style.left = "0";
     veil.style.background = getComputedStyle(app() || doc.body).backgroundColor || "#fff";
     veil.style.transition = "opacity 110ms ease-out";
     veil.style.pointerEvents = "auto";
@@ -56,15 +55,10 @@ export default function () {
     }, 120);
   }
 
-  // Start on the press (earlier than the click), for a page that isn't the current one.
-  doc.addEventListener("pointerdown", (e) => {
+  // Start when a page button is pressed (a tile's click presses its hidden go_tile_ button for it).
+  doc.addEventListener("click", (e) => {
     if (e.button !== 0) return;
-    const opt = e.target.closest && e.target.closest('[data-testid="stSidebar"] [data-testid="stRadioOption"]');
-    if (opt && opt.getAttribute("data-selected") !== "true" && !opt.querySelector("input:checked")) show();
-  }, true);
-  // Keyboard (arrow keys on the page list) changes the radio without a press.
-  doc.addEventListener("change", (e) => {
-    if (e.target.closest && e.target.closest('[data-testid="stSidebar"] [data-testid="stRadio"]')) show();
+    if (e.target.closest && e.target.closest('[class*="st-key-go_"] button')) show();
   }, true);
 
   // Hide once the rerun has started and then finished.
