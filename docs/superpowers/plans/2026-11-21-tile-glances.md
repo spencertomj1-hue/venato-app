@@ -77,6 +77,7 @@ cut-off graphic or label, light and dark; the full suite passes
 | Column's height | fixed 3 rows (Home's default height), not "every row" | a span that depends on the row count is circular; 3 is the one-screen default |
 | How to draw | inline HTML/CSS via `st.html` (as Review and Goals already do) | no new library, theme tokens |
 | Home's minimum row | 8px (was 10px), plus the header trim above | a student's 4-row Home at 1280×720 fits the whole day |
+| Home's MIN_ROW | 108px (was 132) | a student's 4-row Home fits one screen at 1280×720 |
 | Animation | none, bar the existing now-line and the running stopwatch | a screen of moving tiles is noise |
 
 ## Not yet specified
@@ -93,7 +94,7 @@ cut-off graphic or label, light and dark; the full suite passes
 | 2 Whole-day timetable | done |
 | 3 Stopwatch tile | done |
 | 4 Glances | done |
-| 5 Fit check, docs | not started |
+| 5 Fit check, docs | done (see Phase 5 note) |
 
 ### Phase 2 note (measured on seed_demo data, Playwright)
 First build (Column 3 rows, 10px minimum) didn't fit: a 3-row Home at 1280×720 was 6px short, a student's
@@ -106,3 +107,12 @@ no all-day chip or state. After:
 | 3 rows | 1280×720 | 11px | yes |
 | 4 rows (student) | 1440×900 | 11px | yes |
 | 4 rows (student) | 1280×720 | 9px | yes |
+
+### Phase 5 note (Playwright, seed_demo data, 1440×900 and 1280×720, light and dark)
+- Fixed on the way: the Timetable title was squeezed by its status (the status now gives way); Focus had an empty
+  slot above its form and a two-line running view (now one line); Review's letters were cut at 114px rows (shorter
+  bars on short windows, the % moved to the header); Journal's Write and Deadlines' See all took a line on Home
+  (hidden, as Goals' and Habits' already were).
+- Still clipped at 1280×720 (rows 114px), by Home's clip-rather-than-grow rule, in tiles this plan doesn't change:
+  To-dos' "New to-do" and Goals' second bar are cut mid-line; Daily log's second row of habits is hidden whole.
+  Deadlines (when added) shows its first row and part of the second. At 1440×900 everything fits.

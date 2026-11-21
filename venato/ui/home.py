@@ -1,6 +1,6 @@
 """
 Home: the whole app on one screen, and the only way round it. A grid of tiles (four columns; each tile
-Small, Wide, Large or Tall): a card header with the module's coloured icon, its name and a short status
+Small, Wide, Large, Tall or Column, 1 × 3, which the Timetable starts in): a card header with the module's coloured icon, its name and a short status
 ("1 of 4 done today", "2 behind"), then a live preview. Clicking a tile anywhere that isn't one of its own
 controls opens its module's page (ticking a to-do or starting Focus works in place). Which tiles, in what
 order and size is Home's layout (venato/home_layout.py, saved in settings.json "home").
@@ -13,7 +13,7 @@ Above the grid: the date, the search / Ask bar, Edit Home, and the Settings gear
 remove your way out of the app).
 
 Edit Home: the tiles wobble; − takes a tile off Home (its data stays), tapping or dragging a tile picks it up
-and tapping (or dropping on) another moves it there, the picked-up tile gets a Small / Wide / Large / Tall
+and tapping (or dropping on) another moves it there, the picked-up tile gets a Small / Wide / Large / Tall / Column
 picker and a "Drop here" slot, and the "Add a tile" panel lists what's hidden. Every change is saved straight
 away, with Undo; Reset goes back to the start. Moves glide (components/home_flip.js), not with reduced motion.
 """
