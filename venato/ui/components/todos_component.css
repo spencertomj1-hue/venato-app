@@ -54,7 +54,7 @@ svg { display: block; }
 .gl-tile .gl-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .gl-tile .gl-foot .gl-add { width: auto; }
 .gl-tile .gl-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
-.gl-tile .gl-notes { display: none; }
+.gl-tile .gl-notes, .gl-tile .gl-meta { display: none; }
 .gl-tile .gl-add { padding: 4px 0; }
 .gl-more-tile { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
 
@@ -111,6 +111,10 @@ svg { display: block; }
   transition: color 0.25s ease, opacity 0.25s ease;
 }
 .gl-notes { font-size: 0.8em; color: var(--muted); line-height: 1.3; overflow-wrap: anywhere; }
+.gl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 5px; font-size: 0.78em; color: var(--muted);
+           line-height: 1.4; }
+.gl-due.late { color: #EF4444; font-weight: 600; }
+.gl-chip { padding: 0 7px; border-radius: 999px; color: #111; font-weight: 600; }
 .gl-row.done .gl-title { text-decoration: line-through; opacity: 0.72; }   /* still 4.5:1 */
 .gl-repeat { flex: none; color: var(--muted); margin-top: 2px; }
 .gl-repeat svg { width: 13px; height: 13px; }
