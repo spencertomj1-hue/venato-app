@@ -89,7 +89,16 @@ cut-off graphic or label, light and dark; the full suite passes
 | Phase | Status |
 | --- | --- |
 | 1 Column size | done |
-| 2 Whole-day timetable | not started |
+| 2 Whole-day timetable | built; blocked: a 4-row Home at 1280×720 clips the last ~4 h (see note) |
 | 3 Stopwatch tile | not started |
 | 4 Glances | not started |
 | 5 Fit check, docs | not started |
+
+### Phase 2 note (measured on seed_demo data, Playwright)
+| Home | Window | Row | Fits 07:00–01:00? |
+|---|---|---|---|
+| 3 rows | 1440×900 | 14px | yes |
+| 3 rows | 1280×720 | 10px (min) | no: 6px short (last half hour clipped) |
+| 4 rows (student) | 1440×900 | 10px (min) | yes, just |
+| 4 rows (student) | 1280×720 | 10px (min) | no: 78px short (about 3.5 h clipped) |
+Fixed cost above the rows: the sync / Outlook bar (32px) and the day header (36px). Waiting on the user.

@@ -365,11 +365,8 @@ th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; 
 .tt-root.readonly th.day .dn, .tt-root.readonly th.day .dd { display: none; }
 .tt-root.readonly .tt-head { margin-bottom: 4px; }
 .tt-root.readonly .tt-title { display: none; }   /* Home's header already says the date */
-/* Home: a window of the day (fitHome sets its height and where it starts); it scrolls, without a scrollbar,
-   and the day's header (all-day chips) stays at the top. */
-.tt-root.readonly .tt-card { overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
-.tt-root.readonly .tt-card::-webkit-scrollbar { display: none; }
-.tt-root.readonly thead th { position: sticky; top: 0; z-index: 6; background: var(--bg); }
+/* Home: the whole day, no scrolling (fitHome sizes the rows to the tile). */
+.tt-root.readonly .tt-card { overflow: hidden; }
 .tt-root.readonly .tt-head { gap: 6px; flex-wrap: nowrap; }
 .tt-root.readonly .tt-synced:not(.warn) { display: none; }   /* Home: on one line; it's in the sync button's tooltip */
 
@@ -506,3 +503,6 @@ th.day .dstate .ptag { color: var(--bp); font-weight: 700; font-size: 0.66rem; l
 .tt-preview b, .tt-preview span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-preview b { font-size: 0.7rem; font-weight: 600; }
 .tt-preview span { font-size: 0.62rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
+
+/* Home: no gap under each row (the time lines are drawn over the cells), so the whole day fits. */
+.tt-root.readonly table.tt td { border-bottom: none; }
