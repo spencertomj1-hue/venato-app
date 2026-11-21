@@ -158,12 +158,12 @@ def _plan_dialog(did):
         return
     st.markdown(f"**{md(d['title'])}** · due {regional.day_month(due)}")
     ids = [c["id"] for c in cats]
-    start = module["category_id"] if module else None
+    goal = store.deadline_goal(did)
+    start = goal["category_id"] if goal and goal.get("category_id") else module["category_id"] if module else None
     cid = st.selectbox("Counts in", ids, index=ids.index(start) if start in ids else 0,
                        format_func=lambda i: next(c["name"] for c in cats if c["id"] == i), key=f"plan_cat_pick_{did}",
                        help="The hours count in this category. A module's category also holds its lectures.")
     mid = next((m["id"] for m in mods if m["category_id"] == cid), None)       # a module's own category links it
-    goal = store.deadline_goal(did)
     how = st.radio("Hours", ["In total", "A week"], horizontal=True, key=f"plan_how_{did}",
                    index=0, help="A week: the hours for each week from today to the finish-by day.")
     hours = st.number_input("Hours" if how == "In total" else "Hours a week", 0.5, 500.0,
