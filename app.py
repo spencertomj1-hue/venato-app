@@ -10,7 +10,6 @@ from pathlib import Path
 import streamlit as st
 
 from venato.ui import settings_ui
-from venato.ui import home
 from venato import blocks
 from venato import store
 from venato import notify
@@ -23,47 +22,28 @@ from venato.store import init_db
 # App entry point
 # ---------------------------------------------------------------------------
 
-st.set_page_config(page_title="Venato", page_icon=str(Path(__file__).parent / "assets" / "Logo.jpg"), layout="wide")
+st.set_page_config(page_title="Venato", page_icon=str(Path(__file__).parent / "assets" / "Logo.jpg"), layout="wide",
+                   initial_sidebar_state="collapsed")
 
-# All of the app's own CSS goes out first, so nothing jumps around as the page draws:
-# the same top padding on every page, the sidebar nav restyled as large full-width
-# items (radio circles hidden, current page with an accent bar), and no dimming of
-# the previous page while a rerun is in progress.
-st.html(f"""<style>
-.stMainBlockContainer {{ padding-top: 2.5rem; padding-bottom: 1.5rem; padding-left: 2rem; padding-right: 2rem; }}
-[data-stale="true"] {{ opacity: 1 !important; transition: none !important; }}
-[data-testid="stElementContainer"]:has(#venato-ready) {{ display: none; }}   /* no stray gap */
-[data-testid="stSidebar"] [data-testid="stElementContainer"]:has([data-testid="stRadio"]),
-[data-testid="stSidebar"] [data-testid="stRadio"],
-[data-testid="stSidebar"] [data-testid="stRadioGroup"] > div {{ width: 100% !important; }}
-[data-testid="stSidebar"] [data-testid="stRadioGroup"] {{
-    display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: 100%;
-}}
-[data-testid="stSidebar"] [data-testid="stRadioOption"] {{
-    box-sizing: border-box; align-self: stretch;
-    width: 100%; margin: 0; padding: 14px 18px; border-radius: 10px;
-    cursor: pointer; transition: background 0.12s;
-}}
-[data-testid="stSidebar"] [data-testid="stRadioOption"] > div {{ width: 100%; }}
-[data-testid="stSidebar"] [data-testid="stRadioOption"] > div > div:first-child {{ display: none; }}
-[data-testid="stSidebar"] [data-testid="stRadioOption"] p {{ font-size: 1.15rem; font-weight: 500; margin: 0; }}
-[data-testid="stSidebar"] [data-testid="stRadioOption"]:hover {{ background: rgba(128, 128, 128, 0.10); }}
-[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] {{
-    background: rgba(128, 128, 128, 0.16);
-    box-shadow: inset 3px 0 0 {st.get_option("theme.primaryColor") or "#ff4b4b"};
-}}
-[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] p {{ font-weight: 650; }}
+# All of the app's own CSS goes out first, so nothing jumps around as the page draws: the same top padding on
+# every page, no sidebar (Home is the way round the app: venato/ui/nav.py), and no dimming of the previous
+# page while a rerun is in progress.
+st.html("""<style>
+.stMainBlockContainer { padding-top: 2.5rem; padding-bottom: 1.5rem; padding-left: 2rem; padding-right: 2rem; }
+@media (max-width: 640px) { .stMainBlockContainer { padding-left: 1rem; padding-right: 1rem; } }
+[data-stale="true"] { opacity: 1 !important; transition: none !important; }
+[data-testid="stElementContainer"]:has(#venato-ready) { display: none; }   /* no stray gap */
 </style>""")
 
 
-from venato.ui import sidebar_theme          # the marble sidebar and its boxed menu
 from venato.ui import appearance             # light / dark / system
 appearance.sync()
 appearance.apply_text_colours()
 appearance.apply_text_size()
-sidebar_theme.apply()
-from venato.ui import paper                  # serif headings; in light mode paper background, sidebar and buttons
+from venato.ui import paper                  # serif headings; in light mode the paper background and buttons
 paper.apply()
+from venato.ui import nav                    # Home, the top bar on every other page, ?page= and Esc
+st.html(f"<style>{nav.css(appearance.tokens())}</style>")
 
 
 def ready_marker():
@@ -80,26 +60,16 @@ if settings_ui.needs_wizard():
     ready_marker()
     st.stop()
 
-# Home, then the switched-on blocks (Settings → Blocks), then Settings.
-PAGES = {"Home": home.page_home, **blocks.pages(), "Settings": settings_ui.page_settings}
-if st.session_state.get("page") not in PAGES:
-    st.session_state["page"] = "Home"            # its block was switched off
-
-st.sidebar.title("Venato")
-with st.sidebar:
-    from venato.ui import search                  # search everything, at the top of the sidebar
-    search.render_sidebar()
-# Keyed so Home's goals "See all" can switch to the Goals page.
-choice = st.sidebar.radio("Go to", list(PAGES), label_visibility="collapsed", key="page")
+# Home, then the switched-on blocks' pages, then Settings. Home's tiles open them; nav.go switches.
+PAGES = nav.pages()
+choice = nav.current(PAGES)
 if st.session_state.get("last_page") == "Modules" and choice != "Modules":
     st.session_state.pop("gr_module", None)       # leaving Modules: coming back shows the list, not the last module
+if choice != "Home":
+    st.session_state["home_arranging"] = False
 st.session_state["last_page"] = choice
-with st.sidebar:
-    from venato.ui import page_fade               # fades between pages instead of swapping bits in front of you
-    page_fade.render()
-    from venato import feedback                   # opens the feedback form in the browser; nothing is sent
-    st.link_button("Send feedback", feedback.feedback_url(), icon=":material/rate_review:", type="tertiary",
-                   key="sidebar_feedback", width="stretch")
+from venato.ui import page_fade                   # fades between pages instead of swapping bits in front of you
+page_fade.render()
 
 
 def update_banner():
@@ -118,6 +88,7 @@ def update_banner():
 
 update_banner()
 review_ui.maybe_show()                         # Sunday from 7pm: the week's review pops up once
+labels = {} if choice == "Home" else nav.top_bar(choice, PAGES)
 PAGES[choice]()
 
 # The Claude chat bar, pinned to the bottom of every page (Home has it inline, when its Ask widget is on).
@@ -126,6 +97,7 @@ if store.ai_enabled() and not (choice == "Home" and st.session_state.get("home_a
 
 from venato.ui import undo_bar                # "Deleted X · Undo", after a delete or overwrite
 undo_bar.render()
+nav.mount(choice, labels)
 
 
 @st.fragment(run_every=15 * 60)

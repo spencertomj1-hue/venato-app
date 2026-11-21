@@ -64,10 +64,10 @@ def _changed(op):
     return {f"todo:{op.get('id') or op.get('goal', {}).get('id')}"} | ({"undo"} if op["kind"] == "delete" else set())
 
 
-def _on_ops():
+def _on_ops(key="home_todos"):
     """Save new ops and remember them as acknowledged. Only the to-do list reruns, unless the app shows
     something that changed (kit.rerun_app_if)."""
-    ops = st.session_state["home_todos"]["ops"] or []
+    ops = st.session_state[key]["ops"] or []
     acked = st.session_state.setdefault("todo_acked", [])
     new_ops = [op for op in ops if op["opId"] not in acked]
     for op in new_ops:
@@ -92,3 +92,60 @@ def render_home():
     with st.container(border=True, key="home_todos_card"):
         data = {"today": today.isoformat(), "sections": sections, "acked": st.session_state.get("todo_acked", [])}
         _todos_component(data=data, key="home_todos", on_ops_change=_on_ops)
+
+
+# ---------------------------------------------------------------------------
+# The To-dos page (Home's To-dos tile opens it): one list at a time, Today / This week / This month
+# ---------------------------------------------------------------------------
+
+TABS = {"Today": "daily", "This week": "weekly", "This month": "monthly"}
+
+
+def _section(period, today, limit=None):
+    start = store.start_of_period(period, today)
+    return {"period": period, "start": start.isoformat(), "title": store.period_title(period, start, today),
+            "goals": store.todos_for(period, start), "limit": limit}
+
+
+@st.fragment
+def _page_list(period):
+    today = store.local_today()
+    with st.container(border=True, key="todos_page_card"):
+        data = {"today": today.isoformat(), "sections": [_section(period, today)], "single": True,
+                "acked": st.session_state.get("todo_acked", [])}
+        _todos_component(data=data, key=f"page_todos_{period}", on_ops_change=lambda: _on_ops(f"page_todos_{period}"))
+
+
+def render_page():
+    store.roll_todos()
+    today = store.local_today()
+    from venato import tile_status
+    head = st.container(horizontal=True, vertical_alignment="center", key="todos_head")
+    with head:
+        st.html('<span class="vn-page-icon" style="background:#C62828" aria-hidden="true">'
+                '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" '
+                'stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"></rect>'
+                '<path d="M8 12l3 3 5-6"></path></svg></span>', width="content")
+        with st.container(gap=None, width="stretch"):
+            st.header("To-dos", anchor=False)
+            st.caption(f"Today · {tile_status.todos(today)}")
+        tab = st.segmented_control("Which list", list(TABS), default="Today", key="todos_tab",
+                                   label_visibility="collapsed", width="content")
+    period = TABS.get(tab or "Today", "daily")
+    main, side = st.columns([2, 1], gap="medium")
+    with main:
+        _page_list(period)
+    with side:
+        from venato import blocks
+        if blocks.is_on("goals"):
+            with st.container(border=True):
+                from venato.ui import deadlines
+                deadlines.render_home()
+        if period == "daily":
+            week = [t for t in store.todos_for("weekly", today) if not t["done"]]
+            with st.container(border=True, key="todos_later"):
+                kit.subhead("Later this week")
+                if not week:
+                    st.caption("Nothing else on this week's list.")
+                for t in week[:8]:
+                    st.markdown(kit.md(t["title"]))

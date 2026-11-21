@@ -452,7 +452,12 @@ TOOLS = [
      {"type": "object", "properties": {"days": {"type": "integer"}}, "required": []}, tool_summary),
 ]
 
+def _focus_status():
+    from venato import tile_status
+    return tile_status.focus()
+
+
 BLOCK = Block("focus", "Focus", ":material/timer:",
               "A Pomodoro timer with breaks and a stopwatch for tracking time; sessions go into your timetable.",
-              group="Plan", page=_page, widgets=[Widget("focus", "Focus", _home, "s")], tools=TOOLS, prompt=PROMPT, context=_context,
+              group="Plan", page=_page, widgets=[Widget("focus", "Focus", _home, "small", ("small", "wide"), status=_focus_status, colour="#44444C")], tools=TOOLS, prompt=PROMPT, context=_context,
               quick=[_quick], schema=SCHEMA, order=30, default=True, core=True)

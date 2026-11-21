@@ -508,7 +508,12 @@ def _home():
     ui.render_home()
 
 
+def _grades_status():
+    from venato import tile_status
+    return tile_status.modules()
+
+
 BLOCK = Block("grades", "Modules", ":material/school:",
               "Your modules: deadlines, study hours, weighted marks, what you need to hit your target, and your classification or GPA.",
-              group="Study & work", page=_page, widgets=[Widget("modules", "Grades", _home, "m")], tools=TOOLS, prompt=PROMPT, context=_context,
+              group="Study & work", page=_page, widgets=[Widget("modules", "Grades", _home, "small", ("small", "wide"), status=_grades_status, colour="#6B3FA0")], tools=TOOLS, prompt=PROMPT, context=_context,
               quick=[_quick], schema=SCHEMA, migrate=_migrate, order=40, default=True, core=True)

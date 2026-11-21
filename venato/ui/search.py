@@ -1,5 +1,5 @@
 """
-Search everything, from the top of the sidebar on every page: to-dos, goals,
+Search everything, from the search / Ask bar at the top of Home: to-dos, goals,
 deadlines, habits, the journal, timetable blocks, Outlook events and weekly reviews,
 plus whatever the switched-on blocks add (Block.search). Each result is a button that goes
 to the right page (and day); a block's results go where its search_open says. The
@@ -23,12 +23,13 @@ def _icon(kind):
 def _open(r):
     """Go to where a result lives."""
     kind, ss = r["kind"], st.session_state
+    ss["global_search"] = ""
     from venato import blocks
     owner = blocks.search_block(kind)
     if owner and owner.search_open:
         owner.search_open(r, ss)
     elif kind == "To-do":
-        ss["page"] = "Home"
+        ss["page"] = "To-dos"
     elif kind in ("Goal", "Deadline"):
         ss["page"] = "Goals"
         if kind == "Goal":
@@ -56,20 +57,42 @@ def _when(r):
     return when
 
 
-SHOW = 12          # results listed (the sidebar is narrow); more words narrow it down
+SHOW = 12          # results listed; more words narrow it down
 
 
-def render_sidebar():
-    query = st.text_input("Search everything", placeholder="Search",
-                          label_visibility="collapsed", key="global_search", icon=":material/search:")
+def box():
+    """The bar at the top of Home: search everything (and, with the assistant on, ask Claude)."""
+    ask = store.ai_enabled()
+    st.text_input("Search everything", placeholder="Ask Venato or search…" if ask else "Search everything",
+                  label_visibility="collapsed", key="global_search", icon=":material/search:", width=360)
+
+
+def _ask(text):
+    from venato.ui import chat
+    chat.ask(text)
+    st.session_state["global_search"] = ""
+
+
+def results():
+    """What the bar found, under it (nothing while it's empty)."""
+    query = st.session_state.get("global_search") or ""
     if not query.strip():
         return
+    with st.container(border=True, key="search_results"):
+        if store.ai_enabled():
+            st.button(f"Ask Venato: “{query.strip()[:60]}”", key="search_ask", icon=":material/chat:", type="primary",
+                      on_click=_ask, args=(query.strip(),))
+        _list(query)
+
+
+def _list(query):
     results = store.search(query)
     if not results:
         st.caption(f"Nothing matches “{query.strip()}”.")
         return
     n = len(results)
     st.caption(f"{n} result{'s' * (n != 1)}" + (f", the first {SHOW} shown. Add a word to narrow it." if n > SHOW else ""))
+    cols = st.columns(2, gap="small")
     for i, r in enumerate(results[:SHOW]):
         text, detail = (r["detail"] or r["title"], r["title"]) if r["kind"] == "Review" else (r["title"], r["detail"])
         if r["kind"] == "Journal":
@@ -79,6 +102,6 @@ def render_sidebar():
         label = " ".join(str(text or r["kind"]).split())
         if len(label) > 70:
             label = label[:69] + "…"
-        st.button(label, key=f"search_open_{i}_{r['kind']}_{r['id']}", on_click=_open, args=(r,),
-                  icon=f":material/{_icon(r['kind'])}:", width="stretch",
-                  help=f"Open this {r['kind'].lower()}: {meta}" + (f". {detail}" if detail else ""))
+        cols[i % 2].button(label, key=f"search_open_{i}_{r['kind']}_{r['id']}", on_click=_open, args=(r,),
+                           icon=f":material/{_icon(r['kind'])}:", width="stretch",
+                           help=f"Open this {r['kind'].lower()}: {meta}" + (f". {detail}" if detail else ""))

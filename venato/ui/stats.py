@@ -181,3 +181,19 @@ def _charts():
                                labels=".0f", y_scale=alt.Scale(domain=[0, 100]),
                                y_axis=alt.Axis(values=list(range(0, 101, 20)), labelExpr="datum.value + '%'",
                                                title="% of days")))
+
+
+def render_home():
+    """Home's Review tile: this week's Plan followed, a bar a day (Monday first; grey: not confirmed yet)."""
+    from venato import tile_status
+    w = tile_status.week_followed()
+    accent = appearance.accent()
+    bars = "".join(
+        f'<i style="height:{max(8, p or 0)}%;background:{accent if p is not None else "rgba(128,128,128,0.22)"}" '
+        f'title="{d}: {"not confirmed" if p is None else f"{p}% followed"}"></i>'
+        for d, p in zip(("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"), w["days"]))
+    st.html(f"""<style>
+      .vn-rv {{ display: flex; align-items: flex-end; gap: 6px; height: 56px; }}
+      .vn-rv i {{ flex: 1; max-width: 18px; border-radius: 4px; }}
+    </style><div class="vn-rv" role="img" aria-label="Plan followed each day this week">{bars}</div>""")
+    st.caption("No days confirmed yet this week." if w["pct"] is None else f"{w['pct']}% of plan followed this week")

@@ -105,3 +105,13 @@ def accent():
 def warn_colours():
     """(soon, overdue) text colours readable on the current background."""
     return ("#fbbf24", "#ff7b72") if is_dark() else ("#b45309", "#c62828")
+
+
+def tokens():
+    """Home's and the top bar's colours in the current mode: the page, cards, their border, ink and muted text.
+    Every pair is checked for WCAG AA (muted text 4.5:1 on its card)."""
+    if is_dark():
+        return {"paper": "#0E1117", "card": "#1A1C23", "border": "#2E313B", "ink": "#ECECF1", "muted": "#A3A8B8",
+                "accent": accent(), "track": "#2E313B", "slot": "rgba(255, 107, 107, 0.10)"}
+    return {"paper": "#F6F4EF", "card": "#FFFFFF", "border": "#E3E0D8", "ink": "#2B2B30", "muted": "#5F6170",
+            "accent": accent(), "track": "#ECEAE4", "slot": "rgba(198, 40, 40, 0.05)"}

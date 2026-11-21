@@ -206,3 +206,8 @@ svg { display: block; }
 @media (prefers-reduced-motion: reduce) {
   .gl-row, .gl-row * { animation: none !important; transition: none !important; }
 }
+
+/* The To-dos page: one list, bigger rows (44px touch targets). */
+.gl-page .gl-card { font-size: 1.05rem; }
+.gl-page .gl-row { min-height: 44px; }
+.gl-page .gl-add { min-height: 44px; }
