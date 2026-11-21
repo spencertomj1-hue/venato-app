@@ -188,10 +188,23 @@ def done_todos(today=None):
 
 
 def todo_groups():
-    """The user's to-do categories in order: [{id, name, colour}]."""
+    """The user's to-do categories in order: [{id, name, colour, goal_id}]. goal_id: the goal it was made
+    for (a goal is also a to-do category), else None."""
     with db() as conn:
-        rows = conn.execute("SELECT id, name, colour FROM todo_groups ORDER BY ord, name").fetchall()
-    return [{"id": r[0], "name": r[1], "colour": r[2]} for r in rows]
+        rows = conn.execute("SELECT id, name, colour, goal_id FROM todo_groups ORDER BY ord, name").fetchall()
+    return [{"id": r[0], "name": r[1], "colour": r[2], "goal_id": r[3]} for r in rows]
+
+
+def _add_group(conn, name, colour=None):
+    """The id of the category called `name` (any case), adding it if there isn't one."""
+    row = conn.execute("SELECT id FROM todo_groups WHERE name = ?", (name,)).fetchone()
+    if row:
+        return row[0]
+    count = conn.execute("SELECT COUNT(*) FROM todo_groups").fetchone()[0]
+    group_id = uuid.uuid4().hex[:8]
+    conn.execute("INSERT INTO todo_groups (id, name, colour, ord) VALUES (?, ?, ?, ?)",
+                 (group_id, name, colour or TODO_GROUP_COLOURS[count % len(TODO_GROUP_COLOURS)], count))
+    return group_id
 
 
 def add_todo_group(name, colour=None):
@@ -200,15 +213,32 @@ def add_todo_group(name, colour=None):
     if not name:
         raise ValueError("A category needs a name.")
     with db() as conn:
-        row = conn.execute("SELECT id FROM todo_groups WHERE name = ?", (name,)).fetchone()
-        if row:
-            group_id = row[0]
-        else:
-            count = conn.execute("SELECT COUNT(*) FROM todo_groups").fetchone()[0]
-            group_id = uuid.uuid4().hex[:8]
-            conn.execute("INSERT INTO todo_groups VALUES (?, ?, ?, ?)",
-                         (group_id, name, colour or TODO_GROUP_COLOURS[count % len(TODO_GROUP_COLOURS)], count))
+        group_id = _add_group(conn, name, colour)
     return next(g for g in todo_groups() if g["id"] == group_id)
+
+
+def link_goal_group(conn, goal_id, title):
+    """Setting a goal ("Get a job") makes it a to-do category too: the one already called that, if there
+    is one, else a new one. Returns its id."""
+    row = conn.execute("SELECT id FROM todo_groups WHERE goal_id = ?", (goal_id,)).fetchone()
+    if row:
+        return row[0]
+    group_id = _add_group(conn, str(title).strip())
+    conn.execute("UPDATE todo_groups SET goal_id = ? WHERE id = ? AND goal_id IS NULL", (goal_id, group_id))
+    return group_id
+
+
+def rename_goal_group(conn, goal_id, title):
+    """A goal's new title renames its category (unless another category already has that name)."""
+    clash = conn.execute("SELECT 1 FROM todo_groups WHERE name = ? AND goal_id IS NOT ?",
+                         (title, goal_id)).fetchone()
+    if not clash:
+        conn.execute("UPDATE todo_groups SET name = ? WHERE goal_id = ?", (title, goal_id))
+
+
+def goal_todo_group(goal_id):
+    """The to-do category of a goal, or None."""
+    return next((g for g in todo_groups() if g["goal_id"] == goal_id), None)
 
 
 def update_todo_group(group_id, name=None, colour=None):
@@ -256,9 +286,14 @@ def delete_todo(todo_id):
 
 
 def reorder_todos(ids):
-    """Put to-dos in this order (ids of one list, first to last)."""
+    """Put to-dos in this order (ids of one list, first to last). They take the places they had between
+    them, so a list filtered to one category reorders without moving the to-dos it hides."""
     with db() as conn:
-        conn.executemany("UPDATE todos SET ord = ? WHERE id = ?", [(i, gid) for i, gid in enumerate(ids)])
+        marks = ",".join("?" * len(ids))
+        slots = sorted(r[0] for r in conn.execute(f"SELECT ord FROM todos WHERE id IN ({marks})", ids))
+        if len(slots) != len(ids) or len(set(slots)) != len(slots):
+            slots = range(len(ids))                     # unknown ids or ties: number them from the top
+        conn.executemany("UPDATE todos SET ord = ? WHERE id = ?", list(zip(slots, ids)))
 
 
 def _titles(conn, period, start):

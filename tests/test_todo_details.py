@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 from nav_helpers import goto
+import fragment_run
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
@@ -59,7 +60,7 @@ def test_deleting_a_category_keeps_its_todos(store):
     g = store.add_todo_group("Uni")
     t = store.add_todo("Essay", "daily", today, group_id=g["id"])
     store.update_todo_group(g["id"], name="University", colour="#000000")
-    assert store.todo_groups() == [{"id": g["id"], "name": "University", "colour": "#000000"}]
+    assert store.todo_groups() == [{"id": g["id"], "name": "University", "colour": "#000000", "goal_id": None}]
     store.delete_todo_group(g["id"])
     assert store.todo_groups() == [] and store.get_todo(t["id"])["group_id"] is None
 
@@ -128,3 +129,66 @@ def test_page_by_due_date_view(store):
     at.button(key="td_new").click().run()                                  # the Add to-do pop-up opens
     assert not at.exception, at.exception
     assert any(t.key == "tdn_title" for t in at.text_input)
+
+
+def test_a_goal_is_a_todo_category(store):
+    """Setting a goal ("Get a job") adds a to-do category of that name; renaming the goal renames it;
+    deleting the goal keeps the category and its to-dos. A deadline's plan goal makes none."""
+    today = store.local_today()
+    goal = store.add_goal("Get a job", None, today, 10, "applications", due=today + timedelta(days=60))
+    g = store.goal_todo_group(goal["id"])
+    assert g and g["name"] == "Get a job" and g["goal_id"] == goal["id"]
+    t = store.add_todo("Update CV", "daily", today, group_id=g["id"])
+    store.update_goal(goal["id"], title="Get a design job")
+    assert store.goal_todo_group(goal["id"])["name"] == "Get a design job"
+    store.delete_goal(goal["id"])
+    assert [x["name"] for x in store.todo_groups()] == ["Get a design job"]
+    assert store.get_todo(t["id"])["group_id"] == g["id"]
+    nina = store.add_todo_group("Nina")                                     # a goal named like a category joins it
+    linked = store.add_goal("nina", None, today, 3, due=today + timedelta(days=7))
+    assert store.goal_todo_group(linked["id"])["id"] == nina["id"]
+    d = store.add_deadline("Essay", today + timedelta(days=5))
+    store.add_goal("Essay hours", None, today, 6, due=today + timedelta(days=5), deadline_id=d)
+    assert "Essay hours" not in {x["name"] for x in store.todo_groups()}
+
+
+def test_reordering_a_filtered_list_keeps_the_hidden_ones_in_place(store):
+    today = store.local_today()
+    g = store.add_todo_group("Nina")
+    a, b, c, d = (store.add_todo(n, "daily", today, group_id=g["id"] if n in "BD" else None) for n in "ABCD")
+    store.reorder_todos([d["id"], b["id"]])                                 # the Nina list: D above B
+    assert [t["title"] for t in store.todos_for("daily", today)] == ["A", "D", "C", "B"]
+
+
+def test_page_category_filter_and_by_category_view(store):
+    today = store.local_today()
+    nina = store.add_todo_group("Nina")
+    store.add_goal("Get a job", None, today, 10, due=today + timedelta(days=30))
+    job = next(x for x in store.todo_groups() if x["name"] == "Get a job")
+    store.add_todo("Call Nina", "daily", today, group_id=nina["id"])
+    store.add_todo("Send CV", "daily", today, group_id=job["id"])
+    store.add_todo("Buy milk", "daily", today)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    goto(at, "To-dos")
+    assert not at.exception, at.exception
+    at.segmented_control(key="todos_tab").set_value("By category").run()
+    assert not at.exception, at.exception
+    heads = [m.value for m in at.markdown]
+    assert [h.split(" :gray")[0] for h in heads if h.startswith("**") and ":gray[" in h] == \
+        ["**Nina**", "**Get a job** :material/flag:", "**No category**"]
+    at.pills(key="td_filter").set_value(nina["id"]).run()                  # only Nina's
+    assert not at.exception, at.exception
+    assert [c.label for c in at.checkbox] == ["Call Nina"]
+    at.segmented_control(key="todos_tab").set_value("Today").run()         # the filter applies to the lists too
+    assert not at.exception, at.exception
+    data = fragment_run.component_data(at, f"page_todos_daily_{nina['id']}")
+    assert [t["title"] for t in data["sections"][0]["goals"]] == ["Call Nina"]
+
+
+def test_adding_in_a_filtered_list_puts_it_in_that_category(store):
+    from venato.ui import todos
+    today = store.local_today()
+    g = store.add_todo_group("Nina")
+    todos.apply_op({"kind": "add", "goal": {"id": "n1", "title": "Plan trip", "period": "daily",
+                                            "period_start": today.isoformat(), "group_id": g["id"]}})
+    assert store.get_todo("n1")["group_id"] == g["id"]

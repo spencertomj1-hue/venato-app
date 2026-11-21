@@ -62,7 +62,7 @@ from .deadline import (DEADLINE_COLS, add_deadline, countdown, deadline_overdue,
 from .todos import (TODO_BASE, TODO_COLS, TODO_GROUP_COLOURS, TODO_MINUTES, TODO_PERIODS, add_detailed_todo,
     add_todo, add_todo_group, carry_over, delete_todo, delete_todo_group, done_todos, get_todo, list_for_due,
     load_todos, move_target, move_todo, open_todos, reorder_todos, roll_todos, save_todos, set_todo_done,
-    todo_due, todo_groups, todos_for, todos_progress, update_todo, update_todo_group)
+    goal_todo_group, todo_due, todo_groups, todos_for, todos_progress, update_todo, update_todo_group)
 from .goals import (GOAL_COLS, GOAL_PERIODS, _goal_matches, _num, add_goal, add_goal_progress, away_days,
     away_uids, calendar_horizon, counted_between, deadline_goal, delete_goal, get_goal, goal_hours, goal_title_due,
     goal_week_hours, goals_active, goals_in, goals_open, goals_overlapping, goals_past, habit_has_goal,

@@ -10,6 +10,8 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Changed
+- To-dos: the category filter now works on every tab (Today, This week, This month too), so you can see only one category's to-dos, e.g. just Nina's. A to-do added while a filter is on goes in that category. A new **By category** tab lists every open to-do under its category.
+- Each goal you set (e.g. "Get a job") is also a to-do category, marked with a flag. Renaming the goal renames it. Deleting the goal keeps the category and its to-dos. Goals already running get their category once, on update.
 - Home's timetable shows the whole day (07:00–01:00 by default) with no scrolling, in a new **Column** tile size (one column wide, three rows tall) that it starts in. A saved Tall timetable stays Tall. Its sync and Outlook buttons sit in its title line. Short blocks are a colour bar (the name is in the tooltip).
 - Home's Focus tile is a stopwatch: type what you're on, Start, then Stop puts it in today's Actual. Pomodoro timers start on the Focus page.
 - Small glances on Home's tiles: Journal shows the week as dots and a streak from 2 days; Daily log puts each habit's streak after its name ("Exercise · 5"); Deadlines' countdowns are coloured pills (red overdue or today, amber within 3 days, grey later); Review has day letters and a faint 100% line.
