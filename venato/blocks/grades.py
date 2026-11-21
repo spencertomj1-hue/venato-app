@@ -188,13 +188,18 @@ def create_category(mid):
     return cid
 
 
+def safe_colour(colour, default=None):
+    """`colour` if it is #RRGGBB (so it is safe in a style attribute), else `default`."""
+    return colour if re.fullmatch(r"#[0-9A-Fa-f]{6}", str(colour)) else default
+
+
 def category_colour(m):
-    """A module's colour: its category's, or None while it has no category."""
+    """A module's colour: its category's (#RRGGBB), or None while it has no category or a bad colour."""
     if not m["category_id"]:
         return None
     cats = store.load_categories()
     row = cats[cats["id"] == m["category_id"]]
-    return None if row.empty else row.iloc[0]["colour"]
+    return None if row.empty else safe_colour(row.iloc[0]["colour"])
 
 
 # --- A module's time ---

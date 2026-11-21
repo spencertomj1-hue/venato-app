@@ -211,3 +211,24 @@ def test_subheads_render_with_html_allowed_and_user_text_escaped(store):
     assert heads and all(m.proto.allow_html for m in heads)
     assert any("Needs you" in m.value for m in heads)
     assert not any("<b>" in m.value for m in at.markdown if "Tricky" in m.value)    # shown as text, never as markup
+
+
+def test_module_pages_do_not_stick_and_bad_colours_are_dropped(store):
+    from pathlib import Path
+    from streamlit.testing.v1 import AppTest
+    from venato.blocks import grades as gr
+    mid = gr.add_module("Algebra")
+    cid = gr.get_module(mid)["category_id"]
+    with store.db() as conn:
+        conn.execute("UPDATE tt_categories SET colour = ? WHERE id = ?", ('red;" onmouseover="x', cid))
+    assert gr.category_colour(gr.get_module(mid)) is None
+    assert gr.safe_colour("#12abEF") == "#12abEF" and gr.safe_colour("blue", "#999999") == "#999999"
+    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
+    at.sidebar.radio[0].set_value("Modules").run()
+    at.session_state["gr_module"] = mid
+    at.run()
+    assert not at.exception
+    at.sidebar.radio[0].set_value("Home").run()
+    assert "gr_module" not in at.session_state
+    at.sidebar.radio[0].set_value("Modules").run()
+    assert not at.exception and any(m.value == "Modules" for m in at.title)         # the list, not the last module

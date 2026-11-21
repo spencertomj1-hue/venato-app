@@ -188,6 +188,18 @@ def test_a_csv_round_trip_keeps_a_plan_goal_closed_and_linked(store, gr):
     assert store.deadline_goal(did)["id"] == g["id"]
 
 
+def test_a_replace_restore_keeps_plan_links_and_old_csvs_still_load(store, gr):
+    import pandas as pd
+    _, did, g = _plan(store, gr, total=10)
+    df = store.load_goals()
+    assert {"deadline_id", "closed"} <= set(df.columns)
+    store.save_goals(df, replace=True)                           # a restore wipes the goals first
+    assert store.deadline_goal(did)["id"] == g["id"]
+    old = df.drop(columns=["deadline_id", "closed"])
+    assert store.save_goals(old, replace=True) == 1             # an older export: loads, just unlinked
+    assert store.deadline_goal(did) is None
+
+
 def test_needs_you_says_no_plan_then_behind_then_nothing(store, gr, pace):
     from venato.ui import goal_time
     mid = gr.add_module("Organic Chemistry")

@@ -382,7 +382,7 @@ def calendar_horizon():
 def load_goals():
     """Every goal, for export (the linked habit by name, so the CSV makes sense on its own)."""
     return _read(f"""SELECT g.id, g.title, g.period, g.period_start, g.due, g.target, g.unit, g.progress,
-                            h.name AS habit, c.name AS category, g.label, g.ord, g.created_at
+                            h.name AS habit, c.name AS category, g.label, g.ord, g.created_at, g.deadline_id, g.closed
                      FROM goals g LEFT JOIN habits h ON h.id = g.habit_id
                      LEFT JOIN tt_categories c ON c.id = g.category_id
                      ORDER BY g.due, g.ord""")
@@ -422,14 +422,19 @@ def save_goals(df, replace=False):
             category = _clean(row.get("category"), str)
             category_id = cats.get(category.strip().lower()) if category and habit_id is None else None
             ord_ = _clean(row.get("ord"), int)
+            gid = _clean(row.get("id"), str) or uuid.uuid4().hex
             conn.execute(
                 f"INSERT INTO goals ({GOAL_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET title = excluded.title, period = excluded.period, period_start = excluded.period_start, target = excluded.target, unit = excluded.unit, progress = excluded.progress, habit_id = excluded.habit_id, ord = excluded.ord, created_at = excluded.created_at, category_id = excluded.category_id, label = excluded.label, due = excluded.due",   # (not REPLACE: deadline_id and closed stay)
-                (_clean(row.get("id"), str) or uuid.uuid4().hex, title.strip(), period, start, target,
+                (gid, title.strip(), period, start, target,
                  _clean(row.get("unit"), str), max(0.0, _clean(row.get("progress"), float) or 0.0),
                  habit_id, count if ord_ is None else ord_,
                  _clean(row.get("created_at"), str) or stamp(), category_id,
                  (_clean(row.get("label"), str) or None) if category_id else None, due),
             )
+            did = _clean(row.get("deadline_id"), str)          # a restore keeps a deadline's plan linked (updates leave the link alone; old CSVs have none)
+            if replace and did and conn.execute("SELECT 1 FROM deadlines WHERE id = ?", (did,)).fetchone():
+                conn.execute("UPDATE goals SET deadline_id = ?, closed = ? WHERE id = ?",
+                             (did, 1 if _clean(row.get("closed"), int) else 0, gid))
             count += 1
     return count

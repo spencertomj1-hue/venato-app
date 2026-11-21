@@ -199,3 +199,14 @@ def test_a_new_hours_goal_needs_a_plan_it_is_not_behind(store):
     assert "Behind" in old                                                         # a week in: honestly behind
     assert "float:right" not in text                                               # "N h to plan" sits beside, not over, the bar
     assert any("h to plan" in m.value for m in at.markdown)
+
+
+def test_a_plan_goal_shows_once_in_needs_you(store):
+    from datetime import timedelta
+    today = store.local_today()
+    did = store.add_deadline("Lab report", today + timedelta(days=3))
+    store.plan_deadline(did, "study", total=8, today=today)
+    at = app()
+    assert not at.exception
+    rows = [m.value for m in at.markdown if "Lab report" in m.value]
+    assert len(rows) == 1 and "event" in rows[0]                  # the deadline row, not also a goal row

@@ -610,7 +610,7 @@ def _text_on(colour):
 
 
 def _chip(name, colour):
-    colour = colour if re.fullmatch(r"#[0-9A-Fa-f]{6}", str(colour)) else "#999999"
+    colour = gr.safe_colour(colour, "#999999")
     return (f'<span style="display:inline-block;margin:.15rem .3rem .15rem 0;padding:.15rem .65rem;border-radius:1rem;'
             f'background:{colour};color:{_text_on(colour)};font-size:.9rem">{escape(name)}</span>')
 

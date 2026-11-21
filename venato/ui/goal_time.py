@@ -481,10 +481,12 @@ def deadline_needs_plan(d, ctx):
 
 
 def _goal_rows(ctx):
-    """[(pace, state, what it needs)] for goals behind (or slipping, or out of reach) or short of time this week."""
+    """[(pace, state, what it needs)] for goals (not a deadline's plan: its deadline row says it) behind (or slipping, or out of reach) or short of time this week."""
     rows = []
     for p in pace.pace_all(ctx):
         g, w = p["goal"], p.get("week")
+        if g.get("deadline_id"):
+            continue                       # a deadline's plan shows once, as its deadline row
         short = w["short"] if w and not w["over"] else 0.0
         if p["state"] not in PILL and short < pace.TOLERANCE:
             continue
