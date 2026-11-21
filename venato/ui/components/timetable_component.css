@@ -296,6 +296,9 @@ td.s.sel.box { --tile: color-mix(in srgb, var(--accent) 16%, transparent); }
 }
 .tt-pop button { cursor: pointer; }
 .tt-pop .row { display: flex; gap: 6px; }
+.tt-pop .p-when { display: flex; align-items: center; gap: 4px; }
+.tt-pop .p-when .p-date { flex: 1 1 auto; min-width: 0; color-scheme: light dark; }
+.tt-pop .p-when select { flex: 0 0 auto; padding-inline: 4px; }
 .tt-pop .del { color: #d33; margin-right: auto; }
 .tt-pop .save { background: var(--accent); border-color: var(--accent); color: var(--bg); }   /* white on red; dark on the dark mode coral */
 
@@ -513,3 +516,16 @@ th.day .dstate .ptag { color: var(--bp); font-weight: 700; font-size: 0.66rem; l
 
 /* Home: no gap under each row (the time lines are drawn over the cells), so the whole day fits. */
 .tt-root.readonly table.tt td { border-bottom: none; }
+
+/* Done (green, with a tick) / not done (faded, struck through): marked from a block's card. */
+.blk.is-done, .blk.plan.is-done, .blk.outlook.is-done {
+  background: #16A34A !important;
+  border: 1.5px solid #15803D !important;
+  color: #fff !important;
+}
+.blk.is-done span { opacity: 0.9; }
+.blk.is-missed { opacity: 0.45; }
+.blk.is-missed b { text-decoration: line-through; }
+.tt-pop .pk-status button { flex: 1 1 0; }
+.tt-pop .pk-status .st-done.on { background: #16A34A; border-color: #16A34A; color: #fff; }
+.tt-pop .pk-status .st-missed.on { background: var(--muted, #888); border-color: var(--muted, #888); color: var(--bg); }
