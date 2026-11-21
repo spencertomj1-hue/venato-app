@@ -164,7 +164,9 @@ All answered 2026-11-21:
 
 | Phase | Status |
 | --- | --- |
-| 1 Bugs and footer | Not started |
-| 2 Fewer steps | Not started |
-| 3 Goals and first week | Not started |
-| 4 Look | Not started |
+| 1 Bugs and footer | Done |
+| 2 Fewer steps | Done |
+| 3 Goals and first week | Done |
+| 4 Look | Done |
+
+Final whole-branch review: 2 Important + 7 Minor fixed (4581837). Suite: 509 passed, 2 skipped.
