@@ -129,13 +129,13 @@ The first install downloads about 1 GB of packages; the speech model (about 470 
 
 The first time Venato opens, a short setup starts. It adds things and never deletes any, every step except Welcome can be skipped, and **Skip setup** leaves you with a blank app. Run it again any time from Settings → About.
 
-**Everyone.** Venato starts empty: no categories, no habits, no goals. Setup asks about your goals (in 3 months, 6 months and a year), suggests what to track for each (a habit, a timetable category, sleep or water, all unticked until you pick them), lets you add your own timetable categories, and can lay out your first week.
+**Everyone.** Venato starts empty: no categories, habits or goals. Setup asks what you want to get done (a few words, a date and how you'll track it), suggests what to track for each (a habit, a timetable category, sleep or water, all unticked until you pick them), lets you add your own, and lays out your first week.
 
-**If you're a student.** Say so on the second step and you get four more:
-1. **Uni timetable.** Paste the published calendar link from your university's Outlook. Your lectures go on the timetable and Venato finds your modules from them.
-2. **Canvas.** Paste your Canvas Calendar Feed link. Assignments become deadlines, each with its module.
-3. **Your modules.** Tick the ones to add. Each gets its own timetable colour and a card on the Modules page.
-4. **Study hours.** Say how many hours a week you want to study. Each module gets an hours goal.
+**If you're a student.** Press "I'm at uni" on Welcome and you get two more steps after it:
+1. **Connect your calendars.** Paste your university's published Outlook timetable link and your Canvas Calendar Feed link. Both are optional. Lectures go on the timetable, assignments become deadlines, and Venato finds your modules from them.
+2. **Your modules.** Tick the ones to add, rename them if you like, and say how many hours a week each one gets (6 by default). Each gets its own timetable colour and a card on the Modules page.
+
+The steps are Welcome, Connect your calendars, Your modules, Your goals, What would you track? and Your first week. If you're not a student, it's Welcome, Your goals, What would you track? and Your first week.
 
 Both links are read only, and are kept in your system's secret store, never in a file.
 
