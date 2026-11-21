@@ -110,6 +110,13 @@ def _on_go():
         go(target)
 
 
+def icon_md(icon, colour, cls="vn-tile-icon"):
+    """A coloured square with a white icon in it, as markdown for st.markdown(..., unsafe_allow_html=True)
+    (st.html strips SVG; markdown turns :material/x: into the icon, inside the span too)."""
+    from html import escape
+    return f'<span class="{cls}" style="background:{escape(colour or "#5F6170")}" aria-hidden="true">{icon or ""}</span>'
+
+
 def mount(page, labels=None):
     """The hidden router component (address bar, Back, Esc). Drawn once per page, last."""
     with st.container(key="venato_hidden"):
@@ -134,7 +141,7 @@ def top_bar(page, all_pages):
             icon = ICONS.get(name) or blocks.page_icon(name) or ":material/apps:"
             st.button("", key=key, icon=icon, on_click=go, args=(name,), help=name, type="primary")
             labels[key] = f"Open {name}"
-            css.append(f".st-key-{key} button {{ background: {COLOURS.get(name, '#5F6170')} !important; "
+            css.append(f".stApp .st-key-{key} button {{ background: {COLOURS.get(name, '#5F6170')} !important; "
                        f"border-color: transparent !important; }}")
     st.html(f"<style>{''.join(css)}</style>")
     return labels
@@ -148,10 +155,11 @@ def css(t):
     .st-key-venato_hidden {{ display: none !important; }}
     .st-key-nav_top {{ margin: -0.75rem 0 0.75rem; }}
     .st-key-nav_top button {{ min-height: 44px; min-width: 44px; border-radius: 12px; }}
-    .st-key-go_home button {{ background: {t['card']} !important; border: 1px solid {t['border']} !important;
+    .stApp .st-key-go_home button {{ background: {t['card']} !important; border: 1px solid {t['border']} !important;
         color: {t['ink']} !important; padding: 0 16px 0 10px; }}
     .st-key-nav_top [class*="st-key-go_"]:not(.st-key-go_home) button {{ width: 44px; padding: 0; }}
     .st-key-nav_top [class*="st-key-go_"]:not(.st-key-go_home) button * {{ color: #fff !important; }}
     .vn-page-icon {{ display: inline-flex; width: 64px; height: 64px; border-radius: 18px; align-items: center;
-        justify-content: center; }}
+        justify-content: center; font-size: 36px; }}
+    .vn-page-icon span {{ color: #fff !important; }}
     """

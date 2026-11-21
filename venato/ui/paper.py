@@ -56,6 +56,14 @@ def _light():
     """
 
 
+def _dark():
+    """Dark mode only: the accent (#FF6B6B) is light, so white text on it is only 2.7:1; dark ink is 7:1 (AA).
+    Buttons that colour themselves (the shortcut tiles) keep their white icons (their rule is more specific)."""
+    return f"""
+    .stApp [data-testid^="stBaseButton-primary"], .stApp [data-testid^="stBaseButton-primary"] * {{ color: {INK} !important; }}
+    """
+
+
 def apply():
     from venato.ui import appearance
-    st.html(f"<style>{_fonts()}{'' if appearance.is_dark() else _light()}</style>")
+    st.html(f"<style>{_fonts()}{_dark() if appearance.is_dark() else _light()}</style>")

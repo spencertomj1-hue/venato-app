@@ -80,7 +80,7 @@ def _on_ops(key="home_todos"):
 @st.fragment
 def render_home():
     """Today's, this week's and this month's to-dos: one card, its header switching between the lists
-    (the component draws the heading and the switch; it starts on the first list with open to-dos)."""
+    (the tile header names it; the component draws the switch and starts on the first list with open to-dos)."""
     store.roll_todos()
     today = store.local_today()
     sections = []
@@ -90,7 +90,8 @@ def render_home():
                          "title": store.period_title(period, start, today),
                          "goals": store.todos_for(period, start), "limit": HOME_LIMIT})
     with st.container(border=True, key="home_todos_card"):
-        data = {"today": today.isoformat(), "sections": sections, "acked": st.session_state.get("todo_acked", [])}
+        data = {"today": today.isoformat(), "sections": sections, "tile": True,
+                "acked": st.session_state.get("todo_acked", [])}
         _todos_component(data=data, key="home_todos", on_ops_change=_on_ops)
 
 
@@ -122,10 +123,9 @@ def render_page():
     from venato import tile_status
     head = st.container(horizontal=True, vertical_alignment="center", key="todos_head")
     with head:
-        st.html('<span class="vn-page-icon" style="background:#C62828" aria-hidden="true">'
-                '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" '
-                'stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"></rect>'
-                '<path d="M8 12l3 3 5-6"></path></svg></span>', width="content")
+        from venato.ui import nav
+        st.markdown(nav.icon_md(":material/check:", nav.COLOURS["To-dos"], "vn-page-icon"), unsafe_allow_html=True,
+                    width="content")
         with st.container(gap=None, width="stretch"):
             st.header("To-dos", anchor=False)
             st.caption(f"Today · {tile_status.todos(today)}")

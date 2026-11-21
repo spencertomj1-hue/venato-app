@@ -153,7 +153,8 @@ def _reset():
 
 def _css(t, cells, cat, editing, picked):
     out = [f"""
-    .st-key-home_head h1 {{ font-size: 2.1rem; margin: 0; padding: 0; }}
+    .st-key-home_head h1 {{ font-size: 2.1rem; margin: 0; padding: 0; line-height: 1.2; }}
+    .st-key-home_head [data-testid="stHeading"] [data-testid="stMarkdownContainer"] {{ margin-bottom: 2px; }}
     .st-key-home_head button, .st-key-home_head input {{ min-height: 44px; }}
     .st-key-home_head [data-testid="stTextInputRootElement"] {{ border-radius: 12px; min-height: 44px; }}
     .st-key-home_settings button {{ width: 44px; padding: 0; }}
@@ -173,13 +174,17 @@ def _css(t, cells, cat, editing, picked):
     [class*="st-key-hwh_"] [data-testid="stCaptionContainer"] p {{ text-align: right; white-space: nowrap; }}
     [class*="st-key-go_tile_"] button, [class*="st-key-hwt_"] p {{ min-height: 44px; padding: 0 !important;
         justify-content: flex-start; gap: 10px; }}
+    [class*="st-key-go_tile_"] button > div {{ justify-content: flex-start !important; gap: 10px; }}
+    /* The tile's header already opens the page: the preview's own "See all" goes. */
+    [class*="st-key-hwc_"] .st-key-home_goals_all {{ display: none; }}
     [class*="st-key-go_tile_"] button p, [class*="st-key-hwt_"] p {{ font-size: 1.15rem; font-weight: 600 !important;
         color: {t['ink']} !important; }}
     [class*="st-key-go_tile_"] button:hover p {{ text-decoration: underline; }}
     [class*="st-key-go_tile_"] [data-testid="stIconMaterial"] {{ color: #fff !important; border-radius: 8px;
         width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; font-size: 19px; }}
     .vn-tile-icon {{ display: inline-flex; width: 30px; height: 30px; border-radius: 8px; vertical-align: middle;
-        margin-right: 10px; }}
+        margin-right: 10px; align-items: center; justify-content: center; color: #fff; font-size: 19px; }}
+    .vn-tile-icon span {{ color: #fff !important; }}
     @media (max-width: 1000px) {{ .st-key-home_grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
     @media (max-width: 640px) {{
         .st-key-home_grid {{ grid-template-columns: minmax(0, 1fr); }}
@@ -188,7 +193,7 @@ def _css(t, cells, cat, editing, picked):
     .st-key-home_hidden {{ display: none !important; }}
     .st-key-home_add_panel {{ background: {t['card']}; border: 1px solid {t['border']}; border-radius: 24px;
         padding: 24px 22px; gap: 0.75rem; }}
-    [class*="st-key-hadd_"] {{ border: 1px solid {t['border']}; border-radius: 16px; padding: 10px 12px; }}
+    [class*="st-key-hadd_"] {{ flex-wrap: nowrap !important; border: 1px solid {t['border']}; border-radius: 16px; padding: 10px 12px; }}
     [class*="st-key-home_add_"]:not(.st-key-home_add_panel):not(.st-key-home_add_prompt) button {{
         width: 44px; height: 44px; border-radius: 22px; padding: 0; }}
     .st-key-home_add_note {{ background: {t['paper']}; border-radius: 14px; padding: 12px 14px; }}
@@ -209,7 +214,7 @@ def _css(t, cells, cat, editing, picked):
             overflow: visible; }}
         .st-key-home_grid [class*="st-key-hwc_"] {{ pointer-events: none; }}
         [class*="st-key-hwx_"] {{ position: absolute !important; top: -14px; left: -14px; z-index: 4; width: auto !important; }}
-        [class*="st-key-hwx_"] button {{ width: 44px; height: 44px; border-radius: 22px; padding: 0;
+        .stApp [class*="st-key-hwx_"] button {{ width: 44px; height: 44px; border-radius: 22px; padding: 0;
             background: #5F6170 !important; border: 2px solid {t['card']} !important; }}
         [class*="st-key-hwx_"] button * {{ color: #fff !important; }}
         [class*="st-key-hwbar_"] button {{ min-height: 44px; }}
@@ -237,7 +242,8 @@ def _css(t, cells, cat, editing, picked):
 # ---------------------------------------------------------------------------
 
 def _icon_html(w):
-    return f'<span class="vn-tile-icon" style="background:{escape(w.colour or "#5F6170")}" aria-hidden="true"></span>'
+    """The tile's coloured icon square, for st.markdown (which turns :material/x: into the icon)."""
+    return nav.icon_md(w.icon, w.colour)
 
 
 def _status(w):
@@ -341,7 +347,7 @@ def _add_panel(cat, cells, labels):
         for k in hidden:
             w = cat[k]
             with st.container(key=f"hadd_{k}", horizontal=True, vertical_alignment="center", gap="small"):
-                st.html(_icon_html(w), width="content")
+                st.markdown(_icon_html(w), unsafe_allow_html=True, width="content")
                 with st.container(gap=None, width="stretch"):
                     st.markdown(f"**{escape(w.name)}**")
                     st.caption(" · ".join(hl.SIZE_NAMES[s] for s in hl.ORDER if s in w.sizes))

@@ -216,12 +216,13 @@ class GoalLists {
     const onTab = inside && had.matches("[data-tab]");
     this.refocus = null;
     this.rendering = true;
-    // single: the To-dos page, which has its own Today / This week / This month tabs; no header here
-    this.root.innerHTML = this.data.single ? `<div class="gl-one gl-page">` : `<div class="gl-one compact">
-      <header class="gl-top">
-        <span class="gl-heading">To-dos</span>
+    // single: the To-dos page, which has its own Today / This week / This month tabs; no header here.
+    // tile: Home's To-dos tile, whose own header names it; just the switch here
+    const head = this.data.single ? "" : `<header class="gl-top">
+        ${this.data.tile ? "" : '<span class="gl-heading">To-dos</span>'}
         <div class="gl-tabs" role="tablist" aria-label="To-do lists">${sections.map((s) => this.tabHtml(s)).join("")}</div>
-      </header>
+      </header>`;
+    this.root.innerHTML = `<div class="gl-one ${this.data.single ? "gl-page" : "compact"}">${head}
       ${this.sectionHtml(this.section(this.tab))}</div>`;
     this.rendering = false;
     this.restoreEditor();
