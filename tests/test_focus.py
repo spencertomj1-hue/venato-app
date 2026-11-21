@@ -134,26 +134,30 @@ def test_focus_pause_reruns_fragment_only(focus, store):
 
 
 def test_home_tile_is_a_stopwatch(focus, store, monkeypatch):
-    """Home's Focus tile: type what you're on, Start makes a stopwatch (no length); empty is "Focus". Stop puts
-    it in today's Actual. No Pomodoro button on the tile (that's on the Focus page)."""
+    """Home's Focus tile is a dial: idle it carries today's total and the daily aim; pressing it starts a stopwatch
+    (no length) with the name typed beside it, empty is "Focus". Stop puts it in today's Actual. No Pomodoro on
+    the tile (that's on the Focus page)."""
     from datetime import datetime, time as clock
     import fragment_run
     today = store.local_today()
     at_ = lambda hh, mm: datetime.combine(today, clock(hh, mm), tzinfo=store.tz()).timestamp()
     store.save_settings(home=HOME)
-    at = AppTest.from_file(APP, default_timeout=60).run()
-    assert not at.exception
-    assert [b.label for b in at.button if b.key and b.key.startswith("home_focus")] == ["Start"]
-    assert not any("min" in (b.label or "") for b in at.button if b.key and b.key.startswith("home_focus"))
-    at.text_input(key="home_focus_label").set_value("Essay")
-    at.button(key="home_focus_go").click().run()
+    focus.save_settings(daily_aim=180)
+    focus.log_manual("Essay", 45, today)
+    with fragment_run.recording():
+        at = AppTest.from_file(APP, default_timeout=60).run()
+        assert not at.exception
+        assert not [b for b in at.button if b.key and b.key.startswith("home_focus")]   # the dial is the button
+        d = fragment_run.component_data(at, "home_focus_timer")
+        assert (d["state"], d["compact"], d["today"], d["aim"]) == ("idle", True, 45 * 60, 180 * 60)
+        fragment_run.trigger(at, "home_focus_timer", "action", {"name": "start", "at": 1, "label": " Essay "})
     assert not at.exception
     r = focus.running()
     assert (r["label"], r["planned"], r["kind"]) == ("Essay", None, "track")
     focus.cancel()
-    at.run()
-    at.text_input(key="home_focus_label").set_value("  ")
-    at.button(key="home_focus_go").click().run()
+    with fragment_run.recording():
+        at = AppTest.from_file(APP, default_timeout=60).run()
+        fragment_run.trigger(at, "home_focus_timer", "action", {"name": "start", "at": 2, "label": "  "})
     assert focus.running()["label"] == "Focus" and focus.running()["planned"] is None
     focus.cancel()
     # Stop: a stopwatch from 10:00, stopped at 10:30, is in today's Actual.

@@ -44,7 +44,7 @@
 |---|---|
 | **Timetable** | Weekly plan in 30-minute slots with a Plan / Actual switch, calendar events, and fit-time planning. |
 | **Goals** | Goals with deadlines and a pace, to-dos and deadlines. |
-| **Focus** | Pomodoro or stopwatch with auto breaks; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". |
+| **Focus** | Pomodoro or stopwatch with auto breaks; on Home, a dial you press to start, filling to a daily aim; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". |
 | **Modules** | One card per module, with its lectures, deadlines, assessments, study hours and its own timetable colour; a page for each module, where a deadline's **Plan** books the hours for it. Also grades: weighted assessments, the mark needed for your target, UK classification or US GPA. "got 68 in acp coursework". |
 | **Review** | Weekly review, time planned vs done, charts and history. |
 | **Daily Log** | A journal for each day, and habits with streaks. Sleep and water are optional extras (Settings → Daily Log). |

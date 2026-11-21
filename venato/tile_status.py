@@ -99,9 +99,7 @@ def focus(today=None):
     r = f.running()
     if r:
         return "Paused" if r["paused_at"] else "Running"
-    today = today or store.local_today()
-    mins = f.totals(today, today)[1].get(today.isoformat(), 0)
-    return f"{mins:.0f} min today" if mins else ""
+    return f"Aim {hours(f.settings()['daily_aim'] / 60)} h a day"   # today's total is on the dial
 
 
 def hours(h):

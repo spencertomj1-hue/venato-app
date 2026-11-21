@@ -1,12 +1,15 @@
 // The live Focus timer. On the Focus page it's a big stopwatch dial: press it to start, press it
 // again to stop and save. A timer counts down, the stopwatch counts up; the ring shows progress.
-// On Home it's the small version (a ring, the time, the name and Stop; pause and cancel are on the Focus page).
+// On Home it's a small dial beside a name box. Idle, the ring fills to today's total against the daily aim and
+// pressing it starts a stopwatch with the box's name; running, the ring sweeps once an hour round the time and
+// pressing it stops and logs (pause and cancel are on the Focus page). The dial fits the tile's height.
 //
 // Python passes { state: "idle" | "running" | "paused", kind, label, planned (seconds or null),
 // elapsed (seconds when drawn), drawnAt (ms), compact }. The time runs in the database, so
 // this only draws it: buttons send an "action" trigger ({name, at}), and when a timer reaches
 // zero it sends {name: "done"} once, beeps, and Python logs it. Pressing the idle dial sends
-// {name: "start"}: Python reads the label and mode from the controls below it.
+// {name: "start"}: Python reads the label and mode from the controls below it (Home sends {name, label}).
+// Home also passes today (seconds focused today), aim (seconds) and last (the last name used).
 
 const instances = new WeakMap();
 
@@ -18,10 +21,19 @@ export default function (component) {
     t = new FocusTimer(root);
     instances.set(root, t);
   }
-  t.send = (name) => setTriggerValue("action", { name, at: Date.now() });
+  t.send = (name, extra) => setTriggerValue("action", { name, at: Date.now(), ...extra });
   t.update(data);
-  return () => t.stop();
+  return () => { t.stop(); t.unfit(); };
 }
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+// Today's total on the idle dial: "45m", "1h 35m", "4h".
+const short = (secs) => {
+  const m = Math.floor(secs / 60), h = Math.floor(m / 60);
+  return h ? (m % 60 ? `${h}h ${m % 60}m` : `${h}h`) : `${m}m`;
+};
+const hours = (secs) => `${Math.round(secs / 1800) / 2} h`;
+const DIAL_MIN = 44, DIAL_MAX = 128;     // px: Home's dial shrinks to the tile's height between these
 
 const fmt = (secs) => {
   secs = Math.max(0, Math.round(secs));
@@ -51,8 +63,37 @@ class FocusTimer {
         act = d.state === "idle" ? "start" : d.kind === "break" ? "skip" : "stop";
       }
       b.classList.add("pressed");
-      this.send(act);
+      this.send(act, this.homeStart(act));
     });
+    root.addEventListener("keydown", (e) => {          // Enter in Home's name box starts, like pressing the dial
+      if (e.key === "Enter" && e.target.matches(".fc-name")) this.root.querySelector(".fc-dial")?.click();
+    });
+  }
+
+  // Home's start carries the name typed beside the dial.
+  homeStart(act) {
+    return act === "start" && this.data.compact ? { label: this.root.querySelector(".fc-name")?.value || "" } : {};
+  }
+
+  // Home: the dial is as big as the tile has room for (DIAL_MIN..DIAL_MAX). On a narrow window, where Home
+  // scrolls and the tile is as tall as what's in it, it's a fixed 96px.
+  fit() {
+    const host = this.root.getRootNode().host || this.root;
+    const card = host.closest && host.closest('[class*="st-key-hw_"]');     // the tile's card (fixed height)
+    let size = 96;
+    if (card && matchMedia("(min-width: 1001px)").matches) {
+      const pad = parseFloat(getComputedStyle(card).paddingBottom) || 0;
+      const room = Math.floor(card.getBoundingClientRect().bottom - this.root.getBoundingClientRect().top - pad - 4);
+      if (room > 0) size = Math.max(DIAL_MIN, Math.min(DIAL_MAX, room));
+    }
+    this.root.style.setProperty("--dial", `${size}px`);
+    this.root.classList.toggle("fc-tiny", size < 84);
+  }
+
+  unfit() {
+    this.resizeObs?.disconnect();
+    this.resizeObs = null;
+    removeEventListener("venato:flip-settled", this.onSettle);
   }
 
   update(data) {
@@ -131,24 +172,41 @@ class FocusTimer {
 
   renderCompact() {
     const d = this.data;
-    if (d.state === "idle") { this.root.innerHTML = ""; return; }
-    const paused = d.state === "paused", isBreak = d.kind === "break";
-    const btn = (act, label, primary) => `<button data-act="${act}" class="${primary ? "primary" : ""}">${label}</button>`;
+    const idle = d.state === "idle", paused = d.state === "paused", isBreak = d.kind === "break";
+    const typed = this.root.querySelector(".fc-name");      // keep what's being typed across a redraw
+    const name = typed ? typed.value : d.last || "";
+    const hadFocus = typed && typed === (this.root.getRootNode().activeElement || document.activeElement);
+    const today = d.today || 0, aim = d.aim || 0;
+    const aria = idle ? `Start a stopwatch. ${short(today)} focused today of a ${hours(aim)} aim`
+      : isBreak ? "Skip the break" : "Stop and save";
+    const side = idle
+      ? `<input class="fc-name" type="text" placeholder="What are you on?" aria-label="What are you on?" value="${esc(name)}">
+         <span class="fc-hint">Press the dial to start</span>`
+      : `<span class="fc-on">${isBreak ? "Break" : "On"}</span>
+         <strong class="fc-label"></strong>
+         <span class="fc-hint">${paused ? "Paused · " : ""}Started ${esc(d.started || "")}</span>`;
     this.root.innerHTML = `
-      <div class="fc compact ${isBreak ? "break" : ""}">
-        <svg class="fc-ring" viewBox="0 0 120 120" aria-hidden="true">
-          <circle cx="60" cy="60" r="${R}" class="track"/><circle cx="60" cy="60" r="${R}" class="fill"/>
-        </svg>
-        <div class="fc-mid">
-          <div class="fc-time" role="timer" aria-live="off"></div>
-          <div class="fc-label"></div>
-        </div>
-        <div class="fc-btns">
-          ${isBreak ? btn("skip", "Skip break", true) : btn("stop", "Stop", true)}
-        </div>
+      <div class="fc compact ${d.state} ${isBreak ? "break" : ""}">
+        <button class="fc-dial" data-act="toggle" aria-label="${aria}">
+          <svg class="fc-ring" viewBox="0 0 120 120" aria-hidden="true">
+            <circle cx="60" cy="60" r="${R}" class="track"/><circle cx="60" cy="60" r="${R}" class="fill"/>
+          </svg>
+          <span class="fc-mid">
+            <span class="fc-time" ${idle ? "" : 'role="timer" aria-live="off"'}></span>
+            <span class="fc-sub">${idle ? "today" : isBreak ? "Skip" : "Stop"}</span>
+          </span>
+        </button>
+        <div class="fc-side">${side}</div>
       </div>`;
-    this.root.querySelector(".fc-label").textContent =
-      `${d.label}${paused ? " · paused" : ""}`;
+    if (!idle) this.root.querySelector(".fc-label").textContent = d.label;
+    if (hadFocus) this.root.querySelector(".fc-name")?.focus();
+    if (!this.resizeObs) {                              // fit the dial to the tile, now and when it changes
+      this.onSettle = () => this.fit();
+      addEventListener("venato:flip-settled", this.onSettle);
+      this.resizeObs = new ResizeObserver(() => this.fit());
+      this.resizeObs.observe(document.documentElement);
+    }
+    this.fit();
     this.paint();
   }
 
@@ -157,10 +215,14 @@ class FocusTimer {
     const timeEl = this.root.querySelector(".fc-time");
     if (!timeEl) return;
     const { el, left } = this.seconds();
-    timeEl.textContent = left === null ? fmt(el) : fmt(left);
+    const homeIdle = d.compact && d.state === "idle";
+    timeEl.textContent = homeIdle ? short(d.today || 0) : left === null ? fmt(el) : fmt(left);
     const ring = this.root.querySelector(".fill");
-    // Stopwatch: the ring goes round once a minute, like a second hand. Timer: it fills to the end.
-    const frac = d.state === "idle" ? 0 : left === null ? (el % 60) / 60 : Math.min(1, el / d.planned);
+    // Stopwatch: the ring goes round once a minute, like a second hand (on Home once an hour). Timer: it
+    // fills to the end. Home idle: today's total against the daily aim.
+    const lap = d.compact ? 3600 : 60;
+    const frac = homeIdle ? Math.min(1, (d.today || 0) / (d.aim || 1)) : d.state === "idle" ? 0
+      : left === null ? (el % lap) / lap : Math.min(1, el / d.planned);
     if (frac < (this.lastFrac ?? 0)) {              // wrapped round: jump back instead of sweeping backwards
       ring.style.transition = "none";
       ring.style.strokeDasharray = `0 ${C.toFixed(1)}`;
@@ -169,5 +231,6 @@ class FocusTimer {
     }
     this.lastFrac = frac;
     ring.style.strokeDasharray = `${(frac * C).toFixed(1)} ${C.toFixed(1)}`;
+    ring.style.strokeOpacity = frac * C >= 2 ? "" : "0";   // no lone round-cap dot near zero
   }
 }
