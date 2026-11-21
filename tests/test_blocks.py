@@ -153,10 +153,10 @@ def test_old_saved_order_keeps_its_order(store):
 def test_core_blocks_bring_home_widgets(store):
     b = _blocks()
     offered = {w.key: w.size for w in b.widgets()}
-    assert {"timetable_today": "column", "todos": "wide", "deadlines": "small", "goals": "wide", "habits": "small",
+    assert {"timetable_today": "tall", "todos": "wide", "deadlines": "small", "goals": "wide", "habits": "small",
             "journal": "small", "focus": "small", "modules": "small", "review": "small"}.items() <= offered.items()
     sizes = {w.key: set(w.sizes) for w in b.widgets()}
-    assert sizes["timetable_today"] == {"column", "tall", "large", "wide"}   # Column (the whole day) to start
+    assert sizes["timetable_today"] == {"tall", "large", "wide"}             # Tall to start; Large and Wide still on offer
     assert sizes["todos"] == {"small", "wide"}
     b.save(["goals"])
     assert [w.key for w in b.widgets()] == ["todos", "deadlines", "goals"]      # only the switched-on blocks'

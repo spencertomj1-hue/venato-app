@@ -14,7 +14,7 @@ import fragment_run
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 # What a full install offers: every tile key with its default size.
-ALL = {"timetable_today": "column", "ask": "wide", "needs_you": "wide", "todos": "wide", "deadlines": "small",
+ALL = {"timetable_today": "tall", "ask": "wide", "needs_you": "wide", "todos": "wide", "deadlines": "small",
        "goals": "wide", "habits": "small", "journal": "small", "focus": "small", "modules": "small", "review": "small"}
 
 # The layout every install had before tiles: a timetable ⅔ wide, then a stack, in the 12-column sizes.
@@ -25,8 +25,8 @@ OLD_DEFAULT = [{"w": "timetable_today", "size": "l"}, {"stack": ["ask", "needs_y
 
 def test_default_layout():
     d = hl.default()
-    assert hl.keys(d) == ["timetable_today", "todos", "focus", "goals", "review", "habits", "needs_you", "modules"]
-    assert d[0] == {"w": "timetable_today", "size": "column"}        # the whole day, down the left
+    assert hl.keys(d) == ["timetable_today", "todos", "goals", "focus", "modules", "habits", "review", "needs_you"]
+    assert d[0] == {"w": "timetable_today", "size": "tall"}          # narrow: a column down the left
     assert hl.normalise(None, ALL) == d                                  # no saved key: the default
     assert hl.normalise("rubbish", ALL) == d
     assert hl.hidden(d, ALL) == ["ask", "deadlines", "journal"]           # the rest wait in "Add a tile"
@@ -43,10 +43,10 @@ def test_old_default_migrates():
 
 
 def test_sizes_a_tile_doesnt_come_in_fall_back():
-    sizes = {"focus": ("small", "wide"), "timetable_today": ("wide", "large", "tall", "column")}
+    sizes = {"focus": ("small", "wide"), "timetable_today": ("wide", "large", "tall")}
     saved = [{"w": "focus", "size": "large"}, {"w": "timetable_today", "size": "s"}, {"w": "todos", "size": "huge"}]
     assert hl.normalise(saved, ALL, sizes) == [{"w": "focus", "size": "small"},            # its default
-                                               {"w": "timetable_today", "size": "column"},  # its default
+                                               {"w": "timetable_today", "size": "tall"},    # its default
                                                {"w": "todos", "size": "wide"}]
 
 
@@ -65,13 +65,8 @@ def test_junk_list_gives_the_default_but_empty_stays_empty():
 
 
 def test_default_fits_three_rows():
-    """The starting Home is three rows (Home sizes its rows from the window, so it fits one screen). A student's
-    Modules tile starts a fourth: the rows share the screen four ways rather than a tile being left off."""
-    no_modules = {k: v for k, v in ALL.items() if k != "modules"}
-    assert hl.rows(hl.normalise(None, no_modules)) == 3
-    assert hl.rows(hl.default()) == 4
-    assert hl.span("column") == (1, 3) and hl.SIZE_NAMES["column"] == "Column"
-    assert hl.rows([{"w": "a", "size": "column"}]) == 3
+    """The starting Home is three rows (Home sizes its rows from the window, so it fits one screen)."""
+    assert hl.rows(hl.default()) == 3
     assert hl.rows([]) == 0
     assert hl.rows([{"w": "a", "size": "large"}, {"w": "b", "size": "wide"}, {"w": "c", "size": "small"}]) == 2
     assert hl.rows([{"w": "a", "size": "large"}, {"w": "b", "size": "wide"}, {"w": "c", "size": "tall"}]) == 3
@@ -84,8 +79,6 @@ def test_an_old_saved_layout_still_normalises():
               {"w": "focus", "size": "small"}, {"w": "modules", "size": "small"}, {"w": "habits", "size": "small"},
               {"w": "review", "size": "small"}, {"w": "needs_you", "size": "wide"}]
     assert hl.normalise(before, ALL) == before
-    tall = [{"w": "timetable_today", "size": "tall"}]                  # saved before Column: stays Tall
-    assert hl.normalise(tall, ALL, {"timetable_today": ("wide", "large", "tall", "column")}) == tall
     sizes = {"todos": ("small", "wide"), "timetable_today": ("wide", "large", "tall")}
     assert hl.normalise([{"w": "todos", "size": "large"}, {"w": "timetable_today", "size": "l"}], ALL, sizes) == \
         [{"w": "todos", "size": "wide"}, {"w": "timetable_today", "size": "large"}]   # To-dos no longer comes Large
@@ -93,7 +86,7 @@ def test_an_old_saved_layout_still_normalises():
 
 def test_place_fills_gaps():
     """Each tile takes the first place it fits, left to right, top to bottom (like the browser's dense grid)."""
-    assert hl.place(hl.default()) == [(0, 0), (0, 1), (0, 3), (1, 1), (1, 3), (2, 1), (2, 2), (3, 0)]
+    assert hl.place(hl.default()) == [(0, 0), (0, 1), (1, 1), (0, 3), (1, 3), (2, 0), (2, 1), (2, 2)]
     cells = [{"w": "a", "size": "wide"}, {"w": "b", "size": "large"}, {"w": "c", "size": "small"},
              {"w": "d", "size": "small"}, {"w": "e", "size": "tall"}, {"w": "f", "size": "small"}]
     assert hl.place(cells) == [(0, 0), (0, 2), (1, 0), (1, 1), (2, 0), (2, 1)]
@@ -307,8 +300,8 @@ def test_arrows_off_only_when_they_would_do_nothing(store):
     at.button(key="hwr_timetable_today").click().run()
     assert hl.keys(saved(store))[:2] == ["todos", "timetable_today"]
     at.button(key="hwpick_timetable_today").click().run()                 # put it back down
-    at.button(key="hwpick_modules").click().run()
-    assert at.button(key="hwr_modules").disabled                          # last
+    at.button(key="hwpick_needs_you").click().run()
+    assert at.button(key="hwr_needs_you").disabled                        # last
 
 
 def test_esc_leaves_edit_home(store):

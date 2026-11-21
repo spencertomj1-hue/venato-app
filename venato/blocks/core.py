@@ -85,7 +85,7 @@ BLOCKS = [
     Block("timetable", "Timetable", ":material/calendar_view_week:",
           "Your week, with a Plan / Actual switch, Outlook events and Fit time.",
           group="Plan", page=_timetable_page, order=10, default=True, core=True,
-          widgets=[Widget("timetable_today", "Timetable", _timetable_today, "column", ("wide", "large", "tall", "column"),
+          widgets=[Widget("timetable_today", "Timetable", _timetable_today, "tall", ("wide", "large", "tall"),
                           status=_st("timetable"), colour="#0B4F9C")]),
     Block("goals", "Goals", ":material/flag:",
           "To-dos for the day, week and month, goals with progress bars, and deadlines.",
