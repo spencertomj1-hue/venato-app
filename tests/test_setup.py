@@ -262,7 +262,10 @@ def _skip_to_the_end(at):
     seen = []
     while not [b for b in at.button if b.key == "wiz_finish"]:
         seen.append(at.header[0].value)
-        _next(at, "wiz_skip")
+        if [b for b in at.button if b.key == "ob_student_no"]:      # the student question has no Skip
+            _next(at, "ob_student_no")
+        else:
+            _next(at, "wiz_skip")
     return seen
 
 
@@ -303,8 +306,7 @@ def test_a_non_student_gets_no_uni_steps(fresh):
         ["timetable", "canvas", "modules", "hours"]
     at = AppTest.from_file(APP, default_timeout=60).run()
     _next(at)
-    at.radio(key="ob_student").set_value("No").run()
-    _next(at)
+    _next(at, "ob_student_no")
     assert at.header[0].value.endswith("Your goals")             # straight past the four uni steps
     names = _skip_to_the_end(at)
     assert not any(n.endswith(("Canvas", "Your modules", "Study hours", "Your uni timetable")) for n in names)
@@ -317,8 +319,7 @@ def test_a_student_gets_the_uni_steps_and_modules(fresh):
     from venato import blocks
     at = AppTest.from_file(APP, default_timeout=60).run()
     _next(at)
-    at.radio(key="ob_student").set_value("Yes").run()
-    _next(at)
+    _next(at, "ob_student_yes")
     assert at.header[0].value.endswith("Your uni timetable")
     _next(at, "wiz_skip")
     assert at.header[0].value.endswith("Canvas")
@@ -327,7 +328,7 @@ def test_a_student_gets_the_uni_steps_and_modules(fresh):
     assert any("Add a module" in t.label for t in at.text_input)  # no feed: a plain box
     _next(at, "wiz_skip")
     assert at.header[0].value.endswith("Study hours")
-    _next(at)
+    _next(at, "wiz_skip")
     _skip_to_the_end(at)
     _next(at, "wiz_finish")
     assert blocks.is_on("grades")
@@ -339,8 +340,7 @@ def test_student_with_the_fixture_feeds_ends_up_with_everything(fresh):
     from venato.blocks import grades as gr
     at = AppTest.from_file(APP, default_timeout=90).run()
     _next(at)
-    at.radio(key="ob_student").set_value("Yes").run()
-    _next(at)
+    _next(at, "ob_student_yes")
 
     # Uni timetable: the preview counts lectures
     at.text_input(key="ob_link_uni").set_value(UNI_URL)
@@ -407,7 +407,7 @@ def test_student_with_the_fixture_feeds_ends_up_with_everything(fresh):
     assert not at.exception, at.exception
     row = fresh.load_categories().set_index("name").loc["Lab work"]
     assert row["grp"] == "Uni"
-    _next(at)
+    _next(at, "wiz_skip")                                        # the box was emptied by Add: nothing left to save
 
     # First week: suggested sittings go into the Plan
     assert at.header[0].value.endswith("Your first week")
@@ -446,7 +446,7 @@ def test_running_setup_again_deletes_nothing(fresh):
     at.run()
     assert at.title[0].value == "Welcome to Venato"
     _next(at)
-    _next(at, "wiz_skip")                                        # student step: still a student
+    _next(at, "ob_student_yes")                                  # student step: still a student
     names = _skip_to_the_end(at)
     assert any(n.endswith("Your modules") for n in names)
     _next(at, "wiz_finish")
@@ -578,8 +578,7 @@ def test_first_week_suggestions_become_planned_blocks(fresh):
 def test_a_wrong_link_shows_an_error_not_a_crash(fresh):
     at = AppTest.from_file(APP, default_timeout=60).run()
     _next(at)
-    at.radio(key="ob_student").set_value("Yes").run()
-    _next(at)
+    _next(at, "ob_student_yes")
     at.text_input(key="ob_link_uni").set_value("hello")
     _submit(at)
     assert at.error and not at.exception
@@ -596,8 +595,7 @@ def test_try_link_keeps_the_calendar_message(outlook, store):
 def test_pasting_a_connected_link_again_says_already_connected(fresh):
     at = AppTest.from_file(APP, default_timeout=60).run()
     _next(at)
-    at.radio(key="ob_student").set_value("Yes").run()
-    _next(at)
+    _next(at, "ob_student_yes")
     at.text_input(key="ob_link_uni").set_value(UNI_URL)
     _submit(at)
     assert at.success and not at.error
@@ -621,3 +619,131 @@ def test_setup_parses_the_calendars_once_until_one_is_connected(fresh, monkeypat
     assert n and onboarding.detected_modules() == first and len(calls) == n       # the second is from `ob`
     onboarding.connect_feed(onboarding.check_feed(CANVAS_URL, "canvas", day=MON), MON)
     assert "detected" not in state                                                  # a new calendar: parse again
+
+
+# --- Phase 1 of the redesign: Next saves what's typed, one action button, the student cards ---
+
+def _student_at(fresh, student=True):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at)
+    _next(at, "ob_student_yes" if student else "ob_student_no")
+    return at
+
+
+def _main_label(at):
+    """The label of the one main button on the right of the footer (Skip or Next)."""
+    mains = [b for b in at.button if b.key in ("wiz_skip", "wiz_next")]
+    assert len(mains) == 1, [b.key for b in at.button]
+    return mains[0].label
+
+
+def test_next_connects_a_pasted_link(fresh):
+    at = _student_at(fresh)
+    assert at.header[0].value.endswith("Your uni timetable")
+    at.text_input(key="ob_link_uni").set_value(UNI_URL).run()
+    _next(at)                                                    # Next, not Connect
+    assert at.header[0].value.endswith("Canvas") and not at.error
+    assert fresh.outlook_between("2026-11-16", "2026-11-22")
+    at.text_input(key="ob_link_canvas").set_value(CANVAS_URL).run()
+    _next(at)
+    assert at.header[0].value.endswith("Your modules") and len(fresh.deadlines()) == 7
+
+
+def test_next_with_a_bad_link_stays_and_says_why(fresh):
+    at = _student_at(fresh)
+    at.text_input(key="ob_link_uni").set_value("hello").run()
+    _next(at)
+    assert at.header[0].value.endswith("Your uni timetable") and at.error
+    at.text_input(key="ob_link_uni").set_value(CANVAS_URL).run()
+    _next(at)
+    assert at.header[0].value.endswith("Your uni timetable") and any("Canvas" in e.value for e in at.error)
+
+
+def test_next_with_an_already_connected_link_just_moves_on(fresh):
+    at = _student_at(fresh)
+    at.text_input(key="ob_link_uni").set_value(UNI_URL).run()
+    _submit(at)
+    at.text_input(key="ob_link_uni").set_value(UNI_URL).run()
+    _next(at)
+    assert at.header[0].value.endswith("Canvas") and not at.error
+
+
+def test_next_keeps_a_typed_module_habit_and_category(fresh):
+    from venato.blocks import grades as gr
+    at = _student_at(fresh)
+    _next(at, "wiz_skip")
+    _next(at, "wiz_skip")
+    assert at.header[0].value.endswith("Your modules")
+    at.text_input(key="ob_new_module").set_value("Organic Chemistry").run()
+    _next(at)                                                    # Next, not Add
+    assert [m["name"] for m in gr.modules()] == ["Organic Chemistry"]
+    assert at.header[0].value.endswith("Study hours")
+    _next(at)                                                    # a module was made in this run: Next
+    at.text_input(key="ob_goal_0").set_value("Run a 10k").run()
+    _next(at)
+    assert at.header[0].value.endswith("What would you track?")
+    at.text_input(key="ob_own_name").set_value("Stretch").run()
+    _next(at)
+    assert fresh.find_habit("Stretch")
+    assert at.header[0].value.endswith("Your day")
+    at.text_input(key="ob_cat_name").set_value("Lab work").run()
+    at.selectbox(key="ob_cat_group").set_value("New group…").run()
+    at.text_input(key="ob_cat_newgroup").set_value("Uni").run()
+    _next(at)
+    assert fresh.load_categories().set_index("name").loc["Lab work", "grp"] == "Uni"
+    assert at.header[0].value.endswith("Your first week")
+
+
+def test_next_with_a_bad_category_stays_on_the_step(fresh):
+    at = _student_at(fresh, student=False)
+    _next(at, "wiz_skip")
+    _next(at, "wiz_skip")
+    assert at.header[0].value.endswith("Your day")
+    at.text_input(key="ob_cat_name").set_value("Lab work").run()
+    at.selectbox(key="ob_cat_group").set_value("New group…").run()
+    at.text_input(key="ob_cat_newgroup").set_value("").run()
+    _next(at)
+    assert at.header[0].value.endswith("Your day") and at.error and fresh.load_categories().empty
+
+
+def test_the_main_button_says_skip_until_something_is_filled_in(fresh):
+    at = _student_at(fresh)
+    assert _main_label(at) == "Skip" and at.button(key="wiz_back")
+    at.text_input(key="ob_link_uni").set_value(UNI_URL).run()
+    assert _main_label(at) == "Next" and at.button(key="wiz_next")
+    at.text_input(key="ob_link_uni").set_value("").run()
+    assert _main_label(at) == "Skip"
+    at.text_input(key="ob_link_uni").set_value(UNI_URL).run()
+    _submit(at)                                                  # connected in this run: Next
+    assert _main_label(at) == "Next"
+    _next(at, "wiz_next")
+    assert _main_label(at) == "Skip"                             # Canvas, empty
+    _next(at, "wiz_skip")
+    at.text_input(key="ob_new_module").set_value("Algebra").run()   # Your modules
+    assert _main_label(at) == "Next"
+    _next(at)
+    _next(at, "wiz_next")                                        # Study hours: a module was just made
+    assert at.header[0].value.endswith("Your goals") and _main_label(at) == "Skip"
+    at.text_input(key="ob_goal_0").set_value("Run").run()
+    assert _main_label(at) == "Next"
+
+
+def test_the_student_question_is_two_buttons_and_nothing_else(fresh):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at)
+    assert at.header[0].value.endswith("Are you a student?") and not at.radio
+    assert {b.key for b in at.button} >= {"ob_student_yes", "ob_student_no", "wiz_back"}
+    assert not any(b.key in ("wiz_skip", "wiz_next") for b in at.button)
+    assert {b.label for b in at.button if b.key.startswith("ob_student_")} == {"I'm at uni", "Not a student"}
+    _next(at, "ob_student_yes")
+    assert fresh.load_settings()["student"] is True and at.header[0].value.endswith("Your uni timetable")
+
+
+def test_welcome_and_home_copy(fresh):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert any("takes a few minutes" in m.value for m in at.markdown)
+    assert not any("two minutes" in m.value for m in at.markdown)
+    _next(at)
+    _next(at, "ob_student_no")
+    _skip_to_the_end(at)
+    assert any("**Edit Home**" in c.value for c in at.caption) and not any("Arrange" in c.value for c in at.caption)

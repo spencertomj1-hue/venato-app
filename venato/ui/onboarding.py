@@ -360,7 +360,7 @@ def _welcome():
         "- :material/checklist: **to-dos** and **deadlines**, and **goals** with a pace to keep\n"
         "- :material/timer: **focus** sessions and a **weekly review** to see how it went\n\n"
         f":material/lock: **Your data stays on your {system.COMPUTER}.** Nothing is uploaded.\n\n"
-        "Setup takes about two minutes and you can skip any step. **Skip setup** leaves Venato blank, ready for "
+        "Setup takes a few minutes and you can skip any step. **Skip setup** leaves Venato blank, ready for "
         "you to add things yourself.")
 
 
@@ -368,16 +368,22 @@ def _student():
     st.header("Are you a student?", anchor=False)
     st.markdown("Students get a **Modules** page and a few extra steps: your uni timetable, Canvas deadlines "
                 "and study hours.")
-    now = _ob().get("student", store.load_settings().get("student"))
-    st.radio("Are you a student?", ["Yes", "No"], index=None if now is None else 0 if now else 1,
-             key="ob_student", horizontal=True, label_visibility="collapsed")
+    yes, no = st.columns(2)
+    yes.button("I'm at uni", key="ob_student_yes", type="primary", icon=":material/school:", width="stretch",
+               on_click=_answer_student, args=(True,))
+    no.button("Not a student", key="ob_student_no", icon=":material/person:", width="stretch",
+              on_click=_answer_student, args=(False,))
 
 
-def _save_student():
-    answer = st.session_state.get("ob_student")
-    if answer:
-        _ob()["student"] = answer == "Yes"
-        store.save_settings(student=answer == "Yes")
+def _save_student(answer):
+    _ob()["student"] = answer
+    store.save_settings(student=answer)
+
+
+def _answer_student(answer):
+    """Save the answer and go on to the next step (the list of steps depends on it)."""
+    _save_student(answer)
+    st.session_state["wizard_step"] = st.session_state.get("wizard_step", 0) + 1
 
 
 GUIDES = {
@@ -391,6 +397,46 @@ GUIDES = {
 }
 
 
+def _connect_link(kind):
+    """Connect the link typed in the box (nothing if it's empty). Returns "connected", "already" or None.
+    Raises ValueError with a message to show when the link is no good."""
+    text = (st.session_state.get(f"ob_link_{kind}") or "").strip()
+    if not text:
+        return None
+    try:
+        with st.spinner("Checking the link…"):
+            found = check_feed(text, kind)
+            connect_feed(found)
+    except outlook.AlreadyAdded:
+        return "already"
+    except outlook.LinkError as e:
+        raise ValueError(str(e))
+    except outlook.SyncError as e:
+        raise ValueError(outlook.friendly(e).replace("Outlook", "the calendar"))
+    except Exception as e:
+        raise ValueError(f"That link didn't give a calendar Venato can read ({type(e).__name__}).")
+    _ob()[f"found_{kind}"] = found
+    return "connected"
+
+
+def _connect_button(kind):
+    """The Connect button: the same as Next, but it stays on the step."""
+    try:
+        result = _connect_link(kind)
+    except ValueError as e:
+        st.session_state["ob_error"] = str(e)
+        return
+    if result == "already":
+        _ob()[f"link_note_{kind}"] = "Already connected. Nothing more to do here."
+    if result:
+        st.session_state[f"ob_link_{kind}"] = ""
+
+
+def _save_link(kind):
+    if _connect_link(kind):
+        st.session_state[f"ob_link_{kind}"] = ""
+
+
 def _link_step(kind):
     ob = _ob()
     if kind == "uni":
@@ -402,24 +448,12 @@ def _link_step(kind):
     st.markdown(GUIDES[kind])
     st.info("Anyone with this link can see your calendar. Venato keeps it in your system's secret store, never in a file.",
             icon=":material/visibility:")
-    with st.form(f"ob_form_{kind}", clear_on_submit=True, border=False):
-        text = st.text_input("Calendar link", type="password", key=f"ob_link_{kind}", placeholder="https://…",
-                             help="Hidden so the link isn't shown on screen.")
-        go = st.form_submit_button("Connect", type="primary", icon=":material/link:")
-    if go:
-        try:
-            with st.spinner("Checking the link…"):
-                found = check_feed(text, kind)
-                connect_feed(found)
-            ob[f"found_{kind}"] = found
-        except outlook.AlreadyAdded:
-            st.info("Already connected. Nothing more to do here.", icon=":material/check_circle:")
-        except outlook.LinkError as e:
-            st.error(str(e), icon=":material/error:")
-        except outlook.SyncError as e:
-            st.error(outlook.friendly(e).replace("Outlook", "the calendar"), icon=":material/error:")
-        except Exception as e:
-            st.error(f"That link didn't give a calendar Venato can read ({type(e).__name__}).", icon=":material/error:")
+    st.text_input("Calendar link", type="password", key=f"ob_link_{kind}", placeholder="https://…",
+                  help="Hidden so the link isn't shown on screen.")
+    st.button("Connect", key=f"ob_connect_{kind}", type="primary", icon=":material/link:",
+              on_click=_connect_button, args=(kind,))
+    if note := ob.pop(f"link_note_{kind}", None):
+        st.info(note, icon=":material/check_circle:")
     found = ob.get(f"found_{kind}")
     if found:
         if kind == "uni":
@@ -464,16 +498,9 @@ def _modules():
                    help="You can change a module's credits later on the Modules page.")
     b.segmented_control("Target grade", list(TARGET_GRADES), key="ob_target",
                         help="Your target for every new module. You can change it for each one later.")
-    with st.form("ob_add_module", clear_on_submit=True, border=False):
-        x, y = st.columns([4, 1], vertical_alignment="bottom")
-        new = x.text_input("Add a module", placeholder="e.g. Organic Chemistry")
-        if y.form_submit_button("Add", icon=":material/add:") and new.strip():
-            try:
-                add_modules([{"name": new.strip()}], st.session_state.get("ob_credits") or DEFAULT_CREDITS,
-                            TARGET_GRADES.get(st.session_state.get("ob_target")))
-                st.rerun()
-            except gr.GradeError as e:
-                st.error(str(e), icon=":material/error:")
+    x, y = st.columns([4, 1], vertical_alignment="bottom")
+    x.text_input("Add a module", key="ob_new_module", placeholder="e.g. Organic Chemistry")
+    y.button("Add", key="ob_add_module", icon=":material/add:", on_click=_add_module_button)
     courses = canvas_courses()
     if courses:
         st.subheader("Your Canvas courses", anchor=False)
@@ -487,8 +514,26 @@ def _modules():
                          index=options.index(current) if current in options else 0)
 
 
+def _add_typed_module():
+    """Add the module typed in the box (the Add button, and Next). Raises ValueError if it can't be added."""
+    name = (st.session_state.get("ob_new_module") or "").strip()
+    if not name:
+        return
+    add_modules([{"name": name}], st.session_state.get("ob_credits") or DEFAULT_CREDITS,
+                TARGET_GRADES.get(st.session_state.get("ob_target")))
+    st.session_state["ob_new_module"] = ""
+
+
+def _add_module_button():
+    try:
+        _add_typed_module()
+    except ValueError as e:
+        st.session_state["ob_error"] = str(e)
+
+
 def _save_modules():
     ob = _ob()
+    _add_typed_module()
     picked = []
     for c in ob.get("cands", []):
         name = (st.session_state.get(f"ob_name_{_cand_key(c)}") or c["name"]).strip()
@@ -578,18 +623,26 @@ def _track():
             st.checkbox(_suggestion_label(s), value=False, key=f"ob_sg_{i}_{j}")
     for name, _ in ob.get("own", []):
         st.markdown(f":material/check: Your own habit: **{escape(name)}**")
-    with st.form("ob_own", clear_on_submit=True, border=False):
-        a, b, c = st.columns([3, 3, 1], vertical_alignment="bottom")
-        name = a.text_input("Add your own habit", placeholder="e.g. Stretch")
-        titles = ["No goal"] + [g["title"] for _, g in goals]
-        link = b.selectbox("Count it towards", titles)
-        if c.form_submit_button("Add", icon=":material/add:") and name.strip():
-            ob.setdefault("own", []).append((name.strip(), None if link == "No goal" else link))
-            st.rerun()
+    a, b, c = st.columns([3, 3, 1], vertical_alignment="bottom")
+    a.text_input("Add your own habit", key="ob_own_name", placeholder="e.g. Stretch")
+    a_titles = ["No goal"] + [g["title"] for _, g in goals]
+    b.selectbox("Count it towards", a_titles, key="ob_own_link")
+    c.button("Add", key="ob_own_add", icon=":material/add:", on_click=_add_own_habit)
+
+
+def _add_own_habit():
+    """Keep the habit typed in the box to add when Next is pressed (the Add button, and Next)."""
+    name = (st.session_state.get("ob_own_name") or "").strip()
+    if not name:
+        return
+    link = st.session_state.get("ob_own_link")
+    _ob().setdefault("own", []).append((name, None if link in (None, "No goal") else link))
+    st.session_state["ob_own_name"] = ""
 
 
 def _save_track():
     ob = _ob()
+    _add_own_habit()
     goals = _my_goals()
     for i, g in goals:
         for j, s in enumerate(suggest.for_goal(g["title"])):
@@ -615,12 +668,20 @@ def _chip(name, colour):
             f'background:{colour};color:{_text_on(colour)};font-size:.9rem">{escape(name)}</span>')
 
 
-def _add_own_category():
+def _make_own_category(required=False):
+    """Add the category typed in the box (nothing if the name is empty, unless `required`). Raises ValueError
+    if it can't be added."""
+    if not required and not (st.session_state.get("ob_cat_name") or "").strip():
+        return
     group = st.session_state.get("ob_cat_group")
     group = st.session_state.get("ob_cat_newgroup") if group in (None, NEW_GROUP) else group
+    add_category(st.session_state.get("ob_cat_name"), st.session_state.get("ob_cat_colour") or "#4E79A7", group)
+    st.session_state["ob_cat_name"] = ""
+
+
+def _add_own_category():
     try:
-        add_category(st.session_state.get("ob_cat_name"), st.session_state.get("ob_cat_colour") or "#4E79A7", group)
-        st.session_state["ob_cat_name"] = ""
+        _make_own_category(required=True)
     except ValueError as e:
         st.session_state["ob_error"] = str(e)
 
@@ -656,6 +717,7 @@ def _day():
 
 
 def _save_day():
+    _make_own_category()
     for cid, *_ in store.EXAMPLE_CATEGORIES:
         if st.session_state.get(f"ob_ex_{cid}"):
             ensure_category(cid)
@@ -707,13 +769,39 @@ def _home():
         kit.empty("Nothing extra yet. Home starts with your timetable, to-dos and what needs you.", ":material/info:")
     for key, name in picks:
         st.checkbox(f"Show {name} on Home", value=True, key=f"ob_home_{key}")
-    st.caption("Press **Arrange** at the top of Home to move, resize or hide anything.")
+    st.caption("Press **Edit Home** at the top of Home to move, resize or hide anything.")
 
 
 STEP_BODY = {"student": _student, "modules": _modules, "hours": _hours, "goals": _goals, "track": _track, "day": _day,
              "week": _week, "home": _home}
-SAVE = {"student": _save_student, "modules": _save_modules, "hours": _save_hours, "goals": _save_goals,
+SAVE = {"timetable": lambda: _save_link("uni"), "canvas": lambda: _save_link("canvas"), "modules": _save_modules, "hours": _save_hours, "goals": _save_goals,
         "track": _save_track, "day": _save_day}
+
+
+def _typed(key):
+    return bool((st.session_state.get(key) or "").strip())
+
+
+def _filled(key):
+    """Has this step got something in it this run: typed, ticked or connected? (Cheap checks, no writing.)
+    The main button says Next if so, and Skip if not."""
+    ss, ob = st.session_state, _ob()
+    if key in ("timetable", "canvas"):
+        kind = "uni" if key == "timetable" else "canvas"
+        return _typed(f"ob_link_{kind}") or bool(ob.get(f"found_{kind}"))
+    if key == "modules":
+        return (_typed("ob_new_module") or any(ss.get(f"ob_keep_{_cand_key(c)}", True) for c in ob.get("cands", []))
+                or bool(ob.get("new_modules")))
+    if key == "hours":
+        saved = float(store.load_settings().get("study_hours", gr.DEFAULT_WEEK_HOURS))
+        return bool(ob.get("new_modules")) or float(ss.get("ob_hours", saved)) != saved
+    if key == "goals":
+        return any(_typed(f"ob_goal_{i}") for i in range(len(GOAL_SLOTS)))
+    if key == "track":
+        return _typed("ob_own_name") or bool(ob.get("own")) or any(v for k, v in ss.items() if k.startswith("ob_sg_"))
+    if key == "day":
+        return _typed("ob_cat_name") or any(v for k, v in ss.items() if k.startswith("ob_ex_"))
+    return False
 
 
 def _go(index, save=None):
@@ -746,17 +834,21 @@ def wizard(finish):
         else:
             STEP_BODY[key]()
         st.divider()
-        back, skip, nxt = st.columns([1, 1, 1])
         last = step == len(listed) - 1
-        if step > 0:
-            back.button("Back", key="wiz_back", on_click=_go, args=(step - 1,), icon=":material/arrow_back:")
-        if last:
-            nxt.button("Start using Venato", key="wiz_finish", type="primary", on_click=finish, width="stretch")
-        elif key == "welcome":
+        if key == "welcome":
+            _, skip, nxt = st.columns([1, 1, 1])
             skip.button("Skip setup", key="wiz_skip_all", on_click=finish)
             nxt.button("Get started", key="wiz_next", type="primary", on_click=_go, args=(step + 1,),
                        width="stretch", icon=":material/arrow_forward:")
+            return
+        back, main = st.columns([1, 1])
+        back.button("Back", key="wiz_back", on_click=_go, args=(step - 1,), icon=":material/arrow_back:")
+        if last:
+            main.button("Start using Venato", key="wiz_finish", type="primary", on_click=finish, width="stretch")
+        elif key == "student":
+            pass                                              # the two buttons above are the way on
+        elif _filled(key):
+            main.button("Next", key="wiz_next", type="primary", on_click=_go, args=(step + 1, key if key in SAVE else None),
+                        width="stretch", icon=":material/arrow_forward:")
         else:
-            skip.button("Skip for now", key="wiz_skip", on_click=_go, args=(step + 1,))
-            nxt.button("Next", key="wiz_next", type="primary", on_click=_go, args=(step + 1, key if key in SAVE else None),
-                       width="stretch", icon=":material/arrow_forward:")
+            main.button("Skip", key="wiz_skip", on_click=_go, args=(step + 1,), width="stretch")
