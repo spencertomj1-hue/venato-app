@@ -244,10 +244,13 @@ def save_goals(rows, day=None):
 
 def ensure_category(cid):
     """Make one of the example categories (and the activity names that default to it) if it isn't there yet."""
-    if cid in set(store.load_categories()["id"]):
+    cats = store.load_categories()
+    if cid in set(cats["id"]):
         return
     for ex_id, name, colour, text, grp in store.EXAMPLE_CATEGORIES:
         if ex_id == cid:
+            if name.lower() in {n.lower() for n in cats["name"]}:      # already there under another id
+                return
             store.save_category(ex_id, name, colour, grp, text)
             for label, target in store.EXAMPLE_LABEL_MAP.items():
                 if target == cid and not any(r["label"].lower() == label.lower() for r in store.load_label_map().to_dict("records")):
@@ -540,17 +543,17 @@ def _hours_boxes(existing, cands):
     ob = _ob()
     start, total = {}, 0.0
     ob["hours_start"] = start
-    rows = [(m["name"], _hours_key(m=m), min(gr.week_hours_goal(m), 40.0)) for m in existing]
+    rows = [(m["name"], _hours_key(m=m), min(gr.week_hours_goal(m), 80.0)) for m in existing]
     for c in cands:
         name = (st.session_state.get(f"ob_name_{_cand_key(c)}") or c["name"]).strip()
         if st.session_state.get(f"ob_keep_{_cand_key(c)}", True) and name:
-            rows.append((name, _hours_key(c), min(_default_hours(), 40.0)))
+            rows.append((name, _hours_key(c), min(_default_hours(), 80.0)))
     if not rows:
         return
     kit.subhead("Hours a week")
     for name, key, value in rows:
         start[key] = value
-        total += st.number_input(name, 0.0, 40.0, value, 0.5, key=key, help="Lectures count too. You can change it "
+        total += st.number_input(name, 0.0, 80.0, value, 0.5, key=key, help="Lectures count too. You can change it "
                                  "for one module on its page.")
     st.caption(f"{len(rows)} module{'s' if len(rows) != 1 else ''} · {pace.fmt(total)} h a week, lectures included")
 
@@ -574,10 +577,11 @@ def _add_module_button():
 def _save_modules():
     """Add the modules, set the hours boxes that were changed, then give the new modules their study goals."""
     ob, ss = _ob(), st.session_state
+    start = ob.get("hours_start", {})
     _add_typed_module()
     for m in gr.modules():                                     # one from before: its box, if it was drawn and changed
         key = _hours_key(m=m)
-        if key in ss and float(ss[key]) != gr.week_hours_goal(m):
+        if key in ss and key in start and float(ss[key]) != start[key]:
             gr.set_week_hours_goal(m["id"], ss[key])
     default = _default_hours()
     for c in ob.get("cands", []):
@@ -714,13 +718,14 @@ def _colours():
     """Colour your timetable: a chip to switch on for each category, and a box to add your own."""
     options = _colour_options()
     names = [n for _, n, _ in options]
-    existing = {n for n in store.load_categories()["name"]}
-    on = st.session_state.get("ob_cats")
-    on = [n for n in names if n in existing] if on is None else on
+    existing = {n.lower() for n in store.load_categories()["name"]}
+    if "ob_cats" not in st.session_state:                      # seeded here, so the pills take no default
+        st.session_state["ob_cats"] = [n for n in names if n.lower() in existing]
+    on = st.session_state["ob_cats"]
     kit.subhead("Colour your timetable")
     st.caption("Tap a category to switch it on. Your modules and anything you picked above are already there.")
     st.html("".join(_chip(n, c) for _, n, c in options if n in on) or "<i>None switched on yet.</i>")
-    st.pills("Categories", names, selection_mode="multi", default=[n for n in names if n in existing], key="ob_cats",
+    st.pills("Categories", names, selection_mode="multi", key="ob_cats",
              label_visibility="collapsed")
     a, b, c = st.columns([3, 1, 1], vertical_alignment="bottom")
     a.text_input("Add your own category", key="ob_cat_name", placeholder="e.g. Lab work")

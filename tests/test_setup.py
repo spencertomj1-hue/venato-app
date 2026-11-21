@@ -532,6 +532,36 @@ def test_a_chip_switched_on_in_setup_makes_its_category_and_activity_names(fresh
     assert labels["Gym"] == "exercise" and labels["Run"] == "exercise" and "Lecture" not in labels
 
 
+def test_an_existing_category_with_an_examples_name_is_not_made_twice(fresh):
+    fresh.save_category("study-2", "Study", "#123456", "Work")
+    at = _student_at(fresh, student=False)
+    _next(at, "wiz_skip")
+    assert "Study" in at.get("pills")[0].value                    # on already, by name
+    at.get("pills")[0].set_value(["Study", "Exercise"]).run()
+    _next(at)
+    cats = fresh.load_categories()
+    assert list(cats[cats["name"] == "Study"]["id"]) == ["study-2"] and "exercise" in set(cats["id"])
+
+
+def test_a_stale_skip_click_on_track_still_saves_a_ticked_chip(fresh):
+    at = _student_at(fresh, student=False)
+    _next(at, "wiz_skip")
+    at.get("pills")[0].set_value(["Exercise"])
+    at.button(key="wiz_skip").click().run()
+    assert at.header[0].value.endswith("Your first week") and "exercise" in set(fresh.load_categories()["id"])
+
+
+def test_an_untouched_hours_box_over_40_is_left_alone(fresh):
+    from venato.blocks import grades as gr
+    mid = gr.add_module("Marathon")
+    gr.set_week_hours_goal(mid, 50)
+    at = _student_at(fresh)
+    _next(at, "wiz_skip")
+    assert next(n for n in at.number_input if n.key == f"ob_hours_{mid}").value == 50
+    _next(at, "wiz_skip")
+    assert gr.week_hours_goal(gr.get_module(mid)) == 50
+
+
 def test_the_default_group_for_an_own_category_is_the_smallest_not_modules(fresh):
     from venato.ui import onboarding
     assert onboarding.default_group() == "Life"
