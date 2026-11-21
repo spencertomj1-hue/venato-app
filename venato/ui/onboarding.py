@@ -23,7 +23,7 @@ from venato import pace
 from venato import store
 from venato import suggest
 from venato.blocks import grades as gr
-from venato.ui import kit
+from venato.ui import appearance, kit
 
 # (key, name, icon, only for students)
 STEPS = [
@@ -475,14 +475,17 @@ def prefill_home(keys):
 # Steps: drawing, and what Next saves
 # ---------------------------------------------------------------------------
 
+def _empty(text, icon=":material/inbox:"):
+    """kit.empty at body size: inside the wizard an empty state is the step's message, not a footnote."""
+    st.markdown(f"{icon} {text}")
+
+
 def _welcome():
     from venato import system
     st.title("Welcome to Venato", anchor=False)
+    st.markdown("Plan your week, log what really happened, and see the gap.")
+    st.image("assets/onboarding-timetable.png")
     st.markdown(
-        "Venato keeps track of your days:\n\n"
-        "- :material/calendar_view_week: a **timetable** of what you planned and what you actually did\n"
-        "- :material/checklist: **to-dos** and **deadlines**, and **goals** with a pace to keep\n"
-        "- :material/timer: **focus** sessions and a **weekly review** to see how it went\n\n"
         f":material/lock: **Your data stays on your {system.COMPUTER}.** Nothing is uploaded.\n\n"
         "Setup takes a few minutes and you can skip any step. **Skip setup** leaves Venato blank, ready for "
         "you to add things yourself.")
@@ -636,7 +639,7 @@ def _modules():
         if on and typed.strip():
             names.append(typed.strip())
     if not cands and not existing:
-        kit.empty("No modules found yet. Add them below, or connect your timetable on the earlier step.", ":material/info:")
+        _empty("No modules found yet. Add them below, or connect your timetable on the earlier step.", ":material/info:")
     x, y = st.columns([4, 1], vertical_alignment="bottom")
     x.text_input("Add a module", key="ob_new_module", placeholder="e.g. Organic Chemistry")
     y.button("Add", key="ob_add_module", icon=":material/add:", on_click=_add_module_button)
@@ -804,7 +807,7 @@ def _track():
     st.markdown("These are examples based on your goals: pick what you want. Nothing is switched on until you tick it.")
     goals = _my_goals()
     if not goals:
-        kit.empty("Add a goal on the previous step and examples show up here.", ":material/info:")
+        _empty("Add a goal on the previous step and examples show up here.", ":material/info:")
     for i, g in goals:
         found = suggest.for_goal(g["title"])
         kit.subhead(g['title'])
@@ -948,7 +951,7 @@ def _week():
                    "Nothing was added: that time is taken now.", icon=":material/check_circle:")
     if not sittings:
         if added is None:
-            kit.empty("Nothing to suggest yet. Add a goal and it gets sittings here, in your free time.",
+            _empty("Nothing to suggest yet. Add a goal and it gets sittings here, in your free time.",
                       ":material/info:")
         return
     hours = sum(store.slot_of(s["end"]) - store.slot_of(s["start"]) for s in sittings) / 2
@@ -999,7 +1002,18 @@ def _go(index, save=None):
 
 def wizard(finish, skip=None):
     """The full-screen setup: no sidebar. `finish` is called when it's done, `skip` (default: finish) when setup is skipped."""
-    st.html("<style>[data-testid='stSidebar'], [data-testid='stSidebarCollapsedControl'] { display: none; }</style>")
+    ink = appearance.tokens()
+    st.html(f"""<style>
+    [data-testid='stSidebar'], [data-testid='stSidebarCollapsedControl'] {{ display: none; }}
+    /* Progress is not an error: ink, not the red accent. */
+    [data-testid='stProgress'] [role='progressbar'] > div {{ background-color: {ink['track']} !important; }}
+    [data-testid='stProgress'] [role='progressbar'] > div > div {{ background-color: {ink['ink']} !important; }}
+    /* A short step sits in the middle of the window; a long one scrolls as usual (auto margins, not
+    justify-content, so a tall step is never clipped at the top). */
+    [data-testid='stMainBlockContainer'] {{ min-height: 100vh; display: flex; flex-direction: column; }}
+    [data-testid='stMainBlockContainer'] > [data-testid='stVerticalBlock'] {{ flex-grow: 0; margin-block: auto; }}
+    [data-testid='stImage'] img {{ border-radius: .5rem; border: 1px solid {ink['border']}; }}
+    </style>""")
     listed = steps()
     step = min(st.session_state.setdefault("wizard_step", 0), len(listed) - 1)
     key = listed[step][0]
