@@ -13,8 +13,13 @@ them. Home is one screen and the tiles clip (home.py), so every graphic has a fi
 | J | Journal | 7 dots, week start first, filled on days written; "3-day streak" when 2 or more. |
 | R | Review | Day letters under the bars and a faint 100% line, so an empty week still reads as a chart. |
 | H | Daily log | A streak count after each habit's name ("Exercise · 5"). |
+| M | Modules (was "Grades") | The Modules block's tile, which setup adds for every student. Grade tracking is binned for now, so it's renamed **Modules** and shows this week's study hours per module: a thin bar per module, done (Actual) against its hours-a-week target (`grades.module_hours`), up to 3 then "and N more". Header: "4 of 12 h this week". |
 
-Not changing: Grades (later), Goals, To-dos, Needs you, Ask.
+Default Home (never arranged): Timetable (Column) down the left; To-dos, Focus; Goals, Review; Daily log,
+Needs you. Students also get Modules, which spills into a 4th row (user's call: all rows get shorter rather
+than dropping a tile).
+
+Not changing: marks/grades UI, Goals, To-dos, Needs you, Ask.
 
 ## Phases (risk first)
 
@@ -50,6 +55,8 @@ Verified when: unit tests for the new data (journal week, habit streak) and each
   (`journal_week(today)`), `venato/ui/deadlines.py`, `venato/ui/daily_log.py`, `venato/ui/stats.py`,
   `tests/test_tile_glance.py` (new) and the existing tile tests.
 - Streak: reuse the Daily Log page's streak function (no new rule).
+- Modules: `venato/ui/grades.py` `render_home`, `tile_status.modules`, the widget's name in
+  `venato/blocks/grades.py`; tests in `tests/test_grades.py`.
 - Blocked by: none.
 
 ### Phase 5: fit check and docs (Size: S)
@@ -65,7 +72,9 @@ cut-off graphic or label, light and dark; the full suite passes
 | Timetable height | new Column size (1 × all rows) | Tall gives ~13px rows: labels don't fit |
 | Stopwatch name | typed before starting ("Focus" if empty) | user's call |
 | Pomodoro on Home | removed, stays on the Focus page | simplest tile |
-| Grades | not now | user's call |
+| Grades tile | renamed Modules, shows study hours per module, not marks | grade tracking is binned for now (onboarding v2); hours are what setup collects |
+| Students' extra tile | allowed: Home grows to 4 rows | user's call |
+| Column's height | fixed 3 rows (Home's default height), not "every row" | a span that depends on the row count is circular; 3 is the one-screen default |
 | How to draw | inline HTML/CSS via `st.html` (as Review and Goals already do) | no new library, theme tokens |
 | Animation | none, bar the existing now-line and the running stopwatch | a screen of moving tiles is noise |
 
@@ -74,7 +83,7 @@ cut-off graphic or label, light and dark; the full suite passes
 
 ## Always / Never
 - Always: fixed height for every glance, an `aria-label` saying the same in words, light and dark, tests.
-- Never: a chart library, new tables, Grades, Goals / To-dos / Needs you changes, a graphic that grows a tile.
+- Never: a chart library, new tables, marks/grades UI, Goals / To-dos / Needs you changes, a graphic that grows a tile.
 
 ## Progress
 | Phase | Status |
