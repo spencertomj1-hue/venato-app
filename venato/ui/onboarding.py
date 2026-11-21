@@ -34,7 +34,12 @@ STEPS = [
     ("track", "Track", ":material/checklist:", False),
     ("week", "First week", ":material/event_available:", False),
 ]
-GOAL_SLOTS = [("In 3 months", 3), ("In 6 months", 6), ("In 1 year", 12)]
+GOAL_MAX = 5                           # goal rows on the goals step
+GOAL_PLACEHOLDERS = ["e.g. Run a 10k", "e.g. Read 12 books", "e.g. Get a 2:1", "e.g. Learn to cook 10 meals",
+                     "e.g. Save £500"]
+GOAL_WHEN = {"1 month": 1, "3 months": 3, "6 months": 6, "1 year": 12}
+GOAL_HOW = {"Tick it off": "tick", "Hours a week": "hours", "A number": "number"}
+OWN_COLOUR = "#4E79A7"                 # a new category's colour when none is picked
 STUDY_WEEKS = 12                       # a study goal runs this many weeks; its hours are the weekly hours times this
 DEFAULT_CREDITS = 15
 
@@ -218,28 +223,80 @@ def apply_study_hours(per_week, day=None):
 
 def save_goals(rows, day=None):
     """
-    rows: [(text, number or None, months)] in the order of GOAL_SLOTS. Each filled one is a goal due in that
-    many months (without a number, a goal of 1 to tick off). Saving again changes the goal this setup made
-    for that row; a row emptied removes only that goal. Returns {row: goal id}.
+    rows: [(row, text, how, number or None, months)], `how` one of "tick", "hours", "number". Each filled
+    row is a goal due in that many months: "tick" is a goal of 1 to tick off, "number" a target of the number,
+    "hours" an hours goal (unit "h") of the hours a week times the weeks to its due date, with a category so
+    its sittings can be planned. Hours or a number left empty make a goal to tick off. Saving again changes
+    the goal this setup made for that row (its tracking only if the row's choice changed); a row emptied
+    removes only that goal. Returns {row: goal id}.
     """
     day = day or today()
-    ids = _ob().setdefault("goal_ids", {})
-    for i, (text, number, months) in enumerate(rows):
-        text, gid = (text or "").strip(), ids.get(i)
-        if gid and not store.get_goal(gid):
-            gid = ids.pop(i, None)
+    ob = _ob()
+    ids, hows = ob.setdefault("goal_ids", {}), ob.setdefault("goal_how", {})
+    for row, text, how, number, months in rows:
+        text, gid = (text or "").strip(), ids.get(row)
+        if gid and not store.get_goal(gid):                # deleted since: make a new one
+            ids.pop(row, None)
+            gid = None
         if not text:
             if gid:
-                store.delete_goal(gid)
-                ids.pop(i, None)
+                forget_goal_row(row)
             continue
-        target = float(number) if number and number > 0 else 1.0
-        if gid:
-            store.update_goal(gid, title=text, target=target, due=months_on(day, months))
+        number = float(number) if number is not None and number > 0 else None
+        how = how if number is not None else "tick"
+        due = months_on(day, months)
+        if how == "hours":
+            target = number * max(1, round((due - day).days / 7))
         else:
-            ids[i] = store.add_goal(text, None, day, target, due=months_on(day, months))["id"]
-        _ob().setdefault("goal_nums", {})[i] = bool(number and number > 0)
+            target = number if how == "number" else 1.0
+        if gid:
+            store.update_goal(gid, title=text, target=target, due=due)
+            if hows.get(row) != how:                    # changed: the tracking changes too
+                if how == "hours":
+                    if not store.get_goal(gid)["category_id"]:
+                        store.update_goal(gid, category_id=_hours_category(text), unit="h")
+                    else:
+                        store.update_goal(gid, unit="h")
+                else:
+                    store.update_goal(gid, unit=None, category_id=None)
+        else:
+            extra = {"unit": "h", "category_id": _hours_category(text)} if how == "hours" else {}
+            ids[row] = store.add_goal(text, None, day, target, due=due, **extra)["id"]
+        hows[row] = how
+        ob.setdefault("goal_nums", {})[row] = how in ("hours", "number")
+        ob.setdefault("goal_meta", {})[row] = {"number": number, "months": months}
     return dict(ids)
+
+
+def forget_goal_row(row):
+    """A goal row removed (or emptied): delete the goal this setup made for it, and nothing else."""
+    ob = _ob()
+    gid = ob.get("goal_ids", {}).pop(row, None)
+    if gid and store.get_goal(gid):
+        store.delete_goal(gid)
+    for k in ("goal_how", "goal_nums", "goal_meta"):
+        ob.get(k, {}).pop(row, None)
+
+
+def _example_category(cid):
+    """Make an example category if it isn't there, and return the id it has (one of the same name counts)."""
+    ensure_category(cid)
+    cats = store.load_categories()
+    if cid in set(cats["id"]):
+        return cid
+    name = next(n for i, n, *_ in store.EXAMPLE_CATEGORIES if i == cid)
+    return next(i for i, n in zip(cats["id"], cats["name"]) if n.lower() == name.lower())
+
+
+def _hours_category(text):
+    """The category an hours goal counts: its first example category, else Study for a student, else one
+    named after the goal (in the default group; one of that name already there is used)."""
+    cid = next((s["cid"] for s in suggest.for_goal(text) if s["kind"] == "category"), None)
+    if cid or is_student():
+        return _example_category(cid or "study")
+    cats = store.load_categories()
+    same = [i for i, n in zip(cats["id"], cats["name"]) if n.lower() == text.lower()]
+    return same[0] if same else add_category(text, OWN_COLOUR, default_group())
 
 
 def ensure_category(cid):
@@ -309,6 +366,71 @@ def first_week(day=None, ctx=None):
     for first in (pace.week_days(day)[0], pace.week_days(day)[0] + timedelta(days=7)):
         out += [s for s in goal_time.suggestions_for(first, ctx) if day.isoformat() <= s["date"] < (day + timedelta(days=7)).isoformat()]
     return sorted(out, key=lambda s: (s["date"], s["start"]))
+
+
+def _matching_category(goal):
+    """A goal's own category, else an existing category one of its suggestions names, else None."""
+    if goal["category_id"]:
+        return goal["category_id"]
+    cats = store.load_categories()
+    ids, by_name = set(cats["id"]), {n.lower(): i for i, n in zip(cats["id"], cats["name"])}
+    names = {i: n for i, n, *_ in store.EXAMPLE_CATEGORIES}
+    for s in suggest.for_goal(goal["title"]):
+        if s["kind"] == "category":
+            if s["cid"] in ids:
+                return s["cid"]
+            if names[s["cid"]].lower() in by_name:
+                return by_name[names[s["cid"]].lower()]
+    return None
+
+
+FALLBACK_DAYS = (1, 3, 5, 2, 4, 6)     # days after today to try, spread out first
+
+
+def fallback_sittings(goals, day=None, taken=()):
+    """
+    For each goal with no hours unit (they get no sittings from first_week): 3 sittings of 1 h on 3 different
+    days, from tomorrow until the end of the 7 days, each the first free hour between 09:00 and 21:00 that
+    day. Free means nothing in the timetable and nothing in `taken` (other sittings) or given to an earlier
+    goal. A day that already has a block labelled with the goal counts as one of its 3 (so after Add to my
+    Plan nothing more is suggested). Same shape as first_week, labelled with the goal, sorted by date and start.
+    """
+    day = day or today()
+    lo, hi = store.slot_of("09:00"), store.slot_of("21:00")
+    days = [(day + timedelta(days=n)).isoformat() for n in FALLBACK_DAYS]
+    placed = store.blocks_between(min(days), max(days))
+    used = {}
+    for s in taken:
+        used.setdefault(s["date"], set()).update(range(store.slot_of(s["start"]), store.slot_of(s["end"])))
+    free, out = {}, []
+    for g in goals:
+        if g["unit"] == "h":
+            continue
+        cid = _matching_category(g)
+        have = {b["date"] for b in placed if b["label"] == g["title"]}
+        got = len(have)
+        for d in days:
+            if got >= 3:
+                break
+            if d in have:
+                continue
+            runs = free.setdefault(d, store.free_runs(d, lo, hi))
+            busy = used.setdefault(d, set())
+            start = next((i for a, b in runs for i in range(a, b - 1) if not {i, i + 1} & busy), None)
+            if start is None:
+                continue
+            busy.update((start, start + 1))
+            got += 1
+            out.append({"id": f"fb:{d}:{store.slot_time(start)}", "date": d, "start": store.slot_time(start),
+                        "end": store.slot_time(start + 2), "label": g["title"], "categoryId": cid, "goal": g["title"]})
+    return sorted(out, key=lambda s: (s["date"], s["start"]))
+
+
+def week_sittings(goals, day=None, ctx=None):
+    """Your first week: the hours goals' sittings (first_week) and the fallback ones for the other goals."""
+    planned = first_week(day, ctx)
+    return sorted(planned + fallback_sittings(goals, day or (ctx.today if ctx else None), planned),
+                  key=lambda s: (s["date"], s["start"]))
 
 
 def add_first_week(sittings):
@@ -600,28 +722,68 @@ def _save_modules():
     apply_study_hours(default)
 
 
-def _goal_row(i, label):
+def _goal_rows():
+    """The goal rows' ids, in order (ids stay put when a row is removed, so its boxes don't shift)."""
+    return _ob().setdefault("goal_rows", [0])
+
+
+def _goal_row(n, row):
     ob = _ob()
-    gid = ob.get("goal_ids", {}).get(i)
+    gid = ob.get("goal_ids", {}).get(row)
     goal = store.get_goal(gid) if gid else None
-    a, b = st.columns([4, 1], vertical_alignment="bottom")
-    a.text_input(label, value=goal["title"] if goal else "", key=f"ob_goal_{i}", placeholder="e.g. Get a First")
-    b.number_input("Number", 0.0, 100000.0, float(goal["target"]) if goal and ob.get("goal_nums", {}).get(i) else None,
-                   key=f"ob_goal_n_{i}", placeholder="optional", help="A number to reach, like 100 for 100 hours. "
-                   "Leave it empty for a goal you just tick off.", label_visibility="collapsed")
+    meta = ob.get("goal_meta", {}).get(row, {})
+    how_saved = ob.get("goal_how", {}).get(row, "tick")
+    with st.container(border=True):
+        a, b = st.columns([6, 1], vertical_alignment="bottom")
+        a.text_input(f"Goal {n + 1}", value=goal["title"] if goal else "", key=f"ob_goal_{row}",
+                     placeholder=GOAL_PLACEHOLDERS[n % len(GOAL_PLACEHOLDERS)])
+        if n:
+            b.button("Remove", key=f"ob_goal_rm_{row}", icon=":material/close:", type="tertiary",
+                     on_click=_remove_goal_row, args=(row,), help="Remove this goal")
+        when, how = st.columns(2)
+        months = meta.get("months", 3)
+        when.segmented_control("By when", list(GOAL_WHEN), key=f"ob_goal_when_{row}", required=True,
+                               default=next((k for k, v in GOAL_WHEN.items() if v == months), "3 months"))
+        picked = how.segmented_control("How you'll track it", list(GOAL_HOW), key=f"ob_goal_how_{row}", required=True,
+                                       default=next(k for k, v in GOAL_HOW.items() if v == how_saved))
+        if GOAL_HOW.get(picked) == "hours":
+            st.number_input("Hours a week", 0.0, 80.0, meta.get("number") if how_saved == "hours" else None, 0.5,
+                            key=f"ob_goal_n_{row}", placeholder="e.g. 3")
+        elif GOAL_HOW.get(picked) == "number":
+            st.number_input("Number to reach", 0.0, 100000.0, meta.get("number") if how_saved == "number" else None,
+                            key=f"ob_goal_n_{row}", placeholder="e.g. 12")
+
+
+def _add_goal_row():
+    rows = _goal_rows()
+    if len(rows) < GOAL_MAX:
+        rows.append(max(rows) + 1)
+
+
+def _remove_goal_row(row):
+    rows = _goal_rows()
+    if row in rows and len(rows) > 1:
+        rows.remove(row)
+    forget_goal_row(row)
+    for k in ("ob_goal_", "ob_goal_when_", "ob_goal_how_", "ob_goal_n_"):
+        st.session_state.pop(f"{k}{row}", None)
 
 
 def _goals():
     st.header("Your goals", anchor=False)
-    st.markdown("What do you want to have done in 3 months, 6 months and a year? A few words is enough, "
-                "and a number if there is one.")
-    for i, (label, _) in enumerate(GOAL_SLOTS):
-        _goal_row(i, label)
+    st.markdown("What do you want to get done? A few words is enough. Pick when by, and how you'll know you're there.")
+    rows = _goal_rows()
+    for n, row in enumerate(rows):
+        _goal_row(n, row)
+    if len(rows) < GOAL_MAX:
+        st.button("Add another goal", key="ob_goal_add", icon=":material/add:", type="tertiary", on_click=_add_goal_row)
 
 
 def _save_goals():
-    save_goals([(st.session_state.get(f"ob_goal_{i}"), st.session_state.get(f"ob_goal_n_{i}"), months)
-                for i, (_, months) in enumerate(GOAL_SLOTS)])
+    ss = st.session_state
+    save_goals([(row, ss.get(f"ob_goal_{row}"), GOAL_HOW.get(ss.get(f"ob_goal_how_{row}"), "tick"),
+                 ss.get(f"ob_goal_n_{row}"), GOAL_WHEN.get(ss.get(f"ob_goal_when_{row}"), 3))
+                for row in _goal_rows()])
 
 
 def _my_goals():
@@ -739,7 +901,7 @@ def _make_own_category(required=False):
     if not required and not (st.session_state.get("ob_cat_name") or "").strip():
         return
     name = st.session_state.get("ob_cat_name")
-    add_category(name, st.session_state.get("ob_cat_colour") or "#4E79A7", default_group())
+    add_category(name, st.session_state.get("ob_cat_colour") or OWN_COLOUR, default_group())
     st.session_state["ob_cat_name"] = ""
     st.session_state["ob_cats"] = [*(st.session_state.get("ob_cats") or []), name.strip()]
 
@@ -776,7 +938,7 @@ def _week():
     ob = _ob()
     st.header("Your first week", anchor=False)
     st.caption("Press **Edit Home** at the top of Home to change what it shows.")
-    sittings = first_week()
+    sittings = week_sittings([g for _, g in _my_goals()])
     ob["sittings"] = sittings
     added = ob.get("added")
     if added is not None:
@@ -784,7 +946,7 @@ def _week():
                    "Nothing was added: that time is taken now.", icon=":material/check_circle:")
     if not sittings:
         if added is None:
-            kit.empty("Nothing to suggest yet. Hours goals, like a module's study time, get sittings here, in your free time.",
+            kit.empty("Nothing to suggest yet. Add a goal and it gets sittings here, in your free time.",
                       ":material/info:")
         return
     hours = sum(store.slot_of(s["end"]) - store.slot_of(s["start"]) for s in sittings) / 2
@@ -814,7 +976,7 @@ def _filled(key):
                 or any(k in ss and float(ss[k]) != v for k, v in ob.get("hours_start", {}).items())
                 or any(v not in (None, "Not linked") for k, v in ss.items() if k.startswith("ob_course_")))
     if key == "goals":
-        return any(_typed(f"ob_goal_{i}") for i in range(len(GOAL_SLOTS)))
+        return any(_typed(f"ob_goal_{row}") for row in _goal_rows())
     if key == "track":
         return (_typed("ob_own_name") or _typed("ob_cat_name") or bool(ob.get("own"))
                 or any(v for k, v in ss.items() if k.startswith("ob_sg_"))
