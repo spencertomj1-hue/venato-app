@@ -5,6 +5,7 @@ reads or writes them, so an older install's values stay as they were.
 """
 
 import sqlite3
+import uuid
 
 from .database import KEEP, _read, data_version, db, db_path
 from .dates import _as_date
@@ -122,3 +123,105 @@ def journal_entries(query=None, first=None, last=None, limit=None):
     sql += " ORDER BY date DESC" + (f" LIMIT {int(limit)}" if limit else "")
     with db() as conn:
         return [{"date": d, "text": t} for d, t in conn.execute(sql, params)]
+
+
+# ---------------------------------------------------------------------------
+# The journal book (Daily Log): its left page sets sleep and water one at a time, the journal's
+# "quoted" / ^marked^ to-dos are remembered so they're only made once, and day trackers are the
+# user's own numbers for each day.
+# ---------------------------------------------------------------------------
+
+ENTRY_FIELDS = {"sleep": (0, 24), "water": (0, 20)}     # water in litres, like save_entry
+
+
+def set_entry_field(day, field, value):
+    """Set one ENTRY_FIELDS value for a day (None clears it), keeping the rest of its entry."""
+    lo, hi = ENTRY_FIELDS[field]
+    value = None if value is None else max(lo, min(hi, float(value)))
+    with db() as conn:
+        save_entry(conn, _as_date(day).isoformat(), **{field: value})
+
+
+def journal_todo_new(day, period, title):
+    """Record that the journal made this to-do; False if it already had (so it isn't added again)."""
+    with db() as conn:
+        cur = conn.execute("INSERT OR IGNORE INTO journal_todos VALUES (?, ?, ?)",
+                           (_as_date(day).isoformat(), period, str(title).strip()))
+        return cur.rowcount == 1
+
+
+def day_trackers():
+    """The user's own day trackers (settings "day_trackers"): [{id, name, unit, step}]."""
+    return [dict(t) for t in load_settings().get("day_trackers", [])]
+
+
+def find_day_tracker(ref):
+    """A tracker by id or name (any case), or None."""
+    ref = str(ref or "").strip().lower()
+    return next((t for t in day_trackers() if t["id"] == ref or t["name"].lower() == ref), None)
+
+
+def add_day_tracker(name, unit="", step=1):
+    """Add a tracker; returns it. Raises ValueError for a missing or taken name, or a bad step."""
+    name, unit = str(name or "").strip(), str(unit or "").strip()
+    if not name:
+        raise ValueError("A tracker needs a name.")
+    if find_day_tracker(name):
+        raise ValueError(f"There's already a tracker called '{name}'.")
+    step = float(step or 1)
+    if step <= 0:
+        raise ValueError("The step must be more than 0.")
+    tracker = {"id": uuid.uuid4().hex[:10], "name": name, "unit": unit, "step": step}
+    save_settings(day_trackers=day_trackers() + [tracker])
+    return tracker
+
+
+def update_day_tracker(tracker_id, **changes):
+    """Change a tracker's name, unit and/or step."""
+    trackers = day_trackers()
+    for t in trackers:
+        if t["id"] == tracker_id:
+            if "name" in changes:
+                name = str(changes["name"] or "").strip()
+                if not name:
+                    raise ValueError("A tracker needs a name.")
+                if any(o["id"] != tracker_id and o["name"].lower() == name.lower() for o in trackers):
+                    raise ValueError(f"There's already a tracker called '{name}'.")
+                t["name"] = name
+            if "unit" in changes:
+                t["unit"] = str(changes["unit"] or "").strip()
+            if "step" in changes and float(changes["step"] or 0) > 0:
+                t["step"] = float(changes["step"])
+    save_settings(day_trackers=trackers)
+
+
+def delete_day_tracker(tracker_id):
+    """Remove a tracker and everything logged for it."""
+    save_settings(day_trackers=[t for t in day_trackers() if t["id"] != tracker_id])
+    with db() as conn:
+        conn.execute("DELETE FROM day_values WHERE tracker = ?", (tracker_id,))
+
+
+def set_day_value(day, tracker_id, value):
+    """Set a tracker's number for a day (0 or more); None clears it."""
+    day = _as_date(day).isoformat()
+    with db() as conn:
+        if value is None:
+            conn.execute("DELETE FROM day_values WHERE date = ? AND tracker = ?", (day, tracker_id))
+        else:
+            conn.execute("INSERT OR REPLACE INTO day_values VALUES (?, ?, ?)",
+                         (day, tracker_id, max(0.0, min(float(value), 100000.0))))
+
+
+def day_values(day):
+    """{tracker id: value} logged for a day."""
+    with db() as conn:
+        return dict(conn.execute("SELECT tracker, value FROM day_values WHERE date = ?",
+                                 (_as_date(day).isoformat(),)).fetchall())
+
+
+def day_values_between(first, last):
+    """[(date, tracker id, value)] between two dates (inclusive), oldest first."""
+    with db() as conn:
+        return conn.execute("SELECT date, tracker, value FROM day_values WHERE date BETWEEN ? AND ? ORDER BY date",
+                            (_as_date(first).isoformat(), _as_date(last).isoformat())).fetchall()
