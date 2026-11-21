@@ -5,6 +5,7 @@
 // where goals are the to-do rows of that section's period.
 // Edits show straight away and go to Python as ops:
 //   {opId, kind: "add", goal: {id, title, period, period_start}}
+//   {opId, kind: "details", id}  (Python opens the due day / category / length pop-up)
 //   {opId, kind: "toggle", id, done}         {opId, kind: "edit", id, title | notes}
 //   {opId, kind: "repeat", id, repeat}       {opId, kind: "move", id, period}
 //   {opId, kind: "delete", id}               {opId, kind: "reorder", ids}
@@ -286,10 +287,16 @@ class GoalLists {
     const notes = ed === "notes"
       ? `<input class="gl-input gl-notes-input" data-editor placeholder="Notes" aria-label="Notes">`
       : g.notes ? `<span class="gl-notes">${esc(g.notes)}</span>` : "";
+    // Due day, category and length (set in the "Due day, category, length" pop-up; Python words them)
+    const m = g.meta;
+    const meta = m && (m.due || m.group || m.length) ? `<span class="gl-meta">${[
+      m.due ? `<span class="gl-due${m.late ? " late" : ""}">${esc(m.due)}</span>` : "",
+      m.group ? `<span class="gl-chip" style="background:${esc(m.group.colour)}">${esc(m.group.name)}</span>` : "",
+      m.length ? `<span>${esc(m.length)}</span>` : ""].filter(Boolean).join('<span aria-hidden="true">·</span>')}</span>` : "";
     return `<li class="gl-row${g.done ? " done" : ""}${state ? ` ${state}` : ""}" data-id="${esc(g.id)}">
       <button class="gl-tick" data-tick role="checkbox" aria-checked="${g.done}"
         aria-label="${esc(g.title)}: ${g.done ? "mark as not done" : "mark as done"}">${ICONS.check}</button>
-      <div class="gl-text">${title}${notes}</div>
+      <div class="gl-text">${title}${notes}${meta}</div>
       ${g.repeat ? `<span class="gl-repeat" title="Repeats every ${UNITS[g.period]}" role="img" aria-label="Repeats every ${UNITS[g.period]}">${ICONS.repeat}</span>` : ""}
     </li>`;
   }
@@ -457,6 +464,7 @@ class GoalLists {
     menu.innerHTML = `
       <button data-act="title">${ICONS.edit}Edit title</button>
       <button data-act="notes">${ICONS.notes}${g.notes ? "Edit notes" : "Add notes"}</button>
+      <button data-act="details">${ICONS.notes}Due day, category, length…</button>
       <button data-act="repeat" class="${g.repeat ? "on" : ""}">${ICONS.repeat}Repeat every ${UNITS[g.period]}
         <span class="gl-menu-check">${g.repeat ? ICONS.check : ""}</span></button>
       <div class="gl-menu-sep"></div>
@@ -475,6 +483,7 @@ class GoalLists {
       this.closeMenu();
       const act = b.dataset.act;
       if (act === "title" || act === "notes") this.startEdit({ kind: act, id: g.id });
+      else if (act === "details") this.commit([{ opId: uid(), kind: "details", id: g.id }]);
       else if (act === "repeat") this.commit([{ opId: uid(), kind: "repeat", id: g.id, repeat: !g.repeat }]);
       else if (act === "move") this.commit([{ opId: uid(), kind: "move", id: g.id, period: b.dataset.to }]);
       else if (act === "delete") this.commit([{ opId: uid(), kind: "delete", id: g.id }]);

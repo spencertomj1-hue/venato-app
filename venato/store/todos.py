@@ -4,23 +4,30 @@ To-dos for a day, a week or a month.
 Each to-do belongs to one period, identified by its first day (period_start; the period maths
 is in dates.py). Repeating to-dos get a fresh unticked copy when a new period starts
 (roll_todos). "Today" is the date in the user's time zone (dates.local_today).
+
+A to-do can also have a due day, how long it takes (minutes) and one of the user's own to-do
+categories (todo_groups, separate from the timetable's). The To-dos page's "By due date" view lists
+open to-dos by them; a to-do given a due day goes in the list that day falls in (list_for_due).
 """
 
 import sqlite3
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
 from .database import _read, db
-from .dates import end_of_period, local_today, shift_period, stamp, start_of_period
+from .dates import _as_date, end_of_period, local_today, shift_period, stamp, start_of_period
 from .history import _clean, _is_ticked
 
 
 TODO_PERIODS = ("daily", "weekly", "monthly")
 
 
-TODO_COLS = 'id, title, notes, period, period_start, done, done_at, "repeat", ord, created_at'
+TODO_BASE = 'id, title, notes, period, period_start, done, done_at, "repeat", ord, created_at'   # an insert sets these
+TODO_COLS = TODO_BASE + ", due, minutes, group_id"
+TODO_MINUTES = 30                      # how long a to-do takes when the user didn't say
+TODO_GROUP_COLOURS = ("#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#F87171", "#2DD4BF", "#FB923C")
 
 
 def _todo(row):
@@ -53,25 +60,29 @@ def _next_ord(conn, period, start):
                         (period, start)).fetchone()[0]
 
 
-def _insert_todo(conn, title, period, start, notes=None, repeat=False, todo_id=None):
+def _insert_todo(conn, title, period, start, notes=None, repeat=False, todo_id=None, minutes=None, group_id=None):
     """Add a to-do at the end of its list. Idempotent for a given id (the to-do list replays ops)."""
     todo_id = todo_id or uuid.uuid4().hex
     conn.execute(
-        f"INSERT OR IGNORE INTO todos ({TODO_COLS}) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)",
+        f"INSERT OR IGNORE INTO todos ({TODO_BASE}) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)",
         (todo_id, title, notes, period, start, int(bool(repeat)), _next_ord(conn, period, start),
          stamp()),
     )
+    if minutes or group_id:
+        conn.execute("UPDATE todos SET minutes = ?, group_id = ? WHERE id = ?", (minutes, group_id, todo_id))
     return todo_id
 
 
-def add_todo(title, period, day, notes=None, repeat=False, todo_id=None):
-    """Add a to-do to the period containing `day`; returns it."""
+def add_todo(title, period, day, notes=None, repeat=False, todo_id=None, **details):
+    """Add a to-do to the period containing `day` (details: due, minutes, group_id); returns it."""
     title = str(title).strip()
     if not title:
         raise ValueError("A todo needs a title.")
     start = start_of_period(period, day).isoformat()
     with db() as conn:
         todo_id = _insert_todo(conn, title, period, start, notes or None, repeat, todo_id)
+    if details:
+        update_todo(todo_id, move=False, **details)
     return get_todo(todo_id)
 
 
@@ -84,9 +95,19 @@ def set_todo_done(todo_id, done):
         )
 
 
-def update_todo(todo_id, **changes):
-    """Change a to-do's title, notes and/or repeat flag."""
-    fields = {k: v for k, v in changes.items() if k in ("title", "notes", "repeat")}
+def update_todo(todo_id, move=True, **changes):
+    """
+    Change a to-do's title, notes, repeat flag, or details: due (a day, or None to clear it), minutes
+    and group_id (its to-do category). A new due day moves it to the list that day falls in, unless
+    move=False.
+    """
+    if "due" in changes:
+        changes["due"] = _as_date(changes["due"]).isoformat() if changes["due"] else None
+    if "minutes" in changes:
+        changes["minutes"] = int(changes["minutes"]) if changes["minutes"] else None
+    if "group_id" in changes:
+        changes["group_id"] = changes["group_id"] or None
+    fields = {k: v for k, v in changes.items() if k in ("title", "notes", "repeat", "due", "minutes", "group_id")}
     if "title" in fields:
         fields["title"] = str(fields["title"]).strip()
         if not fields["title"]:
@@ -100,6 +121,110 @@ def update_todo(todo_id, **changes):
     sets = ", ".join(f'"{k}" = ?' for k in fields)
     with db() as conn:
         conn.execute(f"UPDATE todos SET {sets} WHERE id = ?", (*fields.values(), todo_id))
+        if move and fields.get("due"):
+            period, start = list_for_due(fields["due"])
+            row = conn.execute("SELECT period, period_start FROM todos WHERE id = ?", (todo_id,)).fetchone()
+            if row and tuple(row) != (period, start):
+                conn.execute("UPDATE todos SET period = ?, period_start = ?, ord = ? WHERE id = ?",
+                             (period, start, _next_ord(conn, period, start), todo_id))
+
+
+# --- Due days, how long, and the user's own to-do categories ---
+
+def list_for_due(due, today=None):
+    """
+    (period, period_start) of the list a to-do due on `due` goes in: today's if it's due today or
+    earlier, this week's if it's due later this week, else the month's list of the month it's due in.
+    """
+    today = today or local_today()
+    due = _as_date(due)
+    if due <= today:
+        return "daily", start_of_period("daily", today).isoformat()
+    week = start_of_period("weekly", today)
+    if due <= end_of_period("weekly", week):
+        return "weekly", week.isoformat()
+    return "monthly", start_of_period("monthly", due).isoformat()
+
+
+def todo_due(todo):
+    """The day a to-do should be done by: its own due day, else the last day of its list's period."""
+    if todo.get("due"):
+        return date.fromisoformat(todo["due"])
+    return end_of_period(todo["period"], date.fromisoformat(todo["period_start"]))
+
+
+def add_detailed_todo(title, due=None, group_id=None, minutes=None, notes=None):
+    """A to-do from the To-dos page's pop-up: it goes in the list its due day falls in (today's if none)."""
+    period, start = list_for_due(due or local_today())
+    return add_todo(title, period, start, notes=notes, due=due, group_id=group_id, minutes=minutes)
+
+
+def open_todos(today=None):
+    """
+    Every unticked to-do in today's, this week's and this month's lists, plus any with a due day in
+    a later list, most urgent first (by due day, then list order).
+    """
+    today = today or local_today()
+    starts = [(p, start_of_period(p, today).isoformat()) for p in TODO_PERIODS]
+    where = " OR ".join("(period = ? AND period_start = ?)" for _ in starts)
+    with db() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT {TODO_COLS} FROM todos WHERE done = 0 AND ({where} OR (due IS NOT NULL AND period_start > ?))",
+            (*[x for pair in starts for x in pair], today.isoformat()),
+        ).fetchall()
+    order = {p: i for i, p in enumerate(TODO_PERIODS)}
+    return sorted((_todo(r) for r in rows), key=lambda t: (todo_due(t), order[t["period"]], t["ord"]))
+
+
+def done_todos(today=None):
+    """To-dos ticked in the last 7 days, most recently ticked first."""
+    since = ((today or local_today()) - timedelta(days=6)).isoformat()
+    with db() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(f"SELECT {TODO_COLS} FROM todos WHERE done = 1 AND substr(done_at, 1, 10) >= ? "
+                            "ORDER BY done_at DESC", (since,)).fetchall()
+    return [_todo(r) for r in rows]
+
+
+def todo_groups():
+    """The user's to-do categories in order: [{id, name, colour}]."""
+    with db() as conn:
+        rows = conn.execute("SELECT id, name, colour FROM todo_groups ORDER BY ord, name").fetchall()
+    return [{"id": r[0], "name": r[1], "colour": r[2]} for r in rows]
+
+
+def add_todo_group(name, colour=None):
+    """Add a to-do category (or return the one already called that); returns it."""
+    name = str(name).strip()
+    if not name:
+        raise ValueError("A category needs a name.")
+    with db() as conn:
+        row = conn.execute("SELECT id FROM todo_groups WHERE name = ?", (name,)).fetchone()
+        if row:
+            group_id = row[0]
+        else:
+            count = conn.execute("SELECT COUNT(*) FROM todo_groups").fetchone()[0]
+            group_id = uuid.uuid4().hex[:8]
+            conn.execute("INSERT INTO todo_groups VALUES (?, ?, ?, ?)",
+                         (group_id, name, colour or TODO_GROUP_COLOURS[count % len(TODO_GROUP_COLOURS)], count))
+    return next(g for g in todo_groups() if g["id"] == group_id)
+
+
+def update_todo_group(group_id, name=None, colour=None):
+    """Rename a to-do category and/or change its colour."""
+    with db() as conn:
+        if name is not None and str(name).strip():
+            conn.execute("UPDATE todo_groups SET name = ? WHERE id = ?", (str(name).strip(), group_id))
+        if colour:
+            conn.execute("UPDATE todo_groups SET colour = ? WHERE id = ?", (colour, group_id))
+
+
+def delete_todo_group(group_id):
+    """Delete a to-do category; its to-dos stay, with no category."""
+    with db() as conn:
+        conn.execute("UPDATE todos SET group_id = NULL WHERE group_id = ?", (group_id,))
+        conn.execute("DELETE FROM todo_groups WHERE id = ?", (group_id,))
 
 
 def move_target(todo, period, today=None):
@@ -158,16 +283,16 @@ def roll_todos(today=None):
             if done and done[0] >= start:
                 continue
             latest = {}
-            for title, notes, repeat in conn.execute(
-                'SELECT title, notes, "repeat" FROM todos WHERE period = ? AND period_start < ? '
+            for title, notes, repeat, minutes, group_id in conn.execute(
+                'SELECT title, notes, "repeat", minutes, group_id FROM todos WHERE period = ? AND period_start < ? '
                 "ORDER BY period_start DESC, ord",
                 (period, start),
             ):
-                latest.setdefault(title.lower(), (title, notes, repeat))
+                latest.setdefault(title.lower(), (title, notes, repeat, minutes, group_id))
             existing = _titles(conn, period, start)
-            for key, (title, notes, repeat) in latest.items():
+            for key, (title, notes, repeat, minutes, group_id) in latest.items():
                 if repeat and key not in existing:
-                    _insert_todo(conn, title, period, start, notes, True)
+                    _insert_todo(conn, title, period, start, notes, True, minutes=minutes, group_id=group_id)
                     made += 1
             conn.execute("INSERT OR REPLACE INTO todo_rollover VALUES (?, ?)", (period, start))
     return made
@@ -181,12 +306,13 @@ def carry_over(period, start):
     with db() as conn:
         existing = _titles(conn, period, nxt)
         rows = conn.execute(
-            'SELECT title, notes, "repeat" FROM todos WHERE period = ? AND period_start = ? AND done = 0 ORDER BY ord',
+            'SELECT title, notes, "repeat", minutes, group_id FROM todos '
+            "WHERE period = ? AND period_start = ? AND done = 0 ORDER BY ord",
             (period, start),
         ).fetchall()
-        for title, notes, repeat in rows:
+        for title, notes, repeat, minutes, group_id in rows:
             if title.lower() not in existing:
-                _insert_todo(conn, title, period, nxt, notes, repeat)
+                _insert_todo(conn, title, period, nxt, notes, repeat, minutes=minutes, group_id=group_id)
                 existing.add(title.lower())
                 copied += 1
     return copied
@@ -223,13 +349,16 @@ def save_todos(df, replace=False):
             start = start_of_period(period, pd.to_datetime(day).date() if day else local_today()).isoformat()
             done = _is_ticked(row.get("done"))
             ord_ = _clean(row.get("ord"), int)
+            due = _clean(row.get("due"), str)
             conn.execute(
-                f"INSERT OR REPLACE INTO todos ({TODO_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT OR REPLACE INTO todos ({TODO_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (_clean(row.get("id"), str) or uuid.uuid4().hex, title.strip(), _clean(row.get("notes"), str),
                  period, start, int(done), _clean(row.get("done_at"), str) if done else None,
                  int(_is_ticked(row.get("repeat"))),
                  _next_ord(conn, period, start) if ord_ is None else ord_,
-                 _clean(row.get("created_at"), str) or stamp()),
+                 _clean(row.get("created_at"), str) or stamp(),
+                 pd.to_datetime(due).date().isoformat() if due else None, _clean(row.get("minutes"), int),
+                 _clean(row.get("group_id"), str)),
             )
             count += 1
     return count

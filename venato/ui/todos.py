@@ -6,13 +6,19 @@ card with a Daily / Weekly / Monthly switch (one list at a time). This is the Py
 The component draws Apple Reminders-style lists and applies edits straight
 away; the ops it sends are saved here with the store and acknowledged in
 `acked`, the same pattern as the timetable grid.
+
+Each to-do can also have a due day, how long it takes and one of the user's own to-do categories
+(store.todo_groups). Rows show them; the row menu's "Due day, category, length…" and the page's
+"Add to-do" open pop-ups for them, and the page's "By due date" view lists every open to-do by
+when it's due, filtered by category.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import streamlit as st
 
-from venato import store
+from venato import regional, store
 from venato.ui import kit
 
 HERE = Path(__file__).parent
@@ -57,6 +63,8 @@ def apply_op(op):
         store.delete_todo(op["id"])
     elif kind == "reorder":
         store.reorder_todos(op["ids"])
+    elif kind == "details":
+        st.session_state["todo_details"] = op["id"]     # the next full run opens its pop-up
 
 
 def _changed(op):
@@ -74,6 +82,8 @@ def _on_ops(key="home_todos"):
         apply_op(op)
     # Keep the list short; a list only ever has a few ops in flight.
     st.session_state["todo_acked"] = (acked + [op["opId"] for op in new_ops])[-500:]
+    if any(op["kind"] == "details" for op in new_ops):
+        st.rerun(scope="app")                            # a pop-up opens from the full app run
     kit.rerun_app_if(set().union(*(_changed(op) for op in new_ops)))
 
 
@@ -83,12 +93,14 @@ def render_home():
     (the tile header names it; the component draws the switch and starts on the first list with open to-dos)."""
     store.roll_todos()
     today = store.local_today()
+    _details_from_menu()
+    groups = _groups()
     sections = []
     for period in store.TODO_PERIODS:
         start = store.start_of_period(period, today)
         sections.append({"period": period, "start": start.isoformat(),
                          "title": store.period_title(period, start, today),
-                         "goals": store.todos_for(period, start), "limit": HOME_LIMIT})
+                         "goals": _with_meta(store.todos_for(period, start), today, groups), "limit": HOME_LIMIT})
     with st.container(border=True, key="home_todos_card"):
         data = {"today": today.isoformat(), "sections": sections, "tile": True,
                 "acked": st.session_state.get("todo_acked", [])}
@@ -99,13 +111,13 @@ def render_home():
 # The To-dos page (Home's To-dos tile opens it): one list at a time, Today / This week / This month
 # ---------------------------------------------------------------------------
 
-TABS = {"Today": "daily", "This week": "weekly", "This month": "monthly"}
+TABS = {"Today": "daily", "This week": "weekly", "This month": "monthly", "By due date": "due"}
 
 
 def _section(period, today, limit=None):
     start = store.start_of_period(period, today)
     return {"period": period, "start": start.isoformat(), "title": store.period_title(period, start, today),
-            "goals": store.todos_for(period, start), "limit": limit}
+            "goals": _with_meta(store.todos_for(period, start), today, _groups()), "limit": limit}
 
 
 @st.fragment
@@ -120,6 +132,7 @@ def _page_list(period):
 def render_page():
     store.roll_todos()
     today = store.local_today()
+    _details_from_menu()
     from venato import tile_status
     head = st.container(horizontal=True, vertical_alignment="center", key="todos_head")
     with head:
@@ -132,9 +145,18 @@ def render_page():
         tab = st.segmented_control("Which list", list(TABS), default="Today", key="todos_tab",
                                    label_visibility="collapsed", width="content")
     period = TABS.get(tab or "Today", "daily")
+    groups = _groups()
+    with st.container(horizontal=True, key="todos_tools"):
+        if st.button("Add to-do", type="primary", icon=":material/add:", key="td_new"):
+            add_dialog(st.session_state.get("td_filter") if period == "due" else None,
+                       None if period == "due" else period)
+        _manage_groups(groups)
     main, side = st.columns([2, 1], gap="medium")
     with main:
-        _page_list(period)
+        if period == "due":
+            _due_view(today, groups)
+        else:
+            _page_list(period)
     with side:
         from venato import blocks
         if blocks.is_on("goals"):
@@ -149,3 +171,207 @@ def render_page():
                     st.caption("Nothing else on this week's list.")
                 for t in week[:8]:
                     st.markdown(kit.md(t["title"]))
+
+
+# ---------------------------------------------------------------------------
+# Due days, how long, and the user's own to-do categories
+# ---------------------------------------------------------------------------
+
+LENGTHS = {"15 min": 15, "30 min": 30, "45 min": 45, "1 hour": 60, "1½ hours": 90, "2 hours": 120,
+           "3 hours": 180, "4 hours": 240}
+NO_LENGTH = "Not set"
+NONE = "No category"
+NEW = "+ New category…"
+WHEN = ("Overdue", "Today", "Tomorrow", "This week", "Later")
+
+
+def _groups():
+    return {g["id"]: g for g in store.todo_groups()}
+
+
+def _length_name(minutes):
+    return next((k for k, v in LENGTHS.items() if v == minutes), f"{minutes} min") if minutes else None
+
+
+def _due_name(due, today):
+    days = (due - today).days
+    if days < -1:
+        return f"Overdue ({due.day} {due:%b})"
+    if days == -1:
+        return "Overdue (yesterday)"
+    if days == 0:
+        return "Today"
+    if days == 1:
+        return "Tomorrow"
+    return f"{due:%a}" if days < 7 else f"{due:%a} {due.day} {due:%b}"
+
+
+def _with_meta(todos, today, groups):
+    """The to-dos with `meta` for the list's rows: due day (in words), category and length, when set."""
+    for t in todos:
+        due = store._as_date(t["due"]) if t.get("due") else None
+        g = groups.get(t.get("group_id"))
+        t["meta"] = {"due": _due_name(due, today) if due else None,
+                     "late": bool(due and due < today and not t["done"]),
+                     "group": {"name": g["name"], "colour": g["colour"]} if g else None,
+                     "length": _length_name(t.get("minutes"))}
+    return todos
+
+
+def _when(due, today):
+    days = (due - today).days
+    if days < 0:
+        return "Overdue"
+    if days <= 1:
+        return ("Today", "Tomorrow")[days]
+    return "This week" if due <= today + timedelta(days=6 - today.weekday()) else "Later"
+
+
+def _group_picker(label, groups, current, key):
+    """A category select with '+ New category…' at the end; returns (group_id or None, new name or None)."""
+    options = [NONE, *groups, NEW]
+    choice = st.selectbox(label, options, key=key, index=options.index(current) if current in groups else 0,
+                          format_func=lambda o: groups[o]["name"] if o in groups else o)
+    if choice == NEW:
+        return None, st.text_input("New category name", key=f"{key}_new", placeholder="e.g. At home repairs")
+    return (choice if choice in groups else None), None
+
+
+def _resolve_group(group_id, new_name):
+    if new_name and new_name.strip():
+        return store.add_todo_group(new_name)["id"]
+    return group_id
+
+
+def _length_picker(key, minutes=None):
+    options = [NO_LENGTH, *LENGTHS]
+    name = _length_name(minutes)
+    choice = st.selectbox("How long will it take?", options, key=key,
+                          index=options.index(name) if name in LENGTHS else 0)
+    return LENGTHS.get(choice)
+
+
+@st.dialog("New to-do")
+def add_dialog(group_id=None, period=None):
+    """'Add to-do': a title, a due day (it goes in the list that day falls in), a category and a length.
+    With no due day it goes in the list on screen (today's, from By due date)."""
+    groups = _groups()
+    title = st.text_input("What needs doing?", key="tdn_title")
+    a, b = st.columns(2)
+    due = a.date_input("Done by", None, key="tdn_due", format=regional.input_format(),
+                       help="Leave it empty for no due day.")
+    with b:
+        minutes = _length_picker("tdn_len")
+    picked, new_name = _group_picker("Category", groups, group_id, "tdn_group")
+    if st.button("Add to-do", type="primary", icon=":material/add:", key="tdn_add"):
+        if not title.strip():
+            st.error("Give the to-do a name.")
+            return
+        group = _resolve_group(picked, new_name)
+        if due or not period:
+            store.add_detailed_todo(title, due=due, group_id=group, minutes=minutes)
+        else:
+            store.add_todo(title, period, store.local_today(), group_id=group, minutes=minutes)
+        st.rerun()
+
+
+@st.dialog("Due day, category, length")
+def details_dialog(todo_id):
+    """The row menu's pop-up: change a to-do's due day, category and length (a new due day moves it to
+    the list that day falls in)."""
+    t = store.get_todo(todo_id)
+    if not t:
+        st.caption("That to-do has gone.")
+        return
+    groups = _groups()
+    st.markdown(f"**{kit.md(t['title'])}**")
+    k = f"tdd_{t['id']}"
+    due = st.date_input("Done by", store._as_date(t["due"]) if t["due"] else None, key=f"{k}_d",
+                        format=regional.input_format(), help="Leave it empty for no due day.")
+    picked, new_name = _group_picker("Category", groups, t["group_id"], f"{k}_g")
+    minutes = _length_picker(f"{k}_l", t["minutes"])
+    if st.button("Save", key=f"{k}_s", type="primary", icon=":material/check:"):
+        store.update_todo(t["id"], due=due, group_id=_resolve_group(picked, new_name), minutes=minutes)
+        st.rerun()
+
+
+def _details_from_menu():
+    todo_id = st.session_state.pop("todo_details", None)
+    if todo_id:
+        details_dialog(todo_id)
+
+
+def _manage_groups(groups):
+    with st.popover("Categories", icon=":material/label:"):
+        st.caption("Your own to-do categories (separate from the timetable's). Deleting one keeps its to-dos, "
+                   "with no category.")
+        for g in groups.values():
+            name, colour, delete = st.columns([5, 1, 1], vertical_alignment="bottom")
+            new = name.text_input("Name", g["name"], key=f"tdg_n_{g['id']}", label_visibility="collapsed")
+            col = colour.color_picker("Colour", g["colour"], key=f"tdg_c_{g['id']}", label_visibility="collapsed")
+            if new.strip() != g["name"] or col != g["colour"]:
+                store.update_todo_group(g["id"], new, col)
+                st.rerun()
+            if delete.button("", key=f"tdg_x_{g['id']}", icon=":material/delete:", help=f"Delete {g['name']}"):
+                store.delete_todo_group(g["id"])
+                st.rerun()
+        with st.form("tdg_add", clear_on_submit=True, border=False):
+            name = st.text_input("New category", placeholder="e.g. At home repairs")
+            if st.form_submit_button("Add category", icon=":material/add:") and name.strip():
+                store.add_todo_group(name)
+                st.rerun()
+
+
+def _tick(todo_id, key):
+    store.set_todo_done(todo_id, st.session_state[key])
+
+
+def _meta_line(t, today, groups):
+    m = _with_meta([dict(t)], today, groups)[0]["meta"]
+    bits = [f":red[{m['due']}]" if m["late"] else m["due"] or "No due day"]
+    if m["group"]:
+        bits.append(f"**{kit.md(m['group']['name'])}**")
+    if m["length"]:
+        bits.append(m["length"])
+    return " · ".join(bits)
+
+
+def _row(t, today, groups, prefix, editable=True):
+    key = f"{prefix}_{t['id']}"
+    st.session_state[key] = t["done"]
+    tick, more = st.columns([14, 1], vertical_alignment="top")
+    tick.checkbox(t["title"], key=key, on_change=_tick, args=(t["id"], key), help=t["notes"])
+    tick.caption(_meta_line(t, today, groups))
+    if editable and more.button("", key=f"{key}_edit", icon=":material/more_horiz:",
+                                help="Due day, category, length"):
+        details_dialog(t["id"])
+
+
+def _due_view(today, groups):
+    """Every open to-do from today's, this week's and this month's lists (and later ones with a due day),
+    most urgent first, in Overdue / Today / Tomorrow / This week / Later, with a category filter."""
+    chosen = None
+    if groups:
+        names = {g["id"]: g["name"] for g in groups.values()}
+        pick = st.pills("Category", ["all", *names], default="all", key="td_filter", label_visibility="collapsed",
+                        format_func=lambda i: "All" if i == "all" else names[i])
+        chosen = None if pick in (None, "all") else pick
+    todos = [t for t in store.open_todos(today) if chosen is None or t["group_id"] == chosen]
+    with st.container(border=True, key="todos_due_card"):
+        if not todos:
+            st.caption("Nothing to do here.")
+        sections = {}
+        for t in todos:
+            sections.setdefault(_when(store.todo_due(t), today), []).append(t)
+        for name in WHEN:
+            if name in sections:
+                rows = sections[name]
+                minutes = sum(t["minutes"] or store.TODO_MINUTES for t in rows)
+                st.markdown(f"**{name}** :gray[· {len(rows)} · about {minutes / 60:g} h]")
+                for t in rows:
+                    _row(t, today, groups, "td")
+        done = [t for t in store.done_todos(today) if chosen is None or t["group_id"] == chosen]
+        if done:
+            with st.expander(f"Done in the last week ({len(done)})"):
+                for t in done:
+                    _row(t, today, groups, "tdd", editable=False)

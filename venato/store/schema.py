@@ -157,6 +157,13 @@ def init_db():
         _add_column(conn, "goals", "category_id", "TEXT REFERENCES tt_categories(id) ON DELETE SET NULL")
         _add_column(conn, "goals", "label", "TEXT")
         _add_column(conn, "weekly_reviews", "kept", "TEXT")       # did they do last week's "to change"? yes/partly/no
+        # To-dos: a due day, how long it takes and one of the user's own to-do categories (todo_groups).
+        _add_column(conn, "todos", "due", "TEXT")
+        _add_column(conn, "todos", "minutes", "INTEGER")
+        _add_column(conn, "todos", "group_id", "TEXT")
+        conn.execute("""CREATE TABLE IF NOT EXISTS todo_groups (
+                            id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                            colour TEXT NOT NULL, ord INTEGER NOT NULL DEFAULT 0)""")
         _goals_get_deadlines(conn)
         conn.executescript(
             """
