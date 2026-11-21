@@ -162,6 +162,13 @@ def move(cells, a, b):
     return out
 
 
+def reorder(cells, order):
+    """The tiles in this order (a drag ends with the order the grid showed). Keys not on Home are ignored;
+    tiles the order leaves out keep their place after the rest. Sizes go with their tiles."""
+    rank = {k: i for i, k in enumerate(k for k in order if isinstance(k, str))}
+    return [deepcopy(c) for c in sorted(cells, key=lambda c: rank.get(c["w"], len(rank)))]
+
+
 def step(cells, key, delta):
     """One place back (-1) or forward (+1)."""
     out = deepcopy(cells)

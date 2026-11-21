@@ -12,10 +12,10 @@ Needs you has no page: a tap on it opens everything in a dialog. Narrower window
 Above the grid: the date, the search / Ask bar, Edit Home, and the Settings gear (always there, so you can't
 remove your way out of the app).
 
-Edit Home: the tiles wobble; − takes a tile off Home (its data stays), tapping or dragging a tile picks it up
-and tapping (or dropping on) another moves it there, the picked-up tile gets a Small / Wide / Large / Tall / Column
-picker and a "Drop here" slot, and the "Add a tile" panel lists what's hidden. Every change is saved straight
-away, with Undo; Reset goes back to the start. Moves glide (components/home_flip.js), not with reduced motion.
+Edit Home: the tiles wobble; drag one and the others make room as you go, so it lands wherever you let go
+(components/home_flip.js). − takes a tile off Home (its data stays), the size button steps through the sizes
+it comes in, and the "Add a tile" panel lists what's hidden. Every change is saved straight away (no Undo bar;
+Cmd/Ctrl+Z still undoes the last one); Reset goes back to the start. Moves glide, not with reduced motion.
 """
 
 from html import escape
@@ -98,7 +98,7 @@ def _name(key, cat=None):
 
 
 # ---------------------------------------------------------------------------
-# Editing (button callbacks: each saves straight to settings.json, with Undo)
+# Editing (callbacks: each saves straight to settings.json; quiet, so no Undo bar, but Cmd/Ctrl+Z works)
 # ---------------------------------------------------------------------------
 
 def _save(label, change):
@@ -107,51 +107,32 @@ def _save(label, change):
     cells = hl.normalise(raw, _defaults(cat), _supported(cat))
     new = change(cells)
     if new != cells:
-        undo.checkpoint_settings(label, home=hl.keep_unavailable(raw, new, _defaults(cat)))
+        undo.checkpoint_settings(label, quiet=True, home=hl.keep_unavailable(raw, new, _defaults(cat)))
 
 
 def _edit(on):
     st.session_state["home_arranging"] = on
-    st.session_state["home_picked"] = None
-
-
-def _pick(key):
-    """Tap a tile: pick it up; tap it again: put it back; tap another: drop it there."""
-    picked = st.session_state.get("home_picked")
-    st.session_state["home_picked"] = None
-    if picked is None:
-        st.session_state["home_picked"] = key
-    elif picked != key:
-        _save(f"Moved {_name(picked)}", lambda c: hl.move(c, picked, key))
-
-
-def _drop_end():
-    picked = st.session_state.get("home_picked")
-    st.session_state["home_picked"] = None
-    if picked:
-        _save(f"Moved {_name(picked)}", lambda c: hl.move(c, picked, None))
 
 
 def _on_drag():
-    """A tile dragged onto another (home_flip.js): move it there."""
-    value = (st.session_state.get("home_flip") or {}).get("drop") or {}
-    a, b = value.get("from"), value.get("to")
-    st.session_state["home_picked"] = None
-    if a and b and a != b:
-        _save(f"Moved {_name(a)}", lambda c: hl.move(c, a, b))
+    """A tile dragged to a new place (home_flip.js sends the order the grid showed when it was let go)."""
+    order = (st.session_state.get("home_flip") or {}).get("drop") or {}
+    order = order.get("order") if isinstance(order, dict) else None
+    if isinstance(order, list):
+        _save("Moved a tile", lambda c: hl.reorder(c, order))
 
 
-def _resize(key, size):
-    _save(f"Made {_name(key)} {hl.SIZE_NAMES.get(size, size).lower()}", lambda c: hl.resize(c, key, size))
-
-
-def _step(key, delta):
-    _save(f"Moved {_name(key)}", lambda c: hl.step(c, key, delta))
+def _cycle(key):
+    """The size button: the next size this tile comes in."""
+    cat = catalog()
+    sizes = [s for s in hl.ORDER if s in (cat[key].sizes if key in cat else hl.ORDER)]
+    now = next((c["size"] for c in _cells(cat) if c["w"] == key), None)
+    if len(sizes) > 1 and now:
+        nxt = sizes[(sizes.index(now) + 1) % len(sizes)] if now in sizes else sizes[0]
+        _save(f"Made {_name(key, cat)} {hl.SIZE_NAMES[nxt].lower()}", lambda c: hl.resize(c, key, nxt))
 
 
 def _hide(key):
-    if st.session_state.get("home_picked") == key:
-        st.session_state["home_picked"] = None
     _save(f"Removed {_name(key)} from Home", lambda c: hl.hide(c, key))
 
 
@@ -162,8 +143,7 @@ def _add(key):
 
 def _reset():
     if store.load_settings().get("home") != hl.default():
-        undo.checkpoint_settings("Reset Home", home=hl.reset())
-    st.session_state["home_picked"] = None
+        undo.checkpoint_settings("Reset Home", quiet=True, home=hl.reset())
 
 
 # ---------------------------------------------------------------------------
@@ -177,10 +157,7 @@ MIN_ROW = 108          # px: rows never get shorter than this (a very short wind
                        # a 4-row Home (a student's, with Modules) at 1280x720
 
 
-DROP_ROW = 110         # px: a row Edit Home's "Drop here" slot adds under the fitted rows (the page scrolls a little)
-
-
-def _css(t, cells, cat, editing, picked, room=PAGE_ROOM):
+def _css(t, cells, cat, editing, room=PAGE_ROOM):
     rows = max(1, hl.rows(cells))
     out = [f"""
     .st-key-home_head h1 {{ font-size: 2.1rem; margin: 0; padding: 0; line-height: 1.2; }}
@@ -199,12 +176,12 @@ def _css(t, cells, cat, editing, picked, room=PAGE_ROOM):
         .stMain .st-key-home_grid {{
             --home-row: calc((max({rows * MIN_ROW + (rows - 1) * GAP}px, var(--home-grid-h, calc(100dvh - 140px - {room}px)))
                 - {(rows - 1) * GAP}px) / {rows});
-            grid-template-rows: repeat({rows}, var(--home-row)); grid-auto-rows: {DROP_ROW}px; flex: none; }}
+            grid-template-rows: repeat({rows}, var(--home-row)); flex: none; }}
         .st-key-home_grid [class*="st-key-hw_"] {{ overflow: hidden; }}
         .st-key-home_grid [class*="st-key-hw_"] > [data-testid="stLayoutWrapper"]:has(> [class*="st-key-hwc_"]) {{
             flex: 1 1 0; min-height: 0; overflow: hidden; }} }}
     .st-key-home_grid > div {{ height: 100%; min-width: 0; min-height: 0; }}
-    .st-key-home_grid [class*="st-key-hw_"], .st-key-home_drop {{ height: 100%; box-sizing: border-box;
+    .st-key-home_grid [class*="st-key-hw_"] {{ height: 100%; box-sizing: border-box;
         background: {t['card']}; border: 1px solid {t['border']}; border-radius: 20px; padding: 4px 16px 12px;
         position: relative; gap: 0.35rem; min-width: 0; flex-wrap: nowrap; }}
     .st-key-home_grid [class*="st-key-hw_"]:has([class*="st-key-go_tile_"], [class*="st-key-open_tile_"]) {{ cursor: pointer; }}
@@ -270,31 +247,22 @@ def _css(t, cells, cat, editing, picked, room=PAGE_ROOM):
         [class*="st-key-hwc_"] {{ animation: venato-wobble 0.45s ease-in-out infinite; transform-origin: 50% 50%; }}
         .st-key-home_grid > div:nth-child(even) [class*="st-key-hwc_"] {{ animation-delay: -0.22s; }}
         @media (prefers-reduced-motion: reduce) {{ [class*="st-key-hwc_"] {{ animation: none; }} }}
-        .st-key-home_grid [class*="st-key-hw_"] {{ border: 1.5px dashed {t['muted']}; cursor: grab; }}
+        .st-key-home_grid [class*="st-key-hw_"] {{ border: 1.5px dashed {t['muted']}; cursor: grab;
+            touch-action: none; user-select: none; -webkit-user-select: none; }}
         .st-key-home_grid [class*="st-key-hw_"][class] {{ overflow: visible; }}
         .st-key-home_grid [class*="st-key-hwc_"] {{ pointer-events: none; }}
         [class*="st-key-hwx_"] {{ position: absolute !important; top: -14px; left: -14px; z-index: 4; width: auto !important; }}
         .stApp [class*="st-key-hwx_"] button {{ width: 44px; height: 44px; border-radius: 22px; padding: 0;
             background: #5F6170 !important; border: 2px solid {t['card']} !important; }}
         [class*="st-key-hwx_"] button * {{ color: #fff !important; }}
-        [class*="st-key-hwbar_"] button {{ min-height: 44px; min-width: 44px; }}
+        [class*="st-key-hwbar_"] button {{ min-height: 44px; min-width: 44px; padding: 0; }}
         [class*="st-key-hwbar_"] {{ padding-left: 22px; }}           /* clear of the − in the corner */
-        [class*="st-key-hwsz_"] button {{ min-height: 44px; padding: 0 12px; }}
-        .st-key-home_drop {{ border: 2px dashed {t['accent']}; background: {t['slot']}; display: flex;
-            align-items: center; justify-content: center; }}
-        .st-key-home_drop button {{ min-height: 44px; }}
-        .st-key-home_drop button p {{ color: {t['accent']} !important; }}
-        .vn-dragging {{ opacity: 0.85; z-index: 20; box-shadow: 0 18px 40px rgba(0,0,0,0.25); }}
-        .vn-drop-target {{ outline: 3px solid {t['accent']} !important; }}
+        /* the tile in your hand: lifted, over the rest, following the pointer (no wobble, no glide) */
+        .st-key-home_grid .vn-dragging {{ z-index: 30; cursor: grabbing; animation: none;
+            box-shadow: 0 22px 48px rgba(0, 0, 0, 0.22); border-style: solid; border-color: {t['accent']}; }}
+        .st-key-home_grid .vn-dragging [class*="st-key-hwc_"] {{ animation: none; }}
+        html.vn-drag-on, html.vn-drag-on * {{ cursor: grabbing !important; }}
         """)
-        if picked:
-            w, h = hl.span(next((c["size"] for c in cells if c["w"] == picked), "wide"))
-            out.append(f"""
-            .st-key-home_grid .st-key-hw_{picked} {{ outline: 3px solid {t['accent']}; outline-offset: 4px;
-                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16); translate: 0 -6px; }}
-            .st-key-hwc_{picked} {{ animation: none; }}
-            .st-key-home_grid > div:has(> .st-key-home_drop) {{ grid-column: span {w}; grid-row: span {h}; }}
-            @media (prefers-reduced-motion: reduce) {{ .st-key-home_grid .st-key-hw_{picked} {{ translate: none; }} }}""")
     return "".join(out)
 
 
@@ -323,7 +291,7 @@ def _header(editing, cells, labels):
         with st.container(gap=None, width="stretch"):
             if editing:
                 st.title("Edit Home", anchor=False)
-                st.caption("Tap or drag a tile to move it · pick a size · − to remove. Saved for you automatically.")
+                st.caption("Drag a tile to move it · ⤢ changes its size · − removes it. Saved as you go.")
             else:
                 st.title(regional.long_date(store.local_today()), anchor=False)
         if not editing:
@@ -358,43 +326,25 @@ def _tile_head(w, labels):
             st.caption(escape(status), width="content")
 
 
-def _edit_bar(w, cell, cells, picked, labels):
-    """In Edit Home: − to remove, the pick-up / drop button, and on the picked-up tile its sizes and ← / →."""
+def _edit_bar(w, cell, labels):
+    """In Edit Home: − to remove, the title, and a size button (steps through the sizes the tile comes in)."""
     k, name = w.key, w.name
     st.button("", key=f"hwx_{k}", icon=":material/remove:", on_click=_hide, args=(k,), help=f"Remove {name}")
     labels[f"hwx_{k}"] = f"Remove {name} from Home"
     with st.container(key=f"hwbar_{k}", horizontal=True, vertical_alignment="center", gap="small"):
         with st.container(key=f"hwt_{k}", width="stretch"):              # the title, on the same line
             st.markdown(f'{_icon_html(w)}**{escape(name)}**', unsafe_allow_html=True)
-        # icon only (the title needs the room), but the picked-up tile's "Put back"
-        if picked is None:
-            text, icon, say = "", ":material/open_with:", f"Pick up {name} to move it"
-        elif picked == k:
-            text, icon, say = "Put back", ":material/undo:", f"Put {name} back where it was"
-        else:
-            text, icon, say = "", ":material/place_item:", f"Move {_name(picked)} here"
-        st.button(text, key=f"hwpick_{k}", icon=icon, on_click=_pick, args=(k,), help=say,
-                  type="primary" if picked == k else "secondary")
-        labels[f"hwpick_{k}"] = say
-        if picked == k:
-            for delta, key, icon, tip in ((-1, "hwl_", ":material/arrow_back:", f"Move {name} back"),
-                                          (1, "hwr_", ":material/arrow_forward:", f"Move {name} forward")):
-                st.button("", key=key + k, icon=icon, on_click=_step, args=(k, delta), help=tip,
-                          disabled=hl.step(cells, k, delta) == cells)
-                labels[key + k] = tip
-    if picked == k:
-        with st.container(key=f"hwsz_{k}", horizontal=True, gap="xxsmall"):
-            for size in hl.ORDER:
-                if size in w.sizes:
-                    st.button(hl.SIZE_NAMES[size], key=f"hwsz_{k}_{size}", on_click=_resize, args=(k, size),
-                              type="primary" if cell["size"] == size else "secondary",
-                              help=f"Make {name} {hl.SIZE_NAMES[size].lower()}")
+        if len([s for s in hl.ORDER if s in w.sizes]) > 1:
+            size = hl.SIZE_NAMES.get(cell["size"], cell["size"])
+            st.button("", key=f"hwsz_{k}", icon=":material/aspect_ratio:", on_click=_cycle, args=(k,),
+                      help=f"{name} is {size.lower()}: tap for the next size")
+            labels[f"hwsz_{k}"] = f"{name} is {size.lower()}. Change size"
 
 
-def _tile(w, cell, cells, editing, picked, labels):
+def _tile(w, cell, editing, labels):
     with st.container(key=f"hw_{w.key}"):            # what the glide follows (home_flip.js)
         if editing:
-            _edit_bar(w, cell, cells, picked, labels)        # its title, Move and (picked up) its sizes
+            _edit_bar(w, cell, labels)                       # −, its title and its size
         else:
             _tile_head(w, labels)
         with st.container(key=f"hwc_{w.key}"):
@@ -449,11 +399,8 @@ def page_home():
     cat = catalog()
     cells = _cells(cat)
     editing = bool(st.session_state.get("home_arranging"))
-    picked = st.session_state.get("home_picked") if editing else None
-    if picked not in hl.keys(cells):              # e.g. it left Home by Undo
-        picked = st.session_state["home_picked"] = None
     chat_bar = store.ai_enabled() and "ask" not in hl.keys(cells)      # app.py pins it to the bottom
-    st.html(f"<style>{_css(appearance.tokens(), cells, cat, editing, picked, CHAT_ROOM if chat_bar else PAGE_ROOM)}</style>")
+    st.html(f"<style>{_css(appearance.tokens(), cells, cat, editing, CHAT_ROOM if chat_bar else PAGE_ROOM)}</style>")
     labels = {}
     _header(editing, cells, labels)
     if not editing:
@@ -467,10 +414,7 @@ def page_home():
         else:
             with st.container(key="home_grid"):
                 for cell in cells:
-                    _tile(cat[cell["w"]], cell, cells, editing, picked, labels)
-                if picked:
-                    with st.container(key="home_drop"):
-                        st.button("Drop here (at the end)", key="home_drop_end", type="tertiary", on_click=_drop_end)
+                    _tile(cat[cell["w"]], cell, editing, labels)
     if side is not None:
         with side:
             _add_panel(cat, cells, labels)
