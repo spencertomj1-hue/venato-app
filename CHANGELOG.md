@@ -11,7 +11,7 @@ Venato was called **Arete** up to 1.1.1.
 
 ### Changed
 - Home's timetable shows the whole day (07:00–01:00 by default) with no scrolling, in a new **Column** tile size (one column wide, three rows tall) that it starts in. A saved Tall timetable stays Tall. Its sync and Outlook buttons sit in its title line. Short blocks are a colour bar (the name is in the tooltip).
-- Home's Focus tile is a stopwatch: type what you're on, Start, then Stop puts it in today's Actual. Pomodoro timers start on the Focus page.
+- Home's Focus tile is a dial. Idle, its ring fills to today's focused time against a daily aim (4 h by default, Focus → Settings); type what you're on and press the dial to start a stopwatch. Running, the ring sweeps once an hour round the time, with the name and start time beside it; press it to stop, which puts it in today's Actual. The dial sizes itself to the tile. Pomodoro timers start on the Focus page.
 - Small glances on Home's tiles: Journal shows the week as dots and a streak from 2 days; Daily log puts each habit's streak after its name ("Exercise · 5"); Deadlines' countdowns are coloured pills (red overdue or today, amber within 3 days, grey later); Review has day letters and a faint 100% line.
 - Home's Grades tile is now **Modules**: this week's study hours per module against its hours-a-week target, and "4 of 12 h this week" in its header. No marks for now.
 - A student's Home starts with Modules in a fourth row, and Home's rows can now be shorter (108px), so all four still fit a 1280×720 window. A tile shows only the rows that fit: one that would be cut off at the bottom is hidden whole.
