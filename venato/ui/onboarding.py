@@ -379,7 +379,7 @@ def _matching_category(goal):
         if s["kind"] == "category":
             if s["cid"] in ids:
                 return s["cid"]
-            if names[s["cid"]].lower() in by_name:
+            if names.get(s["cid"], "").lower() in by_name:
                 return by_name[names[s["cid"]].lower()]
     return None
 
@@ -392,28 +392,25 @@ def fallback_sittings(goals, day=None, taken=()):
     For each goal with no hours unit (they get no sittings from first_week): 3 sittings of 1 h on 3 different
     days, from tomorrow until the end of the 7 days, each the first free hour between 09:00 and 21:00 that
     day. Free means nothing in the timetable and nothing in `taken` (other sittings) or given to an earlier
-    goal. A day that already has a block labelled with the goal counts as one of its 3 (so after Add to my
-    Plan nothing more is suggested). Same shape as first_week, labelled with the goal, sorted by date and start.
+    goal. A goal whose sittings Add to my Plan already added in this setup gets none. Same shape as
+    first_week, labelled with the goal, sorted by date and start.
     """
     day = day or today()
-    lo, hi = store.slot_of("09:00"), store.slot_of("21:00")
+    hi, lo = min(store.slot_of("21:00"), store.slot_count()), store.slot_of("09:00")
+    lo = lo if lo < hi else 0                          # a timetable day that starts after 09:00 (09:00 wraps)
     days = [(day + timedelta(days=n)).isoformat() for n in FALLBACK_DAYS]
-    placed = store.blocks_between(min(days), max(days))
+    done = set(_ob().get("fallback_added", []))
     used = {}
     for s in taken:
         used.setdefault(s["date"], set()).update(range(store.slot_of(s["start"]), store.slot_of(s["end"])))
     free, out = {}, []
     for g in goals:
-        if g["unit"] == "h":
+        if g["unit"] == "h" or g["id"] in done:
             continue
-        cid = _matching_category(g)
-        have = {b["date"] for b in placed if b["label"] == g["title"]}
-        got = len(have)
+        cid, got = _matching_category(g), 0
         for d in days:
             if got >= 3:
                 break
-            if d in have:
-                continue
             runs = free.setdefault(d, store.free_runs(d, lo, hi))
             busy = used.setdefault(d, set())
             start = next((i for a, b in runs for i in range(a, b - 1) if not {i, i + 1} & busy), None)
@@ -422,20 +419,25 @@ def fallback_sittings(goals, day=None, taken=()):
             busy.update((start, start + 1))
             got += 1
             out.append({"id": f"fb:{d}:{store.slot_time(start)}", "date": d, "start": store.slot_time(start),
-                        "end": store.slot_time(start + 2), "label": g["title"], "categoryId": cid, "goal": g["title"]})
+                        "end": store.slot_time(start + 2), "label": g["title"], "categoryId": cid, "goal": g["title"],
+                        "goal_id": g["id"]})
     return sorted(out, key=lambda s: (s["date"], s["start"]))
 
 
 def week_sittings(goals, day=None, ctx=None):
     """Your first week: the hours goals' sittings (first_week) and the fallback ones for the other goals."""
+    ctx = ctx or pace.Ctx()                            # one clock for both
     planned = first_week(day, ctx)
-    return sorted(planned + fallback_sittings(goals, day or (ctx.today if ctx else None), planned),
+    return sorted(planned + fallback_sittings(goals, day or ctx.today, planned),
                   key=lambda s: (s["date"], s["start"]))
 
 
 def add_first_week(sittings):
-    """Add the suggested sittings to the Plan (only into free time; nothing is overwritten). Returns how many went in."""
+    """Add the suggested sittings to the Plan (only into free time; nothing is overwritten). Returns how many went in.
+    Goals whose fallback sittings were added are remembered, so they aren't offered again."""
     from venato.ui import goal_time
+    done = _ob().setdefault("fallback_added", [])
+    done += [s["goal_id"] for s in sittings if s.get("goal_id") and s["goal_id"] not in done]
     return sum(goal_time.add_suggestion(s["date"], s["start"], s["end"],
                                         {"label": s["label"], "category_id": s["categoryId"], "details": None})
                for s in sittings)

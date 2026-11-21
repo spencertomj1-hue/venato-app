@@ -1027,3 +1027,15 @@ def test_first_week_is_never_empty_with_a_goal(fresh):
     mine = [b for b in after if b["label"] == "Run a 10k"]
     assert not before and len(mine) == 3 and len({b["date"] for b in mine}) == 3
     assert not [b for b in at.button if b.key == "ob_week_add"]                   # nothing more offered
+
+
+def test_a_plan_block_named_like_the_goal_does_not_hide_its_sittings(fresh):
+    from venato.ui import onboarding
+    onboarding.restart()
+    for d in ("2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"):            # the user's own, from before setup
+        fresh.paint(d, "plan", fresh.slot_of("07:00"), fresh.slot_of("08:00"), {"label": "Study", "category_id": None})
+    ids = onboarding.save_goals([(0, "Study", "tick", None, 3)], MON)
+    out = onboarding.fallback_sittings([fresh.get_goal(ids[0])], MON)
+    assert len(out) == 3 and len({s["date"] for s in out}) == 3
+    onboarding.add_first_week(out)
+    assert onboarding.fallback_sittings([fresh.get_goal(ids[0])], MON) == []      # added once: not offered again
