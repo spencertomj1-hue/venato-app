@@ -818,8 +818,7 @@ def test_the_student_question_is_two_buttons_and_nothing_else(fresh):
 
 def test_welcome_shows_the_step_names_and_a_saved_answer(fresh):
     at = AppTest.from_file(APP, default_timeout=60).run()
-    cap = at.caption[0].value
-    assert cap == "**Welcome** · Goals · Track · First week"
+    assert not any("**Welcome**" in c.value for c in at.caption)     # no step list until the uni question is answered
     assert not any(b.type == "primary" for b in at.button if b.key.startswith("ob_student_"))
     _next(at, "ob_student_yes")
     cap = at.caption[0].value
@@ -852,7 +851,7 @@ def test_finishing_with_a_goal_and_a_habit_puts_goals_and_habits_on_home(fresh):
 
 def test_welcome_and_home_copy(fresh):
     at = AppTest.from_file(APP, default_timeout=60).run()
-    assert any("takes a few minutes" in m.value for m in at.markdown)
+    assert at.button(key="wiz_skip_all").label == "Skip setup and start blank"
     assert not any("two minutes" in m.value for m in at.markdown)
     _next(at, "ob_student_no")
     _skip_to_the_end(at)

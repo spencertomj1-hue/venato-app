@@ -16,7 +16,6 @@ settings_ui.wizard() draws the page; settings_ui._finish() turns on the core blo
 import re
 from datetime import timedelta
 from html import escape
-from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -486,18 +485,40 @@ def _empty(text, icon=":material/inbox:"):
     st.markdown(f"{icon} {text}")
 
 
+# Plan vs Actual in one picture: the same day twice, Actual a bit off from the Plan. Plain HTML (st.html drops
+# SVG). Colours are the example categories' (Study, Exercise, Reading); the rest uses the theme's text colour.
+def _bar(label, hours, blocks, strong=False):
+    """One row: (name, width, background, text colour, share of its slot it fills). No background: dashed, skipped."""
+    def cell(name, w, bg, fg, part=1):
+        look = f"background:{bg};color:{fg}" if bg else "border:1.5px dashed currentColor;opacity:.45"
+        return (f'<div style="flex:{w};min-width:0"><div style="width:{part * 100:g}%;height:2rem;border-radius:.45rem;'
+                f'padding:0 .55rem;display:flex;align-items:center;font-size:.8rem;white-space:nowrap;overflow:hidden;'
+                f'box-sizing:border-box;{look}">{name}</div></div>')
+    cells = "".join(cell(*b) for b in blocks)
+    return (f'<div style="display:flex;align-items:center;gap:.5rem">'
+            f'<div style="width:3.4rem;font-size:.8rem;opacity:.7">{label}</div>'
+            f'<div style="flex:1;display:flex;gap:.4rem">{cells}</div>'
+            f'<div style="width:2.6rem;text-align:right;font-size:.8rem;{"font-weight:600" if strong else "opacity:.7"}">'
+            f'{hours}</div></div>')
+
+
+_PLAN_ACTUAL = ('<div role="img" aria-label="A planned day above the day that really happened" '
+                'style="display:flex;flex-direction:column;gap:.45rem;margin:.25rem 0 .75rem;max-width:34rem">'
+                + _bar("Plan", "6 h", [("Study", 5, "#00B050", "#fff"), ("Gym", 3, "#FFC000", "#1a1a1a"),
+                                       ("Reading", 4, "#7030A0", "#fff")])
+                + _bar("Actual", "3.5 h", [("Study", 5, "#00B050", "#fff", .65), ("Gym", 3, "#FFC000", "#1a1a1a"),
+                                           ("skipped", 4, None, None)], strong=True)
+                + '</div>')
+
+
 def _welcome():
     from venato import system
     st.title("Welcome to Venato", anchor=False)
     st.markdown("Plan your week, log what really happened, and see the gap.")
-    st.image(str(Path(__file__).parents[2] / "assets" / "onboarding-timetable.png"))
-    st.markdown(
-        f":material/lock: **Your data stays on your {system.COMPUTER}.** Nothing is uploaded.\n\n"
-        "Setup takes a few minutes and you can skip any step. **Skip setup** leaves Venato blank, ready for "
-        "you to add things yourself.")
-    st.subheader("Are you a student?", anchor=False)
-    st.markdown("Students get a **Modules** page and a few extra steps: your uni timetable, Canvas deadlines "
-                "and study hours.")
+    st.html(_PLAN_ACTUAL)
+    st.caption(f":material/lock: Everything stays on your {system.COMPUTER}. Nothing is uploaded.")
+    st.subheader("Are you at uni?", anchor=False)
+    st.caption("Students also connect their timetable and Canvas, and get a Modules page.")
     ob = _ob()
     saved = ob["student"] if "student" in ob else store.load_settings().get("student")
     yes, no = st.columns(2)
@@ -1023,15 +1044,15 @@ def wizard(finish, skip=None):
     [data-testid='stMainBlockContainer'] > [data-testid='stVerticalBlock'] {{ flex-grow: 0; margin-block: auto; }}
     /* Pills wrap onto more lines rather than scrolling sideways (and clipping the last one). */
     [data-testid='stButtonGroup'], [data-testid='stButtonGroup'] > div {{ flex-wrap: wrap !important; overflow: visible !important; }}
-    [data-testid='stImage'] img {{ border-radius: .5rem; border: 1px solid {ink['border']}; }}
     </style>""")
     listed = steps()
     step = min(st.session_state.setdefault("wizard_step", 0), len(listed) - 1)
     key = listed[step][0]
     _, mid, _ = st.columns([1, 3, 1])
     with mid:
-        st.caption(" · ".join(f"**{n}**" if i == step else n for i, (_, n, _) in enumerate(listed)))
-        st.progress((step + 1) / len(listed))
+        if key != "welcome":                          # the steps aren't known until the uni question is answered
+            st.caption(" · ".join(f"**{n}**" if i == step else n for i, (_, n, _) in enumerate(listed)))
+            st.progress((step + 1) / len(listed))
         if error := st.session_state.pop("ob_error", None):
             st.error(error, icon=":material/error:")
         if key == "welcome":
@@ -1044,11 +1065,11 @@ def wizard(finish, skip=None):
             components.html(f"<script>/* step {step} */ const d = window.parent.document;"
                             "d.querySelector('[data-testid=\"stMain\"]')?.scrollTo(0, 0); window.parent.scrollTo(0, 0);</script>",
                             height=0)
-        st.divider()
         last = step == len(listed) - 1
         if key == "welcome":
-            st.button("Skip setup", key="wiz_skip_all", on_click=skip or finish)
+            st.button("Skip setup and start blank", key="wiz_skip_all", type="tertiary", on_click=skip or finish)
             return
+        st.divider()
         back, main = st.columns([1, 1])
         back.button("Back", key="wiz_back", on_click=_go, args=(step - 1,), icon=":material/arrow_back:")
         if last:
