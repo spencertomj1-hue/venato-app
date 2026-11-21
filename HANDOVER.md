@@ -99,6 +99,7 @@ venato/                         The app's code, as a package (imported as `from 
     review.py                  Weekly review pop-up and Review's history
     onboarding.py              The setup wizard's steps and what each saves (feeds, modules, study goals, goals, categories, first week, Home); the page is drawn by `settings_ui.wizard`. State between steps is `st.session_state["ob"]` (calendars are parsed once and kept there)
     module_page.py             One module's page (from the Modules page): lectures, deadlines with Plan, assessments, hours; uses grades.py's `band`, `assessment_editor`, `module_settings`
+    components/home_flip.js    Home's glides, grid fit, tile clicks, and the row trim: a row crossing a tile's bottom edge is hidden whole (no half-cut lines)
     glance.py                  Home tiles' small graphics: dots() (a week of days) and pill() (a coloured badge, markdown so it works in buttons). Fixed height, an aria-label, light and dark
     home.py, stats.py          Home (a grid of tiles, each opening its page; Edit Home; layout logic in venato/home_layout.py, glides in components/home_flip.js) and Review (stats.py) pages
     blocks_ui.py               Settings → Blocks; one page module per block (focus.py, ...)

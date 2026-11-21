@@ -116,3 +116,10 @@ no all-day chip or state. After:
 - Still clipped at 1280×720 (rows 114px), by Home's clip-rather-than-grow rule, in tiles this plan doesn't change:
   To-dos' "New to-do" and Goals' second bar are cut mid-line; Daily log's second row of habits is hidden whole.
   Deadlines (when added) shows its first row and part of the second. At 1440×900 everything fits.
+
+### After Phase 5: no half-cut rows (user's call: option 1)
+home_flip.js hides, whole, any row crossing a tile's bottom edge (visibility only; looks into shadow roots;
+not the timetable, which fits itself). Checked at 1440×900 and 1280×720, light and dark, default Home and one
+with Journal and Deadlines: nothing visible crosses an edge. A tile now shows only the rows that fit (at
+1280×720 To-dos shows just its Daily / Weekly / Monthly switch); a "+N more" line still counts from what Python
+drew, and is hidden when it doesn't fit.
