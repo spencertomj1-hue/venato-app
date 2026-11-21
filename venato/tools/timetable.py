@@ -161,6 +161,8 @@ def add_block(date, track, start, end, label, category=None, details=None, confi
         return Result("", pending=Pending(
             summary, lambda: add_block(date, track, start, end, label, category, details, True)))
     store.paint(day, track, s, e, block)
+    if category:
+        store.learn_label(label, block["category_id"])      # the next block with this label gets it too
     return Result(f"Added {what}.", changed=True)
 
 

@@ -1,9 +1,15 @@
 """
 Timetable categories (name, colour, group), the activity -> category defaults, and the
 category calendar events get.
+
+A label or an event's title means a category when it matches an activity's default or a category's
+name, exactly or as whole words inside it ("Rugby training" -> Sports, from "Rugby"): match_category.
+Saving a block with a category teaches its label (learn_label).
 """
 
-from .database import _read, db
+import re
+
+from .database import _read, data_version, db, db_path
 from .settings import load_settings
 
 
@@ -79,10 +85,53 @@ def remove_label_default(label):
         conn.execute("DELETE FROM tt_label_map WHERE lower(label) = lower(?)", (label,))
 
 
+def match_category(label, label_map=None, categories=None):
+    """
+    The category a typed label (or an event's title) means, or None. First an exact match (any case)
+    with an activity's default ('Boxing' -> Sports), then with a category's name ('Revision'); then the
+    longest activity or category name found as whole words inside it ('Rugby training' -> Sports from
+    'Rugby', 'Maths revision' -> Revision). Activities beat category names. timetable_component.js
+    mirrors this (mapLabel).
+    """
+    want = str(label or "").strip().lower()
+    if not want:
+        return None
+    lm = load_label_map() if label_map is None else label_map
+    cats = load_categories() if categories is None else categories
+    ids = set(cats["id"])
+    defaults = [(str(l).strip().lower(), c) for l, c in zip(lm["label"], lm["category_id"]) if c in ids]
+    names = [(str(n).strip().lower(), i) for n, i in zip(cats["name"], cats["id"])]
+    for pool in (defaults, names):
+        for phrase, cid in pool:
+            if phrase == want:
+                return cid
+    for pool in (defaults, names):                   # an activity inside the label beats a category name
+        best, best_len = None, 0
+        for phrase, cid in pool:
+            if phrase and len(phrase) > best_len and re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", want):
+                best, best_len = cid, len(phrase)
+        if best:
+            return best
+    return None
+
+
+def learn_label(label, category_id):
+    """Remember a label's category when someone saves a block with it, unless it already means that.
+    Returns True when it learned something."""
+    label = str(label or "").strip()
+    if not label or not category_id:
+        return False
+    cats = load_categories()
+    if category_id not in set(cats["id"]) or match_category(label, categories=cats) == category_id:
+        return False
+    set_label_default(label, category_id)
+    return True
+
+
 def resolve_category(label=None, category=None):
     """
-    Pick a category id. `category` may be an id or a name (any case); otherwise
-    the label is looked up in the label map, then against category names.
+    Pick a category id. `category` may be an id or a name (any case); otherwise the label is
+    matched (match_category: activities, then category names, exactly or as words inside it).
     Returns None when nothing matches.
     """
     cats = load_categories()
@@ -93,12 +142,23 @@ def resolve_category(label=None, category=None):
             return key
         return by_name.get(key.lower())
     if label:
-        lm = load_label_map()
-        for lbl, cid in zip(lm["label"], lm["category_id"]):
-            if lbl.lower() == label.strip().lower():
-                return cid
-        return by_name.get(label.strip().lower())
+        return match_category(label, categories=cats)
     return None
+
+
+_titles = {}    # (data version, database) -> {title: category or None}: events repeat, so match each title once
+
+
+def _title_category(title):
+    """match_category for an event's title, remembered until the data changes."""
+    version = (data_version(), str(db_path()))
+    if _titles.get("version") != version:
+        _titles.clear()
+        _titles.update(version=version, labels=load_label_map(), cats=load_categories(), seen={})
+    seen = _titles["seen"]
+    if title not in seen:
+        seen[title] = match_category(title, _titles["labels"], _titles["cats"])
+    return seen[title]
 
 
 def outlook_category(title, module_id=None):
@@ -123,11 +183,15 @@ _LOOK_UP = object()
 
 def event_category(event, default=_LOOK_UP):
     """The category an imported event counts under: its module's (the module_category that
-    outlook_between & co. read), else `default` (outlook_category(), looked up once by loops; None
-    when there are no categories), else, with no default given, outlook_category(). Each event has
-    exactly one, so its hours are counted once."""
+    outlook_between & co. read), else what its title means ("Boxing" -> Sports, like a typed label:
+    match_category), else `default` (outlook_category(), looked up once by loops; None when there are
+    no categories), else, with no default given, outlook_category(). Each event has exactly one, so
+    its hours are counted once."""
     if event.get("module_category"):
         return event["module_category"]
+    matched = _title_category(event.get("title") or "")
+    if matched:
+        return matched
     return outlook_category(event.get("title")) if default is _LOOK_UP else default
 
 
