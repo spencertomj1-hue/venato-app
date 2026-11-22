@@ -482,6 +482,11 @@ TOOL_SPECS = [
     ("complete_todo", "Tick off a to-do, found by title (or id) in the current periods.", TODO_REF, tools.complete_todo),
     ("uncomplete_todo", "Untick a to-do, found by title (or id) in the current periods.", TODO_REF,
      tools.uncomplete_todo),
+    ("schedule_todo", "Put a to-do on the timetable at a date and start time (its length is how long it takes, "
+                      "30 min by default). Ticking it marks the block done, and the other way round. Scheduling it "
+                      "again moves it.",
+     _schema(["todo", "date", "start"], todo={"type": "string", "description": "the to-do's title or id"},
+             date=DATE, start=TIME), tools.schedule_todo),
     ("list_todos", "List to-dos (with ids) for the periods containing a date (default today).",
      _schema([], period=TODO_PERIOD, date=DATE), tools.list_todos),
     ("delete_todo", "Delete a to-do, found by title (or id) in the current periods.", TODO_REF, tools.delete_todo),

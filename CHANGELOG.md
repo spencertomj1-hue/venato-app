@@ -26,6 +26,7 @@ Venato was called **Arete** up to 1.1.1.
 - A To-dos page with Today / This week / This month tabs (the To-dos tile opens it).
 - Home fits on one screen on a laptop (1280×720 and up): the rows share the window's height and each tile shows a summary, with the rest one click away. The timetable runs down the left (see Column above), without a second date. To-dos shows 3 and "+N more" with a smaller Daily / Weekly / Monthly switch, and comes Small or Wide. Goals shows the top 3 (behind ones first), each a name and a thin bar on one line, then "and N more". Needs you shows 3 things on one line each and "+N more"; tap it for everything, with goal bars and Plan my goals. Daily log ticks habits in one line. Narrow windows and phones still scroll. Saved layouts keep their sizes; the new layout is for new installs and Reset.
 - Edit Home: each tile's title and Move button share one line, and "Drop here" adds a row under the grid instead of squeezing it.
+- To-dos on the timetable: to-dos that aren't scheduled show as chips in their day's header (today's list on today, a to-do with a due day on that day). Drag one onto the grid to schedule it, as long as it takes (30 min if not set). A scheduled to-do's block has a to-do badge. Ticking the to-do, from the chip, the To-dos page, Home or Claude, marks its block done, and marking the block done ticks the to-do. Scheduling it again moves it. Claude can schedule a to-do too.
 
 ### Fixed
 - In dark mode, red buttons have dark text (white on the light red was too faint to read).

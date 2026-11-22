@@ -166,6 +166,29 @@ def add_block(date, track, start, end, label, category=None, details=None, confi
     return Result(f"Added {what}.", changed=True)
 
 
+def schedule_todo(todo, date, start, confirmed=False):
+    """Put a to-do on the timetable at date/start: a block titled with it, as long as it takes (30 min if
+    not set), on that day's Plan (its Actual once the day has started). Ticking the to-do marks the block
+    done and the other way round. Scheduling it again moves it (one block per to-do)."""
+    from .todos import _find_todo
+    day = _day(date)
+    _slot(start, False)
+    try:
+        t = _find_todo(todo, date=day)
+    except ToolError:
+        t = _find_todo(todo)
+    store.lock_day(day, now=_now())                 # a started day's Plan copied into its Actual first
+    track, s, e = store.todo_slots(t, day, start, _now())
+    block = {"label": t["title"], "category_id": store.match_category(t["title"]), "details": None}
+    what = f"{t['title']} {store.slot_time(s)}–{store.slot_time(e)} {track} on {nice_day(day)}"
+    affected = store.preview_paint(day, track, s, e, block)
+    if affected and not confirmed:
+        summary = f"Schedule {what}. This overwrites: " + "; ".join(describe_block(b) for b in affected)
+        return Result("", pending=Pending(summary, lambda: schedule_todo(t["id"], date, start, True)))
+    store.schedule_todo(t["id"], day, start, now=_now())
+    return Result(f"Scheduled the to-do {what}.", changed=True)
+
+
 def _get_block(block_id):
     b = store.get_block(str(block_id))
     if not b:
