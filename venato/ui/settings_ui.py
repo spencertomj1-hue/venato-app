@@ -390,7 +390,7 @@ def region_section():
         if length < store.MIN_DAY_HOURS:
             st.error(f"Make the day at least {store.MIN_DAY_HOURS} hours long.")
         else:
-            store.save_settings(day_start=new_start, day_end=new_end)
+            store.save_settings(day_start=new_start, day_end=new_end, sleep_asked=True)
             st.rerun()
     st.caption(f"{length} hours a day. Anything after midnight counts as the day before, like a late night. "
                "Blocks outside these hours stay saved; widen the hours again to see them.")

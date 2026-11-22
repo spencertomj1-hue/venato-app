@@ -274,9 +274,17 @@ def _skip_to_the_end(at):
     return seen
 
 
+def _past_calendar(at):
+    """Skip a non-student's calendar step (the step after Goals)."""
+    assert at.header[0].value == "Connect your calendar"
+    _next(at, "wiz_skip")
+
+
 def _skip_to_the_end_after(at, habit_key, habit):
-    """Goals step -> Next, add a habit on the track step with Next, then skip the rest."""
+    """Goals step -> Next, (a non-student: skip the calendar), add a habit on the track step with Next, then skip the rest."""
     _next(at)
+    if at.header[0].value == "Connect your calendar":
+        _past_calendar(at)
     at.text_input(key=habit_key).set_value(habit).run()
     _next(at)
     _skip_to_the_end(at)
@@ -301,20 +309,25 @@ def test_skipping_everything_lands_on_a_blank_home(fresh):
 def test_skipping_every_step_one_by_one_adds_nothing(fresh):
     at = AppTest.from_file(APP, default_timeout=60).run()
     seen = _skip_to_the_end(at)                                  # Welcome: "Not a student" is the way on
-    assert seen == ["Welcome to Venato", "Your goals for the next few months", "What would you track?"]      # up to the last step
+    assert seen == ["Welcome to Venato", "Your goals for the next few months", "Connect your calendar",
+                    "What would you track?"]      # up to the last step
     _next(at, "wiz_finish")
     assert at.session_state["page"] == "Home"
     assert fresh.load_categories().empty and fresh.goals_open() == [] and fresh.get_habits() == []
 
 
-def test_a_non_student_gets_no_uni_steps(fresh):
+def test_a_non_student_gets_one_calendar_link_and_no_modules(fresh):
     from venato.ui import onboarding
     assert [k for k, *_ in onboarding.STEPS] == ["welcome", "goals", "calendars", "modules", "track", "week"]
     at = AppTest.from_file(APP, default_timeout=60).run()
     _next(at, "ob_student_no")
-    assert at.header[0].value.startswith("Your goals")             # straight past the uni steps
+    assert at.header[0].value.startswith("Your goals")
+    _next(at, "wiz_skip")
+    assert at.header[0].value == "Connect your calendar"           # one link, no Canvas
+    assert [t.key for t in at.text_input] == ["ob_link_uni"]
+    assert not any("Canvas" in s.value for s in at.subheader)
     names = _skip_to_the_end(at)
-    assert not any(n.endswith(("Connect your calendars", "Your modules")) for n in names)
+    assert not any(n.endswith("Your modules") for n in names)
     _next(at, "wiz_finish")
     from venato import blocks
     assert not blocks.is_on("grades") and blocks.chosen_keys() == blocks.STARTER
@@ -534,6 +547,7 @@ def test_a_hours_box_for_a_detected_module_is_kept(fresh):
 def test_a_chip_switched_on_in_setup_makes_its_category_and_activity_names(fresh):
     at = _student_at(fresh, student=False)
     _next(at, "wiz_skip")
+    _past_calendar(at)
     assert at.header[0].value.endswith("What would you track?")
     pills = at.get("pills")[0]
     assert pills.value == [] and "Exercise" in pills.options
@@ -549,6 +563,7 @@ def test_an_existing_category_with_an_examples_name_is_not_made_twice(fresh):
     fresh.save_category("study-2", "Study", "#123456", "Work")
     at = _student_at(fresh, student=False)
     _next(at, "wiz_skip")
+    _past_calendar(at)
     assert "Study" in at.get("pills")[0].value                    # on already, by name
     at.get("pills")[0].set_value(["Study", "Exercise"]).run()
     _next(at)
@@ -559,6 +574,7 @@ def test_an_existing_category_with_an_examples_name_is_not_made_twice(fresh):
 def test_a_stale_skip_click_on_track_still_saves_a_ticked_chip(fresh):
     at = _student_at(fresh, student=False)
     _next(at, "wiz_skip")
+    _past_calendar(at)
     at.get("pills")[0].set_value(["Exercise"])
     at.button(key="wiz_skip").click().run()
     assert at.header[0].value.endswith("Your first week") and "exercise" in set(fresh.load_categories()["id"])
@@ -859,6 +875,7 @@ def test_next_with_a_taken_category_name_stays_on_the_step(fresh):
     fresh.save_category("lab-work", "Lab work", "#112233", "Life")
     at = _student_at(fresh, student=False)
     _next(at, "wiz_skip")
+    _past_calendar(at)
     assert at.header[0].value.endswith("What would you track?")
     at.text_input(key="ob_cat_name").set_value("lab work").run()
     _next(at)
@@ -1061,7 +1078,7 @@ def test_a_stale_skip_click_on_goals_still_saves_the_typed_goal(fresh):
     at.text_input(key="ob_goal_0").set_value("Run a 10k")
     at.button(key="wiz_skip").click().run()
     assert [g["title"] for g in fresh.life_goals()] == ["Run a 10k"]
-    assert at.header[0].value.endswith("What would you track?")
+    assert at.header[0].value == "Connect your calendar"
 
 
 def test_fallback_sittings_are_three_spread_out_hours_in_free_time(fresh):
@@ -1164,6 +1181,7 @@ def test_a_habit_picked_for_a_goal_without_a_target_makes_a_habit_target(fresh):
     _next(at, "ob_goal_add")
     at.text_input(key="ob_goal_1").set_value("Be calm").run()
     _next(at)
+    _past_calendar(at)
     assert fresh.goals_open() == []
     goals = {g["title"]: g for g in fresh.life_goals()}
     next(c for c in at.checkbox if "Trained" in c.label).set_value(True).run()
@@ -1175,6 +1193,7 @@ def test_a_habit_picked_for_a_goal_without_a_target_makes_a_habit_target(fresh):
     assert run["habit_id"] == fresh.find_habit("Trained")[0] and calm["habit_id"] == fresh.find_habit("Breathe")[0]
     assert run["due"] == goals["Run a 10k"]["end_date"] and run["target"] == 3 * 13 and run["unit"] is None
     assert run["title"] == "Trained: 3 times a week"
+    at.button(key="wiz_back").click().run()
     at.button(key="wiz_back").click().run()
     at.button(key="wiz_back").click().run()                      # back to Goals and Next again: the habit target stays
     _next(at)
@@ -1305,8 +1324,27 @@ def test_own_habit_counts_towards_the_row_picked_not_the_first_of_that_name(fres
     _next(at, "ob_goal_add")
     at.text_input(key="ob_goal_1").set_value("Get fit").run()
     _next(at)
+    _past_calendar(at)
     second = at.session_state["ob"]["life_ids"][1]
     at.text_input(key="ob_own_name").set_value("Stretch").run()
     at.selectbox(key="ob_own_link").set_value(1).run()
     _next(at)
     assert [t["life_goal_id"] for t in fresh.goals_open()] == [second]
+
+
+def test_a_non_student_connects_one_calendar_as_my_calendar(fresh):
+    at = _student_at(fresh, student=False)
+    _next(at, "wiz_skip")
+    at.text_input(key="ob_link_uni").set_value(UNI_URL).run()
+    _next(at)
+    assert at.header[0].value.endswith("What would you track?") and not at.error
+    from venato import outlook
+    assert [c["name"] for c in outlook.extra_calendars()] == ["My calendar"]
+
+
+def test_the_first_week_explains_plan_actual_and_confirm(fresh):
+    at = _student_at(fresh, student=False)
+    _skip_to_the_end(at)
+    assert at.header[0].value == "Your first week"
+    text = " ".join(m.value for m in at.markdown)
+    assert "How each day works" in text and "**Confirm**" in text and "confirmed" in text

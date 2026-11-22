@@ -382,8 +382,59 @@ def _sync_text():
 # Page
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Wake-up and bed time: the timetable day runs from one to the other
+# ---------------------------------------------------------------------------
+
+def needs_sleep_hours():
+    """Ask once, until the hours are saved here or in Settings, or the question is put off."""
+    s = store.load_settings()
+    return not s.get("sleep_asked") and "day_start" not in s
+
+
+def save_sleep_hours(wake, bed):
+    """The timetable day runs from waking to bed, so the grid shows only waking hours and free time (goal
+    sittings, Fit time, the week's free hours) never lands while you're asleep. Raises ValueError if too short."""
+    if store.day_length(wake, bed) < store.MIN_DAY_HOURS:
+        raise ValueError(f"That's under {store.MIN_DAY_HOURS} hours awake. Check the times.")
+    store.save_settings(day_start=wake, day_end=bed, sleep_asked=True)
+
+
+def _on_sleep_save():
+    try:
+        save_sleep_hours(st.session_state["tt_wake"], st.session_state["tt_bed"])
+    except ValueError as e:
+        st.session_state["tt_sleep_error"] = str(e)
+
+
+def _on_sleep_later():
+    store.save_settings(sleep_asked=True)
+
+
+def sleep_card():
+    """When do you wake up and go to bed? Fits the timetable to the day you're awake."""
+    start, end = store.day_hours()
+    with st.container(border=True, key="tt_sleep"):
+        kit.subhead("When are you usually awake?", icon=":material/bedtime:")
+        st.caption("Your timetable will show just those hours, and Venato only plans goals and Fit time "
+                   "while you're up. Change it any time in Settings → Region → Timetable hours.")
+        hours = list(range(24))
+        a, b = st.columns(2)
+        wake = a.selectbox("Wake up", hours, index=start, key="tt_wake",
+                           format_func=lambda h: regional.time(f"{h:02d}:00"))
+        b.selectbox("Bed time", hours, index=end, key="tt_bed",
+                    format_func=lambda h: regional.time(f"{h:02d}:00") + (" (next day)" if h <= wake else ""))
+        if error := st.session_state.pop("tt_sleep_error", None):
+            st.error(error, icon=":material/error:")
+        row = st.container(horizontal=True, gap="small")
+        row.button("Save", key="tt_sleep_save", type="primary", icon=":material/check:", on_click=_on_sleep_save)
+        row.button("Not now", key="tt_sleep_later", type="tertiary", on_click=_on_sleep_later)
+
+
 def render_page():
     day = st.session_state.setdefault("tt_day", store.local_today())
+    if needs_sleep_hours():
+        sleep_card()
     monday = store.week_start_of(day)            # the week's first day: Monday, or Sunday if chosen
     # Fit time / Categories: the same things Claude can do, by hand.
     from venato import pace
