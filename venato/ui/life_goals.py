@@ -64,6 +64,23 @@ def _move(ids, gid, step):
         store.reorder_life_goals(ids)
 
 
+def _colour_picker(g, key):
+    """The goal's colour: a row of swatches (GOAL_COLOURS), saved as soon as one is picked; its to-dos' dots,
+    Home's tile and this card follow."""
+    now = store.life_goal_colour(g["id"]).upper()
+    st.caption("Colour")
+    css = []
+    with st.container(horizontal=True, gap="small"):
+        for i, c in enumerate(store.GOAL_COLOURS):
+            k = f"{key}_colour_{i}"
+            ring = f"box-shadow: 0 0 0 2px var(--background-color, #fff), 0 0 0 4px {c};" if c == now else ""
+            css.append(f".st-key-{k} button {{ background: {c} !important; border: 0 !important; width: 28px; "
+                       f"height: 28px; min-height: 28px; padding: 0; border-radius: 50%; color: #fff !important; {ring} }}")
+            st.button("✓" if c == now else "", key=k, help=store.GOAL_COLOUR_NAMES[c],
+                      on_click=store.set_life_goal_colour, args=(g["id"], c))
+    st.html(f"<style>{' '.join(css)}</style>")
+
+
 def _edit(g, ids):
     key = f"life_{g['id']}"
     with st.popover("", icon=":material/more_horiz:", help="Edit, move, archive or delete"):
@@ -75,6 +92,7 @@ def _edit(g, ids):
                         disabled=ids[-1] == g["id"], on_click=_move, args=(ids, g["id"], 1))
         title = st.text_input("Goal", value=g["title"], key=f"{key}_title")
         why = st.text_input("Why it matters (optional)", value=g["why"] or "", key=f"{key}_why")
+        _colour_picker(g, key)
         start, months, end = _span_form(key, g)
         save, archive, delete = st.columns(3)
         if save.button("Save", key=f"{key}_save", type="primary", width="stretch", disabled=not title.strip()):
@@ -97,9 +115,11 @@ def _edit(g, ids):
             st.rerun()
 
 
-def bar_html(frac, label=""):
+def bar_html(frac, label="", colour=None):
+    """A goal's overall bar, in its colour (else the theme's accent)."""
     from venato.ui.goals import BAR_CSS, _accent
-    return (f'<div class="hg-bar" role="img" aria-label="{escape(label)}"><i style="width:{100 * frac:.1f}%"></i></div>'
+    fill = f";background:{colour}" if colour else ""
+    return (f'<div class="hg-bar" role="img" aria-label="{escape(label)}"><i style="width:{100 * frac:.1f}%{fill}"></i></div>'
             + BAR_CSS.replace("ACCENT", _accent()))
 
 
@@ -146,12 +166,14 @@ def card(g, ids, ctx, today, expanded=False):
     with st.container(border=True, key=f"life_card_{g['id']}"):
         text, more = st.columns([8, 1], vertical_alignment="center")
         span = f"{regional.short_date(g['start'], today)} to {regional.short_date(g['end_date'], today)}"
-        text.markdown(f"#### {kit.md(g['title'])}\n:gray[{store.time_left(g, today)} · {span}]")
+        dot = f'<span style="color:{store.life_goal_colour(g["id"])}" aria-hidden="true">●</span> '
+        text.markdown(f"#### {dot}{kit.md(g['title'])}\n:gray[{store.time_left(g, today)} · {span}]",
+                      unsafe_allow_html=True)
         with more:
             _edit(g, ids)
         if g["why"]:
             st.caption(f":material/format_quote: {kit.md(g['why'])}")
-        st.html(bar_html(p["fraction"], f"{g['title']}: {round(100 * p['fraction'])}%"))
+        st.html(bar_html(p["fraction"], f"{g['title']}: {round(100 * p['fraction'])}%", store.life_goal_colour(g["id"])))
         st.caption(f"{round(100 * p['fraction'])}% · {summary(p)}")
         with st.expander("Targets and to-dos", expanded=expanded):
             kit.subhead("Targets", icon=":material/track_changes:")
@@ -181,14 +203,35 @@ def render_section(ctx, today):
                 card(g, [g["id"]], None, today)
 
 
-def home_rows(today=None):
-    """Home's Goals tile: [(goal, progress, nearest open target or None)] for the running goals, in order."""
+BEHIND_BY = 0.05          # a goal more than 5 points under its pace counts as behind
+
+
+def expected_fraction(g, targets, today):
+    """Where an even pace would have a goal by today (0..1): the mean of its targets' (each capped at 100%),
+    or with no targets, how much of its span has gone."""
+    from venato import pace
+    sized = [t for t in targets if t["target"]]
+    if sized:
+        return sum(min(pace.expected(t, today) / t["target"], 1.0) for t in sized) / len(sized)
+    start, end = store._as_date(g["start"]), store._as_date(g["end_date"])
+    total = (end - start).days + 1
+    return min(1.0, max(0, (today - start).days) / total) if total > 0 else 0.0
+
+
+def home_rows(today=None, todos=0):
+    """Home's Goals tile, one dict per running goal in order: goal, colour, progress, fraction, expected (the
+    pace tick), behind, next (the nearest open target or None), targets, and up to `todos` open to-dos."""
     today = today or store.local_today()
+    colours = store.life_goal_colours()
     rows = []
     for g in store.life_goals(today):
         targets = store.life_goal_targets(g["id"])
         p = store.life_goal_progress(g["id"], targets=targets)
         nxt = next((t for t in targets if t["due"] >= today.isoformat()
                     and (not t["target"] or t["value"] < t["target"])), None)
-        rows.append((g, p, nxt))
+        exp = expected_fraction(g, targets, today)
+        rows.append({"goal": g, "colour": colours.get(g["id"]) or store.GOAL_COLOURS[0], "progress": p,
+                     "fraction": p["fraction"], "expected": exp, "behind": p["fraction"] < exp - BEHIND_BY,
+                     "next": nxt, "targets": targets,
+                     "todos": store.life_goal_todos(g["id"], open_only=True)[:todos] if todos else []})
     return rows

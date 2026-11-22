@@ -425,34 +425,159 @@ def home_goals(ctx=None):
     return sorted(rows, key=lambda r: _BEHIND_FIRST.get(r[1]["state"], 2))
 
 
-def _home_life_goals(today):
-    """Home's Goals tile with long-term goals: each goal's name and overall bar on one line, its nearest open
-    target in small type under it, then "and N more"."""
+GOALS_SHOWN = 4         # long-term goals Home's tile shows at any size; the ones behind are kept when trimming
+
+# Home's Goals tile with long-term goals, per tile size: what each goal's row shows (_home_life_goals).
+#   small  name, bar with the pace tick, %                 wide   + its next target on the right
+#   tall   a block each: name and %, bar, next target and time left, then the next move
+#   large  + every target as a chip with its own bar       column tall + its open to-dos, to tick here
+_SIZE_TODOS = {"column": 2}
+_NEXT_MOVE = ("tall", "large", "column")
+
+
+def _pick(rows, n):
+    """The goals to show: all of them when they fit, else the behind ones first (furthest behind first),
+    then the rest, kept in their list order."""
+    if len(rows) <= n:
+        return rows
+    keep = sorted(range(len(rows)), key=lambda i: (not rows[i]["behind"], rows[i]["fraction"] - rows[i]["expected"]))[:n]
+    return [rows[i] for i in sorted(keep)]
+
+
+def _say(r, today):
+    """A goal's row in words, for screen readers and the hover title."""
+    pct, exp = round(100 * r["fraction"]), round(100 * r["expected"])
+    state = f"behind: {exp}% by now" if r["behind"] else "on track"
+    return f"{r['goal']['title']}: {pct}% done, {state}, {store.time_left(r['goal'], today)}"
+
+
+def _next_text(r, today):
+    n = r["next"]
+    return f"{n['title']} · {amount(n)} {store.goal_title_due(n['due'], today)}" if n else ""
+
+
+def _gw_bar(r, today, height=8):
+    c = r["colour"]
+    return (f'<div class="gw-track" role="img" aria-label="{escape(_say(r, today))}" '
+            f'style="height:{height}px;background:{c}33"><i style="width:{100 * r["fraction"]:.1f}%;background:{c}"></i>'
+            f'<span class="gw-tick" style="left:{100 * r["expected"]:.1f}%"></span></div>')
+
+
+def _gw_pct(r):
+    return f'<span class="gw-pct{" gw-behind" if r["behind"] else ""}">{round(100 * r["fraction"])}%</span>'
+
+
+def _gw_name(r):
+    return (f'<span class="gw-name"><span class="gw-dot" style="background:{r["colour"]}"></span>'
+            f'<span>{escape(r["goal"]["title"])}</span></span>')
+
+
+def _gw_row(r, today, size):
+    """One goal on the tile, as `size` draws it."""
+    nxt = _next_text(r, today)
+    title = escape(_say(r, today))
+    if size in ("small", "wide"):
+        side = f'<span class="gw-next">{"Next: " + escape(nxt) if nxt else ""}</span>' if size == "wide" else ""
+        return f'<div class="gw-line gw-{size}" title="{title}">{_gw_name(r)}{_gw_bar(r, today)}{_gw_pct(r)}{side}</div>'
+    sub = (f'<div class="gw-sub"><span class="gw-next">{"Next: " + escape(nxt) if nxt else "No open target"}</span>'
+           f'<span>{escape(store.time_left(r["goal"], today))}</span></div>')
+    if size == "large":
+        chips = "".join(
+            f'<span class="gw-chip">{escape(t["title"])}<span class="gw-mini" style="background:{r["colour"]}33">'
+            f'<i style="width:{100 * fraction(t):.0f}%;background:{r["colour"]}"></i></span>'
+            f'<span class="gw-muted">{escape(amount(t))}</span></span>' for t in r["targets"])
+        state = (f'<span class="gw-behind">behind {round(100 * (r["expected"] - r["fraction"]))}%</span>'
+                 if r["behind"] else "on track")
+        return (f'<div class="gw-big" title="{title}"><div>{_gw_name(r)}<div class="gw-sub gw-indent">'
+                f'{escape(store.time_left(r["goal"], today))} · {state}</div></div>'
+                f'<div><div class="gw-barline">{_gw_bar(r, today)}{_gw_pct(r)}</div>'
+                f'<div class="gw-chips">{chips}</div></div></div>')
+    return f'<div class="gw-block" title="{title}"><div class="gw-head">{_gw_name(r)}{_gw_pct(r)}</div>{_gw_bar(r, today)}{sub}</div>'
+
+
+def _next_move(rows, today):
+    """The goal furthest behind and the one thing to do next for it, or None when none is behind."""
+    behind = [r for r in rows if r["behind"]]
+    if not behind:
+        return None
+    r = min(behind, key=lambda r: r["fraction"] - r["expected"])
+    todo = (r["todos"] or store.life_goal_todos(r["goal"]["id"], open_only=True)[:1] or [None])[0]
+    if r["next"]:
+        step = f"{r['next']['title']} ({amount(r['next'])})"
+    elif todo:
+        step = todo["title"]
+    else:
+        step = "give it a target or a to-do"
+    return r, f"{r['goal']['title']} is furthest behind. Next: {step}"
+
+
+def _gw_css():
+    from venato.ui import appearance
+    bad = appearance.warn_colours()[1]
+    return f"""<style>
+      .gw-rows {{ display: flex; flex-direction: column; gap: 12px; }}
+      .gw-track {{ position: relative; border-radius: 999px; }}
+      .gw-track > i {{ position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }}
+      .gw-tick {{ position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px;
+                  background: currentColor; opacity: 0.85; }}
+      .gw-name {{ display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; font-size: 0.9rem; }}
+      .gw-name > span:last-child {{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+      .gw-dot {{ width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }}
+      .gw-pct {{ font-weight: 600; font-size: 0.85rem; text-align: right; font-variant-numeric: tabular-nums; }}
+      .gw-behind {{ color: {bad}; font-weight: 600; }}
+      .gw-next, .gw-muted {{ opacity: 0.75; }}
+      .gw-next {{ font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }}
+      .gw-line {{ display: grid; align-items: center; gap: 12px; }}
+      .gw-small {{ grid-template-columns: minmax(0, 40%) minmax(0, 1fr) 3em; }}
+      .gw-wide {{ grid-template-columns: minmax(0, 24%) minmax(0, 1fr) 3em minmax(0, 36%); }}
+      .gw-block {{ display: flex; flex-direction: column; gap: 7px; padding-bottom: 10px;
+                   border-bottom: 1px solid rgba(128, 128, 128, 0.18); }}
+      .gw-head, .gw-sub {{ display: flex; align-items: center; gap: 8px; }}
+      .gw-head .gw-pct {{ margin-left: auto; }}
+      .gw-sub {{ font-size: 0.78rem; }}
+      .gw-sub > span:last-child {{ margin-left: auto; white-space: nowrap; opacity: 0.75; }}
+      .gw-indent {{ padding-left: 18px; margin-top: 4px; display: block; opacity: 0.85; }}
+      .gw-big {{ display: grid; grid-template-columns: minmax(0, 32%) minmax(0, 1fr); gap: 16px; padding-bottom: 10px;
+                 border-bottom: 1px solid rgba(128, 128, 128, 0.18); }}
+      .gw-barline {{ display: grid; grid-template-columns: minmax(0, 1fr) 3em; gap: 12px; align-items: center; }}
+      .gw-chips {{ display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }}
+      .gw-chip {{ display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; padding: 2px 8px;
+                  border-radius: 8px; background: rgba(128, 128, 128, 0.1); }}
+      .gw-mini {{ position: relative; width: 36px; height: 4px; border-radius: 2px; display: inline-block; }}
+      .gw-mini > i {{ position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; }}
+      .gw-move {{ display: flex; gap: 8px; align-items: baseline; font-size: 0.82rem; padding: 8px 12px;
+                  border-radius: 10px; background: rgba(128, 128, 128, 0.1); margin-top: 4px; }}
+      .gw-move .gw-dot {{ width: 8px; height: 8px; }}
+      .gw-more {{ font-size: 0.8rem; opacity: 0.75; }}
+    </style>"""
+
+
+def _home_life_goals(today, size="wide"):
+    """Home's Goals tile with long-term goals, drawn for the tile's size (see _SIZE_TODOS / _NEXT_MOVE above):
+    each goal in its colour with a bar and the "should be here by today" tick; at Column, its open to-dos
+    to tick straight from Home."""
     from venato.ui import life_goals
-    rows = life_goals.home_rows(today)
-    lines = []
-    for g, p, nxt in rows[:HOME_LIMIT]:
-        pct = round(100 * p["fraction"])
-        say = f"{g['title']}: {pct}%, {store.time_left(g, today)}"
-        sub = (f'<div class="hg-next">Next: {escape(nxt["title"])} · {escape(amount(nxt))} '
-               f'{escape(store.goal_title_due(nxt["due"], today))}</div>') if nxt else ""
-        lines.append(f'<div class="hg-life" title="{escape(say)}"><div class="hg-row"><span class="hg-name">'
-                     f'{escape(g["title"])}</span><div class="hg-track" role="img" aria-label="{escape(say)}">'
-                     f'<div class="hg-bar"><i style="width:{100 * p["fraction"]:.1f}%"></i></div></div></div>{sub}</div>')
-    st.html(goal_bar_css() + """<style>
-      .hg-rows { display: flex; flex-direction: column; gap: 8px; }
-      .hg-row { display: grid; grid-template-columns: minmax(0, 38%) minmax(0, 1fr); align-items: center; gap: 12px; }
-      .hg-name { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .hg-row .hg-bar { height: 5px; }
-      .hg-next { font-size: 0.78rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .hg-more { font-size: 0.875rem; opacity: 0.85; }
-    </style>""" + f'<div class="hg-rows">{"".join(lines)}'
-            + (f'<div class="hg-more">and {len(rows) - HOME_LIMIT} more</div>' if len(rows) > HOME_LIMIT else "")
-            + "</div>")
+    rows = life_goals.home_rows(today, todos=_SIZE_TODOS.get(size, 0))
+    shown = _pick(rows, GOALS_SHOWN)
+    more = f'<div class="gw-more">+{len(rows) - len(shown)} more</div>' if len(rows) > len(shown) else ""
+    move = _next_move(rows, today) if size in _NEXT_MOVE else None
+    move_html = (f'<div class="gw-move"><span class="gw-dot" style="background:{move[0]["colour"]}"></span>'
+                 f'<span><b>Next move:</b> {escape(move[1])}</span></div>') if move else ""
+    if size != "column":
+        st.html(_gw_css() + f'<div class="gw-rows">{"".join(_gw_row(r, today, size) for r in shown)}{more}{move_html}</div>')
+        return
+    st.html(_gw_css())
+    for r in shown:
+        st.html(_gw_row(r, today, size))
+        for t in r["todos"]:
+            st.checkbox(kit.md(t["title"]), value=False, key=f"home_goal_todo_{t['id']}",
+                        on_change=store.set_todo_done, args=(t["id"], True))
+    if more or move_html:
+        st.html(f'<div class="gw-rows">{more}{move_html}</div>')
 
 
-def render_home():
-    """Home's Goals tile: the long-term goals when there are any (_home_life_goals); otherwise the top three
+def render_home(size="wide"):
+    """Home's Goals tile: the long-term goals when there are any (_home_life_goals, drawn for `size`); otherwise the top three
     targets (behind ones first), each its name and a thin bar with the "should be here by today" tick on one
     line, then "and N more". Everything else is on the Goals page."""
     today = store.local_today()
@@ -460,7 +585,7 @@ def render_home():
     kit.subhead("Goals", head, width="stretch")
     head.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
     if store.life_goals(today):
-        _home_life_goals(today)
+        _home_life_goals(today, size)
         return
     rows = home_goals()
     if not rows:

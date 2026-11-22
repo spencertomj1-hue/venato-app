@@ -82,14 +82,14 @@ def test_home_tile_shows_goals_and_their_next_target(store):
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception, at.exception
     html = " ".join(h.proto.body for h in at.get("html"))
-    assert 'class="hg-life"' in html and "Get fit" in html and "Next: Gym · 0 / 40 sessions by" in html
+    assert 'class="gw-line gw-wide"' in html and "Get fit" in html and "Next: Gym · 0 / 40 sessions by" in html
 
 
 def test_home_tile_without_goals_shows_targets(store):
     store.add_goal("Read", None, store.local_today(), 12, "books", due=store.months_on(store.local_today(), 2))
     at = AppTest.from_file(APP, default_timeout=60).run()
     html = " ".join(h.proto.body for h in at.get("html"))
-    assert 'class="hg-life"' not in html and '<span class="hg-name">Read</span>' in html
+    assert 'class="gw-line' not in html and '<span class="hg-name">Read</span>' in html
 
 
 def test_todo_categories_under_goals_come_first(store):
@@ -101,3 +101,62 @@ def test_todo_categories_under_goals_come_first(store):
     assert [x["name"] for x in groups][-1] == "Chores"
     gym = next(x for x in groups if x["goal_id"] == t["id"])
     assert todos.group_name(gym) == "Gym · Get fit"
+
+
+def _home_goals_tile(size):
+    def draw(size):
+        from venato.ui import goals
+        goals.render_home(size)
+    at = AppTest.from_function(draw, args=(size,), default_timeout=60).run()
+    assert not at.exception, at.exception
+    return at, " ".join(h.proto.body for h in at.get("html"))
+
+
+def test_home_tile_at_every_size(store):
+    today = store.local_today()
+    g = store.add_life_goal("Get fit", months=6)
+    store.add_goal("Gym", None, today, 40, "sessions", due=store.months_on(today, 2), life_goal_id=g["id"])
+    todo = store.add_detailed_todo("Book a class", group_id=store.life_goal_group(g["id"])["id"])
+    colour = store.life_goal_colour(g["id"])
+    for size in ("small", "wide", "tall", "large", "column"):
+        at, html = _home_goals_tile(size)
+        assert "Get fit" in html and f"background:{colour}" in html, size     # the goal in its colour
+        assert ("Next: Gym" in html) == (size in ("wide", "tall", "column")), size   # small: no room; large: chips
+        assert ('class="gw-chip"' in html) == (size == "large"), size
+    at, _ = _home_goals_tile("column")
+    at.checkbox(key=f"home_goal_todo_{todo['id']}").check().run()              # tick a goal's to-do from Home
+    assert store.get_todo(todo["id"])["done"]
+
+
+def test_home_tile_keeps_the_goals_behind_when_trimming(store):
+    from datetime import timedelta
+    today = store.local_today()
+    for i in range(5):
+        store.add_life_goal(f"Goal {i}", start=today - timedelta(days=30), end=today + timedelta(days=30))
+    g = store.life_goals(today)[4]
+    t = store.add_goal("Late one", None, today - timedelta(days=30), 10, due=today + timedelta(days=30),
+                       life_goal_id=g["id"])
+    for x in store.life_goals(today)[:4]:                                      # the others are done
+        store.add_detailed_todo("x", group_id=store.life_goal_group(x["id"])["id"])
+        store.set_todo_done(store.life_goal_todos(x["id"])[0]["id"], True)
+    _, html = _home_goals_tile("small")
+    assert "Goal 4" in html and "+1 more" in html and t["title"] not in html
+
+
+def test_todo_rows_get_their_goals_colour(store):
+    from venato.ui import todos
+    today = store.local_today()
+    g = store.add_life_goal("Get fit", months=6)
+    t = store.add_goal("Gym", None, None, 10, due=store.months_on(today, 2), life_goal_id=g["id"])
+    gym = store.add_todo_group("Gym")
+    store.update_todo_group(gym["id"], colour="#123456")
+    with store.db() as conn:                                                    # the target's own category
+        conn.execute("UPDATE todo_groups SET goal_id = ? WHERE id = ?", (t["id"], gym["id"]))
+    loose = store.add_todo_group("Chores")
+    rows = [store.add_detailed_todo(n, group_id=gid) for n, gid in
+            (("Own", store.life_goal_group(g["id"])["id"]), ("Target's", gym["id"]), ("Loose", loose["id"]))]
+    metas = [m["meta"] for m in todos._with_meta(rows, today, todos._groups())]
+    colour = store.life_goal_colour(g["id"])
+    assert metas[0]["goal"] == {"name": "Get fit", "colour": colour}
+    assert metas[1]["goal"] == {"name": "Get fit", "colour": colour}             # a target's to-do: the goal's colour
+    assert metas[2]["goal"] is None

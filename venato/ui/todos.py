@@ -220,13 +220,16 @@ WHEN = ("Overdue", "Today", "Tomorrow", "This week", "Later")
 
 def _groups():
     """The to-do categories, those under a long-term goal first (in the goals' order), each with `under`:
-    that goal's title (or None)."""
+    that goal's title (or None), and `goal_colour`: that goal's colour (a target's category takes its goal's)."""
     lives = {g["id"]: (i, g["title"]) for i, g in enumerate(store.life_goals(include_past=True))}
     under = store.group_life_goals()
+    colours = store.life_goal_colours()
     rows = []
     for i, g in enumerate(store.todo_groups()):
         life = lives.get(under.get(g["id"]))
-        rows.append(((0, life[0]) if life else (1, 0), i, {**g, "under": life[1] if life else None}))
+        rows.append(((0, life[0]) if life else (1, 0), i,
+                     {**g, "under": life[1] if life else None,
+                      "goal_colour": (colours.get(under[g["id"]]) or g["colour"]) if life else None}))
     return {g["id"]: g for _, _, g in sorted(rows, key=lambda r: (r[0], r[1]))}
 
 
@@ -255,13 +258,15 @@ def _due_name(due, today):
 
 
 def _with_meta(todos, today, groups):
-    """The to-dos with `meta` for the list's rows: due day (in words), category and length, when set."""
+    """The to-dos with `meta` for the list's rows: due day (in words), category and length, when set, and
+    `goal` ({name, colour}) when its category is under a long-term goal: the row's coloured dot."""
     for t in todos:
         due = store._as_date(t["due"]) if t.get("due") else None
         g = groups.get(t.get("group_id"))
         t["meta"] = {"due": _due_name(due, today) if due else None,
                      "late": bool(due and due < today and not t["done"]),
                      "group": {"name": g["name"], "colour": g["colour"]} if g else None,
+                     "goal": {"name": g["under"], "colour": g["goal_colour"]} if g and g.get("under") else None,
                      "length": _length_name(t.get("minutes"))}
     return todos
 
