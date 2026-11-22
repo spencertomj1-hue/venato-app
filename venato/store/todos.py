@@ -93,6 +93,19 @@ def set_todo_done(todo_id, done):
             "UPDATE todos SET done = ?, done_at = CASE WHEN ? THEN COALESCE(done_at, ?) END WHERE id = ?",
             (int(bool(done)), int(bool(done)), stamp(), todo_id),
         )
+    _mark_block(todo_id, done)
+
+
+def _mark_block(todo_id, done):
+    """A scheduled to-do's block (Plan and Actual copy) is marked done when it's ticked, cleared when unticked."""
+    from .status import set_block_status            # (status sits below todos; nothing circular)
+    from .timetable import blocks_at, todo_link
+    link = todo_link(todo_id)
+    if not link:
+        return
+    for b in blocks_at(link["date"], link["start"]):
+        set_block_status(b["id"], "done" if done else None, b["date"], b["start"], b["end"], b["label"],
+                         b["category_id"])
 
 
 def update_todo(todo_id, move=True, **changes):
@@ -283,6 +296,7 @@ def move_todo(todo_id, period, today=None):
 def delete_todo(todo_id):
     with db() as conn:
         conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+        conn.execute("DELETE FROM tt_todo_links WHERE todo_id = ?", (todo_id,))
 
 
 def reorder_todos(ids):
@@ -397,3 +411,37 @@ def save_todos(df, replace=False):
             )
             count += 1
     return count
+
+
+# --- To-dos on the timetable (the link itself: timetable.link_todo) ---
+
+def todo_slots(todo, day, start, now=None):
+    """Where scheduling a to-do at day/start puts it: (track, s, e). Its length is its minutes (30 if not
+    set), rounded up to whole slots; the track is the day's live one (its Plan, or its Actual once started)."""
+    from .days import live_track
+    from .grid import slot_count, slot_of
+    s = slot_of(start)
+    if not 0 <= s < slot_count():
+        raise ValueError("That time isn't on the timetable.")
+    n = -(-(todo.get("minutes") or TODO_MINUTES) // 30)
+    return live_track(day, now), s, min(s + max(n, 1), slot_count())
+
+
+def schedule_todo(todo_id, day, start, category_id=None, now=None, new_id=None):
+    """Paint a to-do onto the timetable at day/start (titled with it) and link it: one block per to-do,
+    so scheduling it again moves the link. Returns the block's (track, start, end)."""
+    from .categories import match_category
+    from .grid import slot_time
+    from .timetable import link_todo, paint
+    todo = get_todo(todo_id)
+    if not todo:
+        raise ValueError("There's no such to-do.")
+    day = _as_date(day).isoformat()
+    track, s, e = todo_slots(todo, day, start, now)
+    cid = category_id or match_category(todo["title"])
+    with db() as conn:
+        paint(day, track, s, e, {"label": todo["title"], "category_id": cid, "details": None}, new_id=new_id, conn=conn)
+        link_todo(todo_id, day, slot_time(s), slot_time(e), conn=conn)
+    if todo["done"]:
+        _mark_block(todo_id, True)
+    return track, slot_time(s), slot_time(e)

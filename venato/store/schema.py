@@ -207,6 +207,10 @@ def init_db():
         _scores_out_of_ten(conn)
         _day_status_table(conn)
         _forget_future_status(conn)
+        # To-dos on the timetable: a to-do's block is the one at this date and start, on either track
+        # (block ids change when a day locks and its Plan is copied into the Actual).
+        conn.execute("""CREATE TABLE IF NOT EXISTS tt_todo_links (
+                            todo_id TEXT PRIMARY KEY, date TEXT NOT NULL, start TEXT NOT NULL, "end" TEXT NOT NULL)""")
 
 
 def _goals_became_todos(conn):

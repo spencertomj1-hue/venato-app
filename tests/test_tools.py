@@ -453,3 +453,13 @@ def test_move_block(store, monkeypatch):
     assert (moved["date"], moved["track"], moved["start"], moved["end"], moved["details"]) == \
         ("2026-10-30", "actual", "18:00", "20:30", "Legs")                       # same id, details kept
     assert store.move_block(gym["id"], "2026-10-30", "actual", 5, 5) is None    # nonsense: ignored
+
+
+def test_schedule_todo_tool_previews_an_overwrite(tools, store):
+    tools.add_block(DAY, "plan", "09:00", "10:00", "Gym", category="Exercise")
+    t = store.add_detailed_todo("Write essay", due=DAY, minutes=60)
+    r = tools.schedule_todo(t["id"], DAY, "09:30")
+    assert r.pending and "overwrites" in r.pending.summary
+    r.pending.run()
+    assert blocks(store)[-1][:3] == ("09:30", "10:30", "Write essay")
+    assert store.todo_link(t["id"]) == {"date": DAY, "start": "09:30", "end": "10:30"}
