@@ -1,5 +1,6 @@
 """
-Tools for goals: measurable targets with a deadline, and their progress.
+Tools for targets (called goals in the tool names, from before long-term goals): measurable, with a deadline,
+and their progress. A target can sit under a long-term goal (life_goals.py).
 """
 
 from datetime import date
@@ -65,7 +66,18 @@ def _due(due):
         raise ToolError("due must be a date, YYYY-MM-DD.")
 
 
-def add_goal(title, target, period=None, unit=None, habit=None, date=None, category=None, label=None, due=None):
+def _life_goal_id(life_goal):
+    """A long-term goal's id from its title or id ("" / "none": no goal)."""
+    if life_goal is None:
+        return None
+    if str(life_goal).strip().lower() in ("", "none"):
+        return ""
+    from .life_goals import find_life_goal
+    return find_life_goal(life_goal)["id"]
+
+
+def add_goal(title, target, period=None, unit=None, habit=None, date=None, category=None, label=None, due=None,
+             life_goal=None):
     """A measurable goal with a deadline (`due`), from today (or `date`). Without a deadline, `period`
     "monthly" / "yearly" makes it due at the end of the month / year (default: this month). With a
     category (and optionally an activity label) it counts the timetable's Actual hours instead of a hand-kept number."""
@@ -92,9 +104,11 @@ def add_goal(title, target, period=None, unit=None, habit=None, date=None, categ
     if habit and category:
         raise ToolError("A goal counts either a habit's ticks or timetable hours, not both.")
     cid = _goal_category(category) if category else None
+    life = _life_goal_id(life_goal) or None
     g = store.add_goal(title, per, day, target, (unit or "h") if cid else unit, _habit_id(habit),
-                       category_id=cid, label=label if cid else None, due=None if per else due)
-    return Result(f"Added the goal {describe_goal(g)}.", changed=True)
+                       category_id=cid, label=label if cid else None, due=None if per else due, life_goal_id=life)
+    under = f" under the goal '{store.get_life_goal(life)['title']}'" if life else ""
+    return Result(f"Added the target {describe_goal(g)}{under}.", changed=True)
 
 
 def log_goal_progress(goal, amount=1, period=None, date=None):
@@ -123,7 +137,7 @@ def set_goal_progress(goal, value, period=None, date=None):
 
 
 def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit=False, period=None, date=None,
-              category=None, label=None, unlink_category=False, due=None, start=None):
+              category=None, label=None, unlink_category=False, due=None, start=None, life_goal=None):
     """Change a goal's title, target, unit, deadline, start (the day it counts from: earlier to count
     progress already made), or what (a habit, timetable hours, or nothing) it counts."""
     g = _find_goal(goal, period, date)
@@ -154,8 +168,11 @@ def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit
         changes["category_id"] = None
     if label is not None:
         changes["label"] = label
+    if life_goal is not None:
+        changes["life_goal_id"] = _life_goal_id(life_goal) or None
     if not changes:
-        raise ToolError("Say what to change: title, target, unit, due, start, habit, category, label, unlink_habit or unlink_category.")
+        raise ToolError("Say what to change: title, target, unit, due, start, habit, category, label, life_goal, "
+                        "unlink_habit or unlink_category.")
     store.update_goal(g["id"], **changes)
     return Result(f"Updated: {describe_goal(store.get_goal(g['id']))}.", changed=True)
 
@@ -173,12 +190,14 @@ def list_goals(period=None, date=None):
     """Goals (with ids, progress and deadlines) not past their deadline on `date` (default today)."""
     day = _period_day(date)
     goals = store.goals_open(day)
-    lines = ["Goals:" + ("" if goals else " none")]
+    lines = ["Targets:" + ("" if goals else " none")]
     for g in goals:
         if True:
             pct = round(100 * min(g["value"] / g["target"], 1))
             how = f"; counts habit {g['habit']}" if g["habit"] else ""
             if g.get("category"):
                 how = f"; counts Actual hours of {g['label'] + ' (' + g['category'] + ')' if g.get('label') else g['category']}"
+            life = store.get_life_goal(g["life_goal_id"]) if g.get("life_goal_id") else None
+            how += f"; under the goal {life['title']}" if life else ""
             lines.append(f"- {g['title']} {store.goal_title_due(g['due'], day)}: {_amount(g)} ({pct}%) (id {g['id']}{how})")
     return Result("\n".join(lines))

@@ -33,7 +33,7 @@ GOAL_PERIODS = ("monthly", "yearly")
 GOAL_COLS = "id, title, period, period_start, target, unit, progress, habit_id, ord, created_at, category_id, label, due"
 # What is read back: also the deadline a plan goal belongs to (deadline_id). A closed goal (its deadline
 # is done) is left out of every list, so pace, sittings and Needs you no longer see it.
-GOAL_SELECT = GOAL_COLS + ", deadline_id"
+GOAL_SELECT = GOAL_COLS + ", deadline_id, life_goal_id"   # life_goal_id: the long-term goal it is a target of
 
 
 def _period_for(start, due):
@@ -225,7 +225,7 @@ def _check_tracking(conn, habit_id, category_id):
 
 
 def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None, category_id=None, label=None,
-             due=None, deadline_id=None):
+             due=None, deadline_id=None, life_goal_id=None):
     """Add a goal; returns it. With `due`, it runs from `day` (default today) to that deadline; without,
     `period` makes it the month's or year's containing `day` (due on its last day). category_id (and
     optionally an activity label) makes it count the Actual hours of that category instead of a hand-kept number."""
@@ -253,6 +253,8 @@ def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None,
             (goal_id, title, period, start, _check_target(target), (unit or "").strip() or None, habit_id,
              stamp(), category_id or None, label, due),
         )
+        if life_goal_id:
+            conn.execute("UPDATE goals SET life_goal_id = ? WHERE id = ?", (life_goal_id, goal_id))
         if deadline_id:
             conn.execute("UPDATE goals SET deadline_id = ? WHERE id = ?", (deadline_id, goal_id))
         else:
@@ -261,7 +263,7 @@ def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None,
 
 
 def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP, category_id=KEEP, label=KEEP,
-                due=KEEP, start=KEEP):
+                due=KEEP, start=KEEP, life_goal_id=KEEP):
     """Change a goal's title, target, unit, deadline, start (the day it counts from: earlier to count
     progress you'd already made), linked habit or counted category (None unlinks them).
     Linking a habit unlinks the category and the other way round."""
@@ -281,6 +283,8 @@ def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP, cate
             raise ValueError("A goal needs a title.")
     if target is not KEEP:
         fields["target"] = _check_target(target)
+    if life_goal_id is not KEEP:
+        fields["life_goal_id"] = life_goal_id or None
     if unit is not KEEP:
         fields["unit"] = (unit or "").strip() or None
     if habit_id is not KEEP:
@@ -389,9 +393,11 @@ def calendar_horizon():
 def load_goals():
     """Every goal, for export (the linked habit by name, so the CSV makes sense on its own)."""
     return _read(f"""SELECT g.id, g.title, g.period, g.period_start, g.due, g.target, g.unit, g.progress,
-                            h.name AS habit, c.name AS category, g.label, g.ord, g.created_at, g.deadline_id, g.closed
+                            h.name AS habit, c.name AS category, g.label, g.ord, g.created_at, g.deadline_id, g.closed,
+                            l.title AS life_goal
                      FROM goals g LEFT JOIN habits h ON h.id = g.habit_id
                      LEFT JOIN tt_categories c ON c.id = g.category_id
+                     LEFT JOIN life_goals l ON l.id = g.life_goal_id
                      ORDER BY g.due, g.ord""")
 
 
@@ -407,6 +413,7 @@ def save_goals(df, replace=False):
             conn.execute("DELETE FROM goals")
         habits = {name.lower(): hid for hid, name in conn.execute("SELECT id, name FROM habits")}
         cats = {name.lower(): cid for cid, name in conn.execute("SELECT id, name FROM tt_categories")}
+        lifes = {name.lower(): lid for lid, name in conn.execute("SELECT id, title FROM life_goals")}
         for row in df.to_dict("records"):
             title = _clean(row.get("title"), str)
             period = (_clean(row.get("period"), str) or "").strip().lower()
@@ -443,5 +450,8 @@ def save_goals(df, replace=False):
             if replace and did and conn.execute("SELECT 1 FROM deadlines WHERE id = ?", (did,)).fetchone():
                 conn.execute("UPDATE goals SET deadline_id = ?, closed = ? WHERE id = ?",
                              (did, 1 if _clean(row.get("closed"), int) else 0, gid))
+            life = _clean(row.get("life_goal"), str)            # the long-term goal, by title (unknown: left as is)
+            if life and life.strip().lower() in lifes:
+                conn.execute("UPDATE goals SET life_goal_id = ? WHERE id = ?", (lifes[life.strip().lower()], gid))
             count += 1
     return count

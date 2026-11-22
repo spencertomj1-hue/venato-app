@@ -282,7 +282,12 @@ What the app tracks
   - edit_todo renames it, changes its notes or repeat, or moves it to another list (move_to="weekly" etc.).
   - delete_todo needs the user's confirmation.
 
-- Goals: measurable targets with a deadline (due), with a progress bar, e.g. "Gym: 12 sessions by 30 Nov",
+- Long-term goals: plans over 3, 6 or 12 months (or to an end date), e.g. "Get fit", "Land a grad job". They sit
+  at the centre of the app: targets (below) and to-dos go under them. "my goal for the next 6 months is to get
+  fit" -> add_life_goal(title="Get fit", months=6); then offer to add a target or to-dos under it
+  (add_goal / add_todo with life_goal). list_life_goals shows each with its targets and to-dos.
+  edit_life_goal changes or archives one; delete_life_goal needs confirmation.
+- Targets (the tools call them goals): measurable, with a deadline (due), with a progress bar, e.g. "Gym: 12 sessions by 30 Nov",
   "Read 20 books by 31 Dec". Each has a target, an optional unit, and runs from the day it's set to its deadline.
   - Progress is either updated by hand (log_goal_progress adds, e.g. "did 2 more gym sessions";
     set_goal_progress sets it), or counted automatically from a habit (habit="Gym": the number of days
@@ -477,7 +482,8 @@ TOOL_SPECS = [
      _schema(["title", "period"], title={"type": "string"}, period=TODO_PERIOD,
              date={**DATE, "description": "YYYY-MM-DD, any day in the period (default today)"},
              repeat={"type": "boolean", "description": "a fresh copy every new period"},
-             notes={"type": "string", "description": "optional short note shown under the title"}),
+             notes={"type": "string", "description": "optional short note shown under the title"},
+             life_goal={"type": "string", "description": "a long-term goal's title or id to put it under (optional)"}),
      tools.add_todo),
     ("complete_todo", "Tick off a to-do, found by title (or id) in the current periods.", TODO_REF, tools.complete_todo),
     ("uncomplete_todo", "Untick a to-do, found by title (or id) in the current periods.", TODO_REF,
@@ -498,7 +504,8 @@ TOOL_SPECS = [
              category={"type": "string", "description": "a timetable category whose Actual hours count as progress (optional)"},
              label={"type": "string", "description": "with category: only count this activity, e.g. 'Guitar' (optional)"},
              date={**DATE, "description": "the day it counts from (default today; earlier to count progress "
-                                         "already made, e.g. 'I've done 3 in the last 2 weeks')"}),
+                                         "already made, e.g. 'I've done 3 in the last 2 weeks')"},
+             life_goal={"type": "string", "description": "the long-term goal it serves, title or id (optional)"}),
      tools.add_goal),
     ("log_goal_progress", "Add to a goal's progress (amount defaults to 1; negative takes some off).",
      _schema(["goal"], **GOAL_REF, amount={"type": "number"}), tools.log_goal_progress),
@@ -509,8 +516,25 @@ TOOL_SPECS = [
              due={**DATE, "description": "a new deadline, YYYY-MM-DD"},
              start={**DATE, "description": "a new day it counts from, YYYY-MM-DD (earlier counts past progress)"},
              habit={"type": "string"}, unlink_habit={"type": "boolean"}, category={"type": "string"},
-             label={"type": "string"}, unlink_category={"type": "boolean"}),
+             label={"type": "string"}, unlink_category={"type": "boolean"},
+             life_goal={"type": "string", "description": "move it under this long-term goal (title or id; 'none' for none)"}),
      tools.edit_goal),
+    ("add_life_goal", "Add a long-term goal: a plan over months, e.g. 'Get fit' for 6 months. Targets and to-dos go under it.",
+     _schema(["title"], title={"type": "string"},
+             months={"type": "integer", "description": "how long: 3, 6 or 12 usually"},
+             end={**DATE, "description": "an end date instead of months"},
+             why={"type": "string", "description": "why it matters, in the user's words (optional)"},
+             start={**DATE, "description": "when it starts (default today)"}),
+     tools.add_life_goal),
+    ("list_life_goals", "List long-term goals with ids, progress, their targets and open to-dos.",
+     _schema([]), tools.list_life_goals),
+    ("edit_life_goal", "Change a long-term goal's title, why, start, length or end, or archive it (done with it).",
+     _schema(["goal"], goal={"type": "string", "description": "its title or id"}, title={"type": "string"},
+             why={"type": "string"}, months={"type": "integer"}, end=DATE, start=DATE,
+             archive={"type": "boolean"}),
+     tools.edit_life_goal),
+    ("delete_life_goal", "Delete a long-term goal (needs the user's confirmation). Its targets and to-dos stay.",
+     _schema(["goal"], goal={"type": "string", "description": "its title or id"}), tools.delete_life_goal),
     ("list_goals", "List current goals (not past their deadline) with progress, deadlines and ids.",
      _schema([], date={**DATE, "description": "list those not past their deadline on this day (default today)"}),
      tools.list_goals),

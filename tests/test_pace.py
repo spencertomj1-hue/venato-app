@@ -93,7 +93,7 @@ def test_capacity_with_sunday_weeks_and_other_day_hours(store, pace):
 def test_budget_text(store, pace):
     store.add_goal("Study", "monthly", "2026-11-01", 300, "h", category_id="study")
     b = pace.week_budget(NOW.date(), pace.Ctx(NOW))
-    assert b["over"] and b["text"].startswith("Goals need ") and "you have 87 h free" in b["text"]
+    assert b["over"] and b["text"].startswith("Targets need ") and "you have 87 h free" in b["text"]
 
 
 # --- Phase 2 / 3: pace and debt ---
@@ -303,7 +303,7 @@ def test_goal_pace_and_week_budget_tools(store, tools):
     assert "Study (0/30 h): Behind" in text and "Books" in text
     assert "Study" in tools.goal_pace("study").text and "Books" not in tools.goal_pace("study").text
     text = tools.week_budget().text
-    assert "Goals need" in text and "- Study: 0/" in text
+    assert "Targets need" in text and "- Study: 0/" in text
 
 
 def test_resolve_goal_moves_the_deadline(store, pace, tools):
@@ -324,7 +324,7 @@ def test_assistant_has_the_goal_tools_and_a_snapshot_line(store, pace):
     names = [spec[0] for spec in assistant.TOOL_SPECS]
     assert {"goal_pace", "week_budget", "plan_goals"} <= set(names)
     store.add_goal("Study", "monthly", "2026-11-01", 30, "h", category_id="study")
-    assert "Goals this week:\nGoals need" in assistant.context(NOW)
+    assert "Goals this week:\nTargets need" in assistant.context(NOW)
 
 
 def test_a_day_can_be_marked_away_without_a_calendar_event(store, pace):

@@ -129,7 +129,7 @@ def suggestion_bar(first, sugg, ctx=None, row=None):
         row.button("Show this week's suggestions again", key="tt_sugg_back", type="tertiary",
                    on_click=_undismiss_week, args=(first,))
     row.toggle("Show suggestions", value=show_suggestions(), key="tt_show_sugg", on_change=_toggle_suggestions,
-               help="Draw where your goals' missing hours would fit, as dashed sittings in free time")
+               help="Draw where your targets' missing hours would fit, as dashed sittings in free time")
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ def suggestion_bar(first, sugg, ctx=None, row=None):
 # ---------------------------------------------------------------------------
 
 def _free_bars(days):
-    """Free hours for goals per day as small bars (away days at zero, labelled), with a text equivalent."""
+    """Free hours for targets per day as small bars (away days at zero, labelled), with a text equivalent."""
     top = max(1.0, store.SLOTS / 2)
     cols, said = [], []
     for d in days:
@@ -170,7 +170,7 @@ def planner(first, ctx=None):
     confirmed, so_far = ctx.confirmed(first, first + timedelta(days=6))
     with st.container(border=True, key="tt_planner"):
         kit.subhead("How the week went" if ended else "Plan this week")
-        st.caption(f"Free hours for goals per day · {pace.fmt(budget['capacity'])} h in all")
+        st.caption(f"Free hours for targets per day · {pace.fmt(budget['capacity'])} h in all")
         st.html(_free_bars(budget["days"]))
         rows = [w for w in budget["goals"]]
         if rows:
@@ -186,12 +186,12 @@ def planner(first, ctx=None):
             if any(w["short"] >= pace.TOLERANCE and not w["over"] for w in rows):
                 if st.button("Plan all goals", icon=":material/auto_awesome_motion:", key="tt_plan_goals",
                              type="primary", width="stretch",
-                             help="Fill what each goal is short into free time, top goal first. You'll see it first."):
+                             help="Fill what each target is short into free time, top target first. You'll see it first."):
                     from venato.ui import timetable_tools
                     timetable_tools.open_plan_goals(first)
             if budget["over"] and not ended and st.button("Share hours", icon=":material/balance:", key="tt_split_goals",
                                             width="stretch",
-                                            help="Goals want more than the week's free time: choose who gets what"):
+                                            help="Targets want more than the week's free time: choose who gets what"):
                 split_dialog(first)
             if so_far and confirmed < so_far:
                 n = so_far - confirmed
@@ -205,7 +205,7 @@ def planner(first, ctx=None):
 def _away_boxes(first, events):
     """"I'm away" for each day of the week, or for one of its all-day events: that day then has no free time for goals."""
     away, days_away = store.away_uids(), store.away_days()
-    st.caption("Ticked days have no free time for goals.")
+    st.caption("Ticked days have no free time for targets.")
     for i in range(7):
         d = first + timedelta(days=i)
         key = f"tt_away_day_{d.isoformat()}"
@@ -218,13 +218,13 @@ def _away_boxes(first, events):
                     on_change=lambda uid=e["uid"], k=key: store.set_away(uid, st.session_state[k]))
 
 
-@st.dialog("Share this week's time between goals", width="large")
+@st.dialog("Share this week's time between targets", width="large")
 def split_dialog(week):
     """Over budget: which goals are short, and how many hours each gets this week (goal_week)."""
     ctx = _ctx()
     budget = pace.week_budget(week, ctx)
     first = budget["week_start"]
-    st.caption(f"{budget['text']} Higher goals in your list get time first; change the hours to share it "
+    st.caption(f"{budget['text']} Higher targets in your list get time first; change the hours to share it "
                "your way. Hours = done so far plus what to plan for the rest of the week.")
     hours = {}
     for w in budget["goals"]:
@@ -241,7 +241,7 @@ def split_dialog(week):
                 + (" · :orange[more than you have]" if planned > budget["capacity"] + pace.TOLERANCE else ""))
     a, b, _ = st.columns([1, 1.4, 2])
     if a.button("Save", type="primary", key="split_save"):
-        undo.checkpoint("Changed how this week's time is shared between goals")
+        undo.checkpoint("Changed how this week's time is shared between targets")
         store.set_goal_week_hours(first, hours)
         st.rerun()
     if b.button("Back to automatic", key="split_auto"):
@@ -432,7 +432,7 @@ def free_split(ctx=None):
         segs += f'<i class="fs-free" style="flex:{max(unclaimed, 0.01) / total:.4f} 1 0" title="Unclaimed: {f(unclaimed)} h"></i>'
     keys = "".join(f'<li><i style="background:{c}"></i><span>{escape(t)}</span><b>{f(h)} h</b></li>' for t, h, c in parts)
     keys += f'<li class="fs-u"><i class="fs-free"></i><span>Unclaimed</span><b>{f(unclaimed)} h</b></li>'
-    label = (f"{f(cap)} hours free for goals this week: " + ", ".join(f"{t} {f(h)} h" for t, h, _ in parts)
+    label = (f"{f(cap)} hours free for targets this week: " + ", ".join(f"{t} {f(h)} h" for t, h, _ in parts)
              + f", {f(unclaimed)} h unclaimed")
     with st.container(border=True, key="goals_free_split"):
         st.subheader(f"Where this week's {f(cap)} h free go", anchor=False)
@@ -451,11 +451,11 @@ def free_split(ctx=None):
         row = st.container(horizontal=True, gap="small")
         if any(w["short"] >= pace.TOLERANCE and not w["over"] for w in budget["goals"]):
             if row.button("Plan my goals", icon=":material/auto_awesome_motion:", key="goals_plan",
-                          help="Fill what each goal is short into free time this week, top goal first."):
+                          help="Fill what each target is short into free time this week, top target first."):
                 from venato.ui import timetable_tools
                 timetable_tools.open_plan_goals(budget["week_start"])
         if row.button("Share hours", icon=":material/balance:", key="goals_split",
-                      help="Choose how this week's free time is shared between goals"):
+                      help="Choose how this week's free time is shared between targets"):
             split_dialog(budget["week_start"])
 
 
@@ -693,7 +693,7 @@ def _needs_goals(rows, ctx):
         st.html(goals.goal_bar(g, ctx.today, line))
     if any(p.get("week") and p["week"]["short"] >= pace.TOLERANCE and not p["week"]["over"] for p, _, _ in rows):
         if st.button("Plan my goals", icon=":material/auto_awesome_motion:", key="home_plan_goals", width="stretch",
-                     help="Fill what each goal is short into free time this week, top goal first. You'll see it first."):
+                     help="Fill what each target is short into free time this week, top target first. You'll see it first."):
             from venato.ui import timetable_tools
             timetable_tools.open_plan_goals(ctx.today)
 
@@ -719,7 +719,7 @@ def offers(ctx=None):
                 st.button(o["text"], key=f"offer_{o['kind']}_{g['id']}", on_click=_offer, args=(g["id"], o["kind"]),
                           width="stretch")
             st.button("Not now", key=f"offer_no_{g['id']}", type="tertiary", on_click=pace.dismiss_offer,
-                      args=(g["id"],), help="Hide this for this goal")
+                      args=(g["id"],), help="Hide this for this target")
 
 
 def _accept(s, target):
@@ -734,9 +734,9 @@ def suggestions(ctx=None):
         target = pace.suggested_target(s["per_week"], ctx.today)
         with st.container(border=True):
             st.markdown(f":material/lightbulb: {md(s['text'])}  \n"
-                        f":gray[A goal of {target} h this month, counted from your timetable's Actual hours.]")
+                        f":gray[A target of {target} h this month, counted from your timetable's Actual hours.]")
             row = st.container(horizontal=True, gap="small")
-            row.button("Make it a goal", key=f"suggest_yes_{s['key']}", icon=":material/add:",
+            row.button("Make it a target", key=f"suggest_yes_{s['key']}", icon=":material/add:",
                        on_click=_accept, args=(s, target))
             row.button("No thanks", key=f"suggest_no_{s['key']}", type="tertiary",
                        on_click=pace.dismiss_suggestion, args=(s,))

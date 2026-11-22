@@ -1,5 +1,5 @@
 """
-Timetable's side panel: your open to-dos and your goals, ready to be given time.
+Timetable's side panel: your open to-dos and targets, under the long-term goal they serve, ready to be given time.
 
 Pick one (it lights up), then drag on the week (or click a slot) to place it: the block takes its name and a
 category, and is linked to it (store/links.py). A click without a drag gives a to-do the time it says it takes
@@ -75,7 +75,8 @@ def _style():
 
 
 def render(ctx=None):
-    """The panel beside the week: a hint for what's picked, then To-dos, then Goals."""
+    """The panel beside the week: a hint for what's picked, then each long-term goal's targets and to-dos under
+    its name, then the other to-dos and targets."""
     _style()
     picked = _picked()
     cats, label_map = store.load_categories(), store.load_label_map()
@@ -85,22 +86,45 @@ def render(ctx=None):
             st.caption(f":material/touch_app: Drag on the week to place **{kit.md(picked['label'])}**. "
                        "Esc puts it down.")
         else:
-            st.caption("Pick a to-do or goal, then drag on the week to put it in.")
+            st.caption("Pick a to-do or target, then drag on the week to put it in.")
 
-        kit.subhead("To-dos", icon=":material/check_box:")
-        todos = store.open_todos(ctx.today if ctx else None)
-        if not todos:
-            st.caption("No open to-dos.")
-        for t in todos:
-            pick = _todo_pick(t, cats, label_map)
-            mins = t.get("minutes")
-            sub = f"{mins} min" if mins else ""
-            _item(f"tt_pick_todo_{t['id']}", pick, t["title"] + (f" · {sub}" if sub else ""), sub, picked)
+        today = ctx.today if ctx else None
+        todos = store.open_todos(today)
+        targets = [g for g in store.goals_open(today) if g["kind"] != "habit"]
+        lives = store.life_goals(today)
+        under = store.group_life_goals()                  # to-do category -> long-term goal
+        for life in lives:                                # each goal's targets and to-dos under its name
+            mine_t = [g for g in targets if g.get("life_goal_id") == life["id"]]
+            mine_d = [t for t in todos if under.get(t["group_id"]) == life["id"]]
+            if not mine_t and not mine_d:
+                continue
+            kit.subhead(life["title"], icon=":material/flag:")
+            _targets(mine_t, cats, label_map, picked)
+            _todos(mine_d, cats, label_map, picked)
+        placed = {life["id"] for life in lives}
+        other_d = [t for t in todos if under.get(t["group_id"]) not in placed]
+        other_t = [g for g in targets if g.get("life_goal_id") not in placed]
 
-        kit.subhead("Goals", icon=":material/flag:")
-        goals = [g for g in store.goals_open(ctx.today if ctx else None) if g["kind"] != "habit"]
-        if not goals:
-            st.caption("No goals to give time to.")
-        for g in goals:
-            sub = _goal_text(g)
-            _item(f"tt_pick_goal_{g['id']}", _goal_pick(g, cats, label_map), f"{g['title']} · {sub}", sub, picked)
+        kit.subhead("Other to-dos" if lives else "To-dos", icon=":material/check_box:")
+        if not other_d:
+            st.caption("No open to-dos." if not lives else "None outside your goals.")
+        _todos(other_d, cats, label_map, picked)
+
+        kit.subhead("Other targets" if lives else "Targets", icon=":material/track_changes:")
+        if not other_t:
+            st.caption("No targets to give time to." if not lives else "None outside your goals.")
+        _targets(other_t, cats, label_map, picked)
+
+
+def _todos(todos, cats, label_map, picked):
+    for t in todos:
+        pick = _todo_pick(t, cats, label_map)
+        mins = t.get("minutes")
+        sub = f"{mins} min" if mins else ""
+        _item(f"tt_pick_todo_{t['id']}", pick, t["title"] + (f" · {sub}" if sub else ""), sub, picked)
+
+
+def _targets(targets, cats, label_map, picked):
+    for g in targets:
+        sub = _goal_text(g)
+        _item(f"tt_pick_goal_{g['id']}", _goal_pick(g, cats, label_map), f"{g['title']} · {sub}", sub, picked)

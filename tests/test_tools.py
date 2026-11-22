@@ -306,12 +306,12 @@ def test_complete_todo_by_shared_words(tools, store, friday):
 
 def test_add_and_update_goal_by_hand(tools, store, friday):
     r = tools.add_goal("Read books", 20, "yearly", unit="books")
-    assert r.changed and r.text == "Added the goal 'Read books' (by 31/12: 0/20 books)."
+    assert r.changed and r.text == "Added the target 'Read books' (by 31/12: 0/20 books)."
     assert "already" in tools.add_goal("read books", 5, "year").text
     assert tools.log_goal_progress("read", 2).text == "Updated 'Read books' (by 31/12: 2/20 books)."
     assert tools.set_goal_progress("books", 5).text == "Set 'Read books' (by 31/12: 5/20 books) (was 2)."
     r = tools.add_goal("Swim", 10, due="2027-02-14")
-    assert r.text == "Added the goal 'Swim' (by 14/02/27: 0/10)."
+    assert r.text == "Added the target 'Swim' (by 14/02/27: 0/10)."
     assert "by 01/03/27" in tools.edit_goal("swim", due="2027-03-01").text
     with pytest.raises(tools.ToolError):
         tools.add_goal("Late", 3, due="2026-10-01")          # before today

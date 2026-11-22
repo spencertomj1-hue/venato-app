@@ -549,10 +549,16 @@ def _data_section():
         "optional `id`, `notes`, `done`, `done_at`, `repeat`, `ord` and `created_at`.",
     )
     _csv_section(
-        "Goals", "goals", store.load_goals, store.save_goals, ["title", "target"],
+        "Goals", "life_goals", store.load_life_goals, store.save_life_goals, ["title", "start", "end_date"],
+        "Long-term goals: `title`, `start` and `end_date` (YYYY-MM-DD); optional `id`, `why`, `ord`, `created_at` "
+        "and `archived`. Import these before targets, so targets find their goal.",
+    )
+    _csv_section(
+        "Targets", "goals", store.load_goals, store.save_goals, ["title", "target"],
         "`title`, `target` and `due` (the deadline, YYYY-MM-DD; or, from older exports, `period`: monthly or "
         "yearly); optional `period_start` (the day it was set), `id`, `unit`, `progress`, `habit` (a habit's name, "
-        "to count its ticks), `category`, `label`, `ord` and `created_at`.",
+        "to count its ticks), `category`, `label`, `life_goal` (the title of the goal it's under), `ord` and "
+        "`created_at`.",
     )
 
 
