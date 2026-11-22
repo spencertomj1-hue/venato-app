@@ -62,23 +62,27 @@ def test_core_blocks_and_starter(store):
     assert set(b.STARTER) <= core and "grades" not in b.STARTER
 
 
-def test_money_and_workouts_are_gone(store):
+def test_money_is_gone(store):
     b = _blocks()
-    assert b.get("money") is None and b.get("workouts") is None
-    for name in ("money", "workouts"):
-        assert importlib.util.find_spec(f"venato.blocks.{name}") is None
-        assert importlib.util.find_spec(f"venato.ui.{name}") is None
+    assert b.get("money") is None
+    assert importlib.util.find_spec("venato.blocks.money") is None
+    assert importlib.util.find_spec("venato.ui.money") is None
     assert "Money" not in b.GROUPS
+
+
+def test_workouts_is_an_optional_extra(store):
+    w = _blocks().get("workouts")
+    assert w is not None and not w.core and not w.default
 
 
 def test_settings_listing_chopped_blocks_load(store):
     b = _blocks()
-    store.save_settings(blocks=["timetable", "money", "workouts", "goals"], blocks_optional=True)
+    store.save_settings(blocks=["timetable", "money", "goals"], blocks_optional=True)
     assert b.chosen_keys() == ["timetable", "goals"]
     assert list(b.pages()) == ["Timetable", "To-dos", "Goals"]       # Goals brings the To-dos page
     settings = store.load_settings()
     settings.pop("blocks_optional")
-    (store.DATA_DIR / "settings.json").write_text(json.dumps({**settings, "blocks": ["money", "workouts"]}))   # an older list
+    (store.DATA_DIR / "settings.json").write_text(json.dumps({**settings, "blocks": ["money"]}))   # an older list
     assert b.chosen_keys() == ["timetable", "goals", "focus", "grades", "stats"]
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
