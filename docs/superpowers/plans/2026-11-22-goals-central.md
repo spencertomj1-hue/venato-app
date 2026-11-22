@@ -14,6 +14,10 @@ Spec: the conversation of 2026-11-22. A **Goal** is an overarching plan over 3, 
 - To-dos: daily/weekly/monthly lists, repeat/rollover, due day, minutes, category, timetable scheduling
   (`store/todos.py`, `ui/todos.py` + JS component).
 - Assistant tools: `tools/goals.py`, `tools/todos.py`, `tools/goal_time.py`.
+- **Since PR #38 (merged 2026-11-22):** Timetable's "Give it time" side panel (`ui/timetable_side.py`) lists
+  open to-dos and non-habit goals flat; pick one, drag on the week to place it. `tt_links` (`store/links.py`,
+  `kind IN ('goal')`, `ref` = `goals.id`) makes a hand-counted target go up one when its block is marked
+  done. Home tiles now resize by a corner grip (`home_flip.js`), so a tile's content must fit any size it offers.
 
 ## Model
 
@@ -58,6 +62,15 @@ Verified when: `pytest tests/test_todos_app.py tests/test_home_layout.py tests/t
   (`render_home`), `venato/blocks/core.py`.
 - Blocked by: 2.
 
+### Phase 3b: Timetable side panel by Goal (Size: S)
+Verified when: `pytest tests/test_timetable_side.py tests/test_timetable_todo_sync.py` green + screenshot.
+- Acceptance: "Give it time" groups its to-dos and targets under a heading per Goal (active Goals in order),
+  then "Other to-dos" / "Other targets"; picking, placing, `tt_links` and done-counting unchanged; a Goal
+  itself is a heading, never pickable (time goes to its targets / to-dos).
+- Home Goals tile (Phase 3) checked at every size its widget offers, now that the grip resizes tiles.
+- Files: `venato/ui/timetable_side.py`, `tests/test_timetable_side.py`.
+- Blocked by: 1 (can run alongside 2).
+
 ### Phase 4: assistant tools (Size: S)
 Verified when: `pytest tests/test_tools.py tests/test_assistant_session.py` green.
 - Acceptance: `add_life_goal`, `list_life_goals`, `edit_life_goal`; `add_goal` (target) and `add_todo` take
@@ -68,15 +81,17 @@ Verified when: `pytest tests/test_tools.py tests/test_assistant_session.py` gree
 
 ### Phase 5: wording + docs (Size: S)
 Verified when: full `pytest` green; `grep` shows no user-facing "goal" meaning target.
-- Acceptance: UI copy says "target" for measurable ones (Needs you, pace lines, onboarding, Settings);
+- Acceptance: UI copy says "target" for measurable ones (Needs you, pace lines, onboarding, Settings,
+  the Timetable side panel and its hint "Pick a to-do or goal");
   README / CHANGELOG / FOR-TOM updated; demo seed (`scripts/seed_demo.py`) has 2 Goals.
-- Blocked by: 2, 3, 4.
+- Blocked by: 2, 3, 3b, 4.
 
 ## Decision log
 | Decision | Chosen | Why |
 |---|---|---|
 | Keep `goals` table for targets | yes | zero risk to pace/hours/deadline-plan code |
 | To-dos join Goals via their category | yes | reuses the existing goal→category link; to-dos keep periods, rollover, scheduling |
+| `tt_links` stays `kind = 'goal'` → targets | yes | blocks serve targets; a Goal gets time only through them, so no schema change to the merged table |
 | Goal progress | mean of targets' fractions; to-dos if no targets | needs no new input from the user |
 | D1 links | a target / to-do sits under at most one Goal | simple; one column each |
 | D2 existing data | existing targets stay unparented ("Not under a goal"); user assigns | nothing guessed |
@@ -87,7 +102,8 @@ Verified when: full `pytest` green; `grep` shows no user-facing "goal" meaning t
 - Nothing open: D1–D4 answered 2026-11-22.
 
 ## Always / Never
-- Always: every current mechanic (habit/hours/hand targets, pace, weekly split, deadline plans, to-do
+- Always: every current mechanic (habit/hours/hand targets, pace, weekly split, deadline plans, side-panel
+  placing and done-counting, tile resizing, to-do
   periods/repeat/rollover/scheduling, undo, export/import) behaves the same.
 - Never: drop or rename `goals`/`todos` tables; force every target or to-do under a Goal.
 
@@ -97,5 +113,6 @@ Verified when: full `pytest` green; `grep` shows no user-facing "goal" meaning t
 | 1 | pending |
 | 2 | pending |
 | 3 | pending |
+| 3b | pending |
 | 4 | pending |
 | 5 | pending |
