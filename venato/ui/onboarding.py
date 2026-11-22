@@ -351,7 +351,7 @@ def forget_goal_row(row):
         ob.get(k, {}).pop(row, None)
 
 
-def _example_category(cid):
+def example_category(cid):
     """Make an example category if it isn't there, and return the id it has (one of the same name counts)."""
     ensure_category(cid)
     cats = store.load_categories()
@@ -366,7 +366,7 @@ def _hours_category(text):
     named after the goal (in the default group; one of that name already there is used)."""
     cid = next((s["cid"] for s in suggest.for_goal(text) if s["kind"] == "category"), None)
     if cid or is_student():
-        return _example_category(cid or "study")
+        return example_category(cid or "study")
     cats = store.load_categories()
     same = [i for i, n in zip(cats["id"], cats["name"]) if n.lower() == text.lower()]
     return same[0] if same else add_category(text, OWN_COLOUR, default_group())

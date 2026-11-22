@@ -10,7 +10,7 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Added
-- **Wake-up and bed time on the Timetable.** The first time you open it, a card asks when you usually wake up and go to bed. Saving makes the timetable day run between them, so the grid shows only your waking hours and goal sittings, Fit time and the week's free hours never land while you're asleep. "Not now" stops it asking; change it later in Settings → Region → Timetable hours.
+- **Your sleep today** on the Timetable's side panel. Until today has them, it asks what time you woke up and went to bed (to the half hour). Adding them fills **Sleep** blocks from the start of the timetable day to when you woke, and from bed time to the end of the day, in free time only, so nothing of yours is overwritten. Each can be added on its own (wake-up in the morning, bed time later), and the widget goes once both are in.
 - **Setup's last step explains how each day works**: Plan, the Plan locked and copied into the Actual when the day starts, then Confirm at the end. Review and goals only count confirmed days, and setup now says so.
 - **Setup offers a calendar to everyone.** People not at uni get a "Connect your calendar" step (one Outlook, Google or iCloud link, no Canvas) so their events show on the timetable and planning goes round them.
 - **New logo**: a white serif V on a red rounded square, now the app icon (Dock, Windows shortcuts, browser tab) in place of the Greek bust. The loading screen shows it with "Venato" and "BETA" underneath (the motto is gone) on the app's paper colour, and follows dark mode.
