@@ -289,7 +289,7 @@ def save_goals(rows, day=None):
             tids.pop(row, None)
             tid = None
         if how == "tick" and hows.get(row) == "habit" and tid:     # a habit target made on Track stays
-            store.update_goal(tid, due=g["end_date"])
+            store.update_goal(tid, due=g["end_date"], target=HABIT_PER_WEEK * _weeks(day, g["end_date"]))
             how = "habit"
         elif how == "tick":
             if tid:
@@ -400,9 +400,12 @@ def habit_target(life_goal, habit, day=None):
 def apply_for_goal(s, row, life_goal, target, day=None):
     """Switch on a suggestion picked for one of setup's goals. With a target it links to that (apply_suggestion);
     a habit for a goal without one makes a habit target under it, remembered as the row's target."""
-    if target is None and s["kind"] == "habit":
+    if s["kind"] == "habit" and target is None:
         _ob().setdefault("goal_ids", {})[row] = habit_target(life_goal, s["name"], day)
         _ob().setdefault("goal_how", {})[row] = "habit"
+        return
+    if s["kind"] == "habit" and _ob().get("goal_how", {}).get(row) == "habit":   # its target counts the first one
+        store.add_habit(s["name"])
         return
     apply_suggestion(s, target and target["id"], _ob().get("goal_how", {}).get(row) in ("hours", "number"))
 
@@ -852,13 +855,19 @@ def _save_modules():
 
 def _goal_rows():
     """The goal rows' ids, in order (ids stay put when a row is removed, so its boxes don't shift). A student's
-    first row starts as "Do well this term" (unless a goal of that name is already there)."""
+    first row starts as "Do well this term" (unless a running goal is called that). Until the step is first saved
+    this follows the student answer, which can change on Welcome; removing the row turns it off for this run."""
     ob = _ob()
-    if "goal_rows" not in ob:
-        ob["goal_rows"] = [0]
-        if is_student() and not store.find_life_goal(TERM_GOAL):
+    rows = ob.setdefault("goal_rows", [0])
+    if not ob.get("goals_saved") and not ob.get("term_removed"):
+        was = "term_row" in ob
+        if is_student() and 0 in rows and not any(g["title"].lower() == TERM_GOAL.lower() for g in store.life_goals()):
             ob["term_row"] = 0
-    return ob["goal_rows"]
+        else:
+            ob.pop("term_row", None)
+        if was != ("term_row" in ob) and (st.session_state.get("ob_goal_0") or "") in ("", TERM_GOAL):
+            st.session_state.pop("ob_goal_0", None)            # untouched box: let it take the new starting text
+    return rows
 
 
 def _goal_row(n, row):
@@ -911,6 +920,9 @@ GOAL_KEYS = ("ob_goal_", "ob_goal_when_", "ob_goal_end_", "ob_goal_how_", "ob_go
 def _remove_goal_row(row):
     """Remove a row and what this setup made for it. The last row left is replaced by an empty one."""
     rows = _goal_rows()
+    if row == _ob().get("term_row"):
+        _ob()["term_removed"] = True
+        _ob().pop("term_row")
     if row in rows:
         rows.remove(row)
         if not rows:
@@ -937,6 +949,8 @@ def goal_rows_typed():
     out = []
     for row in _goal_rows():
         when = ss.get(f"ob_goal_when_{row}")
+        if when == END_DATE and not ss.get(f"ob_goal_end_{row}") and (ss.get(f"ob_goal_{row}") or "").strip():
+            raise ValueError("Pick the goal's end date, or choose how long it runs.")
         months = GOAL_WHEN.get(when, 3) if when != END_DATE else None
         out.append({"row": row, "text": ss.get(f"ob_goal_{row}"), "months": months,
                     "end": ss.get(f"ob_goal_end_{row}") if when == END_DATE else None,
@@ -981,8 +995,9 @@ def _track():
         st.markdown(f":material/check: Your own habit: **{escape(name)}**")
     a, b, c = st.columns([3, 3, 1], vertical_alignment="bottom")
     a.text_input("Add your own habit", key="ob_own_name", placeholder="e.g. Stretch")
-    a_titles = ["No goal"] + [g["title"] for _, g, _ in goals]
-    b.selectbox("Count it towards", a_titles, key="ob_own_link")
+    titles = {i: g["title"] for i, g, _ in goals}
+    b.selectbox("Count it towards", [None, *titles], key="ob_own_link",
+                format_func=lambda i: "No goal" if i is None else titles.get(i, "No goal"))
     c.button("Add", key="ob_own_add", icon=":material/add:", on_click=_add_own_habit)
     _colours()
 
@@ -992,8 +1007,7 @@ def _add_own_habit():
     name = (st.session_state.get("ob_own_name") or "").strip()
     if not name:
         return
-    link = st.session_state.get("ob_own_link")
-    _ob().setdefault("own", []).append((name, None if link in (None, "No goal") else link))
+    _ob().setdefault("own", []).append((name, st.session_state.get("ob_own_link")))    # (name, goal row or None)
     st.session_state["ob_own_name"] = ""
 
 
@@ -1005,8 +1019,8 @@ def _save_track():
             if st.session_state.get(f"ob_sg_{i}_{j}"):
                 _, g, target = next(x for x in _my_goals() if x[0] == i)      # fresh: a pick can make a target
                 apply_for_goal(s, i, g, target)
-    for name, goal_title in ob.get("own", []):
-        mine = next(((i, g, t) for i, g, t in _my_goals() if g["title"] == goal_title), None)
+    for name, link in ob.get("own", []):
+        mine = next(((i, g, t) for i, g, t in _my_goals() if i == link), None) if link is not None else None
         if mine:
             apply_for_goal({"kind": "habit", "name": name}, *mine)
         else:

@@ -52,8 +52,9 @@ from venato.ui import nav                    # Home, the top bar on every other 
 st.html(f"<style>{nav.css(appearance.tokens())}</style>")
 
 
-def feedback_corner():
-    """A small "Send feedback" link pinned to the bottom right of every page (setup too): the pre-filled form."""
+def feedback_corner(raised=False):
+    """A small "Send feedback" link pinned to the bottom right of every page (setup too): the pre-filled form.
+    raised: the chat bar is pinned along the bottom, so it sits just above the bar's right end instead."""
     from html import escape
     from venato import feedback
     t = appearance.tokens()
@@ -62,9 +63,8 @@ def feedback_corner():
     .vn-feedback {{ position: fixed; right: 12px; bottom: 6px; z-index: 1000; font-size: .75rem; color: {t['muted']} !important;
         text-decoration: none; opacity: .8; padding: 2px 6px; border-radius: 6px; background: {t['paper']}; }}
     .vn-feedback:hover {{ opacity: 1; text-decoration: underline; }}
-    /* The chat bar is pinned along the bottom: sit just above its right end instead of under it. */
-    .stApp:has(.st-key-chat) .vn-feedback {{ bottom: 86px; right: 32px; }}
-    </style><a class="vn-feedback" href="{escape(feedback.feedback_url())}" target="_blank" rel="noopener"
+    .vn-feedback.vn-feedback-raised {{ bottom: 86px; right: 32px; }}
+    </style><a class="vn-feedback{' vn-feedback-raised' if raised else ''}" href="{escape(feedback.feedback_url())}" target="_blank" rel="noopener"
     title="Opens a short form in your browser">Send feedback</a>''')
 
 
@@ -115,7 +115,8 @@ labels = {} if choice == "Home" else nav.top_bar(choice, PAGES)
 PAGES[choice]()
 
 # The Claude chat bar, pinned to the bottom of every page (Home has it inline, when its Ask widget is on).
-if store.ai_enabled() and not (choice == "Home" and st.session_state.get("home_ask")):
+chat_pinned = store.ai_enabled() and not (choice == "Home" and st.session_state.get("home_ask"))
+if chat_pinned:
     chat.render()
 
 from venato.ui import undo_bar                # "Deleted X · Undo", after a delete or overwrite
@@ -134,6 +135,6 @@ def _outlook_autosync():
 
 # The page is drawn (with the cached Outlook events), so the launcher can show it;
 # the sync then runs, and only redraws if it brought something new.
-feedback_corner()
+feedback_corner(raised=chat_pinned)
 ready_marker()
 _outlook_autosync()

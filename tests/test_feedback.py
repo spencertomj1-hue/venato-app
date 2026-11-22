@@ -92,3 +92,15 @@ def test_the_feedback_link_is_on_setup_too(blank_store):
     os.remove(blank_store.DATA_DIR / "settings.json")             # no settings: the wizard shows
     at = _app()
     assert at.title[0].value == "Welcome to Venato" and len(_corner(at)) == 1
+
+
+def test_the_feedback_link_moves_up_only_for_the_pinned_chat_bar(blank_store):
+    from nav_helpers import goto
+    blank_store.save_settings(ai_enabled=True)
+    at = _app()
+    goto(at, "Goals")
+    assert 'class="vn-feedback vn-feedback-raised"' in _corner(at)[0]     # the chat bar is pinned below
+    blank_store.save_settings(ai_enabled=False)
+    at = _app()
+    goto(at, "Goals")
+    assert 'class="vn-feedback"' in _corner(at)[0]

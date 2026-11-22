@@ -1168,7 +1168,7 @@ def test_a_habit_picked_for_a_goal_without_a_target_makes_a_habit_target(fresh):
     goals = {g["title"]: g for g in fresh.life_goals()}
     next(c for c in at.checkbox if "Trained" in c.label).set_value(True).run()
     at.text_input(key="ob_own_name").set_value("Breathe").run()
-    at.selectbox(key="ob_own_link").set_value("Be calm").run()
+    at.selectbox(key="ob_own_link").set_value(1).run()
     _next(at)
     by = {t["life_goal_id"]: t for t in fresh.goals_open()}
     run, calm = by[goals["Run a 10k"]["id"]], by[goals["Be calm"]["id"]]
@@ -1240,3 +1240,73 @@ def test_an_emptied_term_goal_stays_empty_after_going_back(fresh):
     _next(at, "wiz_skip")
     at.button(key="wiz_back").click().run()
     assert at.text_input(key="ob_goal_0").value == "" and fresh.life_goals() == []
+
+
+def test_last_terms_ended_goal_does_not_block_the_prefill(fresh):
+    from venato import setup_checks
+    fresh.add_life_goal("Do well this term", start=MON - _dt.timedelta(days=200), months=3)     # ended
+    fresh.add_life_goal("Do well this term and next", months=6)                              # only contains it
+    setup_checks.save_settings(wizard_done=True, student=True)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.session_state["wizard_open"] = True
+    at.run()
+    _next(at, "ob_student_yes")
+    assert at.text_input(key="ob_goal_0").value == "Do well this term"
+
+
+def test_a_second_habit_for_the_same_goal_does_not_relink_its_target(fresh):
+    from venato.ui import onboarding
+    onboarding.restart()
+    onboarding.save_goals([_row(0, "Read and calm down")], MON)
+    (_, g, t), = onboarding._my_goals()
+    onboarding.apply_for_goal({"kind": "habit", "name": "Read"}, 0, g, t, MON)
+    (_, g, t), = onboarding._my_goals()
+    onboarding.apply_for_goal({"kind": "habit", "name": "Meditate"}, 0, g, t, MON)
+    (_, _, t), = onboarding._my_goals()
+    assert t["title"] == "Read: 3 times a week" and t["habit_id"] == fresh.find_habit("Read")[0]
+    assert fresh.find_habit("Meditate") and len(fresh.goals_open(MON)) == 1      # the habit is still switched on
+
+
+def test_a_habit_target_follows_its_goals_new_length(fresh):
+    from venato.ui import onboarding
+    onboarding.restart()
+    onboarding.save_goals([_row(0, "Run a 10k")], MON)
+    (_, g, t), = onboarding._my_goals()
+    onboarding.apply_for_goal({"kind": "habit", "name": "Trained"}, 0, g, t, MON)
+    onboarding.save_goals([_row(0, "Run a 10k", months=12)], MON)
+    (_, g, t), = onboarding._my_goals()
+    assert t["due"] == g["end_date"] == "2027-11-16" and t["target"] == 3 * 52
+
+
+def test_the_term_prefill_follows_a_changed_student_answer(fresh):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at, "ob_student_no")
+    assert at.text_input(key="ob_goal_0").value == ""
+    at.button(key="wiz_back").click().run()
+    _next(at, "ob_student_yes")
+    assert at.text_input(key="ob_goal_0").value == "Do well this term"
+    at.button(key="wiz_back").click().run()
+    _next(at, "ob_student_no")
+    assert at.text_input(key="ob_goal_0").value == "" and not [b for b in at.button if b.key == "ob_goal_rm_0"]
+
+
+def test_an_end_date_choice_without_a_date_stays_on_the_step(fresh):
+    from venato.ui import onboarding
+    onboarding.restart()
+    import streamlit as st
+    st.session_state.update({"ob_goal_0": "Run", "ob_goal_when_0": "Pick an end date"})
+    with pytest.raises(ValueError, match="end date"):
+        onboarding.goal_rows_typed()
+
+
+def test_own_habit_counts_towards_the_row_picked_not_the_first_of_that_name(fresh):
+    at = _student_at(fresh, student=False)
+    at.text_input(key="ob_goal_0").set_value("Get fit").run()
+    _next(at, "ob_goal_add")
+    at.text_input(key="ob_goal_1").set_value("Get fit").run()
+    _next(at)
+    second = at.session_state["ob"]["life_ids"][1]
+    at.text_input(key="ob_own_name").set_value("Stretch").run()
+    at.selectbox(key="ob_own_link").set_value(1).run()
+    _next(at)
+    assert [t["life_goal_id"] for t in fresh.goals_open()] == [second]
