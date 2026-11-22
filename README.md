@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>A private, offline planner for your Mac or PC: plan your week, log what actually happened, and see the gap.</strong><br>
-  For university students who want their timetable, deadlines, goals, focus and grades in one place, offline.
+  For university students who want their goals, timetable, deadlines, modules and focus in one place, offline.
 </p>
 
 <p align="center">
@@ -33,37 +33,40 @@
 
 - **Plan, then adjust, then confirm.** Your Plan for a day is locked in when the day starts and copied into its Actual, so you never log your day twice: move, stretch or delete blocks as the day really goes, then confirm it at the end. The weekly review then tells you how much of your plan you followed, per category, counting only the days you've confirmed. Notion and Daylio don't do that out of the box.
 - **Your data never leaves your computer.** No account, no server, no cloud sync. Everything is one SQLite file in your data folder, the app only listens on `127.0.0.1`, and voice is transcribed locally.
-- **Everything in one place.** Timetable, to-dos, deadlines, goals, focus sessions and grades, with a daily journal with habits (and optional sleep and water), all linked: tick a habit and the goal it counts towards moves; a deadline shows on the timetable and gets a reminder.
+- **Everything in one place.** Long-term goals, timetable, to-dos, deadlines, modules and focus sessions, with a daily journal with habits (and optional sleep and water), all linked: tick a habit and the goal it counts towards moves; a deadline shows on the timetable and gets a reminder.
 - **Optional Claude assistant.** Type or say "Fit 6 hours of revision into next week around my lectures" or "Add a note to today's journal and tick reading". It works through a fixed set of Venato actions, previews anything destructive for you to confirm, and is off unless you switch it on. Everything also works by hand.
 
 ## Features
 
-**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Review and the Daily Log, and students also get Modules. Each brings its own page, Home tiles and assistant skills. **Home is the way round the app** (there is no sidebar): every tile opens its page, and each page has "← Home" (or Esc) and small shortcut tiles to the others. Settings is the gear top right, and search / Ask is the bar at the top of Home. On a laptop Home fits one screen: each tile is a summary and opens its page for the rest. Press **Edit Home** to drag tiles to any cell of the grid (gaps and empty rows included; a tile you land on swaps places, or shuffles to the nearest free spot), make them Small, Wide, Large, Tall or Column (⤢), remove them (their data stays) or add hidden ones from "Add a tile".
+**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Review and the Daily Log, and students also get Modules. Each brings its own page, Home tiles and assistant skills. **Home is the way round the app** (there is no sidebar): every tile opens its page, and each page has "← Home" (or Esc) and small shortcut tiles to the others. Settings is the gear on Home, and search / Ask is the bar at the top of Home. On a laptop Home fits one screen: each tile is a summary and opens its page for the rest. Press **Edit Home** to drag tiles to any cell of the grid (gaps and empty rows included; a tile you land on swaps places, or shuffles to the nearest free spot), make them Small, Wide, Large, Tall or Column (⤢), remove them (their data stays) or add hidden ones from "Add a tile".
 
 | Block | What it does |
 |---|---|
 | **Timetable** | Weekly plan in 30-minute slots with a Plan / Actual switch, calendar events, and fit-time planning. |
-| **Goals** | Long-term goals (3, 6 or 12 months) with targets (deadlines and a pace) and to-dos under them, and deadlines. |
+| **Goals** | Long-term goals (3, 6 or 12 months), each in its own colour, with targets (deadlines and a pace) and to-dos under them, and deadlines. |
 | **Focus** | Pomodoro or stopwatch with auto breaks; on Home, a dial you press to start, filling to a daily aim; sessions of 15+ minutes go into the Actual timetable. "focus 50 on essay". |
 | **Modules** | One card per module, with its lectures, deadlines, assessments, study hours and its own timetable colour; a page for each module, where a deadline's **Plan** books the hours for it. Also grades: weighted assessments, the mark needed for your target, UK classification or US GPA. "got 68 in acp coursework". |
 | **Review** | Weekly review, time planned vs done, charts and history. |
 | **Daily Log** | A journal for each day, and habits with streaks. Sleep and water are optional extras (Settings → Daily Log). |
+| **Workouts** *(optional)* | Log sets, save plans (paste one as text or CSV, or have Claude write it), personal bests, 1RMs and weekly volume. |
+| **Network** *(optional)* | People, groups and who they work for, and when you last met. Meetings on the timetable are logged on the person's card. |
 
 **Planning**
 - **Weekly timetable** in 30-minute slots with a **Plan / Actual** switch. A day's Plan is locked when the day starts and copied into its Actual; after that you change the Actual as the day goes, and confirm it at the end (Confirm under the day, "Confirm week", or Home's "Is the timetable right for today?"). Review and goals count confirmed days only and say how many. Drag to add blocks; point at a block to select it (a thin red outline), click for its details, drag it to move it or drag its top or bottom edge to stretch or shrink it; ⌘/Ctrl+C and ⌘/Ctrl+V copy and paste, Backspace deletes; with no category picked, drag a box (or Shift-drag) to select several, Shift- or ⌘/Ctrl-click to add one, then move, copy, paste or delete them together; ⌘Z / Ctrl+Z to undo.
 - **Colour-coded categories** in groups ("Life", "Work"), with activities that pick their category automatically ("Lunch" goes to Meals).
 - **Fit time:** say what, how many hours and which days; Venato finds free gaps around your blocks and calendar events and previews the sittings before adding them.
-- **To-dos** for today, this week and this month, in the style of Apple Reminders: drag to reorder, notes, repeating to-dos.
-- **Goals** over 3, 6 or 12 months (or to any end date), each with a why, an overall bar, and its targets and to-dos under it. Home's Goals tile shows each goal and its next target.
+- **To-dos** for today, this week and this month (or by category), in the style of Apple Reminders: drag to reorder, notes, repeating to-dos. Unscheduled to-dos show as chips on their day in the timetable; drag one onto the grid to schedule it, and ticking either ticks both.
+- **Goals** over 3, 6 or 12 months (or to any end date), each with a why, its own colour, an overall bar, and its targets and to-dos under it. Home's Goals tile shows each goal against where it should be by today, and its next move.
 - **Targets** (under a goal or not) with a deadline you pick on a small calendar (with markers for 2 weeks from now, the end of the month, a month from now, the end of the year and a year from now, and one-click "End of the year" / "In a year"), updated by hand, linked to a habit, or counted from your timetable's Actual hours in a category (or one activity). Each goal's card has a state badge and a small pace chart: progress so far, an even pace to the target, where you'll end up at your recent rate, and today. Beside them, "Where this week's N h free go" splits the week's free time between your goals in one bar, and goals that can't be finished in time get a card offering to lower the target, move the deadline or take hours from a lower goal.
-- **Goals that know your week:** beside the timetable, a "Plan this week" panel shows your free hours per day, each hours goal's week as a bar (done, planned, not planned yet, carried over) with "Fit N h", "Plan all goals" and "I'm away" for each day. When goals are short, the grid draws where their time would fit as dashed suggested sittings in free gaps: click one to add just that sitting, "Add all to Plan", or dismiss them for the week (Show suggestions turns them off). Venato works out your free time (timetable hours minus calendar events and other blocks), what each goal needs this week including hours carried from slow weeks, whether you're on track, behind, slipping or can't make it, and when you'll finish at your recent pace. It plans extra for time that usually slips, shares a crowded week between goals by priority, offers to lower a target, carry it into next month or borrow hours from a lower goal, suggests goals from what you already do, and nudges you mid-week if what's planned won't cover a goal.
+- **Goals that know your week:** beside the timetable, **Give it time** lists your open to-dos and targets under their goals: pick one and drag on the week to put it in. When targets are short, the grid draws where their time would fit as dashed suggested sittings in free gaps: click one to add it, "Add all to Plan", or dismiss them for the week. Venato works out your free time (timetable hours minus calendar events and other blocks), what each target needs this week including hours carried from slow weeks, whether you're on track, behind, slipping or can't make it, and when you'll finish at your recent pace. It plans extra for time that usually slips, shares a crowded week between goals by priority ("Share hours"), offers to lower a target, carry it over or borrow hours from a lower goal, and nudges you mid-week if what's planned won't cover a goal.
+- **Your sleep today:** say when you woke up and went to bed, and Sleep blocks fill the free time around your day.
 - **Deadlines** with countdowns, reminders the day before and on the day, and "Make time" to plan hours for them.
 
 **Home**
-- Today's timetable (its Actual: the Plan as locked this morning, with your changes), stretched to fill the window, and an end-of-day prompt: "Is the timetable right for today?" with **Confirm** or **Review**.
-- **Home is yours to arrange**, like a phone's home screen: press Arrange (top right), then move, resize, hide or add widgets.
-- **Needs you:** days to confirm, goals that are behind or short of time (each with its state, "N h to plan", its bar with a "should be here by today" tick, and Plan my goals), deadlines this week with no plan, and the odd one-off card. The tile shows the first three; tap it for all of them. Nothing to do: "Nothing needs you."
-- **To-dos** in one card with a Daily / Weekly / Monthly switch, then deadlines, habits and search. A widget with nothing to show (no habits, no marks, no deadlines…) isn't drawn.
+- Today's timetable (its Actual: the Plan as locked this morning, with your changes) down the left, whole day, no scrolling, and an end-of-day prompt: "Is the timetable right for today?" with **Confirm** or **Review**.
+- **Tiles for everything**: Goals, To-dos, Deadlines, Review (this week's % of plan followed and a verdict), a Focus dial you press to start, Modules (this week's study hours), Daily log and Journal. Click one to open its page; ticking a to-do or starting Focus works in place.
+- **Edit Home**: drag tiles to any cell, resize them from their corner grip, remove them or add hidden ones.
+- **Needs you:** days to confirm, goals that are behind or short of time (each with "N h to plan" and Plan my goals), deadlines this week with no plan, and the odd one-off card. Nothing to do: "Nothing needs you."
 
 **Tracking**
 - **Daily log (optional):** a journal box for each day, with a month calendar marking the days you wrote. Click a day to open it and tick habits.
@@ -144,7 +147,7 @@ Both links are read only, and are kept in your system's secret store, never in a
 - **Modules** (students): a card per module; click one for its lectures, deadlines, marks and hours. On a deadline, press **Plan** to book hours for it: Venato makes an hours goal that finishes the day before it's due.
 - **Plan.** Put what you intend to do on the timetable (Plan). When the day starts the Plan is locked and copied into Actual; change the Actual as the day goes, then confirm it.
 - **Home.** Click any tile to open its page; "← Home" or Esc brings you back. Press Edit Home to move, resize, remove or add tiles. Reset puts them back.
-- **Send feedback.** The link in Settings → About opens a short form in your browser with your version and system filled in. Nothing is sent from the app. After two weeks, Needs you asks once how it's going.
+- **Send feedback.** The small link in the bottom-right corner (or Settings → About) opens a short form in your browser with your version and system filled in. Nothing is sent from the app. After two weeks, Needs you asks once how it's going.
 
 ## Setting up the optional bits
 
