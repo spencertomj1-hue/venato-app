@@ -22,9 +22,33 @@ def wk(store):
     return module
 
 
+def test_no_presets_typed_exercises_are_saved(wk, store):
+    """No preset exercises: the list starts empty, and one typed once is saved (type and muscle guessed
+    from its name) and found again."""
+    assert wk.exercises() == [] and wk.find_exercise("bench") is None
+    e = wk.add_exercise("Paused bench press")
+    assert (e["kind"], e["muscle"]) == ("weights", "Chest")
+    assert wk.find_exercise("paused bench")["id"] == e["id"]
+    assert wk.add_exercise("paused BENCH press")["id"] == e["id"]                 # same name: the same one
+    odd = wk.add_exercise("Tyre flips")
+    assert (odd["kind"], odd["muscle"]) == ("weights", None)
+
+
+def test_old_presets_nobody_used_are_dropped(wk, store):
+    with store.db() as conn:
+        conn.execute("DELETE FROM meta WHERE key = 'wk_presets_dropped'")
+        for n in ("Bench press", "Squat", "Lunge"):
+            conn.execute("INSERT INTO wk_exercises (id, name, kind, created_at) VALUES (?, ?, 'weights', 'x')", (n, n))
+    w = wk.add_workout("2026-11-02", "Push")
+    wk.add_sets(w, "Bench press", 3, 8, 60)
+    with store.db() as conn:
+        wk._migrate(conn)
+    assert [e["name"] for e in wk.exercises()] == ["Bench press"]                 # used: kept
+
+
 def test_sets_pbs_and_progress(wk, store):
-    bench = wk.find_exercise("bench")
-    assert bench["name"] == "Bench press"
+    bench = wk.add_exercise("Bench press")
+    assert wk.find_exercise("bench")["id"] == bench["id"]
     w1 = wk.add_workout("2026-11-02", "Push")
     wk.add_sets(w1, bench["id"], 1, 10, 40, warmup=True)
     wk.add_sets(w1, bench["id"], 3, 8, 60)
@@ -47,7 +71,7 @@ def test_plans_units_and_habit(wk, store):
     wk.set_habit_link("Gym")
     w = wk.add_workout(store.local_today(), "Legs")
     assert store.local_today().isoformat() in store.get_habit_dates(store.find_habit("Gym")[0])
-    wk.add_sets(w, wk.find_exercise("squat")["id"], 5, 5, 100)
+    wk.add_sets(w, wk.add_exercise("Squat")["id"], 5, 5, 100)
     pid = wk.save_plan_from(w, "Legs A")
     w2 = wk.start_from_plan(pid, "2026-12-01")
     assert wk.summary(w2) == "Squat 5×5 @ 100 kg"
@@ -63,6 +87,7 @@ def test_tools_and_quick(wk, store):
     r = wk.tool_log([{"name": "Bench press", "sets": 3, "reps": 8, "weight": 60},
                      {"name": "Running", "distance": 5, "minutes": 28}])
     assert r.changed and "Bench press 3×8 @ 60 kg" in r.text and "Running 5 km" in r.text
+    wk.add_exercise("Squat")                                      # typed once before: quick logging knows it
     q = quick.handle("squat 5x5 at 100")
     assert q and "Squat 5×5 @ 100 kg" in q.reply
     assert quick.handle("zorbing 3x8") is None                    # unknown exercise: Claude decides
@@ -74,7 +99,7 @@ def test_tools_and_quick(wk, store):
 
 def test_page(wk, store):
     wid = wk.add_workout(store.local_today(), "Push")
-    wk.add_sets(wid, wk.find_exercise("bench")["id"], 3, 8, 60)
+    wk.add_sets(wid, wk.add_exercise("Bench press")["id"], 3, 8, 60)
     at = AppTest.from_file(APP, default_timeout=60).run()
     goto(at, "Workouts")
     assert not at.exception
@@ -140,7 +165,7 @@ def test_schedule_plan_fits_around_the_week(wk, store):
     blocks = store.blocks_between("2026-11-23", "2026-11-29", "plan")
     gym = [b for b in blocks if b["label"] in ("Monday", "Legs", "Pull")]
     assert len(gym) == 3 and all(b["category_id"] == "exercise" for b in gym)
-    assert next(b for b in gym if b["label"] == "Legs")["details"] == "- Squat 5x5"
+    assert next(b for b in gym if b["label"] == "Legs")["details"] is None      # the session, not its exercises
     with pytest.raises(tools.ToolError):
         wk.schedule_plan(days, start, minutes=60, earliest="07:00", latest="07:30")
 
@@ -151,11 +176,11 @@ def test_upload_plan_page(wk, store):
     area = next(t for t in at.text_area if t.key == "wk_up_text")
     area.set_value(PLAN_TEXT).run()
     assert not at.exception
-    assert any("Found 3 workouts a week" in m.value for m in at.markdown)
+    assert any("3 sessions a week" in m.value for m in at.markdown)
     next(b for b in at.button if b.label == "Find times").click().run()
     assert not at.exception
     yes = next(b for b in at.button if b.key == "wk_up_yes")
-    assert any("add" in i.value and "workouts to your Plan" in i.value for i in at.info)
+    assert any("add" in i.value and "sessions to your Plan" in i.value and "Only the session names" in i.value for i in at.info)
     yes.click().run()
     assert not at.exception
     assert {p["name"] for p in wk.plans()} == {"Push", "Legs", "Wednesday"}
@@ -179,15 +204,16 @@ def test_plan_with_weeks_progresses(wk, store):
     wk.schedule_plan(days, "2026-11-23").pending.run()
     assert {p["name"] for p in wk.plans()} == {"Push · Week 1", "Push · Week 2"}
     b = [b for b in store.blocks_between("2026-11-30", "2026-11-30", "plan") if b["label"] == "Push"][0]
-    assert b["details"] == "Week 2\n- Bench 3x8 @ 65kg"
+    assert b["details"] == "Week 2"
 
 
 def test_upload_page_shows_weeks(wk, store):
     from venato.ui.workouts import EXAMPLE
     at = AppTest.from_file(APP, default_timeout=60).run()
     goto(at, "Workouts")
-    assert any("Get Claude to write your plan" in m.value for m in at.markdown)
+    steps = " ".join(m.value for m in at.markdown)
+    assert "Get Claude to write your plan" in steps and "Paste the plan Claude wrote" in steps
     next(t for t in at.text_area if t.key == "wk_up_text").set_value(EXAMPLE).run()
     assert not at.exception
-    assert any("Found 2 weeks, 4 workouts in all" in m.value for m in at.markdown)
+    assert any("2 weeks**, 4 sessions in all" in m.value for m in at.markdown)
     assert [t.label for t in at.tabs if t.label.startswith("Week")] == ["Week 1", "Week 2"]
