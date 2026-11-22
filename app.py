@@ -52,6 +52,22 @@ from venato.ui import nav                    # Home, the top bar on every other 
 st.html(f"<style>{nav.css(appearance.tokens())}</style>")
 
 
+def feedback_corner():
+    """A small "Send feedback" link pinned to the bottom right of every page (setup too): the pre-filled form."""
+    from html import escape
+    from venato import feedback
+    t = appearance.tokens()
+    st.html(f'''<style>
+    [data-testid="stElementContainer"]:has(.vn-feedback) {{ height: 0; margin: 0; }}
+    .vn-feedback {{ position: fixed; right: 12px; bottom: 6px; z-index: 1000; font-size: .75rem; color: {t['muted']} !important;
+        text-decoration: none; opacity: .8; padding: 2px 6px; border-radius: 6px; background: {t['paper']}; }}
+    .vn-feedback:hover {{ opacity: 1; text-decoration: underline; }}
+    /* The chat bar is pinned along the bottom: sit just above its right end instead of under it. */
+    .stApp:has(.st-key-chat) .vn-feedback {{ bottom: 86px; right: 32px; }}
+    </style><a class="vn-feedback" href="{escape(feedback.feedback_url())}" target="_blank" rel="noopener"
+    title="Opens a short form in your browser">Send feedback</a>''')
+
+
 def ready_marker():
     """Tells the desktop launcher the page has finished drawing (it then swaps the splash for the app)."""
     st.html('<div id="venato-ready" style="display:none"></div>')
@@ -63,6 +79,7 @@ notify.start()      # desktop reminders before blocks start (once per process)
 # First run (or reopened from Settings): the setup wizard instead of the app.
 if settings_ui.needs_wizard():
     settings_ui.wizard()
+    feedback_corner()
     ready_marker()
     st.stop()
 
@@ -117,5 +134,6 @@ def _outlook_autosync():
 
 # The page is drawn (with the cached Outlook events), so the launcher can show it;
 # the sync then runs, and only redraws if it brought something new.
+feedback_corner()
 ready_marker()
 _outlook_autosync()

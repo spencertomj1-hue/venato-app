@@ -68,3 +68,27 @@ def test_about_link(blank_store):
     goto(at, "Settings")
     assert not at.exception
     assert any("Send feedback" in str(e.proto.label) for e in at.get("link_button"))
+
+
+def _corner(at):
+    """The small Send feedback link pinned to the bottom right, if drawn."""
+    return [h.value for h in at.get("html") if "vn-feedback" in h.value and "<a " in h.value]
+
+
+def test_a_small_feedback_link_on_every_page(blank_store):
+    from nav_helpers import goto, page_names
+    from venato import feedback
+    at = _app()
+    for page in page_names():
+        goto(at, page)
+        assert not at.exception, (page, at.exception)
+        (link,) = _corner(at)
+        assert feedback.feedback_url().replace("&", "&amp;") in link or feedback.feedback_url() in link, page
+        assert 'target="_blank"' in link and "Send feedback" in link
+
+
+def test_the_feedback_link_is_on_setup_too(blank_store):
+    import os
+    os.remove(blank_store.DATA_DIR / "settings.json")             # no settings: the wizard shows
+    at = _app()
+    assert at.title[0].value == "Welcome to Venato" and len(_corner(at)) == 1
