@@ -25,7 +25,7 @@ from pathlib import Path
 FROZEN = getattr(sys, "frozen", False)          # running as the packaged Venato.exe
 APP_DIR = Path(sys._MEIPASS) if FROZEN else Path(__file__).parent
 ICON = APP_DIR / "assets" / "icon.png"   # built by scripts/make_icon.py
-SPLASH_LOGO = APP_DIR / "assets" / "splash.png"   # also built by scripts/make_icon.py
+SPLASH_FONT = APP_DIR / "assets" / "fonts" / "Fraunces-600.woff2"   # the logo's V and the name
 SPLASH_SECONDS = 0.6                     # minimum time the loading screen shows
 READY_TIMEOUT = 45                       # give up waiting for the page after this (it shows anyway)
 SETTLE_SECONDS = 0.4                     # the page must hold still this long before the splash lifts
@@ -44,20 +44,31 @@ def _data_dir():
     return system.data_dir()
 
 
-def _window_colour():
-    """The window's colour before the page draws: dark if Venato is set to dark mode, so it doesn't flash white."""
+def _dark():
+    """Whether Venato is set to dark mode."""
     import json
     try:
-        theme = json.loads((_data_dir() / "settings.json").read_text(encoding="utf-8")).get("theme")
+        return json.loads((_data_dir() / "settings.json").read_text(encoding="utf-8")).get("theme") == "Dark"
     except (OSError, ValueError):
-        theme = None
-    return "#0E1117" if theme == "Dark" else "#FFFFFF"
+        return False
+
+
+def _window_colour():
+    """The window's colour before the page draws: dark if Venato is set to dark mode, so it doesn't flash white."""
+    return "#0E1117" if _dark() else "#FFFFFF"
+
+
+def _splash_colour():
+    """The loading screen's background (the app's paper colour), so it doesn't flash before drawing."""
+    return "#0E1117" if _dark() else "#F6F4EF"
 
 
 def splash_html():
-    """splash.html with the logo embedded, so it shows before the server is up."""
-    logo = base64.b64encode(SPLASH_LOGO.read_bytes()).decode()
-    return (APP_DIR / "assets" / "splash.html").read_text(encoding="utf-8").replace("{{LOGO}}", f"data:image/png;base64,{logo}")
+    """splash.html with its font embedded (it shows before the server is up) and the light/dark theme set."""
+    font = base64.b64encode(SPLASH_FONT.read_bytes()).decode()
+    return ((APP_DIR / "assets" / "splash.html").read_text(encoding="utf-8")
+            .replace("{{FONT}}", f"data:font/woff2;base64,{font}")
+            .replace("{{THEME}}", "dark" if _dark() else ""))
 
 
 def set_dock_icon():
@@ -235,8 +246,8 @@ def main():
 
     def show_error(splash):
         splash.evaluate_js(
-            "document.getElementById('motto').outerHTML ="
-            " '<p class=\"error\">Venato couldn\\'t start. Close this window and try again.</p>'"
+            "const s = document.getElementById('status'); s.className = 'error';"
+            " s.textContent = \"Venato couldn't start. Close this window and try again.\";"
         )
 
     state = {"app": None, "swapped": False}
@@ -251,7 +262,7 @@ def main():
     try:
         splash = webview.create_window(
             "Venato", html=splash_html(), width=1200, height=850,
-            maximized=True, background_color="#FFFFFF",
+            maximized=True, background_color=_splash_colour(),
             on_top=True,                                 # stays in front while the app loads behind it
         )
         splash.events.closed += splash_closed

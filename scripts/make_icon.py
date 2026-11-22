@@ -1,70 +1,79 @@
 """
-Build the app icon from assets/Logo.jpg.
+Build the app icon and logo: a white serif V (Fraunces 600) on a red rounded square.
 
-Crops the logo to its drawing, centres it on a white rounded square (the
-standard macOS icon shape, with a soft shadow), and writes:
-  assets/icon.png   1024x1024 (also used as the Dock icon by desktop.py)
+Writes:
+  assets/logo.png    512x512, the bare mark (browser tab icon, README)
+  assets/icon.png    1024x1024 on Apple's icon grid with a soft shadow (also the Dock icon, set by desktop.py)
   assets/Venato.icns all sizes, for Venato.app/Contents/Resources (macOS)
-  assets/icon.ico   all sizes, for the Windows shortcuts made by setup.ps1
-  assets/splash.png the cleaned drawing, for the loading screen
+  assets/icon.ico    all sizes, for the Windows shortcuts made by setup.ps1
 
+The loading screen (assets/splash.html) draws the same mark in CSS, so keep the colour and proportions in step.
+
+Needs fontTools and brotli to read the bundled .woff2 font (build-time only):
+    .venv/bin/pip install fonttools brotli
 Run with:   .venv/bin/python scripts/make_icon.py
 """
 
+import io
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter
+from fontTools.ttLib import TTFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
-LOGO = ASSETS / "Logo.jpg"
+FONT = ASSETS / "fonts" / "Fraunces-600.woff2"
+LOGO = ASSETS / "logo.png"
 PNG = ASSETS / "icon.png"
 ICNS = ASSETS / "Venato.icns"
 ICO = ASSETS / "icon.ico"
-SPLASH = ASSETS / "splash.png"
 
+RED = "#C62828"          # the app's light-mode accent (venato/ui/appearance.py)
 SIZE = 1024
-INSET = 100          # Apple's icon grid: the shape is 824 px inside a 1024 canvas
-RADIUS = 185
-DRAWING = 680        # max width/height of the logo drawing inside the shape
+INSET = 100              # Apple's icon grid: the shape is 824 px inside a 1024 canvas
+RADIUS_RATIO = 34 / 148  # corner radius / side, as on the loading screen
+GLYPH_RATIO = 104 / 148  # V font size / side, as on the loading screen
+SCALE = 4                # draw this much bigger, then shrink, for smooth edges
 
 
-def clean_logo():
-    """The logo drawing with its white margin cropped off and JPEG specks removed."""
-    logo = Image.open(LOGO).convert("RGB")
-    # JPEG leaves faint off-white specks in the background: snap near-white to white,
-    # then crop away the margin around the drawing.
-    logo = logo.point(lambda v: 255 if v > 232 else v)
-    diff = ImageChops.difference(logo, Image.new("RGB", logo.size, "white")).convert("L")
-    return logo.crop(diff.point(lambda v: 255 if v > 40 else 0).getbbox())
+def font(px):
+    """Fraunces at px size. Pillow can't read .woff2, so it is converted to TrueType in memory."""
+    tt = TTFont(FONT)
+    tt.flavor = None
+    buf = io.BytesIO()
+    tt.save(buf)
+    buf.seek(0)
+    return ImageFont.truetype(buf, px)
 
 
-def build_splash():
-    """The cleaned drawing on white, for the loading screen (assets/splash.html)."""
-    logo = clean_logo()
-    logo.thumbnail((900, 900), Image.LANCZOS)
-    logo.save(SPLASH)
+def mark(side):
+    """The logo, side x side: red rounded square, white V centred on its ink."""
+    big = side * SCALE
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((0, 0, big - 1, big - 1), round(big * RADIUS_RATIO), fill=RED)
+    f = font(round(big * GLYPH_RATIO))
+    left, top, right, bottom = draw.textbbox((0, 0), "V", font=f)
+    draw.text(((big - (right - left)) / 2 - left, (big - (bottom - top)) / 2 - top), "V", font=f, fill="white")
+    return img.resize((side, side), Image.LANCZOS)
+
+
+def build_logo():
+    mark(512).save(LOGO)
 
 
 def build_png():
-    logo = clean_logo()
-    logo.thumbnail((DRAWING, DRAWING), Image.LANCZOS)
-
     icon = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    box = (INSET, INSET, SIZE - INSET, SIZE - INSET)
+    side = SIZE - 2 * INSET
 
     # Soft drop shadow under the shape.
     shadow = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).rounded_rectangle((box[0], box[1] + 12, box[2], box[3] + 12), RADIUS, fill=(0, 0, 0, 70))
+    ImageDraw.Draw(shadow).rounded_rectangle((INSET, INSET + 12, SIZE - INSET, SIZE - INSET + 12),
+                                             round(side * RADIUS_RATIO), fill=(0, 0, 0, 70))
     icon.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(18)))
-
-    # White rounded square with a hairline edge, then the drawing in the middle.
-    ImageDraw.Draw(icon).rounded_rectangle(box, RADIUS, fill="white", outline=(0, 0, 0, 30), width=2)
-    x = (SIZE - logo.width) // 2
-    y = (SIZE - logo.height) // 2
-    icon.paste(logo, (x, y))
+    icon.alpha_composite(mark(side), (INSET, INSET))
 
     icon.save(PNG)
     return icon
@@ -85,16 +94,17 @@ def build_icns_pillow(icon):
     icon.save(ICNS, format="ICNS")
 
 
-def build_ico(icon):
-    icon.save(ICO, sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
+def build_ico():
+    """Windows shows the icon small and square, so it gets the mark edge to edge (no Apple-grid margin)."""
+    mark(256).save(ICO, sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
 
 
 if __name__ == "__main__":
+    build_logo()
     icon = build_png()
-    build_ico(icon)
+    build_ico()
     if shutil.which("iconutil"):            # macOS
         build_icns(icon)
     else:
         build_icns_pillow(icon)
-    build_splash()
-    print(f"Wrote the icons and {SPLASH.name}")
+    print(f"Wrote {LOGO.name}, {PNG.name}, {ICO.name} and {ICNS.name}")

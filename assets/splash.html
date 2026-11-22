@@ -1,14 +1,22 @@
 <!doctype html>
-<!-- Loading screen shown by desktop.py while the app starts. {{LOGO}} is replaced with the logo as a data URI. -->
-<html>
+<!-- Loading screen shown by desktop.py while the app starts. {{FONT}} is replaced with Fraunces as a data URI
+     (it shows before the server is up), {{THEME}} with "dark" when Venato is set to dark mode. -->
+<html class="{{THEME}}">
 <head>
 <meta charset="utf-8">
 <title>Venato</title>
 <style>
+  @font-face { font-family: "Fraunces"; font-weight: 600; src: url("{{FONT}}") format("woff2"); }
+
+  :root { --paper: #F6F4EF; --ink: #2B2B30; --muted: #5F6170; --accent: #C62828; --on-accent: #FFFFFF;
+          --glow: rgba(198, 40, 40, 0.22); }
+  .dark { --paper: #0E1117; --ink: #ECECF1; --muted: #A3A8B8; --accent: #FF6B6B; --on-accent: #0E1117;
+          --glow: rgba(0, 0, 0, 0); }
+
   html, body {
     height: 100%;
     margin: 0;
-    background: #ffffff;
+    background: var(--paper);
     overflow: hidden;
     cursor: default;
     user-select: none;
@@ -18,28 +26,44 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 34px;
+    font-family: -apple-system, "Segoe UI", sans-serif;
     transition: opacity 0.4s ease;
   }
   body.out { opacity: 0; }
 
-  img {
-    height: min(42vh, 380px);
+  /* The logo: a serif V in a rounded square (scripts/make_icon.py draws the same for the app icon). */
+  .mark {
+    width: 148px;
+    height: 148px;
+    border-radius: 34px;
+    background: var(--accent);
+    box-shadow: 0 18px 40px var(--glow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font: 600 104px/1 "Fraunces", Georgia, serif;
+    color: var(--on-accent);
     animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   }
+  .mark span { transform: translateY(-4px); }
 
-  /* Didot ships with macOS: a high-contrast classical serif that suits the Greek bust. */
-  p {
-    margin: 0;
-    font-family: "Didot", "Bodoni 72", "Bodoni MT", "Times New Roman", serif;
-    font-style: italic;
-    font-size: clamp(22px, 3.2vw, 34px);
-    letter-spacing: 0.04em;
-    color: #2b2b2b;
+  .name {
+    margin: 26px 0 0;
+    font: 600 40px/1.1 "Fraunces", Georgia, serif;
+    color: var(--ink);
+    animation: rise 0.9s 0.2s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .beta {
+    margin: 6px 0 0;
+    padding-left: 0.32em;       /* balances the letter-spacing so the word sits centred */
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.32em;
+    color: var(--muted);
     animation: rise 0.9s 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   }
 
-  .error { font-family: -apple-system, sans-serif; font-style: normal; font-size: 15px; color: #c0392b; }
+  .error { margin: 28px 0 0; font-size: 15px; color: #c0392b; }
 
   @keyframes rise {
     from { opacity: 0; transform: translateY(14px) scale(0.98); }
@@ -48,7 +72,9 @@
 </style>
 </head>
 <body>
-  <img src="{{LOGO}}" alt="Venato">
-  <p id="motto">No summit, just the climb.</p>
+  <div class="mark" role="img" aria-label="Venato logo"><span>V</span></div>
+  <p class="name">Venato</p>
+  <p class="beta">BETA</p>
+  <p id="status"></p>
 </body>
 </html>

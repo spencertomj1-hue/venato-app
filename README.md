@@ -1,7 +1,7 @@
 <!-- TODO: demo.gif -->
 
 <p align="center">
-  <img src="assets/Logo.jpg" alt="Venato logo" width="140">
+  <img src="assets/logo.png" alt="Venato logo" width="140">
 </p>
 
 <h1 align="center">Venato</h1>

@@ -114,11 +114,11 @@ venato/                         The app's code, as a package (imported as `from 
       calendar_component.*     the month calendar
       chat_component.*         the chat bar
 
-assets/                        Logo, app icon (icon.png, Venato.icns), splash screen (splash.html/.png),
+assets/                        Logo (logo.png), app icon (icon.png, Venato.icns, icon.ico), splash screen (splash.html),
                                and the README screenshots
 scripts/
   seed_demo.py                 Demo data folder (never touches real data): categories, two modules, a planned deadline, journal, goals; tests/test_seed_demo.py runs it
-  make_icon.py                 Builds assets/icon.png, Venato.icns and splash.png from assets/Logo.jpg
+  make_icon.py                 Draws the V logo (Fraunces on red) into assets/logo.png, icon.png, icon.ico and Venato.icns
   install-hooks.sh             gitleaks pre-commit hook
 tests/                         pytest + AppTest; tests/fixtures/sample.ics is a fake calendar; tests/fragment_run.py runs interactions as the browser does (§8)
 ```

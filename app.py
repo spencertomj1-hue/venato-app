@@ -22,7 +22,7 @@ from venato.store import init_db
 # App entry point
 # ---------------------------------------------------------------------------
 
-st.set_page_config(page_title="Venato", page_icon=str(Path(__file__).parent / "assets" / "Logo.jpg"), layout="wide",
+st.set_page_config(page_title="Venato", page_icon=str(Path(__file__).parent / "assets" / "logo.png"), layout="wide",
                    initial_sidebar_state="collapsed")
 
 # All of the app's own CSS goes out first, so nothing jumps around as the page draws: the same top padding on
