@@ -163,6 +163,11 @@ def init_db():
                             id TEXT PRIMARY KEY, date TEXT NOT NULL, start TEXT, "end" TEXT, label TEXT,
                             category_id TEXT, status TEXT NOT NULL CHECK (status IN ('done', 'missed')),
                             at TEXT NOT NULL)""")
+        # A timetable block placed for a goal (the Timetable's side panel): marking the block done adds one
+        # to a goal counted by hand (store/links.py). To-dos link by slot instead (tt_todo_links).
+        conn.execute("""CREATE TABLE IF NOT EXISTS tt_links (
+                            block_id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('goal')),
+                            ref TEXT NOT NULL)""")
         _word_rules_to_label_map(conn)
         # To-dos: a due day, how long it takes and one of the user's own to-do categories (todo_groups).
         _add_column(conn, "todos", "due", "TEXT")
@@ -207,6 +212,10 @@ def init_db():
         _scores_out_of_ten(conn)
         _day_status_table(conn)
         _forget_future_status(conn)
+        # To-dos on the timetable: a to-do's block is the one at this date and start, on either track
+        # (block ids change when a day locks and its Plan is copied into the Actual).
+        conn.execute("""CREATE TABLE IF NOT EXISTS tt_todo_links (
+                            todo_id TEXT PRIMARY KEY, date TEXT NOT NULL, start TEXT NOT NULL, "end" TEXT NOT NULL)""")
 
 
 def _goals_became_todos(conn):

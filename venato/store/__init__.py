@@ -20,6 +20,7 @@ re-exports every submodule's public names. Each module only imports from the one
     todos        to-dos per day / week / month
     status       done / not done marks on timetable blocks and events
     goals        goals, the week's goal hours, away days
+    links        timetable blocks placed for a to-do or a goal
     review       weekly reviews
     stats        the Review page's numbers
     find         search across everything
@@ -43,8 +44,8 @@ from .categories import (EXAMPLE_CATEGORIES, EXAMPLE_LABEL_MAP, DEFAULT_OUTLOOK_
     match_category, next_free_colour, outlook_category, remove_label_default, rename_category, resolve_category, save_category, set_label_default)
 from .outlook import (OUTLOOK_COLS, _as_block, detach_outlook, get_outlook, hide_outlook, outlook_between,
     outlook_details, outlook_overlaps, outlook_signature, replace_outlook, tag_outlook_modules)
-from .timetable import (blocks_between, delete_block, get_block, move_block, paint, preview_paint,
-    set_block_label, upsert_blocks)
+from .timetable import (blocks_at, blocks_between, delete_block, get_block, link_todo, linked_todo, move_block,
+    paint, preview_paint, set_block_label, todo_link, todo_links, unlink_todo, upsert_blocks)
 from .days import (confirm_day, confirmed_days, correct, day_ended, day_started, day_status, free_runs,
     live_track, lock_day, lock_started, mark_confirmed, materialise_ops, retime, slots_gone, unconfirm_day,
     unconfirmed_days, unconfirmed_days_with_blocks)
@@ -61,13 +62,15 @@ from .deadline import (DEADLINE_COLS, add_deadline, countdown, deadline_overdue,
     get_deadline, import_canvas, plan_deadline, set_deadline_done, update_deadline)
 from .todos import (TODO_BASE, TODO_COLS, TODO_GROUP_COLOURS, TODO_MINUTES, TODO_PERIODS, add_detailed_todo,
     add_todo, add_todo_group, carry_over, delete_todo, delete_todo_group, done_todos, get_todo, list_for_due,
-    load_todos, move_target, move_todo, open_todos, reorder_todos, roll_todos, save_todos, set_todo_done,
+    load_todos, move_target, move_todo, open_todos, reorder_todos, roll_todos, save_todos, schedule_todo,
+    set_todo_done, todo_slots,
     goal_todo_group, todo_due, todo_groups, todos_for, todos_progress, update_todo, update_todo_group)
 from .goals import (GOAL_COLS, GOAL_PERIODS, _goal_matches, _num, add_goal, add_goal_progress, away_days,
     away_uids, calendar_horizon, counted_between, deadline_goal, delete_goal, get_goal, goal_hours, goal_title_due,
     goal_week_hours, goals_active, goals_in, goals_open, goals_overlapping, goals_past, habit_has_goal,
     load_goals, reorder_goals, save_goals, set_away, set_away_day, set_goal_progress, set_goal_week_hours,
     update_goal)
+from .links import block_link, link_block, linked_blocks, on_block_status
 from .review import get_review, reviews, save_review
 from .stats import get_stats, period_start
 from .find import _SEARCH, search

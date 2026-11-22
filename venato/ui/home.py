@@ -13,8 +13,8 @@ Above the grid: the date, the search / Ask bar, Edit Home, and the Settings gear
 remove your way out of the app).
 
 Edit Home: the tiles wobble; drag one and the others make room as you go, so it lands wherever you let go
-(components/home_flip.js). − takes a tile off Home (its data stays), the size button steps through the sizes
-it comes in, and the "Add a tile" panel lists what's hidden. Every change is saved straight away (no Undo bar;
+(components/home_flip.js). − takes a tile off Home (its data stays), the grip in its bottom-right corner
+resizes it (drag it: it snaps to the nearest size the tile comes in; tap it: the next size), and the "Add a tile" panel lists what's hidden. Every change is saved straight away (no Undo bar;
 Cmd/Ctrl+Z still undoes the last one); Reset goes back to the start. Moves glide, not with reduced motion.
 """
 
@@ -131,6 +131,17 @@ def _cycle(key):
     if len(sizes) > 1 and now:
         nxt = sizes[(sizes.index(now) + 1) % len(sizes)] if now in sizes else sizes[0]
         _save(f"Made {_name(key, cat)} {hl.SIZE_NAMES[nxt].lower()}", lambda c: hl.resize(c, key, nxt))
+
+
+def _on_resize():
+    """The corner handle dragged to a new size (home_flip.js sends the tile and the size it snapped to)."""
+    got = (st.session_state.get("home_flip") or {}).get("resize")
+    if not isinstance(got, dict):
+        return
+    key, size = got.get("key"), got.get("size")
+    cat = catalog()
+    if key in cat and size in hl.SPANS and size in cat[key].sizes:
+        _save(f"Made {_name(key, cat)} {hl.SIZE_NAMES[size].lower()}", lambda c: hl.resize(c, key, size))
 
 
 def _hide(key):
@@ -260,6 +271,23 @@ def _css(t, cells, cat, editing, room=PAGE_ROOM):
         .stApp [class*="st-key-hwx_"] button::before {{ content: ""; position: absolute; inset: -10px; }}
         [class*="st-key-hwx_"] button * {{ color: #fff !important; font-size: 16px !important; }}
         [class*="st-key-hwbar_"] button {{ min-height: 44px; min-width: 44px; padding: 0; }}
+        /* the size handle: a grip in the bottom-right corner. Drag it to resize (snaps to the sizes the tile
+           comes in); a tap (or Enter) steps to the next size. */
+        [class*="st-key-hwsz_"] {{ position: absolute !important; right: 4px; bottom: 4px; z-index: 4; width: auto !important; }}
+        .stApp [class*="st-key-hwsz_"] button {{ width: 28px; height: 28px; min-height: 28px; min-width: 28px; padding: 0;
+            border: 0 !important; background: transparent !important; cursor: nwse-resize; touch-action: none;
+            border-radius: 6px; position: relative; }}
+        .stApp [class*="st-key-hwsz_"] button::before {{ content: ""; position: absolute; inset: -8px; }}
+        .stApp [class*="st-key-hwsz_"] button::after {{ content: ""; position: absolute; right: 5px; bottom: 5px;
+            width: 14px; height: 14px; background: linear-gradient(135deg, transparent 0 45%, {t['muted']} 45% 53%,
+            transparent 53% 66%, {t['muted']} 66% 74%, transparent 74% 87%, {t['muted']} 87%); }}
+        .stApp [class*="st-key-hwsz_"] button:hover {{ background: {t['paper']} !important; }}
+        .stApp [class*="st-key-hwsz_"] button:hover::after {{ filter: brightness(0.6); }}
+        .stApp [class*="st-key-hwsz_"] button > div {{ display: none; }}
+        .st-key-home_grid .vn-resizing {{ z-index: 30; animation: none; border-style: solid; border-color: {t['accent']};
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16); }}
+        .st-key-home_grid .vn-resizing [class*="st-key-hwc_"] {{ animation: none; }}
+        html.vn-resize-on, html.vn-resize-on * {{ cursor: nwse-resize !important; }}
         [class*="st-key-hwbar_"] {{ padding-left: 8px; }}            /* clear of the − in the corner */
         /* the tile in your hand: lifted, over the rest, following the pointer (no wobble, no glide) */
         .st-key-home_grid .vn-dragging {{ z-index: 30; cursor: grabbing; animation: none;
@@ -295,7 +323,7 @@ def _header(editing, cells, labels):
         with st.container(gap=None, width="stretch"):
             if editing:
                 st.title("Edit Home", anchor=False)
-                st.caption("Drag a tile to move it · ⤢ changes its size · − removes it. Saved as you go.")
+                st.caption("Drag a tile to move it · drag its corner to resize it · − removes it. Saved as you go.")
             else:
                 st.title(regional.long_date(store.local_today()), anchor=False)
         if not editing:
@@ -331,18 +359,24 @@ def _tile_head(w, labels):
 
 
 def _edit_bar(w, cell, labels):
-    """In Edit Home: − to remove, the title, and a size button (steps through the sizes the tile comes in)."""
+    """In Edit Home: − to remove, and the title (the size grip is drawn after the preview: _size_handle)."""
     k, name = w.key, w.name
     st.button("", key=f"hwx_{k}", icon=":material/remove:", on_click=_hide, args=(k,), help=f"Remove {name}")
     labels[f"hwx_{k}"] = f"Remove {name} from Home"
     with st.container(key=f"hwbar_{k}", horizontal=True, vertical_alignment="center", gap="small"):
         with st.container(key=f"hwt_{k}", width="stretch"):              # the title, on the same line
             st.markdown(f'{_icon_html(w)}**{escape(name)}**', unsafe_allow_html=True)
-        if len([s for s in hl.ORDER if s in w.sizes]) > 1:
-            size = hl.SIZE_NAMES.get(cell["size"], cell["size"])
-            st.button("", key=f"hwsz_{k}", icon=":material/aspect_ratio:", on_click=_cycle, args=(k,),
-                      help=f"{name} is {size.lower()}: tap for the next size")
-            labels[f"hwsz_{k}"] = f"{name} is {size.lower()}. Change size"
+
+
+def _size_handle(w, cell, labels):
+    """In Edit Home: the grip in the tile's bottom-right corner. Dragged, it resizes the tile (home_flip.js
+    snaps it to the nearest size the tile comes in); tapped or pressed, it steps to the next size."""
+    k, name = w.key, w.name
+    if len([s for s in hl.ORDER if s in w.sizes]) > 1:
+        size = hl.SIZE_NAMES.get(cell["size"], cell["size"])
+        st.button("", key=f"hwsz_{k}", icon=":material/open_in_full:", on_click=_cycle, args=(k,),
+                  help=f"{name} is {size.lower()}: drag to resize, or tap for the next size")
+        labels[f"hwsz_{k}"] = f"{name} is {size.lower()}. Drag to resize, or press for the next size"
 
 
 def _tile(w, cell, editing, labels):
@@ -356,6 +390,8 @@ def _tile(w, cell, editing, labels):
                 w.draw()
             except Exception as e:                 # one broken tile mustn't take Home down with it
                 st.caption(f":material/error: {w.name} couldn't load ({type(e).__name__}).")
+        if editing:
+            _size_handle(w, cell, labels)                    # the corner grip (over the tile, bottom right)
 
 
 def _add_panel(cat, cells, labels):
@@ -424,7 +460,12 @@ def page_home():
             _add_panel(cat, cells, labels)
     with st.container(key="home_hidden"):
         _flip(key="home_flip", data={"arranging": editing, "labels": labels,
-                                     "room": CHAT_ROOM if chat_bar else PAGE_ROOM}, on_drop_change=_on_drag)
+                                     "room": CHAT_ROOM if chat_bar else PAGE_ROOM,
+                                     # what the corner handle can snap to: {tile: [[size, columns, rows], ...]}
+                                     "sizes": {c["w"]: [[z, *hl.span(z)] for z in hl.ORDER if z in cat[c["w"]].sizes]
+                                               for c in cells},
+                                     "size": {c["w"]: c["size"] for c in cells}},
+              on_drop_change=_on_drag, on_resize_change=_on_resize)
     dialog = st.session_state.pop("home_dialog", None)
     if dialog in _OPENS and not editing and dialog in hl.keys(cells):
         _OPENS[dialog]()

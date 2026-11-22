@@ -20,6 +20,11 @@
 //   {kind: "unconfirm_day", date}   undo that
 // Suggested sittings (data.suggestions, worked out in Python by tools.goal_spots) are drawn dashed in
 // free Plan time on days that haven't started; clicking one sends {kind: "add_suggestion", date, start, end, block, newId, ghost}.
+// A to-do or goal picked in the side panel (data.pick: {kind, id, label, categoryId, slots, once, nonce}) is the
+// brush while it's picked. A goal: painting places it (its label and category; a click gives it `slots`), the
+// paint op carrying link: {kind, id}. A to-do: a schedule_todo op at the slot pressed (as dropping its chip
+// does: its own length, linked by slot), then it's put down. Esc or picking a
+// category puts it down (a "pick" trigger tells Python).
 
 let SLOTS = 36;                   // 30-minute slots in a day (07:00 -> 01:00 by default; from Python)
 let FIRST_MIN = 7 * 60;           // the day's first minute
@@ -139,6 +144,8 @@ const esc = (s) =>
 
 const CAL_ICON = '<svg class="cal-ic" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>';
 
+const TODO_ICON = '<svg class="cal-ic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>';
+
 const LOCK_ICON = '<svg class="cal-ic" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>';
 
 const PIN_ICON = '<svg class="cal-ic" viewBox="0 0 24 24"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2"/></svg>';
@@ -241,7 +248,9 @@ class Timetable {
       if (e.key !== "Escape") return;
       const help = this.root.querySelector(".tt-help");
       if (help && !help.hidden) { this.toggleHelp(false); this.root.querySelector(".tt-help-btn").focus(); return; }
-      // Esc closes whatever is open first; with nothing open, it puts the category down.
+      // Esc closes whatever is open first; with nothing open, it puts the picked to-do / goal, or the category, down.
+      if (this.pick && !this.drag && !this.blockDrag && !this.marquee && !this.groupDrag && !this.popover
+          && !this.picked.size && !isTextField(e.composedPath()[0])) { this.dropPick(); return; }
       if (!this.drag && !this.blockDrag && !this.marquee && !this.groupDrag && !this.popover && !this.picked.size
           && this.brush && this.data && !this.data.readonly && !isTextField(e.composedPath()[0])) this.clearBrush();
       this.cancelDrag();
@@ -266,6 +275,8 @@ class Timetable {
     DATEFMT = data.dateFormat || "DD/MM/YYYY";
     this.nowAt = { min: data.nowMin, ms: Date.now() };   // the time in the user's zone when Python drew this
     this.cats = new Map(data.categories.map((c) => [c.id, c]));
+    // the side panel's pick, unless this one was already placed or put down here (Python hasn't caught up)
+    this.pick = data.pick && data.pick.nonce !== this.pickGone ? data.pick : null;
     this.dayIndex = new Map(data.days.map((d, i) => [d, i]));
     if (data.mode) { this.mode = data.mode; if (!data.readonly) remember("tt-mode", data.mode); }   // (Home: always Actual)
     else if (!this.mode) this.mode = recall("tt-mode") === "plan" ? "plan" : "actual";
@@ -283,6 +294,7 @@ class Timetable {
     this.hidden = new Set();                       // removed / detached here, not yet saved
     this.suggestions = (data.suggestions || []).slice();
     this.ghostsTaken = new Set();                  // suggestions added here, not yet saved
+    this.todos = (data.todos || []).map((t) => ({ ...t, link: t.link && { ...t.link } }));
     this.pending.forEach((op) => this.applyLocal(op));
 
     const key = JSON.stringify([data.categories, data.days, data.today, !!data.readonly]);
@@ -308,6 +320,24 @@ class Timetable {
       if (this.dayState[op.date]) this.dayState[op.date].confirmed = op.kind === "confirm_day";
       return;
     }
+    if (op.kind === "todo_done") {
+      const t = this.todos.find((x) => x.id === op.todoId);
+      if (t) this.markTodo(t, !!op.done);
+      return;
+    }
+    if (op.kind === "schedule_todo") {              // like store.schedule_todo
+      const t = this.todos.find((x) => x.id === op.todoId);
+      if (!t) return;
+      const track = (this.dayState[op.date] || {}).locked ? "actual" : "plan";
+      const s = slotOf(op.start), e = Math.min(s + Math.max(1, Math.ceil((t.minutes || 30) / 30)), SLOTS);
+      this.planPaint({ date: op.date, track, start: slotTime(s), end: slotTime(e), newId: op.newId,
+                       block: { label: t.title, categoryId: this.mapLabel(t.title), details: null } })
+        .forEach((o) => this.applyLocal(o));
+      t.link = { date: op.date, start: slotTime(s), end: slotTime(e) };
+      t.date = op.date;
+      if (t.done) this.markTodo(t, true);
+      return;
+    }
     if (op.kind === "add_suggestion") {
       this.ghostsTaken.add(op.ghost);
       const di = this.dayIndex.get(op.date);
@@ -331,11 +361,16 @@ class Timetable {
       // A dragged block: take it out, then paint it in its new place with the same id (like store.move_block).
       const en = this.entries.get(op.id);
       if (!en) return;
+      const todo = this.todoAt(en.date, en.start);  // its to-do goes with it
       this.entries.delete(op.id);
       this.applyLocal({ kind: "paint", date: op.date, track: op.track, start: op.start, end: op.end, newId: op.id,
                         block: { label: en.label, categoryId: en.categoryId, details: en.details } });
+      if (todo) { todo.link = { date: op.date, start: op.start, end: op.end }; todo.date = op.date; }
     } else if (op.kind === "upsert") this.entries.set(op.entry.id, { ...op.entry });
     else if (op.kind === "set_status") {
+      const en = this.entries.get(op.id);
+      const todo = en && this.todoAt(en.date, en.start);
+      if (todo) this.markTodo(todo, op.status === "done");      // done ticks its to-do; anything else unticks it
       if (op.status) this.status[op.id] = op.status;
       else delete this.status[op.id];
     }
@@ -350,6 +385,23 @@ class Timetable {
         });
       }
     } else this.entries.delete(op.id);
+  }
+
+  // ---------- To-dos: chips in the day header; a scheduled one's block is the one at its date and start ----------
+
+  todoAt(date, start) {
+    return (this.todos || []).find((t) => t.link && t.link.date === date && t.link.start === start);
+  }
+
+  // Like store.set_todo_done: the to-do, and its block (the Plan one and its Actual copy).
+  markTodo(t, done) {
+    t.done = done;
+    if (!t.link) return;
+    for (const en of this.entries.values()) {
+      if (en.date !== t.link.date || en.start !== t.link.start) continue;
+      if (done) this.status[en.id] = "done";
+      else delete this.status[en.id];
+    }
   }
 
   visibleOutlook() {
@@ -651,7 +703,12 @@ class Timetable {
     this.root.querySelectorAll("th.day .chips").forEach((box) => {
       const date = days[+box.dataset.d];
       box.innerHTML = (this.data.outlookAllDay || []).filter((c) => c.date === date)
-        .map((c) => `<span class="chip${c.deadline ? " due" : ""}" title="${esc(c.title)} (${c.deadline ? "deadline" : "Outlook, all day"})">${esc(c.title)}</span>`).join("");
+        .map((c) => `<span class="chip${c.deadline ? " due" : ""}" title="${esc(c.title)} (${c.deadline ? "deadline" : "Outlook, all day"})">${esc(c.title)}</span>`).join("")
+        + (this.data.readonly ? [] : this.todos.filter((t) => t.date === date && !t.link))     // to-dos not on the grid yet
+          .map((t) => `<span class="chip todo${t.done ? " done" : ""}" draggable="${!t.done}" data-todo="${esc(t.id)}" ` +
+            `title="${esc(t.title)} (to-do, ${t.minutes} min)${t.done ? "" : ": drag it onto the grid"}">` +
+            `<button class="tick" tabindex="-1" data-todo-tick="${esc(t.id)}" aria-pressed="${t.done}" ` +
+            `aria-label="${t.done ? "Untick" : "Tick off"} ${esc(t.title)}">${t.done ? "✓" : ""}</button>${esc(t.title)}</span>`).join("");
     });
     // Each day's state under its name. Actual: Confirm once it has started, then "Confirmed" (Undo).
     // Plan: "Locked" once it has started.
@@ -925,7 +982,7 @@ class Timetable {
         }
         return `<div data-di="${di}" class="blk ${this.statusClass(en.id)} ${tall ? "tall" : ""} ${frozen ? "frozen" : ""} ${plan ? "plan" : "act"} ${this.focusId === en.id ? "focus" : ""}${this.hovered === en.id ? " hover" : ""}${this.picked.has(en.id) ? " picked" : ""}" data-id="${esc(en.id)}"${named ? "" : ` title="${esc(en.label)} ${esc(fmtRange(en.start, en.end))}"`} style="${this.boxStyle(firstTd, lastTd, origin, inset)}` +
           (plan ? `--fill:${esc(bg)}">` : `background:${esc(bg)};color:${fg}">`) +
-          `${named ? `<b>${this.statusMark(en.id)}${esc(en.label)}</b>` : ""}${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
+          `${named ? `<b>${this.statusMark(en.id)}${this.todoAt(en.date, en.start) ? `<i class="tdo" title="To-do: marking it done ticks it off">${TODO_ICON}</i>` : ""}${esc(en.label)}</b>` : ""}${tall ? `<span>${esc(fmtRange(en.start, en.end))}</span>` : ""}</div>`;
       })
       .join("");
     this.syncResizePreview();              // keep the preview on its cells if the grid moved
@@ -943,6 +1000,36 @@ class Timetable {
   }
 
   // ---------- Brush ----------
+
+  // The side panel's to-do / goal: put it down (here at once; Python is told, so the panel catches up).
+  dropPick() {
+    if (!this.pick) return;
+    this.pickGone = this.pick.nonce;
+    this.pick = null;
+    this.trigger("pick", { clear: true });
+  }
+
+  // Paint the picked to-do / goal into slots a..b (a click: as long as it takes), linked to it.
+  placePick(di, track, a, b) {
+    const p = this.pick;
+    if (a === b && p.slots > 1) {                 // a click: its length, as far as the day goes
+      b = Math.min(a + p.slots - 1, SLOTS - 1);
+    }
+    if (p.kind === "todo") {                      // a to-do: the same as dropping its chip (its own length, linked)
+      this.pickGone = p.nonce; this.pick = null;
+      if (!this.todos.find((t) => t.id === p.id))   // not one of this week's chips: known now, so it shows at once
+        this.todos.push({ id: p.id, title: p.label, minutes: p.slots * 30, done: false, date: this.data.days[di], link: null });
+      this.commit([{ opId: uid(), kind: "schedule_todo", todoId: p.id, date: this.data.days[di],
+                     start: slotTime(Math.min(a, b)), newId: uid() }]);
+      return;
+    }
+    const cat = this.cats.get(p.categoryId) || this.cats.get(this.brush) || this.data.categories[0];
+    if (!cat) return;
+    const s = Math.min(a, b), e = Math.max(a, b) + 1;
+    this.commit([{ opId: uid(), kind: "paint", date: this.data.days[di], track, start: slotTime(s), end: slotTime(e),
+                   block: { label: p.label, categoryId: cat.id }, newId: uid(), link: { kind: p.kind, id: p.id } }]);
+    if (p.once) { this.pickGone = p.nonce; this.pick = null; }   // Python puts a to-do down when it saves it
+  }
 
   setBrush(id) {
     this.brush = id;
@@ -995,8 +1082,10 @@ class Timetable {
     const table = this.root.querySelector("table.tt");
 
     this.root.querySelectorAll("[data-cat]").forEach((el) =>
-      el.addEventListener("click", () =>
-        el.dataset.cat === this.brush ? this.clearBrush() : this.setBrush(el.dataset.cat)));   // click again to deselect
+      el.addEventListener("click", () => {
+        if (this.pick) { this.dropPick(); this.setBrush(el.dataset.cat); return; }       // a category instead
+        el.dataset.cat === this.brush ? this.clearBrush() : this.setBrush(el.dataset.cat);   // click again to deselect
+      }));
 
     this.root.querySelector(".tt-sync").addEventListener("click", (e) => {
       e.currentTarget.classList.add("spin");
@@ -1031,7 +1120,7 @@ class Timetable {
       const ghost = !hit && !adding && this.ghostAt[di] && this.ghostAt[di][slot];
       if (ghost) { this.takeGhost(ghost); return; }      // a suggested sitting: add just that one
       // Dragging empty time draws a selection box with Shift / Cmd / Ctrl held, or when no category is picked.
-      const selecting = adding || (!hit && !this.cats.has(this.brush));
+      const selecting = adding || (!hit && !this.pick && !this.cats.has(this.brush));
       if (adding && hit) {                          // Shift / Cmd / Ctrl-click a block: add it to / take it out of the selection
         const next = new Set(this.picked);
         next.has(hitId) ? next.delete(hitId) : next.add(hitId);
@@ -1090,7 +1179,7 @@ class Timetable {
       if (td && this.frozen(+td.dataset.d)) { table.style.cursor = hit ? "pointer" : "default"; return; }
       const adding = e.shiftKey || (IS_MAC ? e.metaKey : e.ctrlKey);
       if (!hit && td && this.ghostAt[+td.dataset.d][+td.dataset.s]) { table.style.cursor = "pointer"; return; }
-      if (!hit) { table.style.cursor = td && (adding || !this.cats.has(this.brush)) ? "crosshair" : ""; return; }
+      if (!hit) { table.style.cursor = td && (adding || (!this.pick && !this.cats.has(this.brush))) ? "crosshair" : ""; return; }
       const { s0, e0 } = this.spanOf(hit);
       const zone = this.zoneAt(+td.dataset.d, td.dataset.t, s0, e0, e.clientY);
       const inGroup = this.picked.has(this.idOf(hit)) && this.picked.size > 1;
@@ -1106,12 +1195,54 @@ class Timetable {
 
     // "Confirm" under a day's name (and in the block list): the day went as planned.
     this.root.addEventListener("click", (e) => {
+      const tick = e.target.closest("[data-todo-tick]");       // a to-do chip's tick
+      if (tick && !this.data.readonly) {
+        const t = this.todos.find((x) => x.id === tick.dataset.todoTick);
+        if (t) this.commit([{ opId: uid(), kind: "todo_done", todoId: t.id, date: t.date, done: !t.done }]);
+        return;
+      }
       const u = e.target.closest("[data-unconfirm]");
       if (u && !this.data.readonly) { this.commit([{ opId: uid(), kind: "unconfirm_day", date: u.dataset.unconfirm }]); return; }
       const c = e.target.closest("[data-confirm]");
       if (!c || this.data.readonly) return;
       this.commit([{ opId: uid(), kind: "confirm_day", date: c.dataset.confirm }]);
     });
+
+    // A to-do chip dragged onto the grid: scheduled there (on the day's Plan, or its Actual once started).
+    const cellUnder = (e) => {
+      const at = this.root.getRootNode().elementsFromPoint ? this.root.getRootNode() : document;
+      return at.elementsFromPoint(e.clientX, e.clientY).find((el) => el.matches && el.matches("td.s"));
+    };
+    const dropOn = (td) => {
+      if (this.dropTd === td) return;
+      if (this.dropTd) this.dropTd.classList.remove("todo-drop");
+      this.dropTd = td;
+      if (td) td.classList.add("todo-drop");
+    };
+    this.root.addEventListener("dragstart", (e) => {
+      const chip = e.target.closest && e.target.closest("[data-todo]");
+      if (!chip || this.data.readonly) return;
+      this.dragTodo = chip.dataset.todo;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", chip.textContent);
+    });
+    this.root.addEventListener("dragover", (e) => {
+      if (!this.dragTodo) return;
+      const td = cellUnder(e);
+      dropOn(td);
+      if (td) e.preventDefault();
+    });
+    this.root.addEventListener("drop", (e) => {
+      const td = this.dragTodo && cellUnder(e);
+      if (td) {
+        e.preventDefault();
+        this.commit([{ opId: uid(), kind: "schedule_todo", todoId: this.dragTodo, date: this.data.days[+td.dataset.d],
+                       start: slotTime(+td.dataset.s), newId: uid() }]);
+      }
+      this.dragTodo = null;
+      dropOn(null);
+    });
+    this.root.addEventListener("dragend", () => { this.dragTodo = null; dropOn(null); });
 
     this.root.querySelector(".tt-a11y").addEventListener("click", (e) => {
       const b = e.target.closest("[data-i]");
@@ -1514,6 +1645,7 @@ class Timetable {
         return;
       }
     }
+    if (this.pick) { this.placePick(drag.di, drag.track, drag.a, drag.b); return; }
     const cat = this.cats.get(this.brush);
     if (!cat) {
       this.flashHint("Pick a category first");
