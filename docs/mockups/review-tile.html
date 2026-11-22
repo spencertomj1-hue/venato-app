@@ -1,4 +1,4 @@
-<title>Review Tile Options</title>
+<title>Review Tile Scorecard</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap">
 <style>
@@ -8,7 +8,7 @@
   --track: #ECEAE4; --review: #8E1C1C; --accent: #C62828; --good: #2E7D4F; --warn: #B45309; --none: rgba(128,128,128,0.22);
   --chip: #F3ECE6;
   --f-body: "Inter", system-ui, sans-serif; --f-head: "Space Grotesk", "Inter", system-ui, sans-serif;
-  --row: 190px; --col: 280px; --gap: 14px;
+  --row: 180px; --col: 280px; --gap: 14px;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --paper: #0E1117; --card: #1A1C23; --border: #2E313B; --ink: #ECECF1; --muted: #A3A8B8; --track: #2E313B;
@@ -29,8 +29,7 @@ section { border-top: 1px solid var(--border); padding-block: 26px 10px; }
 .tag { font: 600 .7rem/1 var(--f-body); letter-spacing: .08em; text-transform: uppercase; color: var(--review);
   border: 1px solid currentColor; border-radius: 999px; padding: 4px 8px; }
 .why { color: var(--muted); margin: 4px 0 18px; max-width: 75ch; line-height: 1.5; font-size: .93rem; }
-.grid { display: grid; grid-template-columns: var(--col) calc(2 * var(--col) + var(--gap)) calc(2 * var(--col) + var(--gap));
-  gap: 22px var(--gap); align-items: start; overflow-x: auto; padding-bottom: 6px; }
+.grid { display: flex; flex-wrap: wrap; gap: 22px var(--gap); align-items: flex-start; overflow-x: auto; padding-bottom: 6px; }
 .slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .size { font: 600 .7rem/1 var(--f-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .size em { font-style: normal; font-weight: 500; letter-spacing: 0; text-transform: none; }
@@ -41,14 +40,16 @@ section { border-top: 1px solid var(--border); padding-block: 26px 10px; }
 .tile.wide { width: calc(2 * var(--col) + var(--gap)); }
 .tile.small { width: var(--col); }
 .tile.large { width: calc(2 * var(--col) + var(--gap)); height: calc(2 * var(--row) + var(--gap)); }
-.th { display: flex; align-items: center; gap: 8px; }
-.ic { width: 22px; height: 22px; border-radius: 6px; background: var(--review); display: grid; place-items: center; flex: none; }
-.ic svg { width: 14px; height: 14px; fill: #fff; }
+.th { display: flex; align-items: center; gap: 8px; min-height: 44px; flex: none; }
+.tile { gap: 6px; }
+.ic { width: 30px; height: 30px; border-radius: 8px; background: var(--review); display: grid; place-items: center; flex: none; }
+.ic svg { width: 18px; height: 18px; fill: #fff; }
 .tn { font-weight: 600; font-size: .92rem; }
 .ts { margin-left: auto; font-size: .78rem; color: var(--muted); white-space: nowrap; }
 .body { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .row { display: flex; gap: 14px; min-height: 0; }
 .row > * { min-width: 0; }
+.body.row { flex-direction: row; }
 
 .big { font: 700 2.4rem/1 var(--f-head); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .big small { font-size: 1rem; font-weight: 500; color: var(--muted); margin-left: 2px; }
@@ -121,44 +122,47 @@ section { border-top: 1px solid var(--border); padding-block: 26px 10px; }
 .pick ul { margin: 0; padding-left: 18px; line-height: 1.6; color: var(--muted); max-width: 80ch; }
 .pick b { color: var(--ink); }
 @media (max-width: 700px) { :root { --col: 240px; } h1 { font-size: 1.5rem; } }
+.ts.v { color: var(--ink); font-weight: 600; }
+.vd { font-size: .86rem; line-height: 1.35; margin: 0; }
+.vd b { font-family: var(--f-head); font-weight: 700; }
+.vd .sh { color: var(--accent); font-weight: 600; }
+.clip-ok { font-size: .74rem; color: var(--good); }
+.note { font-size: .8rem; color: var(--muted); line-height: 1.45; margin: 0; max-width: 62ch; }
+.note b { color: var(--ink); }
 </style>
 
 <div class="wrap">
-  <h1>Review tile: three directions</h1>
-  <p class="lede">The tile today is seven little bars and a header that mostly reads "None confirmed yet". Each set below fixes that with the numbers <code>review.summary()</code> already works out, so nothing new needs logging. Every set covers Small and Wide (the sizes the tile has now) plus Large, which it would gain.</p>
-  <p class="now">Example week: <b>Mon 16 – Sun 22 Nov</b>, it's Sunday afternoon. 4 of 6 finished days confirmed, 74% of plan followed (66% last week), Study 6 of 10 h, 14 of 19 to-dos, review opens at 7pm.</p>
+  <h1>Review tile: Scorecard + verdict</h1>
+  <p class="lede">Set A with the review's written verdict added. The header's status line now says the verdict word ("Solid week so far") instead of "None confirmed yet", and the full sentence sits in the tile from Wide up. Tiles are drawn at Home's real header height (44px), on a 180px row.</p>
+  <p class="now">Example week: <b>Mon 16 – Sun 22 Nov</b>, Sunday afternoon. 74% of plan followed (66% last week), Wed and Fri not confirmed, Study 6 of 10 h, 14 of 19 to-dos.</p>
 
-  <!-- ============ SET A ============ -->
   <section>
-    <div class="sethead"><h2>A · Scorecard</h2><span class="tag">Numbers first</span></div>
-    <p class="why">The week's % big, with the change from last week, so you know at a glance if you're up or down. Unconfirmed days are never grey bars any more: they're a count with a button, because that's why the number is missing.</p>
+    <div class="sethead"><h2>Normal week</h2><span class="tag">A + verdict</span></div>
     <div class="grid">
       <div class="slot"><span class="size">Small <em>1 × 1</em></span>
         <div class="tile small">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span></div>
+          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts v">Solid week so far</span></div>
           <div class="body">
-            <div><div class="big">74<small>%</small></div><div class="lbl">of plan followed <span class="delta">▲ 8 vs last week</span></div></div>
-            <span class="chip push"><span class="dot"></span>2 days to confirm</span>
+            <div class="row" style="align-items:center">
+              <div class="big">74<small>%</small></div>
+              <div style="display:flex;flex-direction:column;gap:4px"><span class="delta">▲ 8 vs last week</span><span class="chip"><span class="dot"></span>2 to confirm</span></div>
+            </div>
+            <p class="vd"><span class="sh">Study</span> fell short: 6 of 10 h.</p>
           </div>
         </div>
       </div>
-      <div class="slot"><span class="size">Wide <em>2 × 1</em></span>
+      <div class="slot"><span class="size">Wide <em>2 × 1 · fixed</em></span>
         <div class="tile wide">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">Week so far</span></div>
+          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">29.5 of 38 h · 14 of 19 to-dos</span></div>
           <div class="body row">
-            <div style="display:flex;flex-direction:column;gap:6px;width:150px;flex:none">
+            <div style="display:flex;flex-direction:column;gap:5px;width:140px;flex:none">
               <div class="big">74<small>%</small></div>
-              <div class="lbl">plan followed<br><span class="delta">▲ 8 vs last week</span></div>
-              <span class="chip push"><span class="dot"></span>2 to confirm</span>
+              <span class="delta">▲ 8 vs last week</span>
+              <span class="chip"><span class="dot"></span>2 to confirm</span>
             </div>
-            <div style="flex:1;display:flex;flex-direction:column;gap:8px">
-              <div class="stats">
-                <div class="stat"><div class="v">29.5<small> / 38 h</small></div><div class="lbl">done / planned</div></div>
-                <div class="stat"><div class="v">14<small> / 19</small></div><div class="lbl">to-dos</div></div>
-                <div class="stat"><div class="v" style="color:var(--accent)">−4 h</div><div class="lbl">Study short</div></div>
-              </div>
-              <div class="push"><div class="bars"><span><i style="height:82%"></i></span><span><i style="height:71%"></i></span><span><i class="n" style="height:100%"></i></span><span><i style="height:64%"></i></span><span><i class="n" style="height:100%"></i></span><span><i style="height:90%"></i></span><span><i class="t" style="height:40%"></i></span></div>
-              <div class="days"><b>M</b><b>T</b><b>W</b><b>T</b><b>F</b><b>S</b><b class="t">S</b></div></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+              <p class="vd"><b>Solid week so far.</b> 74% of the plan followed, up from 66%. <span class="sh">Study</span> fell short (6 of 10 h).</p>
+              <div class="push"><div class="bars" style="height:28px"><span><i style="height:82%"></i></span><span><i style="height:71%"></i></span><span><i class="n" style="height:100%"></i></span><span><i style="height:64%"></i></span><span><i class="n" style="height:100%"></i></span><span><i style="height:90%"></i></span><span><i class="t" style="height:40%"></i></span></div><div class="days"><b>M</b><b>T</b><b>W</b><b>T</b><b>F</b><b>S</b><b class="t">S</b></div></div>
             </div>
           </div>
         </div>
@@ -168,17 +172,18 @@ section { border-top: 1px solid var(--border); padding-block: 26px 10px; }
           <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">Week so far · 16–22 Nov</span></div>
           <div class="body">
             <div class="row" style="align-items:center">
-              <div style="width:150px;flex:none"><div class="big">74<small>%</small></div><div class="lbl">plan followed <span class="delta">▲ 8</span></div></div>
-              <div class="stats" style="flex:1">
-                <div class="stat"><div class="v">29.5<small> / 38 h</small></div><div class="lbl">done / planned</div></div>
-                <div class="stat"><div class="v">14<small> / 19</small></div><div class="lbl">to-dos</div></div>
-                <div class="stat"><div class="v">2<small> of 3</small></div><div class="lbl">habits on track</div></div>
-              </div>
+              <div style="width:140px;flex:none"><div class="big">74<small>%</small></div><span class="delta">▲ 8 vs last week</span></div>
+              <p class="vd" style="flex:1"><b>Solid week so far.</b> 74% of the plan followed, up from 66%. <span class="sh">Study</span> fell short (6 of 10 h). Gym is 1 session off its target.</p>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="v">29.5<small> / 38 h</small></div><div class="lbl">done / planned</div></div>
+              <div class="stat"><div class="v">14<small> / 19</small></div><div class="lbl">to-dos</div></div>
+              <div class="stat"><div class="v">2<small> of 3</small></div><div class="lbl">habits on track</div></div>
             </div>
             <div class="split">
               <div><span class="sub">Plan vs done</span>
                 <div class="cats">
-                  <div class="cat"><span>Study</span><span class="tr"><i style="width:100%;background:var(--track)"></i><i style="width:60%;background:#3B6FB6"></i></span><span class="n short">6 / 10 h</span></div>
+                  <div class="cat"><span>Study</span><span class="tr"><i style="width:60%;background:#3B6FB6"></i></span><span class="n short">6 / 10 h</span></div>
                   <div class="cat"><span>Work</span><span class="tr"><i style="width:94%;background:#7A5BB5"></i></span><span class="n">15 / 16 h</span></div>
                   <div class="cat"><span>Gym</span><span class="tr"><i style="width:67%;background:#2E7D4F"></i></span><span class="n">3 / 4.5 h</span></div>
                   <div class="cat"><span>Social</span><span class="tr"><i style="width:100%;background:#B45309"></i></span><span class="n">5.5 / 5 h</span></div>
@@ -193,185 +198,82 @@ section { border-top: 1px solid var(--border); padding-block: 26px 10px; }
                 </svg>
               </div>
             </div>
-            <div class="push"><div class="bars"><span><i style="height:82%"></i></span><span><i style="height:71%"></i></span><span><i class="n" style="height:100%"></i></span><span><i style="height:64%"></i></span><span><i class="n" style="height:100%"></i></span><span><i style="height:90%"></i></span><span><i class="t" style="height:40%"></i></span></div>
-            <div class="days"><b>Mon</b><b>Tue</b><b>Wed</b><b>Thu</b><b>Fri</b><b>Sat</b><b class="t">Sun</b></div></div>
-            <div class="cta"><button class="btn">Confirm Wed &amp; Fri</button><span class="lbl">Hatched days aren't counted yet</span></div>
+            <div class="row push" style="align-items:flex-end">
+              <div style="flex:1"><div class="bars" style="height:28px"><span><i style="height:82%"></i></span><span><i style="height:71%"></i></span><span><i class="n" style="height:100%"></i></span><span><i style="height:64%"></i></span><span><i class="n" style="height:100%"></i></span><span><i style="height:90%"></i></span><span><i class="t" style="height:40%"></i></span></div><div class="days"><b>Mon</b><b>Tue</b><b>Wed</b><b>Thu</b><b>Fri</b><b>Sat</b><b class="t">Sun</b></div></div>
+              <button class="btn" style="flex:none">Confirm Wed &amp; Fri</button>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ============ SET B ============ -->
   <section>
-    <div class="sethead"><h2>B · The verdict</h2><span class="tag">Words first</span></div>
-    <p class="why">Reads like the review itself: the headline it already writes ("Solid week so far"), the one thing that fell short, and what you told yourself last Sunday you'd change. Less to parse, more of a nudge.</p>
+    <div class="sethead"><h2>Other states</h2><span class="tag">Small &amp; Wide</span></div>
+    <p class="why">Nothing confirmed yet, and a finished week (Monday morning, before you've opened the review).</p>
     <div class="grid">
-      <div class="slot"><span class="size">Small <em>1 × 1</em></span>
-        <div class="tile small">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">74%</span></div>
-          <div class="body">
-            <div class="verdict">Solid week <span>so far</span></div>
-            <div class="line"><b>Study</b> fell short<br><span class="mut">6 of 10 h</span></div>
-            <div class="lbl push">Review opens tonight, 7pm</div>
-          </div>
-        </div>
-      </div>
-      <div class="slot"><span class="size">Wide <em>2 × 1</em></span>
-        <div class="tile wide">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">74% followed · ▲ 8</span></div>
-          <div class="body split">
-            <div>
-              <div class="verdict">Solid week <span>so far</span></div>
-              <div class="line"><b>Study</b> fell short (6 of 10 h).<br><b>Gym</b> 2 of 3 sessions.</div>
-              <div class="lbl push">Review opens tonight, 7pm</div>
-            </div>
-            <div>
-              <div class="quote"><span class="lbl">Last Sunday you said you'd change</span>"No phone before 9am lectures"</div>
-              <div class="cta push"><span class="lbl">Did you?</span><button class="btn ghost">Yes</button><button class="btn ghost">Partly</button><button class="btn ghost">No</button></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="slot"><span class="size">Large <em>2 × 2 · new</em></span>
-        <div class="tile large">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">74% followed · ▲ 8</span></div>
-          <div class="body">
-            <div class="verdict" style="font-size:1.5rem">Solid week <span>so far</span></div>
-            <p class="line mut" style="margin:0">74% of the plan followed, up from 66%. Study fell short (6 of 10 h).</p>
-            <div class="split">
-              <div><span class="sub">Went well</span>
-                <ul class="list">
-                  <li><span class="k ok"></span>Work on plan<span class="r">15 / 16 h</span></li>
-                  <li><span class="k ok"></span>Lab report handed in<span class="r">Thu</span></li>
-                  <li><span class="k ok"></span>Reading streak<span class="r">6 / 7</span></li>
-                </ul>
-              </div>
-              <div><span class="sub">Fell short</span>
-                <ul class="list">
-                  <li><span class="k bad"></span>Study<span class="r">6 / 10 h</span></li>
-                  <li><span class="k bad"></span>Gym<span class="r">2 / 3</span></li>
-                  <li><span class="k warn"></span>Wed, Fri not confirmed<span class="r">—</span></li>
-                </ul>
-              </div>
-            </div>
-            <div class="quote"><span class="lbl">Last Sunday you said you'd change</span>"No phone before 9am lectures"</div>
-            <div class="cta push"><button class="btn">Start this week's review</button><span class="lbl">Opens on its own at 7pm</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ SET C ============ -->
-  <section>
-    <div class="sethead"><h2>C · What to do next</h2><span class="tag">Action first</span></div>
-    <p class="why">The tile's job becomes "what should I sort out?": confirm the missing days, then look ahead to next week, which goals are under-booked and what's due. The week's % sits in a ring but isn't the hero.</p>
-    <div class="grid">
-      <div class="slot"><span class="size">Small <em>1 × 1</em></span>
-        <div class="tile small">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">74%</span></div>
-          <div class="body">
-            <div class="line"><b>2 days not confirmed</b><br><span class="mut">Wed and Fri aren't in your 74% yet</span></div>
-            <button class="btn push">Confirm days</button>
-          </div>
-        </div>
-      </div>
-      <div class="slot"><span class="size">Wide <em>2 × 1</em></span>
-        <div class="tile wide">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">Review opens 7pm</span></div>
-          <div class="body row">
-            <svg class="ring" viewBox="0 0 92 92" role="img" aria-label="74% of plan followed">
-              <circle cx="46" cy="46" r="38" fill="none" stroke="var(--track)" stroke-width="9"/>
-              <circle cx="46" cy="46" r="38" fill="none" stroke="var(--review)" stroke-width="9" stroke-linecap="round" stroke-dasharray="176.7 238.8" transform="rotate(-90 46 46)"/>
-              <text x="46" y="50" text-anchor="middle">74%</text><text class="t2" x="46" y="63" text-anchor="middle">followed</text>
-            </svg>
-            <div style="flex:1;display:flex;flex-direction:column;gap:6px">
-              <span class="sub">Before next week</span>
-              <ul class="list">
-                <li><span class="k warn"></span>Confirm Wed &amp; Fri<span class="r">2 days</span></li>
-                <li><span class="k bad"></span>Dissertation under-booked<span class="r">2 of 6 h</span></li>
-                <li><span class="k ok"></span>Essay due Wed<span class="r">3 days</span></li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="slot"><span class="size">Large <em>2 × 2 · new</em></span>
-        <div class="tile large">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">Review opens 7pm</span></div>
+      <div class="slot"><span class="size">Small · nothing confirmed</span>
+        <div class="tile small empty">
+          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">No verdict yet</span></div>
           <div class="body">
             <div class="row" style="align-items:center">
-              <svg class="ring" viewBox="0 0 92 92" role="img" aria-label="74% of plan followed">
-                <circle cx="46" cy="46" r="38" fill="none" stroke="var(--track)" stroke-width="9"/>
-                <circle cx="46" cy="46" r="38" fill="none" stroke="var(--review)" stroke-width="9" stroke-linecap="round" stroke-dasharray="176.7 238.8" transform="rotate(-90 46 46)"/>
-                <text x="46" y="50" text-anchor="middle">74%</text><text class="t2" x="46" y="63" text-anchor="middle">followed</text>
-              </svg>
-              <div style="flex:1;display:flex;flex-direction:column;gap:6px">
-                <div class="line"><b>This week:</b> 29.5 of 38 h done, <span class="delta">▲ 8 vs last week</span></div>
-                <div class="bars" style="height:32px"><span><i style="height:82%"></i></span><span><i style="height:71%"></i></span><span><i class="n" style="height:100%"></i></span><span><i style="height:64%"></i></span><span><i class="n" style="height:100%"></i></span><span><i style="height:90%"></i></span><span><i class="t" style="height:40%"></i></span></div>
-                <div class="days"><b>M</b><b>T</b><b>W</b><b>T</b><b>F</b><b>S</b><b class="t">S</b></div>
-              </div>
+              <div class="big mut">—</div>
+              <span class="chip"><span class="dot"></span>3 days to confirm</span>
             </div>
-            <div class="split">
-              <div><span class="sub">Sort out now</span>
-                <ul class="list">
-                  <li><span class="k warn"></span>Confirm Wed &amp; Fri<span class="r">2 days</span></li>
-                  <li><span class="k bad"></span>Gym: 1 session left<span class="r">2 / 3</span></li>
-                </ul>
-                <button class="btn">Confirm days</button>
-              </div>
-              <div><span class="sub">Next week · 31 h planned</span>
-                <ul class="list">
-                  <li><span class="k bad"></span>Dissertation<span class="r">2 of 6 h booked</span></li>
-                  <li><span class="k warn"></span>Spanish<span class="r">1 of 2 h booked</span></li>
-                  <li><span class="k ok"></span>Essay due<span class="r">Wed 25</span></li>
-                </ul>
-                <button class="btn ghost">Book time</button>
-              </div>
+            <p class="vd mut">Last week: 66% followed.</p>
+          </div>
+        </div>
+      </div>
+      <div class="slot"><span class="size">Wide · nothing confirmed</span>
+        <div class="tile wide empty">
+          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">0 of 12 h confirmed</span></div>
+          <div class="body row">
+            <div style="display:flex;flex-direction:column;gap:5px;width:140px;flex:none">
+              <div class="big mut">—</div><span class="lbl">Last week 66%</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+              <p class="vd"><b>No verdict yet.</b> Confirm Mon–Wed on the timetable to see how the week's going.</p>
+              <button class="btn push">Confirm days</button>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  </section>
-
-  <!-- ============ EMPTY STATES ============ -->
-  <section>
-    <div class="sethead"><h2>When nothing's confirmed yet</h2><span class="tag">All sets</span></div>
-    <p class="why">The case the tile handles worst today. Same Small tile, each set's version.</p>
-    <div class="grid" style="grid-template-columns:repeat(3, var(--col))">
-      <div class="slot"><span class="size">A · Scorecard</span>
-        <div class="tile small empty">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span></div>
-          <div class="body"><div><div class="big mut">—</div><div class="lbl">Last week: 66% followed</div></div>
-          <span class="chip push"><span class="dot"></span>3 days to confirm</span></div>
+      <div class="slot"><span class="size">Small · week finished</span>
+        <div class="tile small">
+          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts v">Strong week</span></div>
+          <div class="body">
+            <div class="row" style="align-items:center">
+              <div class="big">83<small>%</small></div>
+              <span class="delta">▲ 9 vs last week</span>
+            </div>
+            <p class="vd"><span class="sh">Gym</span> missed its target.</p>
+          </div>
         </div>
       </div>
-      <div class="slot"><span class="size">B · Verdict</span>
-        <div class="tile small empty">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span></div>
-          <div class="body"><div class="verdict">No verdict <span>yet</span></div>
-          <div class="quote"><span class="lbl">This week you're working on</span>"No phone before 9am lectures"</div></div>
-        </div>
-      </div>
-      <div class="slot"><span class="size">C · Next</span>
-        <div class="tile small empty">
-          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span></div>
-          <div class="body"><div class="line"><b>Confirm Mon–Wed</b><br><span class="mut">Tick off what actually happened to see how the week's going</span></div>
-          <button class="btn push">Confirm days</button></div>
+      <div class="slot"><span class="size">Wide · week finished</span>
+        <div class="tile wide">
+          <div class="th"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg></span><span class="tn">Review</span><span class="ts">35 of 38 h · 17 of 19 to-dos</span></div>
+          <div class="body row">
+            <div style="display:flex;flex-direction:column;gap:5px;width:140px;flex:none">
+              <div class="big">83<small>%</small></div><span class="delta">▲ 9 vs last week</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+              <p class="vd"><b>Strong week.</b> 83% of the plan followed, up from 74%. Gym missed its target.</p>
+              <button class="btn push">Open last week's review</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
   <div class="pick">
-    <h2>To pick</h2>
+    <h2>What changes in the code</h2>
     <ul>
-      <li><b>A Scorecard</b>: best if you glance at Home for a number.</li>
-      <li><b>B Verdict</b>: best if the Sunday reflection is the point of the module.</li>
-      <li><b>C Next</b>: best if you want the tile to make you do something.</li>
-      <li>Mixing is fine, e.g. A's Small with C's Wide. Large is optional: say if you want it added.</li>
+      <li><b>Header status</b> (<code>tile_status.review</code>): Small shows the verdict word from <code>review.headline()</code>; Wide and Large show hours and to-dos, since the sentence is in the tile.</li>
+      <li><b>Wide fix</b>: its two halves were stacking on top of each other instead of sitting side by side, so the bottom ran off the tile. They now sit side by side, hours and to-dos moved into the header, and the bars are shorter. Checked: nothing in any tile here crosses its bottom edge on a 180px row.</li>
+      <li><b>Unconfirmed days</b> are hatched, not grey, with a count to confirm.</li>
+      <li><b>Large</b> is new: it gets added to the tile's sizes.</li>
     </ul>
   </div>
 </div>
