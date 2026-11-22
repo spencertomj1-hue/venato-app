@@ -44,22 +44,18 @@ def test_panel_lists_todos_and_goals(store):
     assert fragment_run.component_data(at, "timetable")["pick"] is None
 
 
-def test_placing_a_todo_links_it_and_done_ticks_it(store):
-    t = store.add_todo("Prep for Redwave meeting", "daily", store.local_today())
+def test_placing_a_todo_schedules_it(store):
+    t = store.add_todo("Prep for Redwave meeting", "daily", store.local_today(), minutes=60)
     at = timetable()
     at.button(key=f"tt_pick_todo_{t['id']}").click().run()
-    pick = fragment_run.component_data(at, "timetable")["pick"]
     day = future_day(store)
-    paint(at, day, "10:00", "11:00", pick)
-    block = next(b for b in store.blocks_between(day, day, "plan"))
-    assert block["label"] == "Prep for Redwave meeting"
-    assert store.block_link(block["id"]) == ("todo", t["id"])
-    assert store.get_todo(t["id"])["due"] == day                                # it had none: the block's day
+    ops = [{"opId": "s1", "kind": "schedule_todo", "todoId": t["id"], "date": day, "start": "10:00", "newId": "b-s1"}]
+    fragment_run.trigger(at, "timetable", "ops", ops)                         # what placePick sends for a to-do
+    assert not at.exception, at.exception
+    block = store.blocks_between(day, day, "plan")[0]
+    assert (block["label"], block["start"], block["end"]) == ("Prep for Redwave meeting", "10:00", "11:00")
+    assert store.todo_link(t["id"])["date"] == day
     assert fragment_run.component_data(at, "timetable")["pick"] is None           # a to-do is placed once
-    store.on_block_status(block["id"], None, "done")
-    assert store.get_todo(t["id"])["done"]
-    store.on_block_status(block["id"], "done", "missed")
-    assert not store.get_todo(t["id"])["done"]
 
 
 def test_count_goal_goes_up_when_a_sitting_is_done(store):

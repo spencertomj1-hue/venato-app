@@ -69,6 +69,12 @@ def _checkpoint(op):
     elif kind == "set_status":
         undo.checkpoint(f"Marked {op.get('label') or 'a block'} " + {"done": "done", "missed": "not done"}
                         .get(op.get("status"), "as not marked"), quiet=True)
+    elif kind == "schedule_todo":                        # a to-do chip dropped on the grid
+        t = store.get_todo(op["todoId"])
+        undo.checkpoint(f"Scheduled {t['title'] if t else 'a to-do'}", quiet=True)
+    elif kind == "todo_done":                            # a to-do chip's tick
+        t = store.get_todo(op["todoId"])
+        undo.checkpoint(f"{'Ticked' if op.get('done') else 'Unticked'} {t['title'] if t else 'a to-do'}", quiet=True)
     elif kind == "add_suggestion":                       # nothing is overwritten, but Cmd/Ctrl+Z takes it back
         undo.checkpoint(f"Added a suggested sitting of {op['block']['label']}", quiet=True)
     elif kind in ("skip", "replace", "retime"):          # corrections on the one timeline
@@ -104,7 +110,11 @@ def apply_grid_op(op):
       {kind: "unconfirm_day", date}                       undo that
       {kind: "add_suggestion", date, start, end, block}   one suggested sitting, added to the Plan if still free
       {kind: "set_status", id, status, date, start, end, label, categoryId}   done / "missed" (not done) / null,
-                                                          on a block or "outlook:<uid>", any day (locked too)
+                                                          on a block or "outlook:<uid>", any day (locked too);
+                                                          a to-do's block ticks / unticks the to-do too
+    To-dos (chips in the day headers):
+      {kind: "schedule_todo", todoId, date, start, newId}   paint it on the day's live track (its length) and link it
+      {kind: "todo_done", todoId, date, done}        tick / untick it (and its block)
     Painting over an Outlook event detaches it first (store.paint), so it's trimmed like any block.
     Every day an op touches is locked first if it has started, and a started day's Plan is never changed:
     such an op (from a grid drawn before the day started) is dropped; the redraw shows the Actual.
@@ -185,8 +195,9 @@ def _apply(op):
     elif kind == "unconfirm_day":
         store.unconfirm_day(op["date"])
     elif kind == "set_status":                       # done / not done, from a block's card
+        _sync_todo(op)                               # first: unticking clears the to-do's blocks' marks
         was = store.block_statuses(op["date"], op["date"]).get(op["id"])
-        store.on_block_status(op["id"], was, op.get("status"))     # placed for a to-do or goal: count it
+        store.on_block_status(op["id"], was, op.get("status"))     # placed for a goal counted by hand: count it
         store.set_block_status(op["id"], op.get("status"), op["date"], op.get("start"), op.get("end"),
                                op.get("label"), op.get("categoryId"))
         from venato import blocks
@@ -194,10 +205,18 @@ def _apply(op):
             from venato.blocks import network
             if network.on_block_status(op):
                 st.session_state["meeting_who"] = {k: op.get(k) for k in ("id", "date", "label")}
+    elif kind == "schedule_todo":
+        store.schedule_todo(op["todoId"], op["date"], op["start"], new_id=op.get("newId"))
+        pick = st.session_state.get("tt_pick") or {}
+        if pick.get("kind") == "todo" and pick.get("id") == op["todoId"]:
+            st.session_state.pop("tt_pick", None)    # placed from the side panel: a to-do is placed once
+    elif kind == "todo_done":
+        store.set_todo_done(op["todoId"], bool(op.get("done")))
     elif kind == "add_suggestion":
         from venato.ui import goal_time
         goal_time.add_suggestion(op["date"], op["start"], op["end"], _block(op["block"]), new_id=op.get("newId"))
-    if kind in ("skip", "replace", "retime", "confirm_day", "unconfirm_day", "add_suggestion", "set_status"):
+    if kind in ("skip", "replace", "retime", "confirm_day", "unconfirm_day", "add_suggestion", "set_status",
+                "schedule_todo", "todo_done"):
         return
     if op["kind"] == "paint":
         s, e = store.slot_of(op["start"]), store.slot_of(op["end"])
@@ -225,28 +244,61 @@ def _apply(op):
 
 
 def _link(op, s):
-    """A block painted for a to-do or goal: remember what it's for (the block that now covers its first slot:
-    the new one, or the one it merged into). A to-do with no due day is given the block's."""
+    """A block painted for a goal (the side panel): remember what it's for (the block that now covers its
+    first slot: the new one, or the one it merged into)."""
     kind, ref = op["link"].get("kind"), op["link"].get("id")
-    if kind not in ("todo", "goal") or not ref:
+    if kind != "goal" or not ref:
         return
     at = next((b for b in store.blocks_between(op["date"], op["date"], op["track"])
                if store.slot_of(b["start"]) <= s < store.slot_of(b["end"])), None)
-    if not at:
-        return
-    store.link_block(at["id"], kind, ref)
-    if kind == "todo":
-        todo = store.get_todo(ref)
-        if todo and not todo.get("due"):
-            store.update_todo(ref, move=False, due=op["date"])
-        pick = st.session_state.get("tt_pick") or {}
-        if pick.get("kind") == "todo" and pick.get("id") == ref:
-            st.session_state.pop("tt_pick", None)    # a to-do is placed once; a goal stays picked for more sittings
+    if at:
+        store.link_block(at["id"], kind, ref)
 
 
 def _on_pick(key):
     """The grid put the picked to-do / goal down (Esc, or a category picked instead)."""
     st.session_state.pop("tt_pick", None)
+
+
+def _sync_todo(op):
+    """A to-do's block marked done ticks the to-do; not done or cleared unticks it."""
+    b = store.get_block(op["id"]) or {}
+    day, start = b.get("date") or op.get("date"), b.get("start") or op.get("start")
+    todo_id = store.linked_todo(day, start) if day and start else None
+    if todo_id:
+        store.set_todo_done(todo_id, op.get("status") == "done")
+
+
+def grid_todos(days):
+    """
+    The to-dos the grid shows: today's list on today, a to-do with a due day on that day, a scheduled
+    one on the day it's scheduled. Each {id, title, minutes, done, date, link}: link is its block's slot
+    {date, start, end}, or None when it isn't on the timetable (a chip in the day header).
+    """
+    days = [d.isoformat() if hasattr(d, "isoformat") else d for d in days]
+    today = store.local_today().isoformat()
+    links = store.todo_links(days[0], days[-1])
+    pool = {t["id"]: t for t in store.open_todos() + store.done_todos()}
+    if today in days:
+        pool.update({t["id"]: t for t in store.todos_for("daily", today)})
+    pool.update({i: t for i in links if i not in pool and (t := store.get_todo(i))})
+    on_grid = {(b["date"], b["start"]) for b in store.blocks_between(days[0], days[-1])}
+    out = []
+    for t in pool.values():
+        link = links.get(t["id"])
+        if link and (link["date"], link["start"]) not in on_grid:
+            link = None                              # its block was deleted: unscheduled again
+        if link:
+            day = link["date"]
+        elif t.get("due") in days:
+            day = t["due"]
+        elif today in days and t["period"] == "daily" and t["period_start"] == today:
+            day = today
+        else:
+            continue
+        out.append({"id": t["id"], "title": t["title"], "minutes": t.get("minutes") or store.TODO_MINUTES,
+                    "done": t["done"], "date": day, "link": link})
+    return out
 
 
 def _on_ops(key):
@@ -458,6 +510,8 @@ def render_grid(days, key="timetable", single=False, readonly=False, suggestions
         "status": store.block_statuses(days[0], days[-1]),     # id -> "done" | "missed"
         "acked": st.session_state.get("tt_acked", []),
         "rejected": st.session_state.get("tt_rejected", {}),     # opId -> why it wasn't saved
+        # To-dos: unscheduled ones are chips in the day header (drag one onto the grid); scheduled ones badge their block.
+        "todos": grid_todos(days),
         "single": single,
         # The Plan / Actual switch lives in the browser (no rerun); Python only forces it once (Home's Review).
         "mode": "actual" if readonly else st.session_state.pop("tt_force_mode", None),

@@ -356,6 +356,20 @@ th.day .chip {
   font-size: 0.62rem; font-weight: 500; color: var(--text);
 }
 th.day .chip.due { border: 1px solid #c62828; color: #c62828; font-weight: 600; }
+/* To-dos not on the timetable yet: a tick, then the title. Drag one onto the grid to schedule it. */
+th.day .chip.todo {
+  display: inline-flex; align-items: center; gap: 4px; padding-left: 3px;
+  border-style: solid; cursor: grab; white-space: nowrap;
+}
+th.day .chip.todo.done { cursor: default; opacity: 0.6; text-decoration: line-through; }
+th.day .chip.todo .tick {
+  flex: none; width: 11px; height: 11px; padding: 0; border-radius: 3px;
+  border: 1px solid rgba(128, 128, 128, 0.8); background: transparent;
+  font-size: 0.55rem; line-height: 9px; color: #fff; cursor: pointer;
+}
+th.day .chip.todo.done .tick { background: #16A34A; border-color: #15803D; }
+td.s.todo-drop { outline: 2px dashed #16A34A; outline-offset: -2px; }
+.blk .tdo { display: inline-flex; vertical-align: -1px; margin-right: 3px; opacity: 0.85; }
 
 /* Read-only info card on right-click. */
 .tt-pop.outlook-info .ol-title { display: flex; align-items: center; gap: 6px; }

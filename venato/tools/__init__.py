@@ -29,8 +29,8 @@ from .common import FILLER_WORDS, PERIOD_NAMES, Pending, Result, ToolError, _bes
 from .daily_log import (add_habit, delete_habit, get_stats, list_habits, log_day, query_entries,
     rename_habit, set_habit, set_habit_target)
 from .timetable import (OUTLOOK_PREFIX, add_block, confirm_all, confirm_day, delete_block, describe_block,
-    edit_category, list_categories, plan_time, query_blocks, set_activity_default, set_outlook_category,
-    skip_block, update_block)
+    edit_category, list_categories, plan_time, query_blocks, schedule_todo, set_activity_default,
+    set_outlook_category, skip_block, update_block)
 from .deadlines import (add_deadline, complete_deadline, delete_deadline, describe_deadline, edit_deadline,
     list_deadlines)
 from .todos import (_find_todo, add_todo, complete_todo, delete_todo, describe_todo, edit_todo, list_todos,
