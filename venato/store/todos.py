@@ -201,11 +201,12 @@ def done_todos(today=None):
 
 
 def todo_groups():
-    """The user's to-do categories in order: [{id, name, colour, goal_id}]. goal_id: the goal it was made
-    for (a goal is also a to-do category), else None."""
+    """The user's to-do categories in order: [{id, name, colour, goal_id, life_goal_id}]. goal_id: the target
+    it was made for (a target is also a to-do category), else None; life_goal_id: the same for a long-term goal."""
     with db() as conn:
-        rows = conn.execute("SELECT id, name, colour, goal_id FROM todo_groups ORDER BY ord, name").fetchall()
-    return [{"id": r[0], "name": r[1], "colour": r[2], "goal_id": r[3]} for r in rows]
+        rows = conn.execute("SELECT id, name, colour, goal_id, life_goal_id FROM todo_groups "
+                            "ORDER BY ord, name").fetchall()
+    return [{"id": r[0], "name": r[1], "colour": r[2], "goal_id": r[3], "life_goal_id": r[4]} for r in rows]
 
 
 def _add_group(conn, name, colour=None):

@@ -216,6 +216,15 @@ def init_db():
         # (block ids change when a day locks and its Plan is copied into the Actual).
         conn.execute("""CREATE TABLE IF NOT EXISTS tt_todo_links (
                             todo_id TEXT PRIMARY KEY, date TEXT NOT NULL, start TEXT NOT NULL, "end" TEXT NOT NULL)""")
+        # Goals: long-term plans (3 / 6 / 12 months or any end date) with targets (goals.life_goal_id) and
+        # to-dos (through their category: todo_groups.life_goal_id) under them. See store/life_goals.py.
+        conn.execute("""CREATE TABLE IF NOT EXISTS life_goals (
+                            id TEXT PRIMARY KEY, title TEXT NOT NULL, why TEXT,
+                            start TEXT NOT NULL, end_date TEXT NOT NULL,
+                            ord INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+                            archived INTEGER NOT NULL DEFAULT 0)""")
+        _add_column(conn, "goals", "life_goal_id", "TEXT")
+        _add_column(conn, "todo_groups", "life_goal_id", "TEXT")
 
 
 def _goals_became_todos(conn):
