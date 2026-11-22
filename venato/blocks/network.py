@@ -763,7 +763,7 @@ def _home_status():
 BLOCK = Block("network", "Network", ":material/hub:",
               "A map of the people you know, the groups they're in, and when you last met.",
               group="People & life", page=_page, tools=TOOLS, prompt=PROMPT, schema=SCHEMA, migrate=_migrate,
-              widgets=[Widget("network", "Network", _home, "large", ("small", "wide", "large", "tall"),
+              widgets=[Widget("network", "Network", _home, "small", ("small", "wide", "large", "tall"),
                               status=_home_status, colour="#8E4EC6")],
               order=170, search=SEARCH, search_icons=SEARCH_ICONS, search_open=_search_open,
               review=_review, status=STATUS)

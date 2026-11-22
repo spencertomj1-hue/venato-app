@@ -329,7 +329,9 @@ def render_home():
     st.html(f"""<style>
       .st-key-hwc_network [data-testid="stElementContainer"]:has(.vn-spider) {{ flex: 1 1 0; min-height: 96px; }}
       .st-key-hwc_network [data-testid="stHtml"]:has(.vn-spider), .vn-spider {{ height: 100%; }}
-      .vn-spider {{ min-height: 96px; }}
+      .vn-spider {{ min-height: 96px; container-type: size; }}
       .vn-spider-svg {{ display: block; width: 100%; height: 100%; }}
+      /* a Small tile: names would be unreadably tiny, so the dots alone (point at one for its name) */
+      @container (max-height: 150px) {{ .vn-spider-svg text {{ display: none; }} }}
       @media (max-width: 1000px) {{ .vn-spider {{ height: 200px; }} }}
     </style><div class="vn-spider">{spider_svg(data, appearance.tokens(), store.local_today())}</div>""")
