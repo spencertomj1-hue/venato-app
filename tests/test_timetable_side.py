@@ -80,3 +80,16 @@ def test_hours_goal_block_counts_by_its_category(store):
     assert b["category_id"] == "study" and store.block_link(b["id"]) == ("goal", g["id"])
     assert store.goal_hours(store.get_goal(g["id"]), day, day, "plan") == 2
     assert fragment_run.component_data(at, "timetable")["pick"]["id"] == g["id"]   # still picked
+
+
+def test_panel_groups_under_long_term_goals(store):
+    today = store.local_today()
+    life = store.add_life_goal("Get fit", months=6)
+    gym = store.add_goal("Gym", None, today, 40, "sessions", due=store.months_on(today, 2), life_goal_id=life["id"])
+    shoes = store.add_detailed_todo("Buy trainers", group_id=store.life_goal_group(life["id"])["id"])
+    store.add_todo("Laundry", "daily", today)
+    at = timetable()
+    heads = [m.value for m in at.markdown if "vn-subhead" in m.value]
+    order = [next(i for i, h in enumerate(heads) if w in h) for w in ("Get fit", "Other to-dos", "Other targets")]
+    assert order == sorted(order)
+    assert at.button(key=f"tt_pick_goal_{gym['id']}") and at.button(key=f"tt_pick_todo_{shoes['id']}")
