@@ -131,6 +131,19 @@ def test_page_by_due_date_view(store):
     assert any(t.key == "tdn_title" for t in at.text_input)
 
 
+def test_page_all_view_lists_every_open_todo(store):
+    today = store.local_today()
+    store.add_todo("Buy milk", "daily", today)
+    store.add_todo("Finish essay", "weekly", today)
+    store.add_todo("Book dentist", "monthly", today)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    goto(at, "To-dos")
+    at.segmented_control(key="todos_tab").set_value("All").run()
+    assert not at.exception, at.exception
+    assert {c.label for c in at.checkbox} >= {"Buy milk", "Finish essay", "Book dentist"}
+    assert any(m.value.startswith("**Everything to do**") for m in at.markdown)
+
+
 def test_a_goal_is_a_todo_category(store):
     """Setting a goal ("Get a job") adds a to-do category of that name; renaming the goal renames it;
     deleting the goal keeps the category and its to-dos. A deadline's plan goal makes none."""
