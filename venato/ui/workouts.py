@@ -14,7 +14,6 @@ from venato import undo
 from venato.blocks import workouts as wk
 from venato.ui import kit
 
-NEW_EX = "+ New exercise"
 CURRENT = "wk_current"
 UPLOAD_PENDING = "wk_upload_pending"      # a tools.Pending preview of an uploaded plan, waiting for Confirm
 EXAMPLE = """Week 1
@@ -135,9 +134,10 @@ def _add_sets_form(wid):
     w_unit, d_unit = wk.units()
     with st.form(f"wk_add_{wid}", clear_on_submit=False, border=True):
         st.markdown("**Add sets**")
-        choice = st.selectbox("Exercise", names + [NEW_EX], key=f"wk_ex_{wid}")
-        new_name = st.text_input("New exercise name", key=f"wk_newname_{wid}",
-                                 placeholder="only for + New exercise")
+        # Type any exercise; once typed it's saved and offered here next time (no presets).
+        choice = st.selectbox("Exercise", names, index=None, accept_new_options=True, key=f"wk_ex_{wid}",
+                              placeholder="Type an exercise, e.g. Bench press" if not names
+                              else "Pick one, or type a new one")
         c1, c2, c3 = st.columns(3)
         count = c1.number_input("Sets", 1, 50, 3, key=f"wk_n_{wid}")
         reps = c2.number_input("Reps", 0, 1000, 8, key=f"wk_reps_{wid}")
@@ -148,11 +148,15 @@ def _add_sets_form(wid):
         warm = c6.checkbox("Warm-up", key=f"wk_warm_{wid}")
         if st.form_submit_button("Add", type="primary", icon=":material/add:", width="stretch"):
             try:
-                if choice == NEW_EX:
-                    kind = "cardio" if dist else "timed" if mins and not reps else "weights" if weight else "bodyweight"
-                    ex = wk.add_exercise(new_name, kind)
-                else:
-                    ex = wk.find_exercise(choice)
+                name = (choice or "").strip()
+                if not name:
+                    raise wk.WorkoutError("Type the exercise.")
+                ex = next((e for e in wk.exercises() if e["name"].lower() == name.lower()), None)
+                if ex is None:                       # new: saved, with its type from what was filled in
+                    guessed = wk.guess(name)[0]
+                    kind = "cardio" if dist else "timed" if mins and not reps else \
+                        guessed or ("weights" if weight else "bodyweight")
+                    ex = wk.add_exercise(name, kind)
                 wk.add_sets(wid, ex["id"], count, reps or None, wk.kg_in(weight) if weight else None,
                             wk.km_in(dist) if dist else None, int(mins * 60) if mins else None, warm)
                 st.rerun()
@@ -397,18 +401,29 @@ def _plan_cards(days):
             st.markdown("\n".join(f"- {it['text']}" for it in d["items"]))
 
 
+def _step(n, title, note=None):
+    """A numbered step heading in the plan maker."""
+    st.markdown(f"<div style='display:flex;gap:10px;align-items:center;margin:14px 0 4px'>"
+                f"<span style='flex:none;width:24px;height:24px;border-radius:50%;background:#C2410C;color:#fff;"
+                f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem'>{n}</span>"
+                f"<b>{title}</b></div>", unsafe_allow_html=True)
+    if note:
+        st.caption(note)
+
+
 def _upload_plan():
-    with st.expander("Upload a plan and fit it into your week", icon=":material/upload_file:",
+    """Make a plan in steps: get it written, paste it, check it, choose when, then add the sessions to the
+    timetable. Only each session's name (Push, Legs...) goes in the timetable; its exercises stay in the plan."""
+    with st.expander("Make a plan and put it in your week", icon=":material/upload_file:",
                      expanded=not wk.plans() or UPLOAD_PENDING in st.session_state):
-        if _upload_confirm():
+        if UPLOAD_PENDING in st.session_state:
+            _step(5, "Add the sessions to your timetable")
+            _upload_confirm()
             return
-        st.markdown("**1. Get Claude to write your plan.** Copy this (the button at its top right), paste it "
-                    "into Claude, fill in the last line, and Claude writes the plan in the format Venato reads.")
-        st.code(CLAUDE_PROMPT, language=None, wrap_lines=True, height=260)
-        st.markdown("**2. Paste Claude's plan here, or upload it as a .txt or .csv file.**")
-        st.caption("\"Week 1\", \"Week 2\" lines give each week its own weights (progressive overload). "
-                   "A day in a workout's name (\"Monday - Push\") keeps it on that day; the rest are spread "
-                   "through the week around your timetable.")
+        _step(1, "Get Claude to write your plan",
+              "Copy this (the button at its top right), paste it into Claude and fill in the last line.")
+        st.code(CLAUDE_PROMPT, language=None, wrap_lines=True, height=200)
+        _step(2, "Paste the plan Claude wrote", "Or upload it as a .txt or .csv file.")
         f = st.file_uploader("Plan file", type=["txt", "csv", "md"], key="wk_up_file")
         text = st.text_area("Or paste the plan", key="wk_up_text", height=180, placeholder=EXAMPLE)
         if f is not None:
@@ -417,21 +432,26 @@ def _upload_plan():
             return
         name = f.name.rsplit(".", 1)[0] if f is not None else "Workout"
         days, skipped = wk.parse_plan(text, default_name=name)
+        _step(3, "Check the sessions")
         if not days:
             st.warning("No exercises found. Write them like \"Bench press 3x8 @ 60\", one per line.",
                        icon=":material/warning:")
             return
         numbered = wk.plan_weeks(days)
         if numbered:
-            st.markdown(f"**Found {len(numbered)} weeks, {len(days)} workouts in all**")
+            st.markdown(f"Found **{len(numbered)} weeks**, {len(days)} sessions in all.")
             for n, tab in zip(numbered, st.tabs([f"Week {n}" for n in numbered])):
                 with tab:
                     _plan_cards([d for d in days if d["week"] == n])
         else:
-            st.markdown(f"**Found {len(days)} workout{'s' if len(days) != 1 else ''} a week**")
+            st.markdown(f"Found **{len(days)} session{'s' if len(days) != 1 else ''} a week**.")
             _plan_cards(days)
         if skipped:
             st.caption("Couldn't read: " + "; ".join(f"“{x}”" for x in skipped[:8]))
+        _step(4, "Choose when they can go",
+              "A day in a session's name (\"Monday - Push\") keeps it on that day; the rest are spread through "
+              "the week around what's already in your timetable. Only the session names go in the timetable "
+              "(\"Push\", \"Legs\"); the exercises stay in the plan, ready to start from the Log tab.")
         today = store.local_today()
         cats = list(store.load_categories()["name"])
         starts = [store.slot_time(i) for i in range(store.SLOTS)]
@@ -443,8 +463,8 @@ def _upload_plan():
                 weeks = len(numbered)
                 b.text_input("Weeks", value=f"{numbered[-1]} (from the plan)", disabled=True)
             else:
-                weeks = b.number_input("Weeks", 1, 12, 4, help="The same workouts repeat each week.")
-            minutes = c.selectbox("Each workout", [30, 45, 60, 75, 90, 120], index=2,
+                weeks = b.number_input("Weeks", 1, 12, 4, help="The same sessions repeat each week.")
+            minutes = c.selectbox("Each session", [30, 45, 60, 75, 90, 120], index=2,
                                   format_func=lambda m: f"{m // 60} h {m % 60} min".replace(" 0 min", "")
                                   .replace("0 h ", ""))
             a, b, c = st.columns(3)
@@ -455,7 +475,7 @@ def _upload_plan():
             category = c.selectbox("Category", cats, index=cats.index("Exercise") if "Exercise" in cats else 0)
             a, b, _ = st.columns([1, 1, 2])
             go = a.form_submit_button("Find times", type="primary", icon=":material/event_available:")
-            save_only = b.form_submit_button("Just save the plans")
+            save_only = b.form_submit_button("Just save the plan")
         if go:
             try:
                 r = wk.schedule_plan(days, first, weeks, minutes, earliest, latest, category)
@@ -468,7 +488,7 @@ def _upload_plan():
             undo.checkpoint("Saved uploaded workout plans")
             for d in days:
                 wk.save_plan(wk.plan_name(d), d["items"])
-            st.toast(f"Saved {len(days)} plan(s).", icon=":material/check_circle:")
+            st.toast(f"Saved {len(days)} session(s).", icon=":material/check_circle:")
             st.rerun()
 
 
@@ -500,7 +520,12 @@ def _plans_tab():
 
 def _exercises_tab():
     exs = wk.exercises()
-    kit.table([{"Exercise": e["name"], "Type": e["kind"], "Muscle": e["muscle"] or ""} for e in exs], height=300)
+    st.caption("Your exercises. There are no presets: any exercise you type in the Log tab (or a plan) is "
+               "saved here and offered again next time.")
+    if exs:
+        kit.table([{"Exercise": e["name"], "Type": e["kind"], "Muscle": e["muscle"] or ""} for e in exs], height=300)
+    else:
+        kit.empty("None yet. Type one in the Log tab's Add sets.", ":material/fitness_center:")
     with st.form("wk_ex_add", clear_on_submit=True):
         a, b, c = st.columns(3)
         name = a.text_input("New exercise")

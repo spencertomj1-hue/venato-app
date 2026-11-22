@@ -1,5 +1,5 @@
 """
-Workouts: an exercise library, workouts made of sets (weights / reps, distance, time,
+Workouts: the user's own exercises (none are preset: one typed once is saved and offered again), workouts made of sets (weights / reps, distance, time,
 warm-ups, RPE), saved plans to start from, personal bests and estimated one-rep maxes,
 progress per exercise and weekly volume per muscle group.
 
@@ -20,7 +20,9 @@ MUSCLES = ("Chest", "Back", "Shoulders", "Biceps", "Triceps", "Forearms", "Core"
 LB = 0.45359237
 MILE = 1.609344
 
-STARTER = [     # (name, kind, muscle)
+# Not presets: nothing here is shown or saved until the user types it. A typed exercise that matches one
+# gets its type and muscle group from it ("bench press" -> weights, Chest), so weekly volume still works.
+HINTS = [     # (name, kind, muscle)
     ("Bench press", "weights", "Chest"), ("Incline dumbbell press", "weights", "Chest"),
     ("Push-up", "bodyweight", "Chest"), ("Chest fly", "weights", "Chest"), ("Dips", "bodyweight", "Triceps"),
     ("Deadlift", "weights", "Back"), ("Barbell row", "weights", "Back"), ("Pull-up", "bodyweight", "Back"),
@@ -136,15 +138,36 @@ def weight_text(kg):
 EX_COLS = ("id", "name", "kind", "muscle", "notes")
 
 
-def _seed(conn):
-    if conn.execute("SELECT COUNT(*) FROM wk_exercises").fetchone()[0] == 0:
-        conn.executemany("INSERT INTO wk_exercises (id, name, kind, muscle, created_at) VALUES (?, ?, ?, ?, ?)",
-                         [(_id(), n, k, m, store.stamp()) for n, k, m in STARTER])
+def _migrate(conn):
+    """Exercises used to start with a preset library. Once: drop the presets nobody has used (no sets,
+    not in a plan); the ones used stay as the user's own."""
+    conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+    if conn.execute("SELECT 1 FROM meta WHERE key = 'wk_presets_dropped'").fetchone():
+        return
+    names = [n for n, _, _ in HINTS]
+    conn.execute(f"DELETE FROM wk_exercises WHERE name IN ({','.join('?' * len(names))}) "
+                 "AND id NOT IN (SELECT exercise_id FROM wk_sets) AND id NOT IN (SELECT exercise_id FROM wk_plan_items)",
+                 names)
+    conn.execute("INSERT INTO meta VALUES ('wk_presets_dropped', '1')")
+
+
+def guess(name):
+    """(kind, muscle) for a typed exercise name from HINTS: the same name, else the longest hint inside it
+    as whole words ("Paused bench press" -> Bench press); (None, None) if none matches."""
+    want = str(name or "").strip().lower().rstrip("s")
+    best, size = (None, None), 0
+    for n, kind, muscle in HINTS:
+        h = n.lower().rstrip("s")
+        if h == want:
+            return kind, muscle
+        if len(h) > size and re.search(rf"(?<!\w){re.escape(h)}(?!\w)", want):
+            best, size = (kind, muscle), len(h)
+    return best
 
 
 def exercises():
+    """The user's exercises, A-Z (every one they've typed)."""
     with store.db() as conn:
-        _seed(conn)
         rows = conn.execute(f"SELECT {', '.join(EX_COLS)} FROM wk_exercises ORDER BY name COLLATE NOCASE").fetchall()
     return [dict(zip(EX_COLS, r)) for r in rows]
 
@@ -162,10 +185,14 @@ def find_exercise(name):
     return part[0] if len(part) == 1 else None
 
 
-def add_exercise(name, kind="weights", muscle=None, notes=None):
+def add_exercise(name, kind=None, muscle=None, notes=None):
+    """Save an exercise (or return the one already called that). No kind / muscle: guessed from the name."""
     name = str(name or "").strip()
     if not name:
         raise WorkoutError("The exercise needs a name.")
+    hint_kind, hint_muscle = guess(name)
+    kind = kind or hint_kind or "weights"
+    muscle = muscle or hint_muscle
     if kind not in KINDS:
         raise WorkoutError(f"kind must be one of {', '.join(KINDS)}.")
     found = [e for e in exercises() if e["name"].lower() == name.lower()]
@@ -179,7 +206,7 @@ def add_exercise(name, kind="weights", muscle=None, notes=None):
 
 
 def exercise_or_new(name, kind=None):
-    return find_exercise(name) or add_exercise(name, kind or "weights")
+    return find_exercise(name) or add_exercise(name, kind)
 
 
 # --- Workouts and sets ---
@@ -604,8 +631,8 @@ def fit_plan(days, start, weeks=4, minutes=60, earliest="07:00", latest="21:00")
 
 
 def _plan_details(day):
-    head = f"Week {day['week']}\n" if day.get("week") else ""
-    return head + "\n".join(f"- {it['text']}" for it in day["items"])
+    """A scheduled session's timetable details: just its week (the exercises stay in the plan)."""
+    return f"Week {day['week']}" if day.get("week") else None
 
 
 def schedule_plan(days, start, weeks=4, minutes=60, earliest="07:00", latest="21:00", category=None,
@@ -637,8 +664,9 @@ def schedule_plan(days, start, weeks=4, minutes=60, earliest="07:00", latest="21
     if missed:
         short = f"\n\n{len(missed)} didn't fit: " + "; ".join(
             f"{n} (week of {tools.nice_day(w.isoformat())})" for w, n in missed)
-    summary = (f"Save {names} and add {len(placed)} workouts to your Plan "
-               f"({tt_tools._cat_names().get(cid, 'Exercise')}):\n\n{lines}{short}")
+    summary = (f"Save {names} and add {len(placed)} sessions to your Plan as "
+               f"{tt_tools._cat_names().get(cid, 'Exercise')}. Only the session names go in; the exercises "
+               f"stay in the plan:\n\n{lines}{short}")
     if not confirmed:
         return tools.Result("", pending=tools.Pending(summary, lambda: schedule_plan(
             days, start, weeks, minutes, earliest, latest, category, True)))
@@ -648,7 +676,7 @@ def schedule_plan(days, start, weeks=4, minutes=60, earliest="07:00", latest="21
     for d, s, e, day in placed:
         store.paint(d.isoformat(), store.live_track(d.isoformat(), now), s, e,
                     {"label": day["name"], "category_id": cid, "details": _plan_details(day)})
-    return tools.Result(f"Saved {len(days)} plan(s) and added {len(placed)} workouts to your Plan.", changed=True)
+    return tools.Result(f"Saved {len(days)} plan(s) and added {len(placed)} sessions to your Plan.", changed=True)
 
 
 # --- Numbers: 1RM, PBs, volume ---
@@ -897,4 +925,4 @@ BLOCK = Block("workouts", "Workouts", ":material/fitness_center:",
               group="Health & body", page=_page,
               widgets=[Widget("workouts", "Workouts", _home, "small", ("small", "wide", "tall"),
                               status=_home_status, colour="#C2410C")], tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, order=80)
+              quick=[_quick], schema=SCHEMA, migrate=_migrate, order=80)

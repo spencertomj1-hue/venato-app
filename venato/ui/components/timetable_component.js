@@ -699,7 +699,7 @@ class Timetable {
       }
     });
 
-    // All-day events and deadlines: small chips in the day header.
+    // All-day events: small chips in the day header (deadlines are flags on the grid: drawDeadlines).
     this.root.querySelectorAll("th.day .chips").forEach((box) => {
       const date = days[+box.dataset.d];
       box.innerHTML = (this.data.outlookAllDay || []).filter((c) => c.date === date)
@@ -873,7 +873,7 @@ class Timetable {
     box.style.height = `${room}px`;
   }
 
-  // Home only: a thin red line across today at the current time, moving down as time passes.
+  // A thin red line across today's column at the current time, moving down as time passes.
   drawNow() {
     let line = this.wrapEl && this.wrapEl.querySelector(".tt-now");
     const di = this.data && this.data.nowMin != null ? this.dayIndex.get(this.data.today) : undefined;
@@ -883,10 +883,9 @@ class Timetable {
     if (di === undefined || slot < 0 || slot >= SLOTS || !this.cells[di]) { if (line) line.remove(); return; }
     const origin = this.wrapEl.getBoundingClientRect();
     const cell = this.cells[di].plan[Math.floor(slot)].getBoundingClientRect();
-    // Across the whole table: from the edge of the time labels (the dot sits there) to the last day's edge.
-    const last = this.cells.length - 1;
-    const tableLeft = this.cells[0].plan[0].getBoundingClientRect().left;
-    const tableRight = (this.cells[last].actual[0] || this.cells[last].plan[0]).getBoundingClientRect().right;
+    // Across today's column only (Plan and Actual), not the other days.
+    const tableLeft = this.cells[di].plan[0].getBoundingClientRect().left;
+    const tableRight = (this.cells[di].actual[0] || this.cells[di].plan[0]).getBoundingClientRect().right;
     if (!line) {
       line = document.createElement("div");
       line.className = "tt-now";
@@ -938,9 +937,36 @@ class Timetable {
     return { left, top, width: right - left, height: bottom - top };
   }
 
+  // Deadlines: a small red flag in their day's column at the time they're due (the end of the day when
+  // they have no time), over the blocks.
+  drawDeadlines() {
+    if (!this.wrapEl) return;
+    this.wrapEl.querySelectorAll(".tt-due").forEach((x) => x.remove());
+    if (!this.cells[0]) return;
+    const origin = this.wrapEl.getBoundingClientRect();
+    for (const d of this.data.deadlines || []) {
+      const di = this.dayIndex.get(d.date);
+      if (di === undefined || !this.cells[di]) continue;
+      const min = d.time ? slotOf(d.time) * 30 : SLOTS * 30;           // minutes past the day's first one
+      const slot = Math.max(0, Math.min(SLOTS - 1, Math.ceil(min / 30) - 1));
+      const cell = this.cells[di].plan[slot].getBoundingClientRect();
+      const left = this.cells[di].plan[0].getBoundingClientRect().left;
+      const right = (this.cells[di].actual[0] || this.cells[di].plan[0]).getBoundingClientRect().right;
+      const el = document.createElement("div");
+      el.className = "tt-due";
+      el.title = `Due: ${d.title}${d.time ? ` at ${d.time}` : ""}`;
+      el.textContent = d.title;
+      el.style.top = `${cell.bottom - origin.top - 1}px`;
+      el.style.left = `${left - origin.left}px`;
+      el.style.maxWidth = `${right - left}px`;
+      this.wrapEl.appendChild(el);
+    }
+  }
+
   layoutBlocks() {
     this.drawNow();
     this.drawLines();
+    this.drawDeadlines();
     if (!this.blocks) return;
     const origin = this.wrapEl.getBoundingClientRect();
     const fillOf = (en) => esc((this.cats.get(en.categoryId) || {}).colour || "#9e9e9e");
