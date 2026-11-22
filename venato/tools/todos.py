@@ -23,8 +23,8 @@ def describe_todo(t):
     return f"'{t['title']}' in {todo_list_name(t['period'], t['period_start'])}"
 
 
-def add_todo(title, period, date=None, repeat=False, notes=None):
-    """Add a to-do to the period containing `date` (default today)."""
+def add_todo(title, period, date=None, repeat=False, notes=None, life_goal=None):
+    """Add a to-do to the period containing `date` (default today); with life_goal, under that long-term goal."""
     title, per = str(title).strip(), _period(period)
     if not title:
         raise ToolError("The to-do needs a title.")
@@ -33,8 +33,14 @@ def add_todo(title, period, date=None, repeat=False, notes=None):
     start = store.start_of_period(per, day)
     if any(t["title"].lower() == title.lower() for t in store.todos_for(per, start)):
         return Result(f"'{title}' is already in {todo_list_name(per, start)}.")
-    t = store.add_todo(title, per, day, notes=notes, repeat=bool(repeat))
+    group = None
+    if life_goal:
+        from .life_goals import find_life_goal
+        life = find_life_goal(life_goal)
+        group = store.ensure_life_goal_group(life["id"])
+    t = store.add_todo(title, per, day, notes=notes, repeat=bool(repeat), group_id=group)
     extra = f", repeating every {PERIOD_NAMES[per]}" if repeat else ""
+    extra += f", under the goal '{life['title']}'" if life_goal else ""
     return Result(f"Added '{t['title']}' to {todo_list_name(per, start)}{extra}.", changed=True)
 
 

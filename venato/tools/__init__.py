@@ -10,7 +10,8 @@ Blocks (venato/blocks) bring their own tools; these are the core ones, by domain
     timetable    categories, blocks, confirming days, plan_time
     deadlines    deadlines
     todos        to-dos
-    goals        goals and their progress
+    goals        targets (measurable goals) and their progress
+    life_goals   long-term goals (3 / 6 / 12 months) with targets and to-dos under them
     journal      the journal
     review       the weekly review
     goal_time    goals on the timetable: pace, the week's budget, planning goal time
@@ -37,6 +38,8 @@ from .todos import (_find_todo, add_todo, complete_todo, delete_todo, describe_t
     todo_list_name, uncomplete_todo)
 from .goals import (add_goal, delete_goal, describe_goal, edit_goal, list_goals, log_goal_progress,
     set_goal_progress)
+from .life_goals import (add_life_goal, delete_life_goal, describe_life_goal, edit_life_goal, find_life_goal,
+    list_life_goals)
 from .journal import read_journal, write_journal
 from .review import save_review_answers, weekly_review
 from .goal_time import goal_pace, goal_spots, plan_goals, resolve_goal, week_budget
