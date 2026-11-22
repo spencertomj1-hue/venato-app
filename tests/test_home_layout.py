@@ -440,3 +440,15 @@ def test_needs_you_tile_shows_three_then_more(store):
     at.button(key="open_tile_needs_you").click().run()
     assert not at.exception
     assert len([m.value for m in at.markdown if "Deadline" in m.value]) == 3 + 5   # the tile, and the dialog
+
+
+def test_corner_handle_resizes_to_a_size_the_tile_comes_in(store):
+    at = app()
+    at.button(key="home_arrange").click().run()
+    fragment_run.trigger(at, "home_flip", "resize", {"key": "goals", "size": "large", "nonce": "x"})
+    assert not at.exception
+    assert {"w": "goals", "size": "large"} in saved(store)
+    fragment_run.trigger(at, "home_flip", "resize", {"key": "focus", "size": "column", "nonce": "y"})
+    assert {"w": "focus", "size": "column"} not in saved(store)                # Focus doesn't come in Column
+    data = fragment_run.component_data(at, "home_flip")
+    assert ["large", 2, 2] in data["sizes"]["goals"] and data["size"]["goals"] == "large"
