@@ -7,10 +7,12 @@
 // page, the tiles just appear where they land. It also sizes Home's grid to the window (fit, below).
 // Out of Edit Home, a click on a tile anywhere that isn't one of its controls opens its page (presses the
 // tile's title button). In Edit Home a tile is dragged: the others make room live and it lands where it's let
-// go (the new order is sent to Python as "drop"). Icon-only buttons get spoken names (aria-label) from Python.
+// go (the new order is sent to Python as "drop"); its bottom-right grip is dragged to resize it, snapping to the
+// sizes it comes in as you go (sent as "resize"; a tap on the grip is a plain click). Icon-only buttons get spoken names (aria-label) from Python.
 export default function ({ data, setTriggerValue }) {
   window.__venatoHome = data || {};
   window.__venatoDrop = (order) => setTriggerValue("drop", { order, nonce: Math.random().toString(36).slice(2) });
+  window.__venatoResize = (key, size) => setTriggerValue("resize", { key, size, nonce: Math.random().toString(36).slice(2) });
   if (window.__venatoFlip) { window.__venatoFlipLabel && window.__venatoFlipLabel(); return; }
   window.__venatoFlip = true;
   const doc = document;
@@ -203,10 +205,12 @@ export default function ({ data, setTriggerValue }) {
   const tiles = () => [...doc.querySelectorAll(`.st-key-home_grid > div > ${SEL}`)];
   const itemOf = (t) => t.parentElement;                     // the grid item each tile sits in
   const slides = (el) => el.getAnimations().filter((a) => a.id === "slide");
-  let drag = null, ordered = false, clearTimer = 0;
+  let drag = null, sizing = null, ordered = false, clearTimer = 0;
   function clearOrder() {
     clearTimeout(clearTimer);
-    if (!ordered || drag) return;
+    if (drag || sizing) return;
+    for (const t of tiles()) { itemOf(t).style.gridColumn = ""; itemOf(t).style.gridRow = ""; }
+    if (!ordered) return;
     ordered = false;
     for (const t of tiles()) itemOf(t).style.order = "";
   }
@@ -324,5 +328,81 @@ export default function ({ data, setTriggerValue }) {
   doc.addEventListener("pointerup", endDrag, true);
   doc.addEventListener("pointercancel", endDrag, true);
   doc.addEventListener("keydown", (e) => { if (drag?.on && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); endDrag(e); } }, true);
+
+  // Edit Home: the grip in a tile's bottom-right corner. Dragged, the tile takes the size (of the ones it comes
+  // in) nearest to where the pointer is, the others making room live; let go and it's saved. Under 5px of
+  // movement it's a tap: the button's own click (the next size) goes through.
+  const GRIP = '[class*="st-key-hwsz_"]';
+  function grid() {
+    const g = doc.querySelector(GRID), cs = g && getComputedStyle(g);
+    if (!cs) return null;
+    const cols = cs.gridTemplateColumns.split(" ").filter(Boolean);
+    return { cols: cols.length, colW: parseFloat(cols[0]) || 0, gap: parseFloat(cs.columnGap) || 0 };
+  }
+  function setSpan(sz) {                                    // show the tile at a size, the others sliding over
+    const all = tiles(), seen = new Map(all.map((t) => [t, rect(t)]));
+    const item = itemOf(sizing.el);
+    item.style.gridColumn = `span ${sz[1]}`; item.style.gridRow = `span ${sz[2]}`;
+    sizing.now = sz[0];
+    if (reduce.matches) return;
+    for (const t of all) {
+      if (t === sizing.el) continue;
+      const a = seen.get(t), b = rect(t);
+      if (Math.abs(a.l - b.l) < 1 && Math.abs(a.t - b.t) < 1) continue;
+      slides(t).forEach((x) => x.cancel());
+      t.animate([{ transform: `translate(${a.l - b.l}px,${a.t - b.t}px)` }, { transform: "none" }],
+                { duration: SLIDE, easing: EASE }).id = "slide";
+    }
+  }
+  doc.addEventListener("pointerdown", (e) => {
+    const H = window.__venatoHome || {};
+    if (!H.arranging || e.button !== 0 || busy() || !e.target.closest) return;
+    const grip = e.target.closest(GRIP), el = grip && grip.closest(SEL), k = el && keyOf(el);
+    const sizes = k && (H.sizes || {})[k.slice(3)];
+    if (!sizes || sizes.length < 2) return;
+    const g = grid(); if (!g || g.cols < 2) return;          // one column (a phone): nothing to resize
+    const r = el.getBoundingClientRect(), cur = sizes.find((z) => z[0] === (H.size || {})[k.slice(3)]) || sizes[0];
+    sizing = { el, k, x: e.clientX, y: e.clientY, l: r.left, t: r.top, g, sizes, start: cur[0], now: cur[0],
+               rowH: (r.height + g.gap) / cur[2], on: false };
+  }, true);
+  doc.addEventListener("pointermove", (e) => {
+    if (!sizing) return;
+    if (!sizing.on) {
+      if (Math.hypot(e.clientX - sizing.x, e.clientY - sizing.y) < 5) return;
+      sizing.on = true;
+      clearTimeout(clearTimer);
+      sizing.el.classList.add("vn-resizing");
+      root.classList.add("vn-resize-on");
+    }
+    e.preventDefault();
+    const { g } = sizing;
+    // how many columns and rows the pointer reaches (fractional), from the tile's top-left corner
+    const w = (e.clientX - sizing.l + g.gap / 2) / (g.colW + g.gap), h = (e.clientY - sizing.t + g.gap / 2) / sizing.rowH;
+    let best = null, bd = Infinity;
+    for (const z of sizing.sizes) {
+      if (z[1] > g.cols) continue;
+      const d = (z[1] - w) ** 2 + (z[2] - h) ** 2;
+      if (d < bd) { bd = d; best = z; }
+    }
+    if (best && best[0] !== sizing.now) setSpan(best);
+  }, true);
+  function endResize(e) {
+    if (!sizing) return;
+    const s = sizing; sizing = null;
+    root.classList.remove("vn-resize-on");
+    if (!s.on) return;                                       // a tap: the button's click steps the size
+    dragEnd = Date.now();                                     // (and its click is swallowed)
+    s.el.classList.remove("vn-resizing");
+    if (e.type === "pointerup" && s.now !== s.start && window.__venatoResize) {
+      for (const n of measure()) last.set(n.k, n.lay);      // the run glides from here, not from before the drag
+      window.__venatoResize(s.k.slice(3), s.now);
+      clearTimer = setTimeout(() => { if (!busy()) clearOrder(); }, 5000);   // in case the run is never seen
+    } else clearOrder();                                      // cancelled, or back where it started
+  }
+  doc.addEventListener("pointerup", endResize, true);
+  doc.addEventListener("pointercancel", endResize, true);
+  doc.addEventListener("keydown", (e) => {
+    if (sizing?.on && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); endResize(e); }
+  }, true);
   tick();
 }

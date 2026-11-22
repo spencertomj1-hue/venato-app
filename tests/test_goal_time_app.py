@@ -28,9 +28,8 @@ def test_timetable_planner_panel_and_suggestions(store):
     g = store.add_goal("Revision", "monthly", store.local_today(), 200, "h", category_id="study")
     at = app()
     open_page(at, "Timetable")
-    assert at.button(key=f"tt_fit_goal_{g['id']}").label.startswith("Fit ")        # the goal's bar, short
-    assert at.button(key="tt_plan_goals").label == "Plan all goals"
-    assert at.checkbox(key=f"tt_away_day_{store.week_start_of(store.local_today()).isoformat()}")
+    assert at.button(key=f"tt_pick_goal_{g['id']}").label.startswith("Revision")   # the side panel lists it
+    assert not has_key(at, "tt_plan_goals")                                       # "Plan this week" is gone
     assert not any(b.key and b.key.startswith("tt_goal_") for b in at.button)      # the old chip strip is gone
     from venato.ui import goal_time
     sugg = goal_time.suggestions_for(store.week_start_of(store.local_today()))

@@ -20,6 +20,7 @@ re-exports every submodule's public names. Each module only imports from the one
     todos        to-dos per day / week / month
     status       done / not done marks on timetable blocks and events
     goals        goals, the week's goal hours, away days
+    links        timetable blocks placed for a to-do or a goal
     review       weekly reviews
     stats        the Review page's numbers
     find         search across everything
@@ -68,6 +69,7 @@ from .goals import (GOAL_COLS, GOAL_PERIODS, _goal_matches, _num, add_goal, add_
     goal_week_hours, goals_active, goals_in, goals_open, goals_overlapping, goals_past, habit_has_goal,
     load_goals, reorder_goals, save_goals, set_away, set_away_day, set_goal_progress, set_goal_week_hours,
     update_goal)
+from .links import block_link, link_block, linked_blocks, on_block_status
 from .review import get_review, reviews, save_review
 from .stats import get_stats, period_start
 from .find import _SEARCH, search

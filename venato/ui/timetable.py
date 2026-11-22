@@ -185,6 +185,8 @@ def _apply(op):
     elif kind == "unconfirm_day":
         store.unconfirm_day(op["date"])
     elif kind == "set_status":                       # done / not done, from a block's card
+        was = store.block_statuses(op["date"], op["date"]).get(op["id"])
+        store.on_block_status(op["id"], was, op.get("status"))     # placed for a to-do or goal: count it
         store.set_block_status(op["id"], op.get("status"), op["date"], op.get("start"), op.get("end"),
                                op.get("label"), op.get("categoryId"))
         from venato import blocks
@@ -203,6 +205,8 @@ def _apply(op):
         if block:
             block = {"label": block["label"], "category_id": block["categoryId"], "details": block.get("details")}
         store.paint(op["date"], op["track"], s, e, block, new_id=op.get("newId"))
+        if block and isinstance(op.get("link"), dict):     # placed from the side panel: for a to-do or a goal
+            _link(op, s)
         if block and op.get("learn"):              # named in the new-event box: remember its category
             store.learn_label(block["label"], block["category_id"])
     elif op["kind"] == "upsert":
@@ -218,6 +222,31 @@ def _apply(op):
         store.hide_outlook(op["uid"])
     elif op["kind"] == "detach_outlook":
         store.detach_outlook(op["uid"])
+
+
+def _link(op, s):
+    """A block painted for a to-do or goal: remember what it's for (the block that now covers its first slot:
+    the new one, or the one it merged into). A to-do with no due day is given the block's."""
+    kind, ref = op["link"].get("kind"), op["link"].get("id")
+    if kind not in ("todo", "goal") or not ref:
+        return
+    at = next((b for b in store.blocks_between(op["date"], op["date"], op["track"])
+               if store.slot_of(b["start"]) <= s < store.slot_of(b["end"])), None)
+    if not at:
+        return
+    store.link_block(at["id"], kind, ref)
+    if kind == "todo":
+        todo = store.get_todo(ref)
+        if todo and not todo.get("due"):
+            store.update_todo(ref, move=False, due=op["date"])
+        pick = st.session_state.get("tt_pick") or {}
+        if pick.get("kind") == "todo" and pick.get("id") == ref:
+            st.session_state.pop("tt_pick", None)    # a to-do is placed once; a goal stays picked for more sittings
+
+
+def _on_pick(key):
+    """The grid put the picked to-do / goal down (Esc, or a category picked instead)."""
+    st.session_state.pop("tt_pick", None)
 
 
 def _on_ops(key):
@@ -306,7 +335,7 @@ def render_page():
     monday = store.week_start_of(day)            # the week's first day: Monday, or Sunday if chosen
     # Fit time / Categories: the same things Claude can do, by hand.
     from venato import pace
-    from venato.ui import goal_time, timetable_tools
+    from venato.ui import goal_time, timetable_side, timetable_tools
     ctx = pace.Ctx()                             # one look at the timetable for the grid, the panel and the bar
     sugg = goal_time.suggestions_for(monday, ctx)
     if store.load_categories().empty:
@@ -317,7 +346,7 @@ def render_page():
         render_grid([monday + timedelta(days=i) for i in range(7)], suggestions=sugg)
     st.html("<style>.st-key-tt_panel { max-height: calc(100vh - 160px); overflow-y: auto; }</style>")   # scrolls itself, not the page
     with panel.container(key="tt_panel"):
-        goal_time.planner(monday, ctx)
+        timetable_side.render(ctx)
     # The buttons and the suggestions go below everything, so the week is the first thing you see.
     row = st.container(horizontal=True, gap="small", vertical_alignment="center", key="tt_toolbar")
     timetable_tools.toolbar(day, row)
@@ -455,9 +484,13 @@ def render_grid(days, key="timetable", single=False, readonly=False, suggestions
         "slots": store.SLOTS,
         "firstMin": store.FIRST_MIN,
         "dateFormat": regional.date_format(),
+        # A to-do or goal picked in the side panel: painting places it (label, category, link) instead of
+        # the picked category. {kind, id, label, categoryId, slots, once, nonce} or None.
+        "pick": None if readonly else st.session_state.get("tt_pick"),
     }
     _timetable_component(data=data, key=key,
                          on_ops_change=lambda: _on_ops(key), on_nav_change=lambda: _on_nav(key),
-                         on_sync_change=lambda: _on_sync(key), on_outlook_change=lambda: _on_outlook_toggle(key))
+                         on_sync_change=lambda: _on_sync(key), on_outlook_change=lambda: _on_outlook_toggle(key),
+                         on_pick_change=lambda: _on_pick(key))
     return categories, label_map
 

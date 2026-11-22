@@ -163,6 +163,11 @@ def init_db():
                             id TEXT PRIMARY KEY, date TEXT NOT NULL, start TEXT, "end" TEXT, label TEXT,
                             category_id TEXT, status TEXT NOT NULL CHECK (status IN ('done', 'missed')),
                             at TEXT NOT NULL)""")
+        # A timetable block placed for a to-do or a goal (the Timetable's side panel): marking the block done
+        # ticks the to-do, or adds one to a goal counted by hand (store/links.py).
+        conn.execute("""CREATE TABLE IF NOT EXISTS tt_links (
+                            block_id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('todo', 'goal')),
+                            ref TEXT NOT NULL)""")
         _word_rules_to_label_map(conn)
         # To-dos: a due day, how long it takes and one of the user's own to-do categories (todo_groups).
         _add_column(conn, "todos", "due", "TEXT")

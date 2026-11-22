@@ -10,6 +10,8 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Changed
+- Edit Home: each tile has a grip in its bottom-right corner. Drag it to change the tile's width and height (it snaps to the sizes that tile comes in, the others making room as you go); a tap still steps to the next size.
+- Timetable: the "Plan this week" panel is replaced by **Give it time**: your open to-dos and goals. Pick one, then drag (or click) on the week to put it in. A to-do gets its name, a category and, if it had none, the block's day as its due day; marking the block Done ticks it. A goal stays picked for more sittings: hours goals count the time straight away, goals counted by hand go up one when a sitting is marked Done.
 - Network is back as an optional block (Settings → Blocks): people, groups and who they work for, the times you met or spoke to someone, search and the weekly review.
 - With Network on, the timetable gets a **Meetings** category (once you have a category of your own). Blocks and calendar events called things like "Call with Nina", "Coffee - Sam" or "Meeting" go in it. Marking one Done logs it on that person's Network card ("Meeting: Call with Nina"). If the title names nobody in your network, a pop-up asks who it was with (pick people or add someone new). Marking it Not done, or clearing the mark, takes the log back off. Deleting Meetings is respected: it isn't made again.
 - Edit Home is plain drag and drop: drag a tile and the others make room as you go, and it lands where you let go (Esc cancels). The pick-up button, arrows and "Drop here" slot are gone; a ⤢ button on each tile steps through its sizes, and the − buttons are smaller. Home's edits no longer show the Undo bar (⌘Z / Ctrl+Z still undoes the last one).
