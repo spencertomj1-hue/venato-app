@@ -2,12 +2,16 @@
 Home's grid of tiles: which tiles are on Home, in what order and what size. No Streamlit here
 (ui/home.py draws it).
 
-The layout is one ordered list of cells, saved in settings.json as "home":
-    [{"w": "timetable_today", "size": "large"}, {"w": "todos", "size": "wide"}, ...]
+The layout is one list of cells, saved in settings.json as "home":
+    [{"w": "timetable_today", "size": "large", "at": [0, 0]}, {"w": "todos", "size": "wide", "at": [0, 2]}, ...]
 Home is a grid four columns wide. A tile is Small (1 x 1), Wide (2 x 1), Large (2 x 2), Tall (1 x 2) or
-Column (1 x 3: the height of the starting Home, for today's whole timetable), and
-the tiles fill the grid left to right, top to bottom, each taking the first place it fits (so a small tile
-can fill a gap left by a big one).
+Column (1 x 3: the height of the starting Home, for today's whole timetable).
+
+"at" is the tile's top-left cell, [row, column] (0-based): Edit Home lets a tile go anywhere on the grid, gaps
+and all. A tile without one (the starting Home, a layout from before tiles could be placed freely, a tile just
+added) takes the first free place it fits, reading left to right, top to bottom; one whose place is off the grid
+or already taken does the same. The first move or resize pins every tile where it was drawn (pin), so nothing
+else jumps.
 
 Older layouts are converted as they're read (normalise): the old 12-column sizes (s / m / l / full) become
 Small / Wide / Large / Wide, and a stack of widgets in one column becomes its widgets one after another.
@@ -79,8 +83,22 @@ def normalise(layout, available, sizes=None):
         for k in _members(cell):
             if isinstance(k, str) and k in available and k not in seen:
                 seen.add(k)
-                out.append({"w": k, "size": size_of(cell.get("size"), available.get(k), sizes.get(k))})
+                out.append(_with_at({"w": k, "size": size_of(cell.get("size"), available.get(k), sizes.get(k))},
+                                    cell.get("at")))
     return out
+
+
+def _at(value):
+    """A saved place as (row, column), or None when it isn't one."""
+    if isinstance(value, (list, tuple)) and len(value) == 2 and all(type(v) is int and v >= 0 for v in value):
+        return tuple(value)
+    return None
+
+
+def _with_at(cell, at):
+    if _at(at):
+        cell["at"] = list(_at(at))
+    return cell
 
 
 def keys(cells):
@@ -98,23 +116,45 @@ def span(size):
     return SPANS.get(size, SPANS["wide"])
 
 
+def _area(row, col, size, columns=COLUMNS):
+    w, h = span(size)
+    w = min(w, columns)
+    return {(row + dy, col + dx) for dy in range(h) for dx in range(w)}
+
+
 def place(cells, columns=COLUMNS):
-    """Where each tile lands: [(row, column)] (0-based), each tile in the first free place it fits, reading left
-    to right, top to bottom (the browser's dense grid does the same)."""
-    taken, out = set(), []
-    for c in cells:
-        w, h = span(c["size"])
-        w = min(w, columns)
+    """Where each tile lands: [(row, column)] (0-based). A tile with a place ("at") that's on the grid and free
+    keeps it (first come, first served); the rest take the first free place they fit, reading left to right, top
+    to bottom (so a small tile fills a gap left by a big one)."""
+    taken, out = set(), [None] * len(cells)
+    for i, c in enumerate(cells):
+        at = _at(c.get("at"))
+        if at and at[1] + min(span(c["size"])[0], columns) <= columns:
+            area = _area(*at, c["size"], columns)
+            if not area & taken:
+                taken |= area
+                out[i] = at
+    for i, c in enumerate(cells):
+        if out[i] is not None:
+            continue
+        w = min(span(c["size"])[0], columns)
         row = 0
         while True:
-            spot = next((col for col in range(columns - w + 1)
-                         if all((row + dy, col + dx) not in taken for dy in range(h) for dx in range(w))), None)
+            spot = next((col for col in range(columns - w + 1) if not _area(row, col, c["size"], columns) & taken),
+                        None)
             if spot is not None:
                 break
             row += 1
-        taken |= {(row + dy, spot + dx) for dy in range(h) for dx in range(w)}
-        out.append((row, spot))
+        taken |= _area(row, spot, c["size"], columns)
+        out[i] = (row, spot)
     return out
+
+
+def pin(cells, columns=COLUMNS):
+    """Every tile with its place written in ("at"), in reading order (top to bottom, left to right): how it's
+    drawn now, so an edit moves only what it means to."""
+    out = [dict(deepcopy(c), at=list(at)) for c, at in zip(cells, place(cells, columns))]
+    return sorted(out, key=lambda c: tuple(c["at"]))
 
 
 def rows(cells, columns=COLUMNS):
@@ -130,7 +170,7 @@ def keep_unavailable(raw, new, available):
     for cell in _readable(raw):
         for k in _members(cell):
             if isinstance(k, str) and k not in available and k not in have:
-                out.append({"w": k, "size": size_of(cell.get("size"))})
+                out.append(_with_at({"w": k, "size": size_of(cell.get("size"))}, cell.get("at")))
                 have.add(k)
     return out
 
@@ -178,13 +218,77 @@ def step(cells, key, delta):
     return out
 
 
-def resize(cells, key, size):
-    """Give a tile one of the sizes."""
-    out = deepcopy(cells)
-    i = find(cells, key)
-    if i is not None and size in SPANS:
-        out[i]["size"] = size
-    return out
+def _settle(cells, key, columns=COLUMNS):
+    """cells all pinned, key just put down: each tile it now overlaps goes to the nearest free place it fits
+    (the gap key left, usually), the ones nearer the top first. Back in reading order."""
+    me = next(c for c in cells if c["w"] == key)
+    mine = _area(*me["at"], me["size"], columns)
+    hit = [c for c in cells if c is not me and _area(*c["at"], c["size"], columns) & mine]
+    taken = set(mine)
+    for c in cells:
+        if c is not me and c not in hit:
+            taken |= _area(*c["at"], c["size"], columns)
+    bottom = max(r for r, _ in taken) + 1 if taken else 0
+    for c in sorted(hit, key=lambda c: tuple(c["at"])):
+        w, h = min(span(c["size"])[0], columns), span(c["size"])[1]
+        r0, c0 = c["at"]
+        spots = [(r, q) for r in range(bottom + h + 1) for q in range(columns - w + 1)
+                 if not _area(r, q, c["size"], columns) & taken]
+        r, q = min(spots, key=lambda s: (abs(s[0] - r0) + abs(s[1] - c0), s))
+        c["at"] = [r, q]
+        taken |= _area(r, q, c["size"], columns)
+        bottom = max(bottom, r + h)
+    return sorted(cells, key=lambda c: tuple(c["at"]))
+
+
+def move_to(cells, key, row, col, columns=COLUMNS):
+    """Put a tile with its top-left corner at (row, col), anywhere on the grid (a column that would push it off
+    the right edge is pulled back). Where it lands on tiles that fit in the place it left, they swap; otherwise
+    what it lands on goes to the nearest free place. Every tile is pinned (see the top)."""
+    out = pin(cells, columns)
+    i = find(out, key)
+    if i is None or type(row) is not int or type(col) is not int:
+        return deepcopy(cells)
+    me = out[i]
+    w = min(span(me["size"])[0], columns)
+    row, col = max(0, row), min(max(0, col), columns - w)
+    old = tuple(me["at"])
+    if (row, col) == old:
+        return out
+    me["at"] = [row, col]
+    mine = _area(row, col, me["size"], columns)
+    hit = [c for c in out if c is not me and _area(*c["at"], c["size"], columns) & mine]
+    # A swap: shift what it landed on by the way it moved, back into the place it left, if that's all clear.
+    dy, dx = old[0] - row, old[1] - col
+    moved = {c["w"]: (c["at"][0] + dy, c["at"][1] + dx) for c in hit}
+    if hit and all(r >= 0 and 0 <= q <= columns - min(span(c["size"])[0], columns)
+                   for c in hit for r, q in [moved[c["w"]]]):
+        taken, ok = set(mine), True
+        for c in out:
+            if c is me:
+                continue
+            area = _area(*moved.get(c["w"], c["at"]), c["size"], columns)
+            if area & taken:
+                ok = False
+                break
+            taken |= area
+        if ok:
+            for c in hit:
+                c["at"] = list(moved[c["w"]])
+            return sorted(out, key=lambda c: tuple(c["at"]))
+    return _settle(out, key, columns)
+
+
+def resize(cells, key, size, columns=COLUMNS):
+    """Give a tile one of the sizes. It keeps its top-left corner (pulled left if it would hang off the right
+    edge); what it grows over goes to the nearest free place. Every tile is pinned (see the top)."""
+    if size not in SPANS or find(cells, key) is None:
+        return deepcopy(cells)
+    out = pin(cells, columns)
+    me = out[find(out, key)]
+    me["size"] = size
+    me["at"][1] = min(me["at"][1], columns - min(span(size)[0], columns))
+    return _settle(out, key, columns)
 
 
 def hide(cells, key):
@@ -193,7 +297,7 @@ def hide(cells, key):
 
 
 def add(cells, key, size="wide"):
-    """Put a hidden tile on Home, at the end."""
+    """Put a hidden tile on Home: the first free place it fits."""
     out = deepcopy(cells)
     if find(cells, key) is None:
         out.append({"w": key, "size": size_of(size)})

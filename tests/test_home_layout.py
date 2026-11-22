@@ -108,7 +108,7 @@ def test_move_step_resize_hide_add():
     assert hl.move(cells, "a", "c")[2] == {"w": "a", "size": "small"}     # its size goes with it
     assert hl.move(cells, "a", "a") == cells and hl.move(cells, "a", "zzz") == cells
     assert hl.keys(hl.step(cells, "b", -1)) == ["b", "a", "c"] and hl.step(cells, "a", -1) == cells
-    assert hl.resize(cells, "a", "tall")[0] == {"w": "a", "size": "tall"}
+    assert hl.resize(cells, "a", "tall")[0] == {"w": "a", "size": "tall", "at": [0, 0]}
     assert hl.resize(cells, "a", "huge") == cells                         # only the four sizes
     assert hl.keys(hl.hide(cells, "b")) == ["a", "c"]
     assert hl.add(cells, "d", "s")[-1] == {"w": "d", "size": "small"} and hl.add(cells, "a") == cells
@@ -246,13 +246,13 @@ def test_edit_home(store):
     assert "home_todos" in keys(at) and "home_add_panel" in keys(at)      # real content, and "Add a tile"
     assert has(at, "home_add_deadlines") and not has(at, "home_add_todos")  # only hidden tiles are offered
     at.button(key="hwsz_todos").click().run()                             # size steps on: Wide -> Small
-    assert saved(store)[1] == {"w": "todos", "size": "small"}
+    assert saved(store)[1] == {"w": "todos", "size": "small", "at": [0, 1]}   # it stays put (a gap beside it)
     at.button(key="hwsz_todos").click().run()                             # and round again
-    assert saved(store)[1] == {"w": "todos", "size": "wide"}
+    assert saved(store)[1] == {"w": "todos", "size": "wide", "at": [0, 1]}
     at.button(key="hwx_focus").click().run()                              # − remove
     assert "focus" not in hl.keys(saved(store)) and "hw_focus" not in keys(at)
     at.button(key="home_add_focus").click().run()                         # + Add: at the end, its own size
-    assert saved(store)[-1] == {"w": "focus", "size": "small"}
+    assert saved(store)[-1] == {"w": "focus", "size": "small"}           # no place yet: the first free one
     at.button(key="home_reset").click().run()
     assert saved(store) == hl.default()
     at.button(key="home_done").click().run()
@@ -269,15 +269,68 @@ def test_home_edits_are_quiet_but_undoable(store):
     assert undo.restore() and store.load_settings().get("home") == before
 
 
-def test_drag_saves_the_order_it_was_dropped_in(store):
+def test_drag_puts_the_tile_in_the_cell_it_was_dropped_on(store):
     at = app()
     at.button(key="home_arrange").click().run()
-    order = hl.keys(hl.default())
-    order.insert(0, order.pop(order.index("review")))
-    fragment_run.trigger(at, "home_flip", "drop", {"order": order, "nonce": "x"})
+    fragment_run.trigger(at, "home_flip", "drop", {"key": "focus", "row": 4, "col": 2, "nonce": "x"})
     assert not at.exception
-    assert hl.keys(saved(store)) == order
-    assert saved(store)[0] == {"w": "review", "size": "small"}           # its size goes with it
+    assert {"w": "focus", "size": "small", "at": [4, 2]} in saved(store)    # a row of its own, a gap before it
+    assert ".st-key-hw_focus) { grid-column: 3 / span 1; grid-row: 5 / span 1; }" in css(at)
+    assert "grid-template-rows: repeat(6, var(--home-row))" in css(at)      # Edit Home: a spare row under it
+    data = fragment_run.component_data(at, "home_flip")
+    assert data["at"]["focus"] == [4, 2] and data["columns"] == hl.COLUMNS
+    fragment_run.trigger(at, "home_flip", "drop", {"key": "focus", "row": "x", "col": 0, "nonce": "y"})
+    assert not at.exception and {"w": "focus", "size": "small", "at": [4, 2]} in saved(store)   # junk ignored
+
+
+def sizes(store):
+    return [(c["w"], c["size"]) for c in saved(store)]
+
+
+def css(at):
+    return " ".join(h.proto.body for h in at.get("html"))
+
+
+def test_place_keeps_a_tiles_own_place():
+    cells = [{"w": "a", "size": "small", "at": [2, 3]}, {"w": "b", "size": "wide"}, {"w": "c", "size": "wide", "at": [2, 2]}]
+    # a has its place; c's overlaps a's, so it takes the first free place like b
+    assert hl.place(cells) == [(2, 3), (0, 0), (0, 2)]
+    assert hl.place([{"w": "a", "size": "wide", "at": [0, 3]}]) == [(0, 0)]   # off the right edge: first free
+    assert hl.rows([{"w": "a", "size": "small", "at": [3, 0]}]) == 4          # rows reach the lowest tile
+    assert [c["w"] for c in hl.pin(cells)] == ["b", "c", "a"]                # pinned, in reading order
+    assert hl.normalise([{"w": "a", "size": "small", "at": [1, 2]}, {"w": "b", "at": "junk"}], {"a": "small", "b": "wide"}) \
+        == [{"w": "a", "size": "small", "at": [1, 2]}, {"w": "b", "size": "wide"}]
+
+
+def test_move_to_anywhere():
+    d = hl.default()                       # timetable 0,0 column; todos 0,1; focus 0,3; goals 1,1; review 1,3 ...
+    at = lambda cells: {c["w"]: c["at"] for c in cells}
+    # onto a tile the same size: they swap
+    moved = at(hl.move_to(d, "focus", 1, 3))
+    assert moved["focus"] == [1, 3] and moved["review"] == [0, 3]
+    # into empty space far below: nothing else moves, and Home grows a row
+    moved = hl.move_to(d, "focus", 4, 0)
+    assert at(moved)["focus"] == [4, 0] and hl.rows(moved) == 5
+    assert {k: v for k, v in at(moved).items() if k != "focus"} == {c["w"]: list(p) for c, p in zip(d, hl.place(d))
+                                                                     if c["w"] != "focus"}
+    # onto tiles that don't fit where it came from: they go to the nearest free place (the gap it left)
+    moved = at(hl.move_to(d, "timetable_today", 0, 3))
+    assert moved["timetable_today"] == [0, 3] and moved["focus"] == [0, 0] and moved["review"][1] != 3
+    assert hl.move_to(d, "goals", 0, 3)[0]["w"] in {"timetable_today", "todos"}   # pulled back onto the grid,
+    assert at(hl.move_to(d, "goals", 0, 3))["goals"] == [0, 2]                      # in reading order
+    assert hl.move_to(d, "zzz", 0, 0) == d and hl.move_to(d, "focus", "a", 0) == d
+    for cells in (hl.move_to(d, "timetable_today", 0, 3), hl.move_to(d, "modules", 0, 1), hl.resize(d, "focus", "large")):
+        taken = [sq for c, (r, q) in zip(cells, hl.place(cells))
+                 for sq in [(r + y, q + x) for y in range(hl.span(c["size"])[1]) for x in range(hl.span(c["size"])[0])]]
+        assert len(taken) == len(set(taken))                                         # never two in one cell
+        assert [tuple(c["at"]) for c in cells] == hl.place(cells)                    # every place is kept
+
+
+def test_resize_keeps_the_corner_and_makes_room():
+    d = hl.default()
+    grown = {c["w"]: c for c in hl.resize(d, "focus", "wide")}
+    assert grown["focus"]["at"] == [0, 2] and grown["focus"]["size"] == "wide"    # pulled left to fit
+    assert grown["todos"]["at"] != [0, 1]                                          # it was in the way: moved
 
 
 def test_reorder():
@@ -292,7 +345,7 @@ def test_size_button_only_when_there_is_a_choice(store):
     at.button(key="home_arrange").click().run()
     assert has(at, "hwsz_focus")
     at.button(key="hwsz_focus").click().run()
-    assert {"w": "focus", "size": "wide"} in saved(store)                 # Focus: Small or Wide
+    assert ("focus", "wide") in sizes(store)                              # Focus: Small or Wide
 
 
 def test_esc_leaves_edit_home(store):
@@ -447,8 +500,8 @@ def test_corner_handle_resizes_to_a_size_the_tile_comes_in(store):
     at.button(key="home_arrange").click().run()
     fragment_run.trigger(at, "home_flip", "resize", {"key": "goals", "size": "large", "nonce": "x"})
     assert not at.exception
-    assert {"w": "goals", "size": "large"} in saved(store)
+    assert ("goals", "large") in sizes(store)
     fragment_run.trigger(at, "home_flip", "resize", {"key": "focus", "size": "column", "nonce": "y"})
-    assert {"w": "focus", "size": "column"} not in saved(store)                # Focus doesn't come in Column
+    assert ("focus", "column") not in sizes(store)                       # Focus doesn't come in Column
     data = fragment_run.component_data(at, "home_flip")
     assert ["large", 2, 2] in data["sizes"]["goals"] and data["size"]["goals"] == "large"
