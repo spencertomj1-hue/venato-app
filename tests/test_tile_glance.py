@@ -76,6 +76,5 @@ def test_tiles_render_their_glances(store):
     assert any(c.value == "2-day streak" for c in at.caption)
     assert any(c.label == "Exercise · 3" for c in at.checkbox)                # Daily log: the streak after the name
     assert any(":orange-badge[in 2 days]" in m.value for m in at.markdown)   # Deadlines: an amber pill
-    assert 'class="vn-rv-days"' in page and "dashed line is 100%" in page    # Review: letters and the 100% line
-    letters = page.split('class="vn-rv-days"')[1].split("</div>")[0]
-    assert letters.count("<b>") == 7
+    assert 'class="vn-rv-tile"' in page and 'vn-rv-big vn-rv-mut' in page     # Review: nothing confirmed, no %
+    assert any(c.value == "No verdict yet" for c in at.caption)               # ... and its header says so

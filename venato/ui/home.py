@@ -19,6 +19,7 @@ resizes it (drag it: it snaps to the nearest size the tile comes in; tap it: the
 Cmd/Ctrl+Z still undoes the last one); Reset goes back to the start. Moves glide, not with reduced motion.
 """
 
+import inspect
 from html import escape
 from pathlib import Path
 
@@ -324,11 +325,20 @@ def _icon_html(w):
     return nav.icon_md(w.icon, w.colour)
 
 
-def _status(w):
+def _sized(fn, size):
+    """Call a tile's draw or status, telling it the tile's size if it takes one (`size=`)."""
+    try:
+        takes = "size" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        takes = False
+    return fn(size=size) if takes else fn()
+
+
+def _status(w, size):
     if not w.status:
         return ""
     try:
-        return w.status() or ""
+        return _sized(w.status, size) or ""
     except Exception:                       # a status is a nicety: never take the tile down with it
         return ""
 
@@ -358,8 +368,8 @@ def _header(editing, cells, labels):
         labels["home_settings"] = "Settings"
 
 
-def _tile_head(w, labels):
-    status = _status(w)
+def _tile_head(w, labels, size):
+    status = _status(w, size)
     with st.container(key=f"hwh_{w.key}", horizontal=True, vertical_alignment="center"):
         if w.page:
             st.button(w.name, key=f"go_tile_{w.key}", icon=w.icon or None, type="tertiary", on_click=nav.go,
@@ -402,10 +412,10 @@ def _tile(w, cell, editing, labels):
         if editing:
             _edit_bar(w, cell, labels)                       # −, its title and its size
         else:
-            _tile_head(w, labels)
+            _tile_head(w, labels, cell["size"])
         with st.container(key=f"hwc_{w.key}"):
             try:
-                w.draw()
+                _sized(w.draw, cell["size"])
             except Exception as e:                 # one broken tile mustn't take Home down with it
                 st.caption(f":material/error: {w.name} couldn't load ({type(e).__name__}).")
         if editing:

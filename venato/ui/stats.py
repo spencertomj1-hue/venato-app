@@ -183,28 +183,129 @@ def _charts():
                                                title="% of days")))
 
 
-def render_home():
-    """Home's Review tile: this week's Plan followed, a bar a day under a faint 100% line, each day's letter under
-    its bar (the first day of the week first; grey: not confirmed yet)."""
-    from venato import tile_status
-    from venato import pace
-    w = tile_status.week_followed()
-    t = appearance.tokens()
-    names = [d.strftime("%a") for d in pace.week_days(store.local_today())]     # the first day of the week first
+def _days_html(days, dates, t, full=False):
+    """A bar a day under a dashed 100% line, the day's letter (or name) under it: hatched where the day isn't
+    confirmed, faint for today."""
+    today = store.local_today()
+    names = [d.strftime("%a") for d in dates]
     bars = "".join(
-        f'<span><i style="height:{max(8, p or 0)}%;background:{t["accent"] if p is not None else "rgba(128,128,128,0.22)"}" '
-        f'title="{d}: {"not confirmed" if p is None else f"{p}% followed"}"></i></span>'
-        for d, p in zip(names, w["days"]))
-    letters = "".join(f"<b>{d[0]}</b>" for d in names)
-    said = "; ".join(f"{d} {'not confirmed' if p is None else f'{p}%'}" for d, p in zip(names, w["days"]))
+        f'<span><i class="{"n" if p is None else "t" if day == today else ""}" '
+        f'style="height:{100 if p is None else max(8, p)}%" title="{d}: {"not confirmed" if p is None else f"{p}% followed"}"></i></span>'
+        for d, day, p in zip(names, dates, days))
+    letters = "".join(f'<b class="{"t" if day == today else ""}">{d if full else d[0]}</b>' for d, day in zip(names, dates))
+    said = "; ".join(f"{d} {'not confirmed' if p is None else f'{p}%'}" for d, p in zip(names, days))
+    return (f'<div class="vn-rv-week" role="img" aria-label="Plan followed each day (the dashed line is 100%): {said}">'
+            f'<div class="vn-rv">{bars}</div><div class="vn-rv-days" aria-hidden="true">{letters}</div></div>')
+
+
+def _trend_html(pcts):
+    """The last weeks' Plan followed, a small bar a week (this one solid, the rest faint; hatched: nothing
+    confirmed) under a dashed 100% line. CSS, not SVG: st.html strips SVG."""
+    if sum(p is not None for p in pcts) < 2:
+        return ""
+    bars = "".join(f'<span><i class="{"n" if p is None else "t" if k < len(pcts) - 1 else ""}" '
+                   f'style="height:{100 if p is None else max(8, p)}%"></i></span>' for k, p in enumerate(pcts))
+    said = ", ".join("nothing confirmed" if p is None else f"{p}%" for p in pcts)
+    return (f'<div class="vn-rv vn-rv-weeks" role="img" aria-label="Plan followed, last {len(pcts)} weeks, oldest first: {said}">'
+            f'{bars}</div><div class="vn-rv-days" aria-hidden="true"><b>{len(pcts)} weeks ago</b><b class="t">this week</b></div>')
+
+
+def render_home(size="small"):
+    """Home's Review tile: the week's % of Plan followed, the change from last week, the review's verdict in words,
+    and how many days still need confirming. Wide adds a bar a day; Large adds plan vs done by category and the
+    last 8 weeks (Wide and Large say the hours and to-dos in the header). Most important first: on short rows Home hides whatever crosses the bottom."""
+    from html import escape
+    from venato import pace
+    from venato import review
+    t = appearance.tokens()
+    tones = review_ui._tones()
+    w = review.tile(trend_weeks=8 if size == "large" else 0)
+    dates = pace.week_days(w["first"])
+    pct, before = w["pct"], w["before"]
+    delta = ""
+    if pct is not None and before is not None:
+        diff = pct - before
+        delta = (f'<span class="vn-rv-delta" style="color:{tones["good"] if diff >= 0 else tones["bad"]}">'
+                 f'{"▲" if diff > 0 else "▼" if diff < 0 else "="} {abs(diff)} vs the week before</span>')
+    n = len(w["to_confirm"])
+    which = " &amp; ".join(store._as_date(d).strftime("%a") for d in w["to_confirm"][:3]) + ("…" if n > 3 else "")
+    chip = (f'<span class="vn-rv-chip" title="Confirm {which} on the timetable"><i></i>{n} '
+            f'{"day" if n == 1 else "days"} to confirm</span>') if n else ""
+    big = (f'<div class="vn-rv-big">{pct}<small>%</small></div>' if pct is not None
+           else '<div class="vn-rv-big vn-rv-mut">–</div>')
+    short = w["short"]
+    short_line = (f'<span class="vn-rv-sh">{escape(short["category"])}</span> fell short: {short["actual"]:g} of {short["plan"]:g} h.'
+                  if short else f'{escape(" and ".join(w["missed"][:2]))} missed {"its" if len(w["missed"]) == 1 else "their"} target.'
+                  if w["missed"] else "")
+    if pct is None:
+        short_line = f"The week before: {before}% followed." if before is not None else "Confirm days on the timetable to see how the week's going."
+    sentence = escape(w["sentence"]).replace(escape(short["category"]) + " fell short",
+                                             f'<span class="vn-rv-sh">{escape(short["category"])}</span> fell short') \
+        if short else escape(w["sentence"])
+    verdict = f'<p class="vn-rv-vd"><b>{escape(w["verdict"])}.</b> {sentence}</p>'
+
+    if size == "small":
+        body = (f'<div class="vn-rv-row">{big}<div class="vn-rv-col">{delta}{chip}</div></div>'
+                f'<p class="vn-rv-vd">{short_line}</p>')
+    elif size == "wide":
+        right = verdict + (_days_html(w["days"], dates, t) if pct is not None else "")
+        body = (f'<div class="vn-rv-row vn-rv-top"><div class="vn-rv-col vn-rv-left">{big}{delta}{chip}</div>'
+                f'<div class="vn-rv-col vn-rv-right">{right}</div></div>')
+    else:
+        top = max([1.0] + [max(c["plan"], c["actual"]) for c in w["time"]])
+        cats = "".join(
+            f'<div class="vn-rv-cat"><span>{escape(c["category"])}</span><span class="vn-rv-tr">'
+            f'<i style="width:{100 * c["actual"] / top:.0f}%;background:{c["colour"]}"></i>'
+            f'<u style="left:{100 * c["plan"] / top:.0f}%"></u></span>'
+            f'<span class="{"vn-rv-sh" if c["plan"] - c["actual"] >= 1 else ""}">{c["actual"]:g} / {c["plan"]:g} h</span></div>'
+            for c in w["time"][:3])
+        spark = _trend_html(w["trend"])
+        last = w["first"] + timedelta(days=6)
+        when = f'{w["first"].day} – {last.day} {last:%b}'
+        body = (f'<div class="vn-rv-row vn-rv-top"><div class="vn-rv-col vn-rv-left">{big}{delta}</div>'
+                f'<div class="vn-rv-col vn-rv-right">{verdict}</div></div>'
+                + ('<div class="vn-rv-split">'
+                   + (f'<div><span class="vn-rv-sub">Plan vs done · {when}</span>{cats}</div>' if cats else "")
+                   + (f'<div><span class="vn-rv-sub">Last 8 weeks</span>{spark}</div>' if spark else "")
+                   + '</div>' if cats or spark else "")
+                + (f'<div class="vn-rv-row vn-rv-end"><div class="vn-rv-grow">{_days_html(w["days"], dates, t, full=True)}</div>{chip}</div>'
+                   if pct is not None or n else ""))
     st.html(f"""<style>
-      .vn-rv {{ height: 36px; display: inline-flex; gap: 6px; align-items: flex-end; border-top: 1px dashed {t['muted']}88; }}
-      .vn-rv span {{ width: 18px; height: 100%; display: flex; align-items: flex-end; }}
-      .vn-rv i {{ width: 100%; border-radius: 4px; }}
-      .vn-rv-days {{ display: flex; gap: 6px; margin-top: 3px; height: 10px; }}
-      @media (max-height: 800px) {{ .vn-rv {{ height: 24px; }} }}     /* short windows: Home's rows are shorter */
-      .vn-rv-days b {{ width: 18px; text-align: center; font-size: 0.62rem; font-weight: 500;
-        color: {t['muted']}; line-height: 1; }}
-    </style><div role="img" aria-label="Plan followed each day this week (the dashed line is 100%): {said}">
-      <div class="vn-rv">{bars}</div><div class="vn-rv-days" aria-hidden="true">{letters}</div></div>""")
-    # The header says the week's % (or "None confirmed yet"), so no caption: the tile fits Home's shortest rows.
+      .vn-rv-tile {{ display: flex; flex-direction: column; gap: 6px; color: {t['ink']}; }}
+      .vn-rv-row {{ display: flex; gap: 14px; align-items: center; min-width: 0; }}
+      .vn-rv-top {{ align-items: flex-start; }} .vn-rv-end {{ align-items: flex-end; }}
+      .vn-rv-col {{ display: flex; flex-direction: column; gap: 4px; min-width: 0; }}
+      .vn-rv-left {{ width: 140px; flex: none; }} .vn-rv-right, .vn-rv-grow {{ flex: 1; min-width: 0; }}
+      .vn-rv-big {{ font-size: 2.3rem; font-weight: 700; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }}
+      .vn-rv-big small {{ font-size: 0.95rem; font-weight: 500; color: {t['muted']}; margin-left: 2px; }}
+      .vn-rv-mut {{ color: {t['muted']}; }}
+      .vn-rv-delta {{ font-size: 0.78rem; font-weight: 600; white-space: nowrap; }}
+      .vn-rv-chip {{ display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; font-weight: 500; width: fit-content;
+        white-space: nowrap; border-radius: 999px; padding: 3px 10px; background: {t['track']}; }}
+      .vn-rv-chip i {{ width: 7px; height: 7px; border-radius: 50%; background: {tones['amber']}; }}
+      .vn-rv-vd {{ font-size: 0.86rem; line-height: 1.35; margin: 0; }}
+      .vn-rv-vd b {{ font-weight: 700; }}
+      .vn-rv-sh {{ color: {tones['bad']}; font-weight: 600; }}
+      .vn-rv {{ height: 28px; display: flex; gap: 6px; align-items: flex-end; border-top: 1px dashed {t['muted']}88; }}
+      .vn-rv span {{ flex: 1; height: 100%; display: flex; align-items: flex-end; }}
+      .vn-rv i {{ width: 100%; border-radius: 4px; background: {t['accent']}; }}
+      .vn-rv i.t {{ opacity: 0.45; }}
+      .vn-rv i.n {{ background: repeating-linear-gradient(135deg, rgba(128,128,128,0.25) 0 3px, transparent 3px 6px);
+        border: 1px dashed {t['muted']}; box-sizing: border-box; }}
+      .vn-rv-days {{ display: flex; gap: 6px; margin-top: 3px; }}
+      .vn-rv-days b {{ flex: 1; text-align: center; font-size: 0.62rem; font-weight: 500; color: {t['muted']}; line-height: 1; }}
+      .vn-rv-days b.t {{ color: {t['ink']}; font-weight: 700; }}
+      .vn-rv-split {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+      .vn-rv-split > div {{ display: flex; flex-direction: column; gap: 5px; min-width: 0; }}
+      .vn-rv-sub {{ font-size: 0.66rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: {t['muted']}; }}
+      .vn-rv-cat {{ display: grid; grid-template-columns: minmax(0, 74px) 1fr auto; gap: 8px; align-items: center; font-size: 0.78rem; }}
+      .vn-rv-cat > span:first-child {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+      .vn-rv-cat > span:last-child {{ font-variant-numeric: tabular-nums; color: {t['muted']}; white-space: nowrap; }}
+      .vn-rv-cat > span.vn-rv-sh {{ color: {tones['bad']}; }}
+      .vn-rv-tr {{ height: 8px; background: {t['track']}; border-radius: 4px; position: relative; }}
+      .vn-rv-tr i {{ position: absolute; inset: 0 auto 0 0; border-radius: 4px; }}
+      .vn-rv-tr u {{ position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: {t['muted']}; }}
+      .vn-rv-weeks {{ height: 52px; gap: 4px; }} .vn-rv-weeks i.t {{ opacity: 0.35; }}
+      .vn-rv-weeks + .vn-rv-days {{ justify-content: space-between; }} .vn-rv-weeks + .vn-rv-days b {{ flex: none; }}
+      @media (max-height: 800px) {{ .vn-rv-big {{ font-size: 1.9rem; }} .vn-rv {{ height: 22px; }} }}
+    </style><div class="vn-rv-tile">{body}</div>""")

@@ -185,3 +185,64 @@ def test_next_week_from_the_timetable(review, store, monkeypatch):
     assert (n["planned"], n["this_planned"]) == (1.0, 4.0)
     [g] = n["short"]
     assert g["title"] == "Study" and g["booked"] == 1.0 and g["need"] > 1.0
+
+
+def test_verdict_words(review):
+    assert review.verdict(None) == "No verdict yet"
+    assert review.verdict(85) == "Strong week" and review.verdict(60, complete=False) == "Solid week so far"
+    assert review.verdict(45) == "Patchy week" and review.verdict(10) == "Rough week"
+
+
+def _week_with_a_gap(store, monkeypatch):
+    """Last week: Tuesday's 4 h of Study all done. This week: Tuesday's 4 h of Study, 1 h done (25%),
+    Wednesday planned but not confirmed. It's Thursday morning."""
+    from venato import tools
+    tools = importlib.reload(tools)
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 19, 8, 0))
+    for day in ("2026-10-20", "2026-10-27", "2026-10-28"):
+        tools.add_block(day, "plan", "09:00", "13:00", "Revision", category="Study")
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 10, 29, 9, 0))
+    monkeypatch.setattr(store, "local_today", lambda: date(2026, 10, 29))
+    store.confirm_day("2026-10-20")
+    tools.add_block("2026-10-27", "actual", "10:00", "13:00", "Scrolling", category="Distracted").pending.run()
+    store.confirm_day("2026-10-27")
+
+
+def test_home_tile_numbers(review, store, monkeypatch):
+    _week_with_a_gap(store, monkeypatch)
+    t = review.tile(trend_weeks=2)
+    assert t["first"] == date(2026, 10, 26) and not t["complete"]
+    assert (t["pct"], t["before"], t["verdict"]) == (25, 100, "Rough week so far")
+    assert t["sentence"].startswith("25% of the plan followed, down from 100%")       # the headline after the verdict
+    assert t["short"]["category"] == "Study" and t["to_confirm"] == ["2026-10-28"]
+    assert t["days"][:3] == [None, 25, None] and (t["planned"], t["done"]) == (4.0, 4.0)
+    assert t["trend"] == [100, 25]
+    from venato import tile_status
+    assert tile_status.review() == "Rough week so far"                                 # Small: the verdict
+    assert tile_status.review(size="wide") == "4 of 4 h"                               # bigger: the hours
+
+
+def test_home_tile_shows_last_week_until_reviewed(review, store, monkeypatch):
+    _week_with_a_gap(store, monkeypatch)
+    monkeypatch.setattr(store, "local_now", lambda: datetime(2026, 11, 2, 9, 0))      # Monday: nothing confirmed yet
+    monkeypatch.setattr(store, "local_today", lambda: date(2026, 11, 2))
+    t = review.tile()
+    assert t["first"] == date(2026, 10, 26) and t["complete"] and t["verdict"] == "Rough week"
+    store.save_review(date(2026, 10, 26), seen=True)
+    t = review.tile()
+    assert t["first"] == date(2026, 11, 2) and t["pct"] is None and t["verdict"] == "No verdict yet"
+
+
+@pytest.mark.parametrize("size", ["small", "wide", "large"])
+def test_home_tile_draws_each_size(store, monkeypatch, size):
+    _week_with_a_gap(store, monkeypatch)
+    store.save_settings(home=[{"w": "review", "size": size}])
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.exception
+    page = " ".join(h.proto.body for h in at.get("html"))
+    assert 'class="vn-rv-tile"' in page and "25<small>%</small>" in page and "1 day to confirm" in page
+    assert ("dashed line is 100%" in page) == (size != "small")                       # a bar a day from Wide up
+    assert ("Plan vs done" in page) == (size == "large")
+    assert ("Rough week so far.</b>" in page) == (size != "small")                     # the verdict in words
+    head = [c.value for c in at.caption]
+    assert ("Rough week so far" in head) == (size == "small")

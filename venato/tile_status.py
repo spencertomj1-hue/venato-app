@@ -4,8 +4,6 @@ Each takes today's date (and the time, where it matters) so the tests can pin th
 there's nothing worth saying.
 """
 
-from datetime import timedelta
-
 from venato import store
 
 
@@ -125,9 +123,16 @@ def modules(ctx=None):
     return f"{hours(done)} of {hours(goal)} h this week"
 
 
-def review(today=None, now=None):
-    p = week_followed(today, now)["pct"]
-    return "None confirmed yet" if p is None else f"{p}% of plan followed"
+def review(today=None, size="small"):
+    """Small: the verdict ("Solid week so far"); bigger tiles say the verdict inside, so: hours and to-dos."""
+    from venato import review as rv
+    t = rv.tile(today)
+    if size == "small" or not (t["planned"] or t["todos"]):
+        return t["verdict"]
+    parts = [f"{t['done']:g} of {t['planned']:g} h"] if t["planned"] else []
+    if t["todos"]:
+        parts.append(f"{t['todos_done']} of {t['todos']} to-dos")
+    return " · ".join(parts)
 
 
 def needs_you():
@@ -135,19 +140,3 @@ def needs_you():
     items = goal_time.needs_items()
     n = sum(len(items[k]) for k in ("days", "goals", "deadlines", "blocks")) + bool(items["assistant"]) + bool(items["feedback"])
     return f"{n} thing{'s' * (n != 1)}" if n else "All clear"
-
-
-def week_followed(today=None, now=None):
-    """This week's Plan followed so far: {"pct": the week's % (None: nothing confirmed yet),
-    "days": [% or None per day, Monday first]}."""
-    from venato import pace
-    from venato import review as rv
-    now = now or store.local_now()
-    first = pace.week_days(today or now.date())[0]
-    days = [(first + timedelta(days=i)).isoformat() for i in range(7)]
-    per_day = []
-    for d in days:
-        _, planned, matched, _ = rv._time([d], now)
-        per_day.append(round(100 * matched / planned) if planned else None)
-    _, planned, matched, _ = rv._time(days, now)
-    return {"pct": round(100 * matched / planned) if planned else None, "days": per_day}
