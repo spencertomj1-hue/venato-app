@@ -38,7 +38,7 @@
 
 ## Features
 
-**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Review and the Daily Log, and students also get Modules. Each brings its own page, Home tiles and assistant skills. **Home is the way round the app** (there is no sidebar): every tile opens its page, and each page has "← Home" (or Esc) and small shortcut tiles to the others. Settings is the gear top right, and search / Ask is the bar at the top of Home. On a laptop Home fits one screen: each tile is a summary and opens its page for the rest. Press **Edit Home** to drag tiles where you want them, make them Small, Wide, Large, Tall or Column (⤢), remove them (their data stays) or add hidden ones from "Add a tile".
+**Blocks.** Venato is built from blocks, and every one can be switched on or off in Settings → Blocks. A new setup starts with Timetable, Goals (to-dos and deadlines too), Focus, Review and the Daily Log, and students also get Modules. Each brings its own page, Home tiles and assistant skills. **Home is the way round the app** (there is no sidebar): every tile opens its page, and each page has "← Home" (or Esc) and small shortcut tiles to the others. Settings is the gear top right, and search / Ask is the bar at the top of Home. On a laptop Home fits one screen: each tile is a summary and opens its page for the rest. Press **Edit Home** to drag tiles to any cell of the grid (gaps and empty rows included; a tile you land on swaps places, or shuffles to the nearest free spot), make them Small, Wide, Large, Tall or Column (⤢), remove them (their data stays) or add hidden ones from "Add a tile".
 
 | Block | What it does |
 |---|---|
