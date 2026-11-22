@@ -177,6 +177,25 @@ def wait_for_server(port, timeout=30):
     raise RuntimeError("Streamlit didn't start in time")
 
 
+def relaunch_if_moved(stop_server):
+    """
+    macOS reruns app.py from inside the .app on every click, so if the bundle is moved, renamed or replaced
+    while Venato is open (installing a new version over it, or Finder's "Keep Both" making "Venato 2.app"),
+    every page fails with "No such file or directory: .../app.py". When that happens, quit and reopen Venato
+    from wherever it now lives.
+    """
+    import threading
+
+    def watch():
+        while (APP_DIR / "app.py").exists():
+            time.sleep(2)
+        stop_server()
+        subprocess.Popen(["open", "-b", "local.venato"])       # the installed copy, by bundle id
+        os._exit(0)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def main():
     import webview            # only the window process needs the GUI toolkit (not --serve / --check)
 
@@ -199,6 +218,8 @@ def main():
     # Cmd+Q, or the process being killed).
     atexit.register(stop_server)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    if FROZEN and sys.platform == "darwin":
+        relaunch_if_moved(stop_server)
 
     def show_app(splash):
         """
