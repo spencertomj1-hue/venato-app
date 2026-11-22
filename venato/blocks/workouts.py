@@ -12,7 +12,7 @@ import uuid
 from datetime import timedelta
 
 from venato import store
-from venato.blocks import Block
+from venato.blocks import Block, Widget
 
 KINDS = ("weights", "bodyweight", "cardio", "timed")
 MUSCLES = ("Chest", "Back", "Shoulders", "Biceps", "Triceps", "Forearms", "Core", "Quads", "Hamstrings",
@@ -887,7 +887,14 @@ def _home():
     ui.render_home()
 
 
+def _home_status():
+    from venato.ui import workouts as ui
+    return ui.home_status()
+
+
 BLOCK = Block("workouts", "Workouts", ":material/fitness_center:",
               "Log workouts set by set, save plans, and track personal bests, 1RMs and weekly volume.",
-              group="Health & body", page=_page, home=_home, tools=TOOLS, prompt=PROMPT, context=_context,
+              group="Health & body", page=_page,
+              widgets=[Widget("workouts", "Workouts", _home, "small", ("small", "wide", "tall"),
+                              status=_home_status, colour="#C2410C")], tools=TOOLS, prompt=PROMPT, context=_context,
               quick=[_quick], schema=SCHEMA, order=80)

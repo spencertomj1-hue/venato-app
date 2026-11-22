@@ -550,16 +550,38 @@ def render_page():
         _settings_tab()
 
 
-def render_home():
+def home_status():
+    """The Workouts tile's header: how many this week."""
     today = store.local_today()
-    week = wk.workouts(store.week_start_of(today), today)
-    st.markdown("**Workouts**")
+    n = len(wk.workouts(store.week_start_of(today), today))
+    return f"{n} this week"
+
+
+def render_home():
+    """Home's Workouts widget: this week as seven dots (filled on a day you trained), then the last workout."""
+    from venato.ui import appearance
+    kit.subhead("Workouts")
+    today = store.local_today()
+    start = store.week_start_of(today)
+    days = {store._as_date(w["date"]) for w in wk.workouts(start, start + timedelta(days=6))}
+    t = appearance.tokens()
+    dots = "".join(
+        f'<span class="d{" on" if start + timedelta(days=i) in days else ""}{" today" if start + timedelta(days=i) == today else ""}"'
+        f' title="{store.fmt_day(start + timedelta(days=i), "%a %-d %b")}">'
+        f'<i></i><b>{store.fmt_day(start + timedelta(days=i), "%a")[:1]}</b></span>' for i in range(7))
+    st.html(f"""<style>
+      .vn-wk-week {{ display: flex; gap: 6px; }}
+      .vn-wk-week .d {{ display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1 1 0; }}
+      .vn-wk-week i {{ width: 14px; height: 14px; border-radius: 50%; border: 2px solid #C2410C; box-sizing: border-box; }}
+      .vn-wk-week .on i {{ background: #C2410C; }}
+      .vn-wk-week b {{ font-size: 0.7rem; font-weight: 500; color: {t['muted']}; }}
+      .vn-wk-week .today b {{ color: {t['ink']}; font-weight: 700; }}
+    </style><div class="vn-wk-week" role="img" aria-label="{len(days)} workout days this week">{dots}</div>""")
     last = wk.workouts(today - timedelta(days=60), today)[:1]
-    text = f"{len(week)} this week"
-    if last:
-        w = last[0]
-        text += f" · last: {store.fmt_day(store._as_date(w['date']), '%a %-d %b')}, {w['title']}"
-        detail = wk.summary(w["id"])
-        if detail:
-            text += f" ({detail[:80]}{'…' if len(detail) > 80 else ''})"
-    st.caption(text)
+    if not last:
+        st.caption("No workouts yet. Log one on the Workouts page, or tell Claude.")
+        return
+    w = last[0]
+    detail = wk.summary(w["id"])
+    st.caption(f"Last: {store.fmt_day(store._as_date(w['date']), '%a %-d %b')}, **{kit.md(w['title'])}**"
+               + (f" · {kit.md(detail[:80])}{'…' if len(detail) > 80 else ''}" if detail else ""))

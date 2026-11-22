@@ -255,3 +255,81 @@ def meeting_dialog(meeting):
         st.rerun()
     if skip.button("Don't log it", key=f"{k}_x", width="stretch"):
         st.rerun()
+
+
+# ---------------------------------------------------------------------------------------------- Home tile
+
+SEEN_DAYS = 60      # a person not seen for this long is drawn hollow
+
+
+def spider_svg(data, t, today):
+    """Home's Network tile: a spider diagram of biggest_network()'s data. The group sits in the middle with a
+    spoke to each person; dashed lines join people who know each other; a hollow dot is someone not seen in
+    SEEN_DAYS days. `t` is appearance.tokens(). It scales to whatever box it's put in."""
+    from datetime import date
+    from html import escape
+    import math
+
+    W, H = 320, 200
+    cx, cy = W / 2, H / 2
+    colour = (data["group"] or {}).get("colour") or t["accent"]
+    people = data["people"]
+    n = len(people)
+    rx, ry = W / 2 - 62, H / 2 - 26
+    spot = {}
+    for i, p in enumerate(people):
+        a = -math.pi / 2 + 2 * math.pi * i / n
+        spot[p["id"]] = (cx + rx * math.cos(a), cy + ry * math.sin(a), math.cos(a), math.sin(a))
+    parts = []
+    for a, b in data["links"]:
+        (x1, y1, *_), (x2, y2, *_) = spot[a], spot[b]
+        parts.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{t["muted"]}" '
+                     f'stroke-opacity="0.45" stroke-width="1" stroke-dasharray="3 3"/>')
+    for p in people:
+        x, y, *_ = spot[p["id"]]
+        parts.append(f'<line x1="{cx}" y1="{cy}" x2="{x:.1f}" y2="{y:.1f}" stroke="{colour}" '
+                     f'stroke-opacity="0.55" stroke-width="1.5"/>')
+    for p in people:
+        x, y, c, s = spot[p["id"]]
+        days = (today - date.fromisoformat(p["last"])).days if p["last"] else None
+        fresh = days is not None and days <= SEEN_DAYS
+        when = ("seen today" if days == 0 else f"last seen {days} day{'s' if days != 1 else ''} ago") \
+            if days is not None else "not seen yet"
+        name = p["name"] if len(p["name"]) <= 14 else p["name"][:13] + "…"
+        anchor = "middle" if abs(c) < 0.3 else ("start" if c > 0 else "end")
+        lx, ly = x + 9 * c, y + 9 * s + (4 if abs(c) >= 0.3 else (12 if s > 0 else -6))
+        parts.append(
+            f'<g><title>{escape(p["name"])}: {when}</title>'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5.5" fill="{colour if fresh else t["card"]}" '
+            f'stroke="{colour}" stroke-width="2"/>'
+            f'<text x="{lx:.1f}" y="{ly:.1f}" text-anchor="{anchor}" font-size="11" fill="{t["ink"]}">'
+            f'{escape(name)}</text></g>')
+    label = data["group"]["name"] if data["group"] else "You"
+    label = label if len(label) <= 12 else label[:11] + "…"
+    more = data["total"] - n
+    parts.append(f'<circle cx="{cx}" cy="{cy}" r="17" fill="{colour}"/>'
+                 f'<text x="{cx}" y="{cy + 31}" text-anchor="middle" font-size="11.5" font-weight="600" '
+                 f'fill="{t["ink"]}">{escape(label)}</text>')
+    if more > 0:
+        parts.append(f'<text x="{W - 4}" y="{H - 4}" text-anchor="end" font-size="10.5" fill="{t["muted"]}">'
+                     f'+{more} more</text>')
+    who = ", ".join(p["name"] for p in people)
+    return (f'<svg class="vn-spider-svg" viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet" role="img" '
+            f'aria-label="{escape(label)}: {escape(who)}" xmlns="http://www.w3.org/2000/svg">{"".join(parts)}</svg>')
+
+
+def render_home():
+    """Home's Network widget: the spider diagram of the biggest group (see spider_svg)."""
+    from venato.ui import appearance, kit
+    kit.subhead("Network")
+    data = net.biggest_network()
+    if not data:
+        st.caption("No one here yet. Tell Claude about someone, or add them on the Network page.")
+        return
+    st.html(f"""<style>
+      .st-key-hwc_network [data-testid="stElementContainer"]:has(.vn-spider) {{ flex: 1 1 0; min-height: 96px; }}
+      .st-key-hwc_network [data-testid="stHtml"]:has(.vn-spider), .vn-spider {{ height: 100%; }}
+      .vn-spider {{ min-height: 96px; }}
+      .vn-spider-svg {{ display: block; width: 100%; height: 100%; }}
+      @media (max-width: 1000px) {{ .vn-spider {{ height: 200px; }} }}
+    </style><div class="vn-spider">{spider_svg(data, appearance.tokens(), store.local_today())}</div>""")
