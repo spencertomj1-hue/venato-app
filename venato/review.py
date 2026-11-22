@@ -115,6 +115,14 @@ def gaps(time, top=2, at_least=1.0):
     return sorted(short, key=lambda t: -(t["plan"] - t["actual"]))[:top]
 
 
+def verdict(pct, complete=True):
+    """The verdict in a few words: "Strong week" / "Solid week so far" ... ("No verdict yet": nothing confirmed)."""
+    if pct is None:
+        return "No verdict yet"
+    word = "Strong week" if pct >= 80 else "Solid week" if pct >= 60 else "Patchy week" if pct >= 40 else "Rough week"
+    return word if complete else word + " so far"
+
+
 def headline(s):
     """One line that says how the week went, before the numbers."""
     pct, before = s["followed_pct"], s["before"]["followed_pct"]
@@ -122,9 +130,7 @@ def headline(s):
         if not s["days_confirmed"] and s["days_so_far"]:
             return "No days confirmed on the timetable yet, so there's no verdict on your time."
         return "Not much to go on yet."
-    word = "Strong week" if pct >= 80 else "Solid week" if pct >= 60 else "Patchy week" if pct >= 40 else "Rough week"
-    if not s["complete"]:
-        word += " so far"
+    word = verdict(pct, s["complete"])
     trend = "" if before is None or abs(pct - before) < 5 else f", {'up' if pct > before else 'down'} from {before}%"
     parts = [f"{word}: {pct}% of the plan followed{trend}"]
     g = gaps(s["time"], top=1)
@@ -267,6 +273,46 @@ def summary(first):
     }
     s["headline"] = headline(s)
     return s
+
+
+def tile(today=None, trend_weeks=0):
+    """What Home's Review tile shows: this week so far, or last week while it's waiting to be reviewed and
+    nothing this week is confirmed yet. {"first", "complete", "pct", "before" (last week's %), "verdict",
+    "sentence" (the headline, after the verdict), "short" (the biggest gap, or None), "missed" (habits off
+    target, a finished week only), "days" (% or None per day, the first day of the week first), "to_confirm" (ISO dates),
+    "planned", "done" (hours), "todos" / "todos_done", "habits" / "habits_hit", "time" (per category),
+    "trend" ([% or None], oldest first; only with trend_weeks)}."""
+    from venato import pace
+    today = today or store.local_today()
+    now = store.local_now()
+    first = pace.week_days(today)[0]
+    s = summary(first)
+    if s["followed_pct"] is None:
+        prev = summary(first - timedelta(days=7))
+        if prev["followed_pct"] is not None and not prev["review"].get("seen_at"):
+            s = prev                                    # last week, until its review has been seen
+    days = _days(s["first"])
+    per_day = []
+    for d in days:
+        _, planned, matched, _ = _time([d], now)
+        per_day.append(_pct(matched, planned))
+    head = s["headline"]
+    word = verdict(s["followed_pct"], s["complete"])
+    sentence = head[len(word) + 2:] if head.startswith(word + ":") else head
+    g = gaps(s["time"], top=1)
+    t = s["todos"]
+    out = {"first": s["first"], "complete": s["complete"], "pct": s["followed_pct"],
+           "before": s["before"]["followed_pct"], "verdict": word, "sentence": sentence,
+           "short": g[0] if g else None,
+           "missed": [h["name"] for h in s["habits"] if not h["hit"]] if s["complete"] else [],
+           "days": per_day, "to_confirm": s["unconfirmed"],
+           "planned": s["planned_hours"], "done": s["actual_hours"],
+           "todos": t["weekly"] + t["daily"], "todos_done": t["weekly_done"] + t["daily_done"],
+           "habits": len(s["habits"]), "habits_hit": sum(h["hit"] for h in s["habits"]),
+           "time": s["time"], "trend": []}
+    if trend_weeks:
+        out["trend"] = [w["followed_pct"] for w in trend(s["first"], trend_weeks)]
+    return out
 
 
 def as_text(s):

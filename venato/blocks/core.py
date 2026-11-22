@@ -40,17 +40,21 @@ def _todos_page():
     todos.render_page()
 
 
-def _review_home():
+def _review_home(size="small"):
     from venato.ui import stats
-    stats.render_home()
+    stats.render_home(size)
 
 
-def _st(name):
-    """A tile's status line, from venato/tile_status.py."""
+def _st(name, sized=False):
+    """A tile's status line, from venato/tile_status.py. sized: it depends on the tile's size."""
     def status():
         from venato import tile_status
         return getattr(tile_status, name)()
-    return status
+
+    def sized_status(size="small"):
+        from venato import tile_status
+        return getattr(tile_status, name)(size=size)
+    return sized_status if sized else status
 
 
 def _log_page():
@@ -109,6 +113,6 @@ BLOCKS = [
     Block("stats", "Review", ":material/monitoring:",
           "Time planned vs done, your past weekly reviews, and sleep charts if you track it.",
           group="Plan", page=_stats_page, order=50, default=True, core=True,
-          widgets=[Widget("review", "Review", _review_home, "small", ("small", "wide"), status=_st("review"),
+          widgets=[Widget("review", "Review", _review_home, "small", ("small", "wide", "large"), status=_st("review", True),
                           colour="#8E1C1C")]),
 ]
