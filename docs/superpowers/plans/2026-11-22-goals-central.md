@@ -110,9 +110,16 @@ Verified when: full `pytest` green; `grep` shows no user-facing "goal" meaning t
 ## Progress
 | Phase | Status |
 |---|---|
-| 1 | pending |
-| 2 | pending |
-| 3 | pending |
-| 3b | pending |
-| 4 | pending |
-| 5 | pending |
+| 1 | done |
+| 2 | done |
+| 3 | done |
+| 3b | done |
+| 4 | done |
+| 5 | done |
+
+## Execution notes (2026-11-22)
+- Shipped as planned. Store: `store/life_goals.py`; UI: `ui/life_goals.py` + `ui/goals.py`; tools: `tools/life_goals.py`.
+- Wording: user-facing text says "target" for the measurable ones; the tool names (`add_goal`, `list_goals`…)
+  keep their names so old chats and prompts still work, and the system prompt explains it.
+- Left as is: onboarding's "Your goals" step still makes targets (FOR-TOM item 2 is the place to make it ask
+  for long-term goals first).

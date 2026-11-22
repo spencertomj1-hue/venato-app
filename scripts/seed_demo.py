@@ -167,13 +167,20 @@ def main():
         for d in range(7):                                  # those weeks were confirmed day by day
             store.mark_confirmed(MONDAY - timedelta(weeks=week) + timedelta(days=d))
 
-    # --- Goals: two that count timetable hours, one counting a habit, one kept by hand ---
-    store.add_goal("Study", "monthly", TODAY, 30, "h", category_id="study")
+    # --- Long-term goals, with targets (two counting timetable hours, one a habit, one kept by hand) and
+    # to-dos under them; one target under no goal ---
+    degree = store.add_life_goal("Get a first", months=6, why="Grad schemes want a 2:1 at least")
+    fit = store.add_life_goal("Get fit", months=12)
+    store.add_goal("Study", "monthly", TODAY, 30, "h", category_id="study", life_goal_id=degree["id"])
+    store.add_goal("Learn Spanish", "monthly", TODAY, 300, "h", category_id="study", label="Spanish",
+                   life_goal_id=degree["id"])                                       # can't be done in time
+    store.add_goal("Exercise", "monthly", TODAY, 16, "sessions", habit_id=store.find_habit("Exercise")[0],
+                   life_goal_id=fit["id"])
     store.add_goal("Side project", "monthly", TODAY, 25, "h", category_id="projects")
-    store.add_goal("Learn Spanish", "monthly", TODAY, 300, "h", category_id="study", label="Spanish")   # can't be done in time
-    store.add_goal("Exercise", "monthly", TODAY, 16, "sessions", habit_id=store.find_habit("Exercise")[0])
     books = store.add_goal("Read books", "yearly", TODAY, 20, "books")
     store.set_goal_progress(books["id"], 14)
+    for title, life in (("Book office hours", degree), ("Past papers list", degree), ("Buy running shoes", fit)):
+        store.add_detailed_todo(title, group_id=store.life_goal_group(life["id"])["id"])
 
     print(f"Demo data created in: {FOLDER}")
     print(f"Run the app on it:    VENATO_DATA_DIR='{FOLDER}' .venv/bin/streamlit run app.py")

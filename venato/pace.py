@@ -421,9 +421,9 @@ def week_budget(week, ctx=None):
     need = sum(max(0.0, w["want"] - w["done"]) for w in goals)
     est = " (an estimate: your calendar only reaches 8 weeks ahead)" if cap["estimate"] else ""
     if not goals:
-        text = f"No hours goals this week. You have {fmt(cap['hours'])} h free{est}."
+        text = f"No hours targets this week. You have {fmt(cap['hours'])} h free{est}."
     else:
-        text = f"Goals need {fmt(need)} h, you have {fmt(cap['hours'])} h free{est}."
+        text = f"Targets need {fmt(need)} h, you have {fmt(cap['hours'])} h free{est}."
     return {"week_start": cap["week_start"], "capacity": cap["hours"], "need": need, "estimate": cap["estimate"],
             "over": need > cap["hours"] + TOLERANCE, "goals": goals, "days": cap["days"], "text": text}
 
