@@ -73,3 +73,31 @@ def test_archive_and_delete(store):
     assert "Past goals (1)" in [e.label for e in at.expander]
     at.button(key=f"life_{g['id']}_delete").click().run()
     assert store.get_life_goal(g["id"]) is None and store.get_goal(t["id"])["life_goal_id"] is None
+
+
+def test_home_tile_shows_goals_and_their_next_target(store):
+    today = store.local_today()
+    g = store.add_life_goal("Get fit", months=6)
+    store.add_goal("Gym", None, today, 40, "sessions", due=store.months_on(today, 2), life_goal_id=g["id"])
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.exception, at.exception
+    html = " ".join(h.proto.body for h in at.get("html"))
+    assert 'class="hg-life"' in html and "Get fit" in html and "Next: Gym · 0 / 40 sessions by" in html
+
+
+def test_home_tile_without_goals_shows_targets(store):
+    store.add_goal("Read", None, store.local_today(), 12, "books", due=store.months_on(store.local_today(), 2))
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    html = " ".join(h.proto.body for h in at.get("html"))
+    assert 'class="hg-life"' not in html and '<span class="hg-name">Read</span>' in html
+
+
+def test_todo_categories_under_goals_come_first(store):
+    from venato.ui import todos
+    store.add_todo_group("Chores")
+    g = store.add_life_goal("Get fit", months=6)
+    t = store.add_goal("Gym", None, None, 10, due=store.months_on(store.local_today(), 2), life_goal_id=g["id"])
+    groups = list(todos._groups().values())
+    assert [x["name"] for x in groups][-1] == "Chores"
+    gym = next(x for x in groups if x["goal_id"] == t["id"])
+    assert todos.group_name(gym) == "Gym · Get fit"

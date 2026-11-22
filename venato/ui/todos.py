@@ -149,7 +149,7 @@ def _filter(groups):
     """The page's category filter (every tab): the chosen category's id, or None for all."""
     if not groups:
         return None
-    names = {g["id"]: g["name"] for g in groups.values()}
+    names = {g["id"]: ("⚑ " if g.get("under") else "") + group_name(g) for g in groups.values()}
     if st.session_state.get("td_filter") not in (None, "all", *names):
         st.session_state["td_filter"] = "all"                # its category was deleted
     pick = st.pills("Category", ["all", *names], default="all", key="td_filter", label_visibility="collapsed",
@@ -219,7 +219,22 @@ WHEN = ("Overdue", "Today", "Tomorrow", "This week", "Later")
 
 
 def _groups():
-    return {g["id"]: g for g in store.todo_groups()}
+    """The to-do categories, those under a long-term goal first (in the goals' order), each with `under`:
+    that goal's title (or None)."""
+    lives = {g["id"]: (i, g["title"]) for i, g in enumerate(store.life_goals(include_past=True))}
+    under = store.group_life_goals()
+    rows = []
+    for i, g in enumerate(store.todo_groups()):
+        life = lives.get(under.get(g["id"]))
+        rows.append(((0, life[0]) if life else (1, 0), i, {**g, "under": life[1] if life else None}))
+    return {g["id"]: g for _, _, g in sorted(rows, key=lambda r: (r[0], r[1]))}
+
+
+def group_name(g):
+    """A category's name for a list or picker: "Gym · Get fit" when it's a target's under a goal."""
+    if g.get("under") and g["under"] != g["name"]:
+        return f"{g['name']} · {g['under']}"
+    return g["name"]
 
 
 def _length_name(minutes):
@@ -264,7 +279,8 @@ def _group_picker(label, groups, current, key):
     """A category select with '+ New category…' at the end; returns (group_id or None, new name or None)."""
     options = [NONE, *groups, NEW]
     choice = st.selectbox(label, options, key=key, index=options.index(current) if current in groups else 0,
-                          format_func=lambda o: groups[o]["name"] if o in groups else o)
+                          format_func=lambda o: ("⚑ " if groups[o].get("under") else "") + group_name(groups[o])
+                          if o in groups else o)
     if choice == NEW:
         return None, st.text_input("New category name", key=f"{key}_new", placeholder="e.g. At home repairs")
     return (choice if choice in groups else None), None
@@ -336,13 +352,14 @@ def _details_from_menu():
 
 def _manage_groups(groups):
     with st.popover("Categories", icon=":material/label:"):
-        st.caption("Your own to-do categories (separate from the timetable's). Each goal you set is one too "
-                   ":material/flag:. Deleting one keeps its to-dos, with no category.")
+        st.caption("Your own to-do categories (separate from the timetable's). Each goal and target you set is "
+                   "one too :material/flag:. Deleting one keeps its to-dos, with no category.")
         for g in groups.values():
             name, colour, delete = st.columns([5, 1, 1], vertical_alignment="bottom")
             new = name.text_input("Name", g["name"], key=f"tdg_n_{g['id']}", label_visibility="collapsed",
-                                  icon=":material/flag:" if g["goal_id"] else None,
-                                  help="From your goal of that name" if g["goal_id"] else None)
+                                  icon=":material/flag:" if g["goal_id"] or g.get("life_goal_id") else None,
+                                  help="From your goal of that name" if g.get("life_goal_id") else
+                                  "From your target of that name" if g["goal_id"] else None)
             col = colour.color_picker("Colour", g["colour"], key=f"tdg_c_{g['id']}", label_visibility="collapsed")
             if new.strip() != g["name"] or col != g["colour"]:
                 store.update_todo_group(g["id"], new, col)
@@ -399,8 +416,8 @@ def _category_view(today, groups, chosen=None):
         for gid in [*groups, None]:
             if gid in by:
                 g = groups.get(gid)
-                name = f"**{kit.md(g['name'])}**" + (" :material/flag:" if g["goal_id"] else "") if g else \
-                    "**No category**"
+                flag = " :material/flag:" if g and (g["goal_id"] or g.get("life_goal_id")) else ""
+                name = f"**{kit.md(group_name(g))}**{flag}" if g else "**No category**"
                 st.markdown(f"{name} {_hours(by[gid])}")
                 for t in by[gid]:
                     _row(t, today, groups, "tdc")

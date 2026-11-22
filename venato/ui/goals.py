@@ -425,14 +425,44 @@ def home_goals(ctx=None):
     return sorted(rows, key=lambda r: _BEHIND_FIRST.get(r[1]["state"], 2))
 
 
+def _home_life_goals(today):
+    """Home's Goals tile with long-term goals: each goal's name and overall bar on one line, its nearest open
+    target in small type under it, then "and N more"."""
+    from venato.ui import life_goals
+    rows = life_goals.home_rows(today)
+    lines = []
+    for g, p, nxt in rows[:HOME_LIMIT]:
+        pct = round(100 * p["fraction"])
+        say = f"{g['title']}: {pct}%, {store.time_left(g, today)}"
+        sub = (f'<div class="hg-next">Next: {escape(nxt["title"])} · {escape(amount(nxt))} '
+               f'{escape(store.goal_title_due(nxt["due"], today))}</div>') if nxt else ""
+        lines.append(f'<div class="hg-life" title="{escape(say)}"><div class="hg-row"><span class="hg-name">'
+                     f'{escape(g["title"])}</span><div class="hg-track" role="img" aria-label="{escape(say)}">'
+                     f'<div class="hg-bar"><i style="width:{100 * p["fraction"]:.1f}%"></i></div></div></div>{sub}</div>')
+    st.html(goal_bar_css() + """<style>
+      .hg-rows { display: flex; flex-direction: column; gap: 8px; }
+      .hg-row { display: grid; grid-template-columns: minmax(0, 38%) minmax(0, 1fr); align-items: center; gap: 12px; }
+      .hg-name { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .hg-row .hg-bar { height: 5px; }
+      .hg-next { font-size: 0.78rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .hg-more { font-size: 0.875rem; opacity: 0.85; }
+    </style>""" + f'<div class="hg-rows">{"".join(lines)}'
+            + (f'<div class="hg-more">and {len(rows) - HOME_LIMIT} more</div>' if len(rows) > HOME_LIMIT else "")
+            + "</div>")
+
+
 def render_home():
-    """Home's Goals tile: the top three goals (behind ones first), each its name and a thin bar with the
-    "should be here by today" tick on one line, then "and N more". Everything else is on the Goals page."""
+    """Home's Goals tile: the long-term goals when there are any (_home_life_goals); otherwise the top three
+    targets (behind ones first), each its name and a thin bar with the "should be here by today" tick on one
+    line, then "and N more". Everything else is on the Goals page."""
     today = store.local_today()
-    rows = home_goals()
     head = st.container(horizontal=True, vertical_alignment="center")
     kit.subhead("Goals", head, width="stretch")
     head.button("See all", key="home_goals_all", type="tertiary", on_click=_go_to_goals)
+    if store.life_goals(today):
+        _home_life_goals(today)
+        return
+    rows = home_goals()
     if not rows:
         st.caption("No goals running. Set one on the Goals page.")
         return
