@@ -60,7 +60,8 @@ def test_deleting_a_category_keeps_its_todos(store):
     g = store.add_todo_group("Uni")
     t = store.add_todo("Essay", "daily", today, group_id=g["id"])
     store.update_todo_group(g["id"], name="University", colour="#000000")
-    assert store.todo_groups() == [{"id": g["id"], "name": "University", "colour": "#000000", "goal_id": None}]
+    assert store.todo_groups() == [{"id": g["id"], "name": "University", "colour": "#000000", "goal_id": None,
+                                   "life_goal_id": None}]
     store.delete_todo_group(g["id"])
     assert store.todo_groups() == [] and store.get_todo(t["id"])["group_id"] is None
 

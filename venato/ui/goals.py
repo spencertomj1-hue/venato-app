@@ -102,15 +102,16 @@ def due_picker(key, value, label="Deadline"):
 # The form shared by "New goal" and "Edit"
 # ---------------------------------------------------------------------------
 
-def _goal_form(key, goal=None):
-    """Title, target, unit, deadline and how progress is tracked. Returns the values, or None if a habit choice is missing."""
+def _goal_form(key, goal=None, life_goal_id=None):
+    """Title, target, unit, deadline, the long-term goal it's under and how progress is tracked. Returns the
+    values, or None if a habit choice is missing."""
     habits = dict(store.get_habits())                       # id -> name
     cats = store.load_categories()
     categories = dict(zip(cats["id"], cats["name"]))        # id -> name
-    title = st.text_input("Goal", value=goal["title"] if goal else "", key=f"{key}_title",
+    title = st.text_input("Target", value=goal["title"] if goal else "", key=f"{key}_title",
                           placeholder="e.g. Gym")
     a, b = st.columns(2)
-    target = a.number_input("Target", min_value=0.5, step=1.0, value=float(goal["target"]) if goal else 10.0, format="%g",
+    target = a.number_input("Aim for", min_value=0.5, step=1.0, value=float(goal["target"]) if goal else 10.0, format="%g",
                             key=f"{key}_target")
     unit = b.text_input("Unit (optional)", value=(goal["unit"] or "") if goal else "", key=f"{key}_unit",
                         placeholder="sessions, km, books…")
@@ -121,7 +122,8 @@ def _goal_form(key, goal=None):
                         "Count timetable hours: the hours in your timetable's Actual track in a category "
                         "(and, if you like, only one activity) add up by themselves.")
     values = {"title": title.strip(), "target": target, "unit": unit.strip() or None, "habit_id": None,
-              "category_id": None, "label": None, "due": due}
+              "category_id": None, "label": None, "due": due,
+              "life_goal_id": _life_goal_picker(key, goal["life_goal_id"] if goal else life_goal_id)}
     if how == BY_HABIT:
         if not habits:
             st.caption("You have no habits yet. Add one on the Daily Log page, or update this goal yourself.")
@@ -144,6 +146,17 @@ def _goal_form(key, goal=None):
         values["unit"] = values["unit"] or "h"
     values["start"], values["earlier"] = _earlier(key, values, goal)
     return values
+
+
+def _life_goal_picker(key, current):
+    """Which long-term goal a target is under (or none). Hidden while there are no goals."""
+    lives = store.life_goals(include_past=True)
+    if not lives:
+        return current
+    ids = [None] + [g["id"] for g in lives]
+    names = {g["id"]: g["title"] for g in lives}
+    return st.selectbox("Under goal", ids, index=ids.index(current) if current in ids else 0, key=f"{key}_life",
+                        format_func=lambda i: names.get(i, "No goal"))
 
 
 def _earlier(key, values, goal=None):
@@ -170,16 +183,18 @@ def _earlier(key, values, goal=None):
         return start, done
 
 
-def _new_goal():
-    with st.popover("New goal", icon=":material/add:", width="stretch"):
-        values = _goal_form("new_goal")
-        if st.button("Add goal", key="new_goal_add", type="primary", disabled=not values or not values["title"]):
+def _new_goal(key="new_goal", life_goal_id=None):
+    """"Add target": a measurable target with a deadline (under `life_goal_id`, which the form can change)."""
+    with st.popover("Add target", icon=":material/add:", width="stretch"):
+        values = _goal_form(key, life_goal_id=life_goal_id)
+        if st.button("Add target", key=f"{key}_add", type="primary", disabled=not values or not values["title"]):
             g = store.add_goal(values["title"], None, values["start"] or store.local_today(), values["target"],
                                values["unit"], values["habit_id"], category_id=values["category_id"],
-                               label=values["label"], due=max(values["due"], values["start"] or values["due"]))
+                               label=values["label"], due=max(values["due"], values["start"] or values["due"]),
+                               life_goal_id=values["life_goal_id"])
             if values["earlier"]:
                 store.set_goal_progress(g["id"], values["earlier"])
-            for k in [k for k in st.session_state if k.startswith("new_goal_")]:
+            for k in [k for k in st.session_state if k.startswith(f"{key}_")]:
                 del st.session_state[k]                      # an empty form next time
             st.rerun()
 
@@ -221,7 +236,7 @@ def _edit_goal(g, ids=None):
                 store.set_goal_progress(g["id"], progress + earlier)
             st.rerun()
         if delete.button("Delete", key=f"{key}_delete", icon=":material/delete:", width="stretch"):
-            undo.checkpoint(f"Deleted the goal '{g['title']}'")
+            undo.checkpoint(f"Deleted the target '{g['title']}'")
             store.delete_goal(g["id"])
             st.rerun()
 
@@ -288,22 +303,24 @@ def due_parts(g, today=None):
 
 
 def _section(today, ctx):
-    from venato import pace
-    goals = pace.goals_open(today)
+    """The targets under no long-term goal (deadline plans among them), and every past target folded away."""
+    goals = store.unparented_targets(today)
     done = sum(fraction(g) >= 1 for g in goals)
     with st.container(border=True):
-        st.subheader(f"Goals :gray[{done}/{len(goals)}]", anchor=False)
+        heading = "Targets" if not store.life_goals(include_past=True) else "Targets not under a goal"
+        st.subheader(f"{heading} :gray[{done}/{len(goals)}]", anchor=False)
         ids = [g["id"] for g in goals]
         cols = st.columns(2, gap="small")
         for i, g in enumerate(goals):
             with cols[i % 2]:
                 _goal_row(g, ctx, ids)
         if not goals:
-            st.caption("No goals yet.")
+            st.caption("None. Measurable targets with a deadline (\"Gym 40 sessions by 31/03\") go here or under a goal.")
         _new_goal()
+    from venato import pace
     past = pace.goals_past(today)
     if past:
-        with st.expander(f"Past goals ({sum(fraction(g) >= 1 for g in past)}/{len(past)} done)"):
+        with st.expander(f"Past targets ({sum(fraction(g) >= 1 for g in past)}/{len(past)} done)"):
             cols = st.columns(2, gap="small")
             for i, g in enumerate(past):
                 with cols[i % 2]:
@@ -312,7 +329,7 @@ def _section(today, ctx):
 
 def render_page():
     st.header("Goals", anchor=False)
-    st.caption("Measurable targets, each with a deadline, and deadlines for work. Day-to-day to-dos live on the To-dos page.")
+    st.caption("Your plans for the next 3, 6 or 12 months. Under each: targets (measurable, by a date) and to-dos.")
     today = store.local_today()
     from venato import pace
     from venato.ui import goal_time
@@ -320,7 +337,9 @@ def render_page():
     ctx = pace.Ctx()
     main, side = st.columns([2.3, 1], gap="medium")      # the side panel stacks under on narrow screens
     with main:
-        st.html(goal_chart.legend())                    # once, for every goal's pace chart
+        st.html(goal_chart.legend())                    # once, for every target's pace chart
+        from venato.ui import life_goals
+        life_goals.render_section(ctx, today)
         _section(today, ctx)
     with side:
         goal_time.free_split(ctx)                       # where this week's free time goes, by goal

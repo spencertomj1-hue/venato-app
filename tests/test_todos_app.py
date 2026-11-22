@@ -90,11 +90,11 @@ def test_goals_page_plus_minus_and_past_goals(store):
     at.button(key=f"minus_{g['id']}").click().run()
     assert store.get_goal(g["id"])["value"] == 1
     assert not [b for b in at.button if b.key and b.key.startswith("plus_") and b.key != f"plus_{g['id']}"]
-    assert "Past goals" not in [e.label.split(" (")[0] for e in at.expander]
+    assert "Past targets" not in [e.label.split(" (")[0] for e in at.expander]
     from datetime import timedelta
     store.add_goal("Old", None, today - timedelta(days=40), 3, due=today - timedelta(days=10))
     at.run()
-    assert any(e.label.startswith("Past goals (0/1") for e in at.expander)       # a past deadline: folded away
+    assert any(e.label.startswith("Past targets (0/1") for e in at.expander)     # a past deadline: folded away
 
 
 def test_deadline_marks_and_default(store):

@@ -182,6 +182,15 @@ def life_goal_group(life_goal_id):
     return next((g for g in todo_groups() if g.get("life_goal_id") == life_goal_id), None)
 
 
+def ensure_life_goal_group(life_goal_id):
+    """The id of a goal's own to-do category, making it again if the user deleted it."""
+    g = get_life_goal(life_goal_id)
+    if not g:
+        raise ValueError("There's no such goal.")
+    with db() as conn:
+        return _link_group(conn, life_goal_id, g["title"])
+
+
 def life_goal_group_ids(life_goal_id):
     """The to-do categories whose to-dos count for a goal: its own and its targets'."""
     with db() as conn:
