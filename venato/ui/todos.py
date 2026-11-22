@@ -10,7 +10,8 @@ away; the ops it sends are saved here with the store and acknowledged in
 Each to-do can also have a due day, how long it takes and one of the user's own to-do categories
 (store.todo_groups; every goal is one too, e.g. "Get a job"). Rows show them; the row menu's "Due day,
 category, length…" and the page's "Add to-do" open pop-ups for them. The page's category filter applies
-to every tab; "By due date" lists every open to-do by when it's due and "By category" under its category.
+to every tab; "All" lists every open to-do in one list, "By due date" by when it's due and "By category"
+under its category.
 """
 
 from datetime import timedelta
@@ -112,9 +113,9 @@ def render_home():
 # The To-dos page (Home's To-dos tile opens it): one list at a time, Today / This week / This month
 # ---------------------------------------------------------------------------
 
-TABS = {"Today": "daily", "This week": "weekly", "This month": "monthly", "By due date": "due",
+TABS = {"All": "all", "Today": "daily", "This week": "weekly", "This month": "monthly", "By due date": "due",
         "By category": "category"}
-VIEWS = ("due", "category")      # the tabs that aren't one list
+VIEWS = ("all", "due", "category")      # the tabs that aren't one list
 
 
 def _section(period, today, limit=None, group_id=None):
@@ -181,7 +182,9 @@ def render_page():
         add_dialog(chosen, None if period in VIEWS else period)
     main, side = st.columns([2, 1], gap="medium")
     with main:
-        if period == "due":
+        if period == "all":
+            _all_view(today, groups, chosen)
+        elif period == "due":
             _due_view(today, groups, chosen)
         elif period == "category":
             _category_view(today, groups, chosen)
@@ -401,6 +404,24 @@ def _category_view(today, groups, chosen=None):
                 st.markdown(f"{name} {_hours(by[gid])}")
                 for t in by[gid]:
                     _row(t, today, groups, "tdc")
+
+
+def _all_view(today, groups, chosen=None):
+    """Every open to-do in one list, no headings: today's, this week's and this month's lists together (and later
+    ones with a due day), most urgent first, in the chosen category (or all)."""
+    todos = [t for t in store.open_todos(today) if chosen is None or t["group_id"] == chosen]
+    with st.container(border=True, key="todos_all_card"):
+        if not todos:
+            st.caption("Nothing to do. Add a to-do, or tell Claude.")
+        else:
+            st.markdown(f"**Everything to do** {_hours(todos)}")
+        for t in todos:
+            _row(t, today, groups, "tda")
+        done = [t for t in store.done_todos(today) if chosen is None or t["group_id"] == chosen]
+        if done:
+            with st.expander(f"Done in the last week ({len(done)})"):
+                for t in done:
+                    _row(t, today, groups, "tdad", editable=False)
 
 
 def _due_view(today, groups, chosen=None):

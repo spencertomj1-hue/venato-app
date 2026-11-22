@@ -12,7 +12,7 @@ import re
 import uuid
 
 from venato import store, tools
-from venato.blocks import Block
+from venato.blocks import Block, Widget
 
 # Network groups (they colour people in the Network web); editable on the Network page.
 DEFAULT_NET_GROUPS = [
@@ -713,13 +713,57 @@ def on_block_status(op):
     return None
 
 
+def biggest_network(limit=10):
+    """Home's Network tile: the group with the most people (counting its sub-groups'), as
+    {"group": {id, name, colour} or None, "people": [{id, name, last}] (most recently seen first, up to
+    `limit`), "total": everyone in it, "links": [(a, b)] between the people shown}. With no group holding
+    anyone, everyone (group None). None when there's nobody at all."""
+    people = net_people()
+    if not people:
+        return None
+    groups = net_groups()
+    with store.db() as conn:
+        family = {g["id"]: _descendants(conn, g["id"]) | {g["id"]} for g in groups}
+    best, members = None, []
+    for g in groups:                                    # net_groups' order breaks ties: the first listed wins
+        inside = [p for p in people if p["group_id"] in family[g["id"]]]
+        if len(inside) > len(members):
+            best, members = g, inside
+    if not members:
+        members = people
+    last = last_interactions()
+    seen = sorted((p for p in members if last.get(p["id"])), key=lambda p: last[p["id"]], reverse=True)
+    unseen = sorted((p for p in members if not last.get(p["id"])), key=lambda p: p["name"].lower())
+    total, members = len(members), (seen + unseen)[:limit]
+    shown = {p["id"] for p in members}
+    links = [(l["a"], l["b"]) for l in net_links() if l["a"] in shown and l["b"] in shown]
+    return {"group": {k: best[k] for k in ("id", "name", "colour")} if best else None,
+            "people": [{"id": p["id"], "name": p["name"], "last": last.get(p["id"])} for p in members],
+            "total": total, "links": links}
+
+
 def _page():
     from venato.ui import network as ui
     ui.render_page()
 
 
+def _home():
+    from venato.ui import network as ui
+    ui.render_home()
+
+
+def _home_status():
+    data = biggest_network()
+    if not data:
+        return ""
+    n = data["total"]
+    return f"{data['group']['name'] + ' · ' if data['group'] else ''}{n} {'person' if n == 1 else 'people'}"
+
+
 BLOCK = Block("network", "Network", ":material/hub:",
               "A map of the people you know, the groups they're in, and when you last met.",
               group="People & life", page=_page, tools=TOOLS, prompt=PROMPT, schema=SCHEMA, migrate=_migrate,
+              widgets=[Widget("network", "Network", _home, "small", ("small", "wide", "large", "tall"),
+                              status=_home_status, colour="#8E4EC6")],
               order=170, search=SEARCH, search_icons=SEARCH_ICONS, search_open=_search_open,
               review=_review, status=STATUS)

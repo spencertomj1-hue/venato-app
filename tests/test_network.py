@@ -249,3 +249,59 @@ def test_search_result_opens_the_person(store, net):
     person.click().run()
     assert not at.exception and at.session_state["page"] == "Network"
 
+
+
+# ---------------------------------------------------------------------------------------------- Home tile
+
+def test_biggest_network_counts_sub_groups_and_puts_the_recently_seen_first(net):
+    assert net.biggest_network() is None
+    uni = net.add_net_group("Northfield")
+    society = net.add_net_group("Physics Society", parent_id=uni)
+    work = net.find_net_group("Work")
+    net.add_person("Wren", group_id=work)
+    net.add_person("Will", group_id=work)
+    ann = net.add_person("Ann", group_id=uni)["id"]
+    bo = net.add_person("Bo", group_id=society)["id"]
+    cy = net.add_person("Cy", group_id=society)["id"]
+    net.add_interaction(cy, "coffee", date(2026, 11, 1))
+    net.add_interaction(bo, "lab", date(2026, 11, 20))
+    net.link_people(ann, bo)
+    net.link_people(ann, net.find_people("Wren")[0]["id"])          # Wren isn't shown, so no line to her
+    data = net.biggest_network()
+    assert data["group"]["name"] == "Northfield" and data["total"] == 3
+    assert [p["name"] for p in data["people"]] == ["Bo", "Cy", "Ann"]
+    assert data["links"] == [tuple(sorted((ann, bo)))]
+    assert len(net.biggest_network(limit=2)["people"]) == 2
+
+
+def test_biggest_network_without_groups_is_everyone(net):
+    net.add_person("Solo")
+    data = net.biggest_network()
+    assert data["group"] is None and [p["name"] for p in data["people"]] == ["Solo"]
+
+
+def test_spider_svg_escapes_names_and_hollows_people_not_seen(net):
+    from venato.ui import network as ui
+    t = {"card": "#fff", "ink": "#000", "muted": "#666", "accent": "#f00"}
+    data = {"group": {"id": "g", "name": "Friends", "colour": "#F5A524"}, "total": 4, "links": [("a", "b")],
+            "people": [{"id": "a", "name": "<Al>", "last": "2026-11-20"}, {"id": "b", "name": "Bea", "last": None}]}
+    svg = ui.spider_svg(data, t, date(2026, 11, 22))
+    assert "&lt;Al&gt;" in svg and "<Al>" not in svg
+    assert "+2 more" in svg and "stroke-dasharray" in svg
+    assert 'fill="#F5A524" stroke="#F5A524"' in svg and 'fill="#fff" stroke="#F5A524"' in svg
+    assert "last seen 2 days ago" in svg and "not seen yet" in svg
+
+
+def test_network_and_workouts_tiles_can_be_added_to_home(net):
+    from venato import blocks
+    from venato.ui import home
+    blocks.save([*blocks.chosen_keys(), "workouts"])
+    net.add_person("Sam", group_id=net.find_net_group("Friends"))
+    cat = home.catalog()
+    assert "network" in cat and "workouts" in cat
+    from venato import store
+    store.save_settings(home=[{"w": "network", "size": "large"}, {"w": "workouts", "size": "small"}])
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.exception
+    assert any("vn-spider" in getattr(h, "body", "") for h in at.get("html"))
+    assert any("vn-wk-week" in getattr(h, "body", "") for h in at.get("html"))
