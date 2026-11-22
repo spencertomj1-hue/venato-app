@@ -2,14 +2,17 @@
 The setup wizard's steps. A new install starts blank; setup only ever adds things, so running it again
 never deletes anything. Every step but Welcome can be skipped, and "Skip setup" leaves the app as it is.
 
-  Students: Welcome ("Are you at uni?") -> Connect your calendars -> Your modules (with hours a week)
-            -> Your goals -> What would you track? (and the timetable colours) -> Your first week
+  Students: Welcome ("Are you at uni?") -> Your goals -> Connect your calendars -> Your modules (with hours a
+            week) -> What would you track? (and the timetable colours) -> Your first week
   Others:   Welcome -> Your goals -> What would you track? -> Your first week
+
+Goals come first for everyone: each row is a long-term goal (3 / 6 / 12 months or an end date), with at most one
+target under it ("How you'll know") and a first to-do. Track, Modules and First week hang off those goals.
 
 What a step writes happens when its Next or Skip is pressed (the same save: a click can come from the previous
 run's button, so Skip must save what was just typed). Connect, Add, the student buttons and Add to my Plan write
 too. Writing again changes the same thing rather than adding a second (goals made in this setup are remembered
-by id in st.session_state["ob"]).
+by id per row in st.session_state["ob"]).
 settings_ui.wizard() draws the page; settings_ui._finish() turns on the core blocks.
 """
 
@@ -32,17 +35,19 @@ from venato.ui import appearance, kit
 # (key, name, icon, only for students)
 STEPS = [
     ("welcome", "Welcome", ":material/waving_hand:", False),
+    ("goals", "Goals", ":material/flag:", False),
     ("calendars", "Calendars", ":material/calendar_month:", True),
     ("modules", "Modules", ":material/menu_book:", True),
-    ("goals", "Goals", ":material/flag:", False),
     ("track", "Track", ":material/checklist:", False),
     ("week", "First week", ":material/event_available:", False),
 ]
 GOAL_MAX = 5                           # goal rows on the goals step
 GOAL_PLACEHOLDERS = ["e.g. Run a 10k", "e.g. Read 12 books", "e.g. Get a 2:1", "e.g. Learn to cook 10 meals",
                      "e.g. Save £500"]
-GOAL_WHEN = {"1 month": 1, "3 months": 3, "6 months": 6, "1 year": 12}
+END_DATE = "Pick an end date"
+GOAL_WHEN = {"3 months": 3, "6 months": 6, "1 year": 12, END_DATE: None}
 GOAL_HOW = {"Tick it off": "tick", "Hours a week": "hours", "A number": "number"}
+TERM_GOAL = "Do well this term"         # a student's prefilled first goal row (D4): the module targets go under it
 OWN_COLOUR = "#4E79A7"                 # a new category's colour when none is picked
 STUDY_WEEKS = 12                       # a study goal runs this many weeks; its hours are the weekly hours times this
 DEFAULT_CREDITS = 15
@@ -204,10 +209,18 @@ def link_courses(links):
             gr.link_canvas_course(course_id, mid)
 
 
+def term_goal_id():
+    """The goal the module study targets go under: the students' "Do well this term" row (whatever it was renamed
+    to), if it was saved and is still there; else None."""
+    ob = _ob()
+    lid = ob.get("life_ids", {}).get(ob.get("term_row"))
+    return lid if lid and store.get_life_goal(lid) else None
+
+
 def apply_study_hours(per_week, day=None):
-    """The default hours a week, and one hours goal for each module made in this run of setup that has none yet
-    (counting its category, which also holds its lectures). A module's own number (its page) wins. Modules
-    from before, and ones without a category, are left alone."""
+    """The default hours a week, and one hours target for each module made in this run of setup that has none yet
+    (counting its category, which also holds its lectures), under the term goal if there is one. A module's own
+    number (its page) wins. Modules from before, and ones without a category, are left alone."""
     day = day or today()
     store.save_settings(study_hours=float(per_week))
     made = []
@@ -215,6 +228,7 @@ def apply_study_hours(per_week, day=None):
         return made
     have = {g["category_id"] for g in store.goals_open(day) if g["category_id"] and g["unit"] == "h" and not g["deadline_id"]}
     mine = set(_ob().get("new_modules", []))
+    lid = term_goal_id()
     for m in gr.modules():
         cid = m["category_id"]
         if m["id"] not in mine or not cid or cid in have:
@@ -222,64 +236,115 @@ def apply_study_hours(per_week, day=None):
         hours = gr.week_hours_goal(m)
         if hours > 0:
             made.append(store.add_goal(f"{m['name']} study", None, day, hours * STUDY_WEEKS, unit="h", category_id=cid,
-                                       due=day + timedelta(weeks=STUDY_WEEKS)))
+                                       due=day + timedelta(weeks=STUDY_WEEKS), life_goal_id=lid))
     return made
+
+
+def _weeks(day, end):
+    """Whole weeks from `day` to `end` (at least 1)."""
+    return max(1, round((store._as_date(end) - day).days / 7))
+
+
+def target_title(text, how, number):
+    """A setup target's title: the goal's words and the number ("Run a 10k: 3 h a week", "Read books: 12")."""
+    return f"{text}: {number:g} h a week" if how == "hours" else f"{text}: {number:g}"
 
 
 def save_goals(rows, day=None):
     """
-    rows: [(row, text, how, number or None, months)], `how` one of "tick", "hours", "number". Each filled
-    row is a goal due in that many months: "tick" is a goal of 1 to tick off, "number" a target of the number,
-    "hours" an hours goal (unit "h") of the hours a week times the weeks to its due date, with a category so
-    its sittings can be planned. Hours or a number left empty make a goal to tick off. Saving again changes
-    the goal this setup made for that row (its tracking only if the row's choice changed); a row emptied
-    removes only that goal. Returns {row: goal id}.
+    rows: [{"row", "text", "months" (3, 6, 12) or "end" (a date), "why", "how", "number", "step"}], `how` one of
+    "tick", "hours", "number". Each filled row is a long-term goal from `day` for that long (D2), with:
+      - "hours" / "number" and a number: one target under it, due on the goal's end ("hours": the hours a week
+        times the weeks, unit "h", with a category so its sittings can be planned; "number": that number).
+        "tick", or no number: no target (D1: its bar fills from its to-dos).
+      - "step": one to-do in the goal's own to-do category, on this week's list.
+    Saving again changes what this setup made for that row (the target's tracking only if the row's choice
+    changed); a row emptied removes only those three things. Returns {row: {"goal", "target", "todo"}} (ids or None).
     """
     day = day or today()
     ob = _ob()
-    ids, hows = ob.setdefault("goal_ids", {}), ob.setdefault("goal_how", {})
-    for row, text, how, number, months in rows:
-        text, gid = (text or "").strip(), ids.get(row)
-        if gid and not store.get_goal(gid):                # deleted since: make a new one
-            ids.pop(row, None)
-            gid = None
+    lids, tids, todos, hows = (ob.setdefault(k, {}) for k in ("life_ids", "goal_ids", "todo_ids", "goal_how"))
+    out = {}
+    for r in rows:
+        row, text = r["row"], (r.get("text") or "").strip()
         if not text:
-            if gid:
-                forget_goal_row(row)
+            forget_goal_row(row)
             continue
+        number = r.get("number")
         number = float(number) if number is not None and number > 0 else None
-        how = how if number is not None else "tick"
-        due = months_on(day, months)
-        if how == "hours":
-            target = number * max(1, round((due - day).days / 7))
+        how = r.get("how", "tick") if number is not None else "tick"
+        months, end = (None, r["end"]) if r.get("end") else (int(r.get("months") or 3), None)
+        why, step = (r.get("why") or "").strip() or None, (r.get("step") or "").strip()
+
+        lid = lids.get(row)
+        if lid and store.get_life_goal(lid):
+            g = store.update_life_goal(lid, title=text, why=why, **({"months": months} if months else {"end": end}))
         else:
-            target = number if how == "number" else 1.0
-        if gid:
-            store.update_goal(gid, title=text, target=target, due=due)
-            if hows.get(row) != how:                    # changed: the tracking changes too
-                if how == "hours":
-                    if not store.get_goal(gid)["category_id"]:
-                        store.update_goal(gid, category_id=_hours_category(text), unit="h")
+            g = store.add_life_goal(text, months=months, end=end, start=day, why=why)
+            lids[row] = g["id"]
+            lid = g["id"]
+
+        tid = tids.get(row)
+        if tid and not store.get_goal(tid):                    # deleted since: make a new one if wanted
+            tids.pop(row, None)
+            tid = None
+        if how == "tick" and hows.get(row) == "habit" and tid:     # a habit target made on Track stays
+            store.update_goal(tid, due=g["end_date"])
+            how = "habit"
+        elif how == "tick":
+            if tid:
+                store.delete_goal(tids.pop(row))
+                tid = None
+        else:
+            title, due = target_title(text, how, number), g["end_date"]
+            target = number * _weeks(day, due) if how == "hours" else number
+            if tid:
+                store.update_goal(tid, title=title, target=target, due=due, life_goal_id=lid)
+                if hows.get(row) != how:                    # changed: the tracking changes too
+                    if how == "hours":
+                        if not store.get_goal(tid)["category_id"]:
+                            store.update_goal(tid, category_id=_hours_category(text), unit="h")
+                        else:
+                            store.update_goal(tid, unit="h")
                     else:
-                        store.update_goal(gid, unit="h")
-                else:
-                    store.update_goal(gid, unit=None, category_id=None)
-        else:
-            extra = {"unit": "h", "category_id": _hours_category(text)} if how == "hours" else {}
-            ids[row] = store.add_goal(text, None, day, target, due=due, **extra)["id"]
+                        store.update_goal(tid, unit=None, category_id=None, habit_id=None)
+            else:
+                extra = {"unit": "h", "category_id": _hours_category(text)} if how == "hours" else {}
+                tid = tids[row] = store.add_goal(title, None, day, target, due=due, life_goal_id=lid, **extra)["id"]
+
+        todo = todos.get(row)
+        if todo and not store.get_todo(todo):
+            todos.pop(row, None)
+            todo = None
+        if step:
+            group = store.ensure_life_goal_group(lid)
+            if todo:
+                store.update_todo(todo, title=step, group_id=group)
+            else:
+                todo = todos[row] = store.add_todo(step, "weekly", day, group_id=group)["id"]
+        elif todo:
+            store.delete_todo(todos.pop(row))
+            todo = None
+
         hows[row] = how
-        ob.setdefault("goal_nums", {})[row] = how in ("hours", "number")
-        ob.setdefault("goal_meta", {})[row] = {"number": number, "months": months}
-    return dict(ids)
+        ob.setdefault("goal_meta", {})[row] = {"number": number, "months": months, "end": end}
+        out[row] = {"goal": lid, "target": tid, "todo": todo}
+    return out
 
 
 def forget_goal_row(row):
-    """A goal row removed (or emptied): delete the goal this setup made for it, and nothing else."""
+    """A goal row removed (or emptied): delete the goal, target and to-do this setup made for it, and nothing else."""
     ob = _ob()
-    gid = ob.get("goal_ids", {}).pop(row, None)
-    if gid and store.get_goal(gid):
-        store.delete_goal(gid)
-    for k in ("goal_how", "goal_nums", "goal_meta"):
+    lid = ob.get("life_ids", {}).pop(row, None)
+    tid = ob.get("goal_ids", {}).pop(row, None)
+    todo = ob.get("todo_ids", {}).pop(row, None)
+    if todo and store.get_todo(todo):
+        store.delete_todo(todo)
+    if tid and store.get_goal(tid):
+        store.delete_goal(tid)
+    if lid and store.get_life_goal(lid):
+        store.delete_life_goal(lid)
+    for k in ("goal_how", "goal_meta"):
         ob.get(k, {}).pop(row, None)
 
 
@@ -319,9 +384,32 @@ def ensure_category(cid):
                     store.set_label_default(label, cid)
 
 
+HABIT_PER_WEEK = 3                     # a habit target made in setup: ticks a week, times the weeks to the goal's end
+
+
+def habit_target(life_goal, habit, day=None):
+    """A target under a goal that has none, counting a habit's ticks: HABIT_PER_WEEK a week until the goal ends (D1).
+    Returns its id."""
+    day = day or today()
+    store.add_habit(habit)
+    return store.add_goal(f"{habit}: {HABIT_PER_WEEK} times a week", None, day,
+                          HABIT_PER_WEEK * _weeks(day, life_goal["end_date"]), habit_id=store.find_habit(habit)[0],
+                          due=life_goal["end_date"], life_goal_id=life_goal["id"])["id"]
+
+
+def apply_for_goal(s, row, life_goal, target, day=None):
+    """Switch on a suggestion picked for one of setup's goals. With a target it links to that (apply_suggestion);
+    a habit for a goal without one makes a habit target under it, remembered as the row's target."""
+    if target is None and s["kind"] == "habit":
+        _ob().setdefault("goal_ids", {})[row] = habit_target(life_goal, s["name"], day)
+        _ob().setdefault("goal_how", {})[row] = "habit"
+        return
+    apply_suggestion(s, target and target["id"], _ob().get("goal_how", {}).get(row) in ("hours", "number"))
+
+
 def apply_suggestion(s, goal_id=None, number=False):
-    """Switch on one suggestion from suggest.for_goal and link it to its goal. A goal counts a habit's ticks or
-    timetable hours, never both: a habit wins, and a category links only for a goal with a number (read as hours)."""
+    """Switch on one suggestion from suggest.for_goal and link it to its target. A target counts a habit's ticks or
+    timetable hours, never both: a habit wins, and a category links only for a target with a number (read as hours)."""
     kind = s["kind"]
     if kind == "habit":
         store.add_habit(s["name"])
@@ -429,6 +517,11 @@ def fallback_sittings(goals, day=None, taken=()):
     return sorted(out, key=lambda s: (s["date"], s["start"]))
 
 
+def week_goals():
+    """What setup's first week plans for, one per goal: its target, else the goal itself (no unit, no category)."""
+    return [t or {"id": g["id"], "title": g["title"], "unit": None, "category_id": None} for _, g, t in _my_goals()]
+
+
 def week_sittings(goals, day=None, ctx=None):
     """Your first week: the hours goals' sittings (first_week) and the fallback ones for the other goals."""
     ctx = ctx or pace.Ctx()                            # one clock for both
@@ -455,7 +548,7 @@ def home_picks():
         picks.append(("deadlines", "Deadlines"))
     if store.get_habits():
         picks.append(("habits", "Habits"))
-    if store.goals_open():
+    if store.life_goals() or store.goals_open():
         picks.append(("goals", "Goals"))
     return picks
 
@@ -758,35 +851,52 @@ def _save_modules():
 
 
 def _goal_rows():
-    """The goal rows' ids, in order (ids stay put when a row is removed, so its boxes don't shift)."""
-    return _ob().setdefault("goal_rows", [0])
+    """The goal rows' ids, in order (ids stay put when a row is removed, so its boxes don't shift). A student's
+    first row starts as "Do well this term" (unless a goal of that name is already there)."""
+    ob = _ob()
+    if "goal_rows" not in ob:
+        ob["goal_rows"] = [0]
+        if is_student() and not store.find_life_goal(TERM_GOAL):
+            ob["term_row"] = 0
+            st.session_state.setdefault("ob_goal_0", TERM_GOAL)
+    return ob["goal_rows"]
 
 
 def _goal_row(n, row):
     ob = _ob()
-    gid = ob.get("goal_ids", {}).get(row)
-    goal = store.get_goal(gid) if gid else None
+    lid = ob.get("life_ids", {}).get(row)
+    goal = store.get_life_goal(lid) if lid else None
     meta = ob.get("goal_meta", {}).get(row, {})
     how_saved = ob.get("goal_how", {}).get(row, "tick")
+    todo = store.get_todo(ob.get("todo_ids", {}).get(row)) if ob.get("todo_ids", {}).get(row) else None
     with st.container(border=True):
         a, b = st.columns([6, 1], vertical_alignment="bottom")
         a.text_input(f"Goal {n + 1}", value=goal["title"] if goal else "", key=f"ob_goal_{row}",
                      placeholder=GOAL_PLACEHOLDERS[n % len(GOAL_PLACEHOLDERS)])
-        if n:
+        if n or row == ob.get("term_row"):
             b.button("Remove", key=f"ob_goal_rm_{row}", icon=":material/close:", type="tertiary",
                      on_click=_remove_goal_row, args=(row,), help="Remove this goal")
-        when, how = st.columns(2)
-        months = meta.get("months", 3)
-        when.segmented_control("By when", list(GOAL_WHEN), key=f"ob_goal_when_{row}", required=True,
-                               default=next((k for k, v in GOAL_WHEN.items() if v == months), "3 months"))
-        picked = how.segmented_control("How you'll track it", list(GOAL_HOW), key=f"ob_goal_how_{row}", required=True,
-                                       default=next(k for k, v in GOAL_HOW.items() if v == how_saved))
+        when = st.segmented_control("How long", list(GOAL_WHEN), key=f"ob_goal_when_{row}", required=True,
+                                    default=END_DATE if meta.get("end") else
+                                    next((k for k, v in GOAL_WHEN.items() if v == meta.get("months", 3)), "3 months"))
+        if when == END_DATE:
+            saved = goal and store._as_date(goal["end_date"])
+            st.date_input("Ends on", saved or months_on(today(), 3), min_value=today() + timedelta(days=1),
+                          key=f"ob_goal_end_{row}")
+        how, num = st.columns(2, vertical_alignment="bottom")
+        picked = how.segmented_control("How you'll know", list(GOAL_HOW), key=f"ob_goal_how_{row}", required=True,
+                                       default=next((k for k, v in GOAL_HOW.items() if v == how_saved), "Tick it off"))
         if GOAL_HOW.get(picked) == "hours":
-            st.number_input("Hours a week", 0.0, 80.0, meta.get("number") if how_saved == "hours" else None, 0.5,
-                            key=f"ob_goal_n_{row}", placeholder="e.g. 3")
+            num.number_input("Hours a week", 0.0, 80.0, meta.get("number") if how_saved == "hours" else None, 0.5,
+                             key=f"ob_goal_n_{row}", placeholder="e.g. 3")
         elif GOAL_HOW.get(picked) == "number":
-            st.number_input("Number to reach", 0.0, 100000.0, meta.get("number") if how_saved == "number" else None,
-                            key=f"ob_goal_n_{row}", placeholder="e.g. 12")
+            num.number_input("Number to reach", 0.0, 100000.0, meta.get("number") if how_saved == "number" else None,
+                             key=f"ob_goal_n_{row}", placeholder="e.g. 12")
+        with st.expander("Why it matters, and a first step"):
+            st.text_input("Why it matters (optional)", value=(goal or {}).get("why") or "", key=f"ob_goal_why_{row}",
+                          placeholder="e.g. To feel fitter by summer")
+            st.text_input("First step (optional)", value=todo["title"] if todo else "", key=f"ob_goal_step_{row}",
+                          placeholder="e.g. Buy running shoes", help="Goes on this week's to-do list, under this goal.")
 
 
 def _add_goal_row():
@@ -795,18 +905,25 @@ def _add_goal_row():
         rows.append(max(rows) + 1)
 
 
+GOAL_KEYS = ("ob_goal_", "ob_goal_when_", "ob_goal_end_", "ob_goal_how_", "ob_goal_n_", "ob_goal_why_", "ob_goal_step_")
+
+
 def _remove_goal_row(row):
+    """Remove a row and what this setup made for it. The last row left is replaced by an empty one."""
     rows = _goal_rows()
-    if row in rows and len(rows) > 1:
+    if row in rows:
         rows.remove(row)
+        if not rows:
+            rows.append(row + 1)
     forget_goal_row(row)
-    for k in ("ob_goal_", "ob_goal_when_", "ob_goal_how_", "ob_goal_n_"):
+    for k in GOAL_KEYS:
         st.session_state.pop(f"{k}{row}", None)
 
 
 def _goals():
-    st.header("Your goals", anchor=False)
-    st.markdown("What do you want to get done? A few words is enough. Pick a date and how you'll know you're there.")
+    st.header("Your goals for the next few months", anchor=False)
+    st.markdown("What do you want to get to? A few words is enough. A **goal** is the big thing; a **target** is "
+                "how you'll know you're on the way: hours a week, or a number to reach.")
     rows = _goal_rows()
     for n, row in enumerate(rows):
         _goal_row(n, row)
@@ -814,16 +931,30 @@ def _goals():
         st.button("Add another goal", key="ob_goal_add", icon=":material/add:", type="tertiary", on_click=_add_goal_row)
 
 
-def _save_goals():
+def goal_rows_typed():
+    """The goal rows as typed: what save_goals takes."""
     ss = st.session_state
-    save_goals([(row, ss.get(f"ob_goal_{row}"), GOAL_HOW.get(ss.get(f"ob_goal_how_{row}"), "tick"),
-                 ss.get(f"ob_goal_n_{row}"), GOAL_WHEN.get(ss.get(f"ob_goal_when_{row}"), 3))
-                for row in _goal_rows()])
+    out = []
+    for row in _goal_rows():
+        when = ss.get(f"ob_goal_when_{row}")
+        months = GOAL_WHEN.get(when, 3) if when != END_DATE else None
+        out.append({"row": row, "text": ss.get(f"ob_goal_{row}"), "months": months,
+                    "end": ss.get(f"ob_goal_end_{row}") if when == END_DATE else None,
+                    "how": GOAL_HOW.get(ss.get(f"ob_goal_how_{row}"), "tick"), "number": ss.get(f"ob_goal_n_{row}"),
+                    "why": ss.get(f"ob_goal_why_{row}"), "step": ss.get(f"ob_goal_step_{row}")})
+    return out
+
+
+def _save_goals():
+    save_goals(goal_rows_typed())
 
 
 def _my_goals():
-    """[(row, goal)] of the goals this setup made."""
-    return [(i, g) for i, gid in sorted(_ob().get("goal_ids", {}).items()) if (g := store.get_goal(gid))]
+    """[(row, goal, its target or None)] of the long-term goals this setup made, in row order."""
+    ob = _ob()
+    tids = ob.get("goal_ids", {})
+    return [(i, g, store.get_goal(tids[i]) if tids.get(i) else None)
+            for i, lid in sorted(ob.get("life_ids", {}).items()) if (g := store.get_life_goal(lid))]
 
 
 def _suggestion_label(s):
@@ -837,8 +968,8 @@ def _track():
     st.markdown("These are examples based on your goals: pick what you want.")
     goals = _my_goals()
     if not goals:
-        _empty("Add a goal on the previous step and examples show up here.", ":material/info:")
-    for i, g in goals:
+        _empty("Add a goal on the goals step and examples show up here.", ":material/info:")
+    for i, g, _ in goals:
         found = suggest.for_goal(g["title"])
         kit.subhead(g['title'])
         if not found:
@@ -849,7 +980,7 @@ def _track():
         st.markdown(f":material/check: Your own habit: **{escape(name)}**")
     a, b, c = st.columns([3, 3, 1], vertical_alignment="bottom")
     a.text_input("Add your own habit", key="ob_own_name", placeholder="e.g. Stretch")
-    a_titles = ["No goal"] + [g["title"] for _, g in goals]
+    a_titles = ["No goal"] + [g["title"] for _, g, _ in goals]
     b.selectbox("Count it towards", a_titles, key="ob_own_link")
     c.button("Add", key="ob_own_add", icon=":material/add:", on_click=_add_own_habit)
     _colours()
@@ -868,14 +999,17 @@ def _add_own_habit():
 def _save_track():
     ob = _ob()
     _add_own_habit()
-    goals = _my_goals()
-    for i, g in goals:
+    for i, g, _ in _my_goals():
         for j, s in enumerate(suggest.for_goal(g["title"])):
             if st.session_state.get(f"ob_sg_{i}_{j}"):
-                apply_suggestion(s, g["id"], ob.get("goal_nums", {}).get(i, False))
+                _, g, target = next(x for x in _my_goals() if x[0] == i)      # fresh: a pick can make a target
+                apply_for_goal(s, i, g, target)
     for name, goal_title in ob.get("own", []):
-        gid = next((g["id"] for _, g in goals if g["title"] == goal_title), None)
-        apply_suggestion({"kind": "habit", "name": name}, gid)
+        mine = next(((i, g, t) for i, g, t in _my_goals() if g["title"] == goal_title), None)
+        if mine:
+            apply_for_goal({"kind": "habit", "name": name}, *mine)
+        else:
+            apply_suggestion({"kind": "habit", "name": name})
     ob["own"] = []
     for cid, name, *_ in _colour_options():                    # setup only adds: a category left off is not removed
         if name in (st.session_state.get("ob_cats") or []):
@@ -973,7 +1107,7 @@ def _week():
     ob = _ob()
     st.header("Your first week", anchor=False)
     st.caption("Press **Edit Home** at the top of Home to change what it shows.")
-    sittings = week_sittings([g for _, g in _my_goals()])
+    sittings = week_sittings(week_goals())
     ob["sittings"] = sittings
     added = ob.get("added")
     if added is not None:

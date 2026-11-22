@@ -86,7 +86,7 @@ Verified when: `pytest tests/test_setup.py tests/test_life_goals_app.py` green.
 ## Progress
 | Phase | Status |
 |---|---|
-| 1 | pending |
-| 2 | pending |
-| 3 | pending |
+| 1 | done |
+| 2 | done |
+| 3 | done |
 | 4 | pending |

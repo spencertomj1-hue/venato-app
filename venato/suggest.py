@@ -18,7 +18,7 @@ RULES = [
       "cycle", "strength", "football", "hike"),
      [("category", "Exercise", "exercise"), ("habit", "Trained", None)]),
     (("exam", "degree", "first", "2:1", "2:2", "grade", "revise", "revision", "study", "essay", "dissertation",
-      "thesis", "gpa", "pass"),
+      "thesis", "gpa", "pass", "term", "module", "uni"),
      [("category", "Study", "study")]),
     (("read", "book", "novel"),
      [("category", "Reading", "reading"), ("habit", "Read", None)]),

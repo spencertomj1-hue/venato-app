@@ -257,6 +257,11 @@ def _next(at, key="wiz_next"):
     assert not at.exception, at.exception
 
 
+def _row(row, text, how="tick", number=None, months=3, **kw):
+    """One goal row for onboarding.save_goals."""
+    return {"row": row, "text": text, "how": how, "number": number, "months": months, **kw}
+
+
 def _skip_to_the_end(at):
     """Skip every step from here to the last; the headers seen on the way."""
     seen = []
@@ -264,8 +269,8 @@ def _skip_to_the_end(at):
         seen.append((at.header or at.title)[0].value)
         if [b for b in at.button if b.key == "ob_student_no"]:      # the student question has no Skip
             _next(at, "ob_student_no")
-        else:
-            _next(at, "wiz_skip")
+        else:                                                    # (a student's goals step starts filled in)
+            _next(at, "wiz_skip" if [b for b in at.button if b.key == "wiz_skip"] else "wiz_next")
     return seen
 
 
@@ -296,7 +301,7 @@ def test_skipping_everything_lands_on_a_blank_home(fresh):
 def test_skipping_every_step_one_by_one_adds_nothing(fresh):
     at = AppTest.from_file(APP, default_timeout=60).run()
     seen = _skip_to_the_end(at)                                  # Welcome: "Not a student" is the way on
-    assert seen == ["Welcome to Venato", "Your goals", "What would you track?"]      # up to the last step
+    assert seen == ["Welcome to Venato", "Your goals for the next few months", "What would you track?"]      # up to the last step
     _next(at, "wiz_finish")
     assert at.session_state["page"] == "Home"
     assert fresh.load_categories().empty and fresh.goals_open() == [] and fresh.get_habits() == []
@@ -304,10 +309,10 @@ def test_skipping_every_step_one_by_one_adds_nothing(fresh):
 
 def test_a_non_student_gets_no_uni_steps(fresh):
     from venato.ui import onboarding
-    assert [k for k, *_ in onboarding.STEPS] == ["welcome", "calendars", "modules", "goals", "track", "week"]
+    assert [k for k, *_ in onboarding.STEPS] == ["welcome", "goals", "calendars", "modules", "track", "week"]
     at = AppTest.from_file(APP, default_timeout=60).run()
     _next(at, "ob_student_no")
-    assert at.header[0].value.endswith("Your goals")             # straight past the uni steps
+    assert at.header[0].value.startswith("Your goals")             # straight past the uni steps
     names = _skip_to_the_end(at)
     assert not any(n.endswith(("Connect your calendars", "Your modules")) for n in names)
     _next(at, "wiz_finish")
@@ -319,12 +324,14 @@ def test_a_student_gets_the_uni_steps_and_modules(fresh):
     from venato import blocks
     at = AppTest.from_file(APP, default_timeout=60).run()
     _next(at, "ob_student_yes")
+    assert at.header[0].value.startswith("Your goals")            # goals first (D3)
+    _next(at)
     assert at.header[0].value == "Connect your calendars"
     _next(at, "wiz_skip")
     assert at.header[0].value.endswith("Your modules")
     assert any("Add a module" in t.label for t in at.text_input)  # no feed: a plain box
     _next(at, "wiz_skip")
-    assert at.header[0].value.endswith("Your goals")
+    assert at.header[0].value == "What would you track?"
     _skip_to_the_end(at)
     _next(at, "wiz_finish")
     assert blocks.is_on("grades")
@@ -336,6 +343,26 @@ def test_student_with_the_fixture_feeds_ends_up_with_everything(fresh):
     from venato.blocks import grades as gr
     at = AppTest.from_file(APP, default_timeout=90).run()
     _next(at, "ob_student_yes")
+
+    # Goals first (D3): the term goal is there to start (D4); a second goal with a number; a first step
+    assert at.text_input(key="ob_goal_0").value == "Do well this term"
+    assert at.segmented_control(key="ob_goal_when_0").value == "3 months"
+    assert at.segmented_control(key="ob_goal_how_0").value == "Tick it off"
+    assert at.button(key="ob_goal_rm_0")                         # removable
+    at.text_input(key="ob_goal_step_0").set_value("Buy a planner")
+    _next(at, "ob_goal_add")
+    at.text_input(key="ob_goal_1").set_value("Run a 10k")
+    at.segmented_control(key="ob_goal_when_1").set_value("6 months")
+    at.segmented_control(key="ob_goal_how_1").set_value("A number").run()
+    at.number_input(key="ob_goal_n_1").set_value(20.0)
+    at.run()
+    _next(at)
+    goals = {g["title"]: g for g in fresh.life_goals()}
+    term, run = goals["Do well this term"], goals["Run a 10k"]
+    assert term["end_date"] == "2027-02-16" and run["end_date"] == "2027-05-16"
+    (target,) = fresh.goals_open()
+    assert target["life_goal_id"] == run["id"] and target["target"] == 20 and target["due"] == "2027-05-16"
+    assert [t["title"] for t in fresh.life_goal_todos(term["id"])] == ["Buy a planner"]
 
     # Calendars: both on one step; the previews count lectures and assignments
     assert at.header[0].value == "Connect your calendars"
@@ -368,21 +395,7 @@ def test_student_with_the_fixture_feeds_ends_up_with_everything(fresh):
 
     study = [g for g in fresh.goals_open() if g["unit"] == "h"]                   # the default 6 h each
     assert len(study) == len(mods) and all(g["target"] == 6 * 12 for g in study)
-
-    # Goals
-    assert at.segmented_control(key="ob_goal_when_0").value == "3 months"
-    assert at.segmented_control(key="ob_goal_how_0").value == "Tick it off"
-    at.text_input(key="ob_goal_0").set_value("Get a First in my degree")
-    _next(at, "ob_goal_add")
-    at.text_input(key="ob_goal_1").set_value("Run a 10k")
-    at.segmented_control(key="ob_goal_when_1").set_value("6 months")
-    at.segmented_control(key="ob_goal_how_1").set_value("A number").run()
-    at.number_input(key="ob_goal_n_1").set_value(20.0)
-    at.run()
-    _next(at)
-    mine = {g["title"]: g for g in fresh.goals_open()}
-    assert mine["Get a First in my degree"]["due"] == "2027-02-16" and mine["Run a 10k"]["due"] == "2027-05-16"
-    assert mine["Run a 10k"]["target"] == 20
+    assert all(g["life_goal_id"] == term["id"] for g in study)                    # under the term goal (D4)
 
     # What would you track: examples, all unticked to start
     boxes = [c for c in at.checkbox if c.key.startswith("ob_sg_")]
@@ -403,7 +416,7 @@ def test_student_with_the_fixture_feeds_ends_up_with_everything(fresh):
     assert row["grp"] != "Modules"
     _next(at)
     assert fresh.find_habit("Trained") and "study" in set(fresh.load_categories()["id"])
-    assert fresh.get_goal(mine["Run a 10k"]["id"])["habit_id"] == fresh.find_habit("Trained")[0]
+    assert fresh.get_goal(target["id"])["habit_id"] == fresh.find_habit("Trained")[0]
 
     # First week: suggested sittings go into the Plan
     assert at.header[0].value.endswith("Your first week")
@@ -589,19 +602,85 @@ def test_check_feed_is_canvas_aware(fresh):
         onboarding.check_feed("not a link", "uni")
 
 
-def test_goals_save_once_and_update_in_place(fresh):
+def test_goal_rows_make_long_term_goals_with_a_target_and_a_first_step(fresh):
     from venato.ui import onboarding
-    ids = onboarding.save_goals([(0, "Get a First", "tick", None, 3), (1, "", "tick", None, 6),
-                                 (2, "Run", "number", 100, 12)], MON)
-    assert set(ids) == {0, 2} and len(fresh.goals_open(MON)) == 2
-    assert fresh.get_goal(ids[2])["target"] == 100 and fresh.get_goal(ids[2])["unit"] is None
-    again = onboarding.save_goals([(0, "Get a 2:1", "tick", None, 3), (1, "", "tick", None, 6),
-                                   (2, "Run", "number", 100, 12)], MON)
-    assert again == ids and len(fresh.goals_open(MON)) == 2
-    assert fresh.get_goal(ids[0])["title"] == "Get a 2:1"
-    onboarding.save_goals([(0, "", "tick", None, 3), (1, "", "tick", None, 6), (2, "Run", "number", 100, 12)], MON)
-    assert [g["title"] for g in fresh.goals_open(MON)] == ["Run"]
+    onboarding.restart()
+    out = onboarding.save_goals([
+        _row(0, "Get a First", step="Book a library room"),
+        _row(1, "", months=6),
+        _row(2, "Run a 10k", "number", 20, 6, why="Feel fitter"),
+        _row(3, "Learn guitar", "hours", 2, end=_dt.date(2027, 1, 11)),
+    ], MON)
+    assert set(out) == {0, 2, 3}
+    first, run, guitar = (fresh.get_life_goal(out[i]["goal"]) for i in (0, 2, 3))
+    assert first["end_date"] == "2027-02-16" and run["end_date"] == "2027-05-16" and guitar["end_date"] == "2027-01-11"
+    assert run["why"] == "Feel fitter" and first["start"] == MON.isoformat()
+    assert out[0]["target"] is None                                                # Tick it off: no target (D1)
+    t = fresh.get_goal(out[2]["target"])
+    assert t["life_goal_id"] == run["id"] and t["target"] == 20 and t["due"] == run["end_date"] and t["unit"] is None
+    h = fresh.get_goal(out[3]["target"])                                           # 8 weeks to 11 January
+    assert h["life_goal_id"] == guitar["id"] and h["unit"] == "h" and h["category_id"] and h["target"] == 2 * 8
+    assert h["title"] == "Learn guitar: 2 h a week" and t["title"] == "Run a 10k: 20"
+    todo = fresh.get_todo(out[0]["todo"])                                          # this week's list, the goal's category
+    assert todo["title"] == "Book a library room" and todo["period"] == "weekly"
+    assert todo["group_id"] == fresh.life_goal_group(first["id"])["id"]
+    assert [x["id"] for x in fresh.life_goal_todos(first["id"])] == [todo["id"]]
+    assert out[2]["todo"] is None and len(fresh.goals_open(MON)) == 2
+
+
+def test_saving_goal_rows_again_changes_them_in_place(fresh):
+    from venato.ui import onboarding
+    onboarding.restart()
+    out = onboarding.save_goals([_row(0, "Get a First", step="Book a room"), _row(1, "Run", "number", 100, 12)], MON)
+    again = onboarding.save_goals([_row(0, "Get a 2:1", months=6, step="Book a quiet room"),
+                                   _row(1, "Run", "hours", 3, 12)], MON)
+    assert again == out and len(fresh.life_goals(MON)) == 2 and len(fresh.goals_open(MON)) == 1
+    g = fresh.get_life_goal(out[0]["goal"])
+    assert g["title"] == "Get a 2:1" and g["end_date"] == "2027-05-16"
+    assert fresh.get_todo(out[0]["todo"])["title"] == "Book a quiet room"
+    t = fresh.get_goal(out[1]["target"])                                           # number -> hours: same target
+    assert t["unit"] == "h" and t["category_id"] == "exercise" and t["target"] == 3 * 52
+    third = onboarding.save_goals([_row(0, "Get a 2:1", months=6), _row(1, "Run", "tick", None, 12)], MON)
+    assert third[0]["todo"] is None and fresh.get_todo(out[0]["todo"]) is None   # step emptied: its to-do goes
+    assert third[1]["target"] is None and fresh.get_goal(out[1]["target"]) is None  # tick: the target goes
+    assert fresh.get_life_goal(out[1]["goal"])
+    back = onboarding.save_goals([_row(1, "Run", "number", 5, 12)], MON)          # and comes back as a new one
+    assert back[1]["target"] and fresh.get_goal(back[1]["target"])["life_goal_id"] == out[1]["goal"]
+
+
+def test_emptying_a_goal_row_deletes_only_what_setup_made_for_it(fresh):
+    from venato.ui import onboarding
+    onboarding.restart()
+    mine = fresh.add_life_goal("Mine from before", months=3)
+    other = fresh.add_goal("Old target", None, MON, 5, due="2027-01-01", life_goal_id=mine["id"])
+    out = onboarding.save_goals([_row(0, "Run a 10k", "number", 10, step="Buy shoes"), _row(1, "Read", "number", 12)], MON)
+    by_hand = fresh.add_todo("Stretch", "weekly", MON, group_id=fresh.life_goal_group(out[0]["goal"])["id"])
+    onboarding.save_goals([_row(0, "", "number", 10), _row(1, "Read", "number", 12)], MON)
+    assert fresh.get_life_goal(out[0]["goal"]) is None and fresh.get_goal(out[0]["target"]) is None
+    assert fresh.get_todo(out[0]["todo"]) is None and fresh.get_todo(by_hand["id"])        # only its own to-do
+    assert fresh.get_life_goal(mine["id"]) and fresh.get_goal(other["id"]) and fresh.get_life_goal(out[1]["goal"])
+    onboarding.forget_goal_row(1)
+    assert [g["title"] for g in fresh.life_goals(MON)] == ["Mine from before"]
+    assert [g["title"] for g in fresh.goals_open(MON)] == ["Old target"]
     assert onboarding.months_on(_dt.date(2026, 11, 30), 3) == _dt.date(2027, 2, 28)
+
+
+def test_my_goals_are_the_rows_goals_and_their_targets(fresh):
+    from venato.ui import onboarding
+    onboarding.restart()
+    out = onboarding.save_goals([_row(0, "Get a First"), _row(2, "Run a 10k", "number", 20)], MON)
+    mine = onboarding._my_goals()
+    assert [(r, g["id"], t and t["id"]) for r, g, t in mine] == [(0, out[0]["goal"], None),
+                                                               (2, out[2]["goal"], out[2]["target"])]
+    fresh.delete_life_goal(out[0]["goal"])                                         # deleted elsewhere: gone here too
+    assert [r for r, *_ in onboarding._my_goals()] == [2]
+
+
+def test_a_goal_ending_before_it_starts_is_an_error(fresh):
+    from venato.ui import onboarding
+    onboarding.restart()
+    with pytest.raises(ValueError):
+        onboarding.save_goals([_row(0, "Run", end=MON)], MON)
 
 
 def test_keyword_suggestions():
@@ -609,6 +688,7 @@ def test_keyword_suggestions():
     names = lambda text: {(s["kind"], s["name"]) for s in suggest.for_goal(text)}
     assert names("Run a 10k") == {("category", "Exercise"), ("habit", "Trained")}
     assert ("category", "Study") in names("Get a First in my exams")
+    assert names("Do well this term") == {("category", "Study")}                # the students' first goal
     assert names("I'm always tired") == {("sleep", "Track my sleep")}
     assert names("prune the hedge") == set() and names("") == set()
     assert not [s for s in suggest.for_goal("run, read, tired, drink water") if s["kind"] == "block"]
@@ -616,7 +696,9 @@ def test_keyword_suggestions():
 
 def test_tracking_suggestions_link_and_switch(fresh):
     from venato.ui import onboarding
-    ids = onboarding.save_goals([(0, "Run 100 hours", "number", 100, 3), (1, "Be less tired", "tick", None, 6)], MON)
+    onboarding.restart()
+    out = onboarding.save_goals([_row(0, "Run 100 hours", "number", 100), _row(1, "Be less tired", months=6)], MON)
+    ids = {0: out[0]["target"], 1: None}
     goal = fresh.get_goal(ids[0])
     onboarding.apply_suggestion({"kind": "category", "name": "Exercise", "cid": "exercise"}, ids[0], number=True)
     g = fresh.get_goal(ids[0])
@@ -663,8 +745,7 @@ def test_first_week_suggestions_become_planned_blocks(fresh):
 
 
 def test_a_wrong_link_shows_an_error_not_a_crash(fresh):
-    at = AppTest.from_file(APP, default_timeout=60).run()
-    _next(at, "ob_student_yes")
+    at = _student_at(fresh)
     at.text_input(key="ob_link_uni").set_value("hello")
     at.button(key="ob_connect_uni").click().run()
     assert at.error and not at.exception
@@ -679,8 +760,7 @@ def test_try_link_keeps_the_calendar_message(outlook, store):
 
 
 def test_pasting_a_connected_link_again_says_already_connected(fresh):
-    at = AppTest.from_file(APP, default_timeout=60).run()
-    _next(at, "ob_student_yes")
+    at = _student_at(fresh)
     at.text_input(key="ob_link_uni").set_value(UNI_URL)
     at.button(key="ob_connect_uni").click().run()
     assert at.success and not at.error
@@ -709,8 +789,11 @@ def test_setup_parses_the_calendars_once_until_one_is_connected(fresh, monkeypat
 # --- Phase 1 of the redesign: Next saves what's typed, one action button, the student cards ---
 
 def _student_at(fresh, student=True):
+    """Past Welcome. A student also goes on past Goals (saving the prefilled term goal) to the calendars step."""
     at = AppTest.from_file(APP, default_timeout=60).run()
     _next(at, "ob_student_yes" if student else "ob_student_no")
+    if student:
+        _next(at)
     return at
 
 
@@ -763,9 +846,6 @@ def test_next_keeps_a_typed_module_habit_and_category(fresh):
     at.text_input(key="ob_new_module").set_value("Organic Chemistry").run()
     _next(at)                                                    # Next, not Add
     assert [m["name"] for m in gr.modules()] == ["Organic Chemistry"]
-    assert at.header[0].value.endswith("Your goals")
-    at.text_input(key="ob_goal_0").set_value("Run a 10k").run()
-    _next(at)
     assert at.header[0].value.endswith("What would you track?")
     at.text_input(key="ob_own_name").set_value("Stretch").run()
     at.text_input(key="ob_cat_name").set_value("Lab work").run()
@@ -786,7 +866,14 @@ def test_next_with_a_taken_category_name_stays_on_the_step(fresh):
 
 
 def test_the_main_button_says_skip_until_something_is_filled_in(fresh):
-    at = _student_at(fresh)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at, "ob_student_yes")
+    assert at.header[0].value.startswith("Your goals") and _main_label(at) == "Next"    # the term goal is filled in
+    at.text_input(key="ob_goal_0").set_value("").run()
+    assert _main_label(at) == "Skip"
+    at.text_input(key="ob_goal_0").set_value("Run").run()
+    assert _main_label(at) == "Next"
+    _next(at)
     assert _main_label(at) == "Skip" and at.button(key="wiz_back")
     at.text_input(key="ob_link_uni").set_value(UNI_URL).run()
     assert _main_label(at) == "Next" and at.button(key="wiz_next")
@@ -801,9 +888,7 @@ def test_the_main_button_says_skip_until_something_is_filled_in(fresh):
     at.text_input(key="ob_new_module").set_value("Algebra").run()   # Your modules
     assert _main_label(at) == "Next"
     _next(at)
-    assert at.header[0].value.endswith("Your goals") and _main_label(at) == "Skip"
-    at.text_input(key="ob_goal_0").set_value("Run").run()
-    assert _main_label(at) == "Next"
+    assert at.header[0].value == "What would you track?"
 
 
 def test_the_student_question_is_two_buttons_and_nothing_else(fresh):
@@ -813,7 +898,7 @@ def test_the_student_question_is_two_buttons_and_nothing_else(fresh):
     assert not any(b.key in ("wiz_skip", "wiz_next") for b in at.button)
     assert {b.label for b in at.button if b.key.startswith("ob_student_")} == {"I'm at uni", "Not a student"}
     _next(at, "ob_student_yes")
-    assert fresh.load_settings()["student"] is True and at.header[0].value == "Connect your calendars"
+    assert fresh.load_settings()["student"] is True and at.header[0].value == "Your goals for the next few months"
 
 
 def test_welcome_shows_the_step_names_and_a_saved_answer(fresh):
@@ -822,7 +907,7 @@ def test_welcome_shows_the_step_names_and_a_saved_answer(fresh):
     assert not any(b.type == "primary" for b in at.button if b.key.startswith("ob_student_"))
     _next(at, "ob_student_yes")
     cap = at.caption[0].value
-    assert cap == "Welcome · **Calendars** · Modules · Goals · Track · First week"
+    assert cap == "Welcome · **Goals** · Calendars · Modules · Track · First week"
     at.button(key="wiz_back").click().run()                      # a re-run: the saved answer is on its button
     assert at.title[0].value == "Welcome to Venato"
     assert at.button(key="ob_student_yes").proto.type == "primary" and at.button(key="ob_student_no").proto.type == "secondary"
@@ -874,7 +959,7 @@ def test_a_stale_skip_click_on_the_modules_step_still_adds_the_typed_module(fres
     assert at.header[0].value.endswith("Your modules")
     at.text_input(key="ob_new_module").set_value("Algebra")
     at.button(key="wiz_skip").click().run()
-    assert [m["name"] for m in gr.modules()] == ["Algebra"] and at.header[0].value.endswith("Your goals")
+    assert [m["name"] for m in gr.modules()] == ["Algebra"] and at.header[0].value == "What would you track?"
 
 
 def test_picking_only_a_canvas_course_link_says_next(fresh):
@@ -909,14 +994,14 @@ def test_skip_setup_leaves_home_as_it_is_even_with_data(fresh):
 
 
 def _goal_keys(at):
-    return [t.key for t in at.text_input if t.key.startswith("ob_goal_")]
+    return [t.key for t in at.text_input if t.key.startswith("ob_goal_") and not t.key.startswith(("ob_goal_why_", "ob_goal_step_"))]
 
 
 def test_goal_rows_can_be_added_up_to_five_and_removed(fresh):
     at = _student_at(fresh, student=False)
     assert _goal_keys(at) == ["ob_goal_0"] and not [b for b in at.button if b.key.startswith("ob_goal_rm_")]
     assert at.text_input(key="ob_goal_0").placeholder == "e.g. Run a 10k"
-    assert at.segmented_control(key="ob_goal_when_0").options == ["1 month", "3 months", "6 months", "1 year"]
+    assert at.segmented_control(key="ob_goal_when_0").options == ["3 months", "6 months", "1 year", "Pick an end date"]
     assert at.segmented_control(key="ob_goal_how_0").options == ["Tick it off", "Hours a week", "A number"]
     assert not at.number_input                                   # Tick it off: no box
     for _ in range(4):
@@ -927,13 +1012,13 @@ def test_goal_rows_can_be_added_up_to_five_and_removed(fresh):
     at.text_input(key="ob_goal_0").set_value("Run a 10k")
     at.text_input(key="ob_goal_1").set_value("Read 12 books")
     at.text_input(key="ob_goal_2").set_value("Save £500").run()
-    _next(at)                                                    # saved: three goals
-    assert len(fresh.goals_open()) == 3
+    _next(at)                                                    # saved: three goals, no targets
+    assert len(fresh.life_goals()) == 3 and fresh.goals_open() == []
     at.button(key="wiz_back").click().run()
     assert at.text_input(key="ob_goal_1").value == "Read 12 books"
     _next(at, "ob_goal_rm_1")                                    # removes only that row's goal
     assert "ob_goal_1" not in _goal_keys(at) and len(_goal_keys(at)) == 4
-    assert sorted(g["title"] for g in fresh.goals_open()) == ["Run a 10k", "Save £500"]
+    assert sorted(g["title"] for g in fresh.life_goals()) == ["Run a 10k", "Save £500"]
     assert at.text_input(key="ob_goal_2").value == "Save £500"
     assert [b for b in at.button if b.key == "ob_goal_add"]
 
@@ -956,41 +1041,41 @@ def test_hours_goals_get_a_category_even_without_an_example(fresh):
     from venato import setup_checks
     from venato.ui import onboarding
     onboarding.restart()                                         # nothing remembered from another test
-    ids = onboarding.save_goals([(0, "Practise guitar", "hours", 2, 1)], MON)       # no example: its own category
-    g = fresh.get_goal(ids[0])
+    ids = onboarding.save_goals([_row(0, "Practise guitar", "hours", 2, 3)], MON)   # no example: its own category
+    g = fresh.get_goal(ids[0]["target"])
     cats = fresh.load_categories().set_index("id")
-    assert g["unit"] == "h" and cats.loc[g["category_id"], "name"] == "Practise guitar" and g["target"] == 2 * 4
-    onboarding.save_goals([(0, "Practise guitar", "tick", None, 1)], MON)           # back to a tick: no hours
-    g = fresh.get_goal(ids[0])
-    assert g["unit"] is None and g["category_id"] is None and g["target"] == 1
+    assert g["unit"] == "h" and cats.loc[g["category_id"], "name"] == "Practise guitar" and g["target"] == 2 * 13
+    onboarding.save_goals([_row(0, "Practise guitar", "number", 30, 3)], MON)      # to a number: no hours
+    g = fresh.get_goal(ids[0]["target"])
+    assert g["unit"] is None and g["category_id"] is None and g["target"] == 30
     setup_checks.save_settings(student=True)
-    st_ids = onboarding.save_goals([(1, "Learn Spanish", "hours", 4, 12)], MON)     # a student: Study
-    assert fresh.get_goal(st_ids[1])["category_id"] == "study"
-    empty = onboarding.save_goals([(2, "Get fit", "hours", None, 3)], MON)[2]       # no hours given: a goal to tick off
-    assert fresh.get_goal(empty)["target"] == 1 and fresh.get_goal(empty)["unit"] is None
+    st_ids = onboarding.save_goals([_row(1, "Learn Spanish", "hours", 4, 12)], MON)  # a student: Study
+    assert fresh.get_goal(st_ids[1]["target"])["category_id"] == "study"
+    empty = onboarding.save_goals([_row(2, "Get fit", "hours", None)], MON)[2]       # no hours given: no target
+    assert empty["target"] is None and fresh.get_life_goal(empty["goal"])
 
 
 def test_a_stale_skip_click_on_goals_still_saves_the_typed_goal(fresh):
     at = _student_at(fresh, student=False)
-    assert at.header[0].value.endswith("Your goals")
+    assert at.header[0].value.startswith("Your goals")
     at.text_input(key="ob_goal_0").set_value("Run a 10k")
     at.button(key="wiz_skip").click().run()
-    assert [g["title"] for g in fresh.goals_open()] == ["Run a 10k"]
+    assert [g["title"] for g in fresh.life_goals()] == ["Run a 10k"]
     assert at.header[0].value.endswith("What would you track?")
 
 
 def test_fallback_sittings_are_three_spread_out_hours_in_free_time(fresh):
     from venato.ui import onboarding
     onboarding.restart()                                         # nothing remembered from another test
-    ids = onboarding.save_goals([(0, "Read 12 books", "tick", None, 3), (1, "Save £500", "number", 500, 6),
-                                 (2, "Learn guitar", "hours", 2, 3)], MON)
-    goals = [fresh.get_goal(ids[i]) for i in (0, 1, 2)]
+    onboarding.save_goals([_row(0, "Read 12 books"), _row(1, "Save £500", "number", 500, 6),
+                           _row(2, "Learn guitar", "hours", 2)], MON)
+    goals = onboarding.week_goals()                              # the goal itself when it has no target
     fresh.save_category("reading", "Reading", "#7030A0", "Life")
     fresh.paint("2026-11-17", "plan", fresh.slot_of("09:00"), fresh.slot_of("12:00"), {"label": "Busy", "category_id": None})
     out = onboarding.fallback_sittings(goals, MON)
     read = [s for s in out if s["label"] == "Read 12 books"]
-    save = [s for s in out if s["label"] == "Save £500"]
-    assert not [s for s in out if s["label"] == "Learn guitar"]                    # an hours goal gets its own
+    save = [s for s in out if s["label"] == "Save £500: 500"]                      # named after the target
+    assert not [s for s in out if s["label"].startswith("Learn guitar")]           # an hours target gets its own
     assert len(read) == 3 and len({s["date"] for s in read}) == 3 and len(save) == 3
     assert all("2026-11-17" <= s["date"] <= "2026-11-22" for s in out)            # from tomorrow, in the 7 days
     assert all(fresh.slot_of(s["end"]) - fresh.slot_of(s["start"]) == 2 for s in out)
@@ -1027,11 +1112,11 @@ def test_a_plan_block_named_like_the_goal_does_not_hide_its_sittings(fresh):
     onboarding.restart()
     for d in ("2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"):            # the user's own, from before setup
         fresh.paint(d, "plan", fresh.slot_of("07:00"), fresh.slot_of("08:00"), {"label": "Study", "category_id": None})
-    ids = onboarding.save_goals([(0, "Study", "tick", None, 3)], MON)
-    out = onboarding.fallback_sittings([fresh.get_goal(ids[0])], MON)
+    onboarding.save_goals([_row(0, "Study")], MON)
+    out = onboarding.fallback_sittings(onboarding.week_goals(), MON)
     assert len(out) == 3 and len({s["date"] for s in out}) == 3
     onboarding.add_first_week(out)
-    assert onboarding.fallback_sittings([fresh.get_goal(ids[0])], MON) == []      # added once: not offered again
+    assert onboarding.fallback_sittings(onboarding.week_goals(), MON) == []       # added once: not offered again
 
 
 def test_a_rerun_puts_back_no_home_tile_the_user_removed(fresh):
@@ -1047,3 +1132,102 @@ def test_a_rerun_puts_back_no_home_tile_the_user_removed(fresh):
     _skip_to_the_end(at)
     _next(at, "wiz_finish")
     assert setup_checks.load_settings()["home"] == cells
+
+
+def test_the_goals_step_asks_how_long_why_and_a_first_step(fresh):
+    at = _student_at(fresh, student=False)
+    assert at.header[0].value == "Your goals for the next few months"
+    assert any("**goal**" in m.value and "**target**" in m.value for m in at.markdown)
+    assert at.segmented_control(key="ob_goal_how_0").label == "How you'll know"
+    assert [e.label for e in at.expander] == ["Why it matters, and a first step"]
+    assert not at.date_input
+    at.text_input(key="ob_goal_0").set_value("Learn guitar")
+    at.segmented_control(key="ob_goal_when_0").set_value("Pick an end date").run()
+    at.date_input(key="ob_goal_end_0").set_value(_dt.date(2027, 3, 1))
+    at.text_input(key="ob_goal_why_0").set_value("Play at the wedding")
+    at.text_input(key="ob_goal_step_0").set_value("Find a teacher").run()
+    _next(at)
+    (g,) = fresh.life_goals()
+    assert g["title"] == "Learn guitar" and g["end_date"] == "2027-03-01" and g["why"] == "Play at the wedding"
+    assert [t["title"] for t in fresh.life_goal_todos(g["id"])] == ["Find a teacher"] and fresh.goals_open() == []
+    at.button(key="wiz_back").click().run()                      # back: what was saved is shown, and Next changes it
+    assert at.date_input(key="ob_goal_end_0").value == _dt.date(2027, 3, 1)
+    at.text_input(key="ob_goal_step_0").set_value("Find a cheaper teacher").run()
+    _next(at)
+    assert len(fresh.life_goals()) == 1
+    assert [t["title"] for t in fresh.life_goal_todos(g["id"])] == ["Find a cheaper teacher"]
+
+
+def test_a_habit_picked_for_a_goal_without_a_target_makes_a_habit_target(fresh):
+    at = _student_at(fresh, student=False)
+    at.text_input(key="ob_goal_0").set_value("Run a 10k").run()        # Tick it off: no target
+    _next(at, "ob_goal_add")
+    at.text_input(key="ob_goal_1").set_value("Be calm").run()
+    _next(at)
+    assert fresh.goals_open() == []
+    goals = {g["title"]: g for g in fresh.life_goals()}
+    next(c for c in at.checkbox if "Trained" in c.label).set_value(True).run()
+    at.text_input(key="ob_own_name").set_value("Breathe").run()
+    at.selectbox(key="ob_own_link").set_value("Be calm").run()
+    _next(at)
+    by = {t["life_goal_id"]: t for t in fresh.goals_open()}
+    run, calm = by[goals["Run a 10k"]["id"]], by[goals["Be calm"]["id"]]
+    assert run["habit_id"] == fresh.find_habit("Trained")[0] and calm["habit_id"] == fresh.find_habit("Breathe")[0]
+    assert run["due"] == goals["Run a 10k"]["end_date"] and run["target"] == 3 * 13 and run["unit"] is None
+    assert run["title"] == "Trained: 3 times a week"
+    at.button(key="wiz_back").click().run()
+    at.button(key="wiz_back").click().run()                      # back to Goals and Next again: the habit target stays
+    _next(at)
+    assert len(fresh.goals_open()) == 2 and fresh.get_goal(run["id"])["habit_id"]
+
+
+def test_the_first_week_is_named_after_the_target_else_the_goal(fresh):
+    from venato.ui import onboarding
+    onboarding.restart()
+    onboarding.save_goals([_row(0, "Read more"), _row(1, "Save money", "number", 500)], MON)
+    labels = {s["label"] for s in onboarding.fallback_sittings(onboarding.week_goals(), MON)}
+    assert labels == {"Read more", "Save money: 500"}                              # one set per goal
+
+
+def test_module_targets_go_under_the_term_goal_or_none_if_it_was_removed(fresh):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at, "ob_student_yes")
+    _next(at, "ob_goal_rm_0")                                    # the term goal removed: one empty row left
+    assert at.text_input(key=_goal_keys(at)[0]).value == "" and _main_label(at) == "Skip"
+    _next(at, "wiz_skip")
+    _next(at, "wiz_skip")                                        # calendars
+    at.text_input(key="ob_new_module").set_value("Algebra").run()
+    _next(at)
+    (t,) = fresh.goals_open()
+    assert t["title"] == "Algebra study" and t["life_goal_id"] is None and fresh.life_goals() == []
+
+
+def test_module_targets_go_under_the_renamed_term_goal(fresh):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at, "ob_student_yes")
+    at.text_input(key="ob_goal_0").set_value("Get a 2:1 this year").run()
+    _next(at)
+    _next(at, "wiz_skip")
+    at.text_input(key="ob_new_module").set_value("Algebra").run()
+    _next(at)
+    (g,) = fresh.life_goals()
+    assert g["title"] == "Get a 2:1 this year" and [t["life_goal_id"] for t in fresh.goals_open()] == [g["id"]]
+
+
+def test_a_rerun_does_not_prefill_the_term_goal_twice(fresh):
+    from venato import setup_checks
+    fresh.add_life_goal("Do well this term", months=3)
+    setup_checks.save_settings(wizard_done=True, student=True)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.session_state["wizard_open"] = True
+    at.run()
+    _next(at, "ob_student_yes")
+    assert at.text_input(key="ob_goal_0").value == "" and _main_label(at) == "Skip"
+
+
+def test_home_offers_goals_for_a_long_term_goal_alone(fresh):
+    from venato.ui import onboarding
+    onboarding.restart()
+    assert ("goals", "Goals") not in onboarding.home_picks()
+    fresh.add_life_goal("Run a 10k", months=3)
+    assert ("goals", "Goals") in onboarding.home_picks()
