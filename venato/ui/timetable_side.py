@@ -78,6 +78,8 @@ def render(ctx=None):
     """The panel beside the week: a hint for what's picked, then each long-term goal's targets and to-dos under
     its name, then the other to-dos and targets."""
     _style()
+    from venato.ui import sleep_side
+    sleep_side.render(ctx.today if ctx else None)
     picked = _picked()
     cats, label_map = store.load_categories(), store.load_label_map()
     with st.container(border=True, key="tt_side"):

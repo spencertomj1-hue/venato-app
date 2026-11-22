@@ -10,6 +10,9 @@ Venato was called **Arete** up to 1.1.1.
 ## [Unreleased]
 
 ### Added
+- **Your sleep today** on the Timetable's side panel. Until today has them, it asks what time you woke up and went to bed (to the half hour). Adding them fills **Sleep** blocks from the start of the timetable day to when you woke, and from bed time to the end of the day, in free time only, so nothing of yours is overwritten. Each can be added on its own (wake-up in the morning, bed time later), and the widget goes once both are in.
+- **Setup's last step explains how each day works**: Plan, the Plan locked and copied into the Actual when the day starts, then Confirm at the end. Review and goals only count confirmed days, and setup now says so.
+- **Setup offers a calendar to everyone.** People not at uni get a "Connect your calendar" step (one Outlook, Google or iCloud link, no Canvas) so their events show on the timetable and planning goes round them.
 - **Place Home tiles anywhere.** In Edit Home a faint grid shows Home's cells, with a spare row underneath, and a dragged tile snaps to the cell under it: any column, any row, leaving gaps if you like. A tile you drop it on swaps into the place it left when it fits there, otherwise it moves to the nearest free spot, and you see where everything will go while you drag. Resizing keeps the tile's top-left corner and moves only what it grows over. Your current layout looks the same until you first change it. In windows under 1000 px wide tiles still stack in reading order.
 - **New logo**: a white serif V on a red rounded square, now the app icon (Dock, Windows shortcuts, browser tab) in place of the Greek bust. The loading screen shows it with "Venato" and "BETA" underneath (the motto is gone) on the app's paper colour, and follows dark mode.
 - A small **Send feedback** link in the bottom-right corner of every page (setup too), above the chat bar when it's there. It opens the same pre-filled form as Settings → About.
