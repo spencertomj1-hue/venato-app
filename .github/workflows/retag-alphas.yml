@@ -1,0 +1,41 @@
+# One-off: renumber the releases published as 1.0.0-1.3.0 to alphas before 1.0.0 ships.
+# Runs only from this branch and is deleted again before the branch is merged.
+name: Renumber alpha releases
+on:
+  push:
+    branches: ["claude/upbeat-carson-0rf04q"]
+    paths: [".github/workflows/retag-alphas.yml"]
+permissions:
+  contents: write
+jobs:
+  retag:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Renumber
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          while read -r old new; do
+            if ! git rev-parse -q --verify "refs/tags/$old" >/dev/null; then echo "$old: gone already"; continue; fi
+            sha=$(git rev-list -n1 "$old")
+            git ls-remote --exit-code --tags origin "refs/tags/$new" >/dev/null || git push origin "$sha:refs/tags/$new"
+            if gh release view "$old" >/dev/null 2>&1; then
+              gh release edit "$old" --tag "$new" --title "Venato ${new#v}" --prerelease
+            fi
+            git push origin --delete "refs/tags/$old"
+            echo "$old -> $new ($sha)"
+          done <<'MAP'
+          v1.0.0 v0.2.0-alpha
+          v1.1 v0.3.0-alpha
+          v1.1.1 v0.3.1-alpha
+          v1.2.0 v0.4.0-alpha
+          v1.3.0 v0.5.0-alpha
+          MAP
+          gh release edit v0.1.0-alpha --prerelease || true
+          gh release list

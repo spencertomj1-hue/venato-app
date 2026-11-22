@@ -5,11 +5,12 @@ All notable changes to Venato are listed here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Versions match the git tags and [GitHub Releases](https://github.com/spencertomj1-hue/venato-app/releases).
-Venato was called **Arete** up to 1.1.1.
+Everything before 1.0.0 was an alpha test. Those releases were first published as 1.0.0 to 1.3.0 and renumbered
+0.2.0-alpha to 0.5.0-alpha when 1.0.0 came out. Venato was called **Arete** up to 0.3.1-alpha.
 
 ## [Unreleased]
 
-## [2.0.0] - 2026-11-22
+## [1.0.0] - 2026-11-22
 
 Venato now focuses on student life and long-term goals. Home is how you get round the app (the sidebar is gone), goals are plans over months with targets and to-dos under them, setup is a short wizard, and a new install starts blank. Several blocks are gone, but none of their data is deleted (see Removed).
 
@@ -63,7 +64,7 @@ Venato now focuses on student life and long-term goals. Home is how you get roun
 - Setup reads your calendars once instead of on every click, and pasting a link you've already connected says "Already connected".
 - `scripts/seed_demo.py` runs again.
 
-## [1.3.0] - 2026-11-07
+## [0.5.0-alpha] - 2026-11-07
 
 ### Added
 - Daily log: a self-rated productivity score for each day, out of 10, in the log, the calendar, Stats, the weekly review, the assistant ("productivity 8") and CSV export / import.
@@ -106,7 +107,7 @@ Venato now focuses on student life and long-term goals. Home is how you get roun
 - Backspace on a timetable block edited the label box instead when it still had the cursor.
 - README pointed at a "Settings → Claude" tab that doesn't exist; it's Settings → Assistant.
 
-## [1.2.0] - 2026-11-02
+## [0.4.0-alpha] - 2026-11-02
 
 ### Added
 - Smart scheduling: fit N hours of an activity into the Plan's free gaps around your blocks and Outlook events, previewed before adding.
@@ -139,7 +140,7 @@ Venato now focuses on student life and long-term goals. Home is how you get roun
 - Backups now close the database files after copying.
 - Assorted fixes from the pre-release test pass.
 
-## [1.1.1] - 2026-10-30
+## [0.3.1-alpha] - 2026-10-30
 
 ### Fixed
 - The packaged app was missing its UI modules and failed on launch; `--check` now opens every page inside the bundle.
@@ -148,7 +149,7 @@ Venato now focuses on student life and long-term goals. Home is how you get roun
 - The sidebar takes no room when closed.
 - Quieter installer build logs.
 
-## [1.1.0] - 2026-10-30
+## [0.3.0-alpha] - 2026-10-30
 
 Tagged as `v1.1`.
 
@@ -165,7 +166,7 @@ Tagged as `v1.1`.
 ### Fixed
 - Windows: a date format crashed Home; Claude status and PATH tests made portable.
 
-## [1.0.0] - 2026-10-30
+## [0.2.0-alpha] - 2026-10-30
 
 First public version.
 
@@ -179,10 +180,10 @@ First public version.
 - Read-only Outlook calendar via a published ICS link.
 - Claude chat box with on-device voice input.
 
-[Unreleased]: https://github.com/spencertomj1-hue/venato-app/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/spencertomj1-hue/venato-app/compare/v1.3.0...v2.0.0
-[1.3.0]: https://github.com/spencertomj1-hue/venato-app/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/spencertomj1-hue/venato-app/compare/v1.1.1...v1.2.0
-[1.1.1]: https://github.com/spencertomj1-hue/venato-app/compare/v1.1...v1.1.1
-[1.1.0]: https://github.com/spencertomj1-hue/venato-app/compare/v1.0.0...v1.1
-[1.0.0]: https://github.com/spencertomj1-hue/venato-app/releases/tag/v1.0.0
+[Unreleased]: https://github.com/spencertomj1-hue/venato-app/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/spencertomj1-hue/venato-app/compare/v0.5.0-alpha...v1.0.0
+[0.5.0-alpha]: https://github.com/spencertomj1-hue/venato-app/compare/v0.4.0-alpha...v0.5.0-alpha
+[0.4.0-alpha]: https://github.com/spencertomj1-hue/venato-app/compare/v0.3.1-alpha...v0.4.0-alpha
+[0.3.1-alpha]: https://github.com/spencertomj1-hue/venato-app/compare/v0.3.0-alpha...v0.3.1-alpha
+[0.3.0-alpha]: https://github.com/spencertomj1-hue/venato-app/compare/v0.2.0-alpha...v0.3.0-alpha
+[0.2.0-alpha]: https://github.com/spencertomj1-hue/venato-app/releases/tag/v0.2.0-alpha
