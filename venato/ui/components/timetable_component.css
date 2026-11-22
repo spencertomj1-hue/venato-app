@@ -433,6 +433,13 @@ td.s.todo-drop { outline: 2px dashed #16A34A; outline-offset: -2px; }
   border-radius: 50%; background: #E53935;
 }
 
+/* A deadline: a small red flag in its day's column at the time it's due (drawDeadlines) */
+.tt-due { position: absolute; z-index: 7; transform: translateY(-100%); pointer-events: auto; cursor: default;
+  font-size: 0.66rem; line-height: 1.2; font-weight: 600; color: #fff; background: #C62828;
+  padding: 1px 5px 1px 4px; border-radius: 0 6px 6px 0; border-left: 2px solid #7F1D1D;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+.tt-due::before { content: "⚑ "; }
+
 /* Plan / Actual switch: the tiles and the Plan tint fade over the same 380ms as the blocks (JS SWAP_MS). */
 .tt-root.swapping td.s::before, .tt-root.swapping th.day::before {
   transition: background 380ms cubic-bezier(.4,0,.2,1);

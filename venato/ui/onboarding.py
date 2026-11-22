@@ -4,7 +4,8 @@ never deletes anything. Every step but Welcome can be skipped, and "Skip setup" 
 
   Students: Welcome ("Are you at uni?") -> Your goals -> Connect your calendars -> Your modules (with hours a
             week) -> What would you track? (and the timetable colours) -> Your first week
-  Others:   Welcome -> Your goals -> What would you track? -> Your first week
+  Others:   Welcome -> Your goals -> Connect your calendar (one link, no Canvas) -> What would you track?
+            -> Your first week
 
 Goals come first for everyone: each row is a long-term goal (3 / 6 / 12 months or an end date), with at most one
 target under it ("How you'll know") and a first to-do. Track, Modules and First week hang off those goals.
@@ -36,7 +37,7 @@ from venato.ui import appearance, kit
 STEPS = [
     ("welcome", "Welcome", ":material/waving_hand:", False),
     ("goals", "Goals", ":material/flag:", False),
-    ("calendars", "Calendars", ":material/calendar_month:", True),
+    ("calendars", "Calendars", ":material/calendar_month:", False),   # students also get Canvas
     ("modules", "Modules", ":material/menu_book:", True),
     ("track", "Track", ":material/checklist:", False),
     ("week", "First week", ":material/event_available:", False),
@@ -79,7 +80,7 @@ def is_student():
 
 
 def steps():
-    """The steps for this person: [(key, name, icon)]. Students get the two uni steps."""
+    """The steps for this person: [(key, name, icon)]. Students also get Modules (and Canvas on Calendars)."""
     student = is_student()
     return [(k, n, i) for k, n, i, uni in STEPS if student or not uni]
 
@@ -109,7 +110,8 @@ def check_feed(text, kind, fetcher=None, day=None):
         raise outlook.LinkError("That isn't a Canvas calendar feed. In Canvas, open Calendar and copy the "
                                 "Calendar Feed link.")
     if kind == "uni" and is_canvas:
-        raise outlook.LinkError("That's a Canvas link. Paste it on the Canvas step; this one is for your timetable.")
+        raise outlook.LinkError("That's a Canvas link. Paste it on the Canvas step; this one is for your timetable."
+                                if is_student() else "That's a Canvas link. Paste a calendar link here instead.")
     found["url"] = url
     if kind == "uni":
         events = outlook.parse(found["data"], day)
@@ -122,7 +124,8 @@ def check_feed(text, kind, fetcher=None, day=None):
 def connect_feed(found, day=None):
     """Save a checked link (it stays in the system secret store) and import it: lectures go on the timetable,
     Canvas assignments become deadlines. Returns the sync's status."""
-    status = outlook.add_calendar("Canvas" if found["kind"] == "canvas" else "Uni timetable",
+    name = "Canvas" if found["kind"] == "canvas" else "Uni timetable" if is_student() else "My calendar"
+    status = outlook.add_calendar(name,
                                   found["url"], found["data"], day)
     _forget_calendars()
     return status
@@ -348,7 +351,7 @@ def forget_goal_row(row):
         ob.get(k, {}).pop(row, None)
 
 
-def _example_category(cid):
+def example_category(cid):
     """Make an example category if it isn't there, and return the id it has (one of the same name counts)."""
     ensure_category(cid)
     cats = store.load_categories()
@@ -363,7 +366,7 @@ def _hours_category(text):
     named after the goal (in the default group; one of that name already there is used)."""
     cid = next((s["cid"] for s in suggest.for_goal(text) if s["kind"] == "category"), None)
     if cid or is_student():
-        return _example_category(cid or "study")
+        return example_category(cid or "study")
     cats = store.load_categories()
     same = [i for i, n in zip(cats["id"], cats["name"]) if n.lower() == text.lower()]
     return same[0] if same else add_category(text, OWN_COLOUR, default_group())
@@ -684,10 +687,15 @@ def _connect_button(kind):
         st.session_state[f"ob_link_{kind}"] = ""
 
 
+def _calendar_kinds():
+    """The link boxes on the calendars step: a student's timetable and Canvas, or anyone else's one calendar."""
+    return ("uni", "canvas") if is_student() else ("uni",)
+
+
 def _save_calendars():
     """Connect whatever is typed in either box. Both are tried; if either link is no good the step stays."""
     problems = []
-    for kind in ("uni", "canvas"):
+    for kind in _calendar_kinds():
         try:
             if _connect_link(kind):
                 st.session_state[f"ob_link_{kind}"] = ""
@@ -698,30 +706,39 @@ def _save_calendars():
 
 
 def _calendars():
-    st.header("Connect your calendars", anchor=False)
-    st.markdown("Both are optional. Venato only reads them.")
+    if is_student():
+        st.header("Connect your calendars", anchor=False)
+        st.markdown("Both are optional. Venato only reads them.")
+    else:
+        st.header("Connect your calendar", anchor=False)
+        st.markdown("Optional. Your events show on the timetable, and Venato plans around them. It only reads it.")
     st.info("Anyone with a calendar link can see that calendar. Venato keeps yours in your system's secret store, "
             "never in a file.", icon=":material/visibility:")
-    for kind in ("uni", "canvas"):
+    for kind in _calendar_kinds():
         with st.container(border=True):
             _link_card(kind)
 
 
 def _link_card(kind):
     ob = _ob()
-    if kind == "uni":
+    student = is_student()
+    if kind == "uni" and not student:
+        st.subheader("Outlook calendar", anchor=False)
+    elif kind == "uni":
         st.subheader("Uni timetable", anchor=False)
         st.markdown("Your lectures appear in the timetable, and Venato finds your modules from them.")
     else:
         st.subheader("Canvas", anchor=False)
         st.markdown("Your Canvas assignments become deadlines.")
-    st.markdown(GUIDES[kind])
+    st.markdown(GUIDES[kind] if student or kind != "uni" else GUIDES[kind].replace("university's ", "").replace(
+        "your timetable calendar", "your calendar"))
     if kind == "uni":
         with st.expander("Not using Outlook?"):
             st.markdown("- **Google Calendar** gives you a link in Settings → your calendar → "
                         "**Secret address in iCal format**.\n"
-                        "- Other uni timetable sites usually have a **Subscribe** or **iCal/ICS** link.\n"
-                        "- Paste any link that ends in **.ics**.")
+                        + ("- Other uni timetable sites usually have a **Subscribe** or **iCal/ICS** link.\n" if student
+                           else "- **Apple Calendar** (iCloud): share the calendar as a **Public Calendar** and copy its link.\n")
+                        + "- Paste any link that ends in **.ics**.")
     st.text_input("Calendar link", key=f"ob_link_{kind}", placeholder="https://…")
     st.button("Connect", key=f"ob_connect_{kind}", type="primary", icon=":material/link:",
               on_click=_connect_button, args=(kind,))
@@ -729,7 +746,10 @@ def _link_card(kind):
         st.info(note, icon=":material/check_circle:")
     found = ob.get(f"found_{kind}")
     if found:
-        if kind == "uni":
+        if kind == "uni" and not student:
+            n = found["lectures"]
+            st.success(f"Connected. Found {n} event{'s' if n != 1 else ''} next week.", icon=":material/check_circle:")
+        elif kind == "uni":
             n, mods = found["lectures"], len(found["modules"])
             st.success(f"Connected. Found {n} lecture{'s' if n != 1 else ''} next week"
                        + (f" and {mods} module{'s' if mods != 1 else ''}." if mods else "."), icon=":material/check_circle:")
@@ -1118,10 +1138,30 @@ def _add_week():
     _ob()["added"] = added
 
 
+HOW_DAYS = ("1. **Plan** your week on the timetable: drag blocks into your free time.\n"
+            "2. When a day starts, its Plan is **locked** and copied into its **Actual**. Move, stretch or delete "
+            "blocks there as the day really goes; there's nothing to log twice.\n"
+            "3. At the end of the day, **Confirm** it: under the day on the timetable, or Home asks "
+            "*\"Is the timetable right for today?\"*\n\n"
+            "Review and your goals only count **confirmed** days, so an unconfirmed week shows as empty.")
+
+
+def _how_days():
+    """The loop the app is built on (Plan -> Actual -> Confirm), told once before setup ends."""
+    with st.container(border=True):
+        kit.subhead("How each day works")
+        st.markdown(HOW_DAYS)
+
+
 def _week():
-    ob = _ob()
     st.header("Your first week", anchor=False)
     st.caption("Press **Edit Home** at the top of Home to change what it shows.")
+    _week_sittings()
+    _how_days()
+
+
+def _week_sittings():
+    ob = _ob()
     sittings = week_sittings(week_goals())
     ob["sittings"] = sittings
     added = ob.get("added")
@@ -1153,7 +1193,7 @@ def _filled(key):
     The main button says Next if so, and Skip if not."""
     ss, ob = st.session_state, _ob()
     if key == "calendars":
-        return any(_typed(f"ob_link_{k}") or bool(ob.get(f"found_{k}")) for k in ("uni", "canvas"))
+        return any(_typed(f"ob_link_{k}") or bool(ob.get(f"found_{k}")) for k in _calendar_kinds())
     if key == "modules":
         return (_typed("ob_new_module") or any(ss.get(f"ob_keep_{_cand_key(c)}", True) for c in ob.get("cands", []))
                 or bool(ob.get("new_modules"))

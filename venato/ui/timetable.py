@@ -530,9 +530,10 @@ def render_grid(days, key="timetable", single=False, readonly=False, suggestions
              "details": store.outlook_details(e), "categoryId": store.event_category(e, outlook_cat)}
             for e in events if not e["all_day"]
         ],
-        "outlookAllDay": [{"date": e["date"], "title": e["title"]} for e in events if e["all_day"]]
-        + [{"date": d["due"], "title": f"Due: {d['title']}", "deadline": True} for d in store.deadlines()
-           if days[0].isoformat() <= d["due"] <= days[-1].isoformat()],
+        "outlookAllDay": [{"date": e["date"], "title": e["title"]} for e in events if e["all_day"]],
+        # Deadlines: small flags on the grid at their time (the end of the day without one)
+        "deadlines": [{"date": d["due"], "time": d.get("due_time"), "title": d["title"]} for d in store.deadlines()
+                      if days[0].isoformat() <= d["due"] <= days[-1].isoformat()],
         "sync": _sync_text(),
         "clock": regional.clock(),
         "slots": store.SLOTS,

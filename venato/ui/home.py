@@ -12,8 +12,9 @@ Needs you has no page: a tap on it opens everything in a dialog. Narrower window
 Above the grid: the date, the search / Ask bar, Edit Home, and the Settings gear (always there, so you can't
 remove your way out of the app).
 
-Edit Home: the tiles wobble; drag one and the others make room as you go, so it lands wherever you let go
-(components/home_flip.js). − takes a tile off Home (its data stays), the grip in its bottom-right corner
+Edit Home: the tiles wobble over a faint grid of Home's cells (with a spare row underneath); drag one and it
+snaps to the cell under it, anywhere on the grid, gaps and all: tiles it lands on swap into the place it left
+when they fit there, else go to the nearest free place, and you see that live (components/home_flip.js). − takes a tile off Home (its data stays), the grip in its bottom-right corner
 resizes it (drag it: it snaps to the nearest size the tile comes in; tap it: the next size), and the "Add a tile" panel lists what's hidden. Every change is saved straight away (no Undo bar;
 Cmd/Ctrl+Z still undoes the last one); Reset goes back to the start. Moves glide, not with reduced motion.
 """
@@ -117,11 +118,13 @@ def _edit(on):
 
 
 def _on_drag():
-    """A tile dragged to a new place (home_flip.js sends the order the grid showed when it was let go)."""
-    order = (st.session_state.get("home_flip") or {}).get("drop") or {}
-    order = order.get("order") if isinstance(order, dict) else None
-    if isinstance(order, list):
-        _save("Moved a tile", lambda c: hl.reorder(c, order))
+    """A tile dragged to a new place (home_flip.js sends the tile and the cell its top-left corner landed on)."""
+    got = (st.session_state.get("home_flip") or {}).get("drop")
+    if not isinstance(got, dict):
+        return
+    key, row, col = got.get("key"), got.get("row"), got.get("col")
+    if isinstance(key, str) and type(row) is int and type(col) is int:
+        _save(f"Moved {_name(key)}", lambda c: hl.move_to(c, key, row, col))
 
 
 def _cycle(key):
@@ -172,6 +175,7 @@ MIN_ROW = 108          # px: rows never get shorter than this (a very short wind
 
 def _css(t, cells, cat, editing, room=PAGE_ROOM):
     rows = max(1, hl.rows(cells))
+    shown = rows + 1 if editing else rows        # Edit Home: a spare row to drag tiles into
     out = [f"""
     .st-key-home_head h1 {{ font-size: 2.1rem; margin: 0; padding: 0; line-height: 1.2; }}
     .st-key-home_head h1:focus, .st-key-home_head h1:focus-visible {{ outline: none !important; }}
@@ -189,7 +193,7 @@ def _css(t, cells, cat, editing, room=PAGE_ROOM):
         .stMain .st-key-home_grid {{
             --home-row: calc((max({rows * MIN_ROW + (rows - 1) * GAP}px, var(--home-grid-h, calc(100dvh - 140px - {room}px)))
                 - {(rows - 1) * GAP}px) / {rows});
-            grid-template-rows: repeat({rows}, var(--home-row)); flex: none; }}
+            grid-template-rows: repeat({shown}, var(--home-row)); flex: none; }}
         .st-key-home_grid [class*="st-key-hw_"] {{ overflow: hidden; }}
         .st-key-home_grid [class*="st-key-hw_"] > [data-testid="stLayoutWrapper"]:has(> [class*="st-key-hwc_"]) {{
             flex: 1 1 0; min-height: 0; overflow: hidden; }} }}
@@ -248,15 +252,28 @@ def _css(t, cells, cat, editing, room=PAGE_ROOM):
     .st-key-home_add_note {{ background: {t['paper']}; border-radius: 14px; padding: 12px 14px; }}
     .st-key-home_empty {{ background: {t['card']}; border: 1px dashed {t['border']}; border-radius: 24px; padding: 28px; }}
     """]
-    for c in cells:
+    for c, (r, col) in zip(cells, hl.place(cells)):
         k, (w, h) = c["w"], hl.span(c["size"])
         out.append(f".st-key-home_grid > div:has(> .st-key-hw_{k}) {{ grid-column: span {w}; grid-row: span {h}; }}")
+        # Four columns: each tile in its own place (gaps and all). Narrower, they flow in reading order.
+        out.append(f"@media (min-width: 1001px) {{ .st-key-home_grid > div:has(> .st-key-hw_{k}) "
+                   f"{{ grid-column: {col + 1} / span {w}; grid-row: {r + 1} / span {h}; }} }}")
         colour = getattr(cat.get(k), "colour", "") or "#5F6170"
         out.append(f".st-key-go_tile_{k} [data-testid='stIconMaterial'], .st-key-open_tile_{k} [data-testid='stIconMaterial'] "
                    f"{{ background: {colour}; }}")
         out.append(icons.css([f".st-key-go_tile_{k}", f".st-key-open_tile_{k}"], getattr(cat.get(k), "icon", "")))
     if editing:
         out.append(f"""
+        /* Home's cells, faintly, so you can see where a tile can go (four columns only: narrower, tiles flow) */
+        @media (min-width: 1001px) {{ .st-key-home_grid {{ background:
+            linear-gradient(to right, transparent calc(100% - {GAP}px), {t['paper']} calc(100% - {GAP}px))
+                0 0 / calc((100% + {GAP}px) / {hl.COLUMNS}) 100%,
+            linear-gradient(to bottom, transparent calc(100% - {GAP}px), {t['paper']} calc(100% - {GAP}px))
+                0 0 / 100% calc(var(--home-row) + {GAP}px),
+            {t['track']}; border-radius: 20px; }} }}
+        /* where the tile in your hand will land */
+        .st-key-home_grid > .vn-slot {{ outline: 2px dashed {t['accent']}; outline-offset: -1px; border-radius: 20px;
+            background: {t['slot']}; }}
         @keyframes venato-wobble {{ 0%, 100% {{ rotate: -0.3deg; }} 50% {{ rotate: 0.3deg; }} }}
         [class*="st-key-hwc_"] {{ animation: venato-wobble 0.45s ease-in-out infinite; transform-origin: 50% 50%; }}
         .st-key-home_grid > div:nth-child(even) [class*="st-key-hwc_"] {{ animation-delay: -0.22s; }}
@@ -333,7 +350,8 @@ def _header(editing, cells, labels):
         with st.container(gap=None, width="stretch"):
             if editing:
                 st.title("Edit Home", anchor=False)
-                st.caption("Drag a tile to move it · drag its corner to resize it · − removes it. Saved as you go.")
+                st.caption("Drag a tile anywhere on the grid · drag its corner to resize it · − removes it. "
+                           "Saved as you go.")
             else:
                 st.title(regional.long_date(store.local_today()), anchor=False)
         if not editing:
@@ -463,7 +481,7 @@ def page_home():
             _empty()
         else:
             with st.container(key="home_grid"):
-                for cell in cells:
+                for cell in hl.pin(cells):                  # in reading order (how narrow windows flow them)
                     _tile(cat[cell["w"]], cell, editing, labels)
     if side is not None:
         with side:
@@ -474,7 +492,10 @@ def page_home():
                                      # what the corner handle can snap to: {tile: [[size, columns, rows], ...]}
                                      "sizes": {c["w"]: [[z, *hl.span(z)] for z in hl.ORDER if z in cat[c["w"]].sizes]
                                                for c in cells},
-                                     "size": {c["w"]: c["size"] for c in cells}},
+                                     "size": {c["w"]: c["size"] for c in cells},
+                                     # where each tile is: {tile: [row, column]}, and how many columns
+                                     "at": {c["w"]: list(at) for c, at in zip(cells, hl.place(cells))},
+                                     "columns": hl.COLUMNS},
               on_drop_change=_on_drag, on_resize_change=_on_resize)
     dialog = st.session_state.pop("home_dialog", None)
     if dialog in _OPENS and not editing and dialog in hl.keys(cells):
