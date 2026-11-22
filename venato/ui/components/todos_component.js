@@ -297,6 +297,8 @@ class GoalLists {
       <button class="gl-tick" data-tick role="checkbox" aria-checked="${g.done}"
         aria-label="${esc(g.title)}: ${g.done ? "mark as not done" : "mark as done"}">${ICONS.check}</button>
       <div class="gl-text">${title}${notes}${meta}</div>
+      ${m && m.goal ? `<span class="gl-goal" style="background:${esc(m.goal.colour)}" title="Goal: ${esc(m.goal.name)}"
+        role="img" aria-label="Goal: ${esc(m.goal.name)}"></span>` : ""}
       ${g.repeat ? `<span class="gl-repeat" title="Repeats every ${UNITS[g.period]}" role="img" aria-label="Repeats every ${UNITS[g.period]}">${ICONS.repeat}</span>` : ""}
     </li>`;
   }

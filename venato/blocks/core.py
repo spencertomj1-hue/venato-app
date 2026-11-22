@@ -30,9 +30,9 @@ def _deadlines_home():
     deadlines.render_home()
 
 
-def _goals_home():
+def _goals_home(size="wide"):
     from venato.ui import goals
-    goals.render_home()
+    goals.render_home(size)
 
 
 def _todos_page():
@@ -99,7 +99,7 @@ BLOCKS = [
                           icon=":material/check:", colour="#C62828"),
                    Widget("deadlines", "Deadlines", _deadlines_home, "small", ("small", "wide", "tall"),
                           status=_st("deadlines"), icon=":material/event:", colour="#5F6170"),
-                   Widget("goals", "Goals", _goals_home, "wide", status=_st("goals"), icon=":material/flag:",
+                   Widget("goals", "Goals", _goals_home, "wide", ("small", "wide", "large", "tall", "column"), status=_st("goals"), icon=":material/flag:",
                           colour="#146C2E")]),
     Block("log", "Daily Log", ":material/edit_calendar:",
           "A journal for each day, habits with streaks, and optional sleep and water.",

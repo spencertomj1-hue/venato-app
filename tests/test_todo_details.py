@@ -106,10 +106,10 @@ def test_rows_carry_their_details(store):
     store.add_detailed_todo("Essay", due=today - timedelta(days=1), group_id=g["id"], minutes=90)
     sec = todos._section("daily", today)
     assert sec["goals"][0]["meta"] == {"due": "Overdue (yesterday)", "late": True,
-                                       "group": {"name": "Uni", "colour": g["colour"]}, "length": "1½ hours"}
+                                       "group": {"name": "Uni", "colour": g["colour"]}, "goal": None, "length": "1½ hours"}
     store.add_todo("Plain", "daily", today)
     plain = todos._section("daily", today)["goals"][1]["meta"]
-    assert plain == {"due": None, "late": False, "group": None, "length": None}
+    assert plain == {"due": None, "late": False, "group": None, "goal": None, "length": None}
 
 
 def test_page_by_due_date_view(store):

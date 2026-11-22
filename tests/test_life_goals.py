@@ -3,6 +3,7 @@
 from datetime import date
 
 import pandas as pd
+import pytest
 
 
 def test_add_by_months_and_by_end_date(store):
@@ -121,3 +122,32 @@ def test_old_database_gets_the_new_columns(store):
             assert "life_goal_id" in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
     store.init_db()                                     # running again is safe
     assert isinstance(store.load_life_goals(), pd.DataFrame)
+
+
+def test_goals_get_their_own_colours_and_can_change_them(store):
+    a = store.add_life_goal("Get fit", months=6)
+    b = store.add_life_goal("Grad job", months=6)
+    colours = store.life_goal_colours()
+    assert colours[a["id"]] == store.GOAL_COLOURS[0] and colours[b["id"]] == store.GOAL_COLOURS[1]
+    store.set_life_goal_colour(a["id"], store.GOAL_COLOURS[4])
+    assert store.life_goal_colour(a["id"]) == store.GOAL_COLOURS[4]
+    assert store.life_goal_group(a["id"])["colour"] == store.GOAL_COLOURS[4]    # its to-dos' category follows
+    c = store.add_life_goal("Read more", months=3)                              # the first colour is free again
+    assert store.life_goal_colour(c["id"]) == store.GOAL_COLOURS[0]
+    with pytest.raises(ValueError):
+        store.set_life_goal_colour(a["id"], "blue")
+
+
+def test_expected_fraction_is_targets_pace_else_time_gone(store):
+    from datetime import timedelta
+    from venato.ui import life_goals
+    today = store.local_today()
+    g = store.add_life_goal("Get fit", start=today - timedelta(days=50), end=today + timedelta(days=49))
+    assert abs(life_goals.expected_fraction(g, [], today) - 0.5) < 0.01         # no targets: half the span gone
+    t = store.add_goal("Gym", None, today - timedelta(days=10), 20, "sessions", due=today + timedelta(days=9),
+                       life_goal_id=g["id"])
+    t = store.get_goal(t["id"])
+    assert abs(life_goals.expected_fraction(g, [t], today) - 0.5) < 0.01        # the target's own even pace
+    store.set_goal_progress(t["id"], 2)
+    row = life_goals.home_rows(today)[0]
+    assert row["behind"] and row["colour"] == store.GOAL_COLOURS[0] and row["next"]["id"] == t["id"]

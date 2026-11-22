@@ -118,6 +118,9 @@ svg { display: block; }
 .gl-row.done .gl-title { text-decoration: line-through; opacity: 0.72; }   /* still 4.5:1 */
 .gl-repeat { flex: none; color: var(--muted); margin-top: 2px; }
 .gl-repeat svg { width: 13px; height: 13px; }
+/* The linked goal's colour: a small dot at the row's right (its name on hover and for screen readers) */
+.gl-goal { flex: none; width: 9px; height: 9px; border-radius: 50%; margin: 0.5em 2px 0 auto; }
+.gl-tile .gl-goal { margin-top: 0.45em; }
 
 /* Just ticked: the circle pops, the title fades and strikes, then the row folds away. */
 .gl-row.ticking .gl-tick { animation: gl-pop 0.35s ease; }

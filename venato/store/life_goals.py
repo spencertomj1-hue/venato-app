@@ -22,6 +22,10 @@ from .dates import _as_date, local_today, stamp
 from .history import _clean
 
 HORIZONS = (3, 6, 12)                # months: the quick choices (any end date works too)
+# A goal's colour: its own to-do category's colour, so its to-dos, Home's tile and the Goals page all agree.
+# New goals take the first of these no running goal has. No red: red means "behind" across the app.
+GOAL_COLOURS = ("#F76B15", "#E5A00D", "#30A46C", "#12A594", "#3E63DD", "#8E4EC6", "#D6409F", "#6F6E77")
+GOAL_COLOUR_NAMES = dict(zip(GOAL_COLOURS, ("Orange", "Amber", "Green", "Teal", "Blue", "Violet", "Pink", "Slate")))
 LIFE_GOAL_COLS = "id, title, why, start, end_date, ord, created_at, archived"
 
 
@@ -102,7 +106,7 @@ def _link_group(conn, life_goal_id, title):
     row = conn.execute("SELECT id FROM todo_groups WHERE life_goal_id = ?", (life_goal_id,)).fetchone()
     if row:
         return row[0]
-    group_id = _add_group(conn, str(title).strip())
+    group_id = _add_group(conn, str(title).strip(), _free_colour(conn))
     conn.execute("UPDATE todo_groups SET life_goal_id = ? WHERE id = ? AND life_goal_id IS NULL",
                  (life_goal_id, group_id))
     return group_id
@@ -180,6 +184,33 @@ def life_goal_group(life_goal_id):
     """A goal's own to-do category ({id, name, colour, goal_id, life_goal_id}), or None."""
     from .todos import todo_groups
     return next((g for g in todo_groups() if g.get("life_goal_id") == life_goal_id), None)
+
+
+def _free_colour(conn):
+    """The first goal colour no other goal's category has (they cycle once all are taken)."""
+    used = [r[0].upper() for r in conn.execute("SELECT colour FROM todo_groups WHERE life_goal_id IS NOT NULL")]
+    return next((c for c in GOAL_COLOURS if c.upper() not in used), GOAL_COLOURS[len(used) % len(GOAL_COLOURS)])
+
+
+def life_goal_colours():
+    """{goal id: "#RRGGBB"} for every goal with a category (a goal always has one unless the user deleted it)."""
+    with db() as conn:
+        return {lid: colour for lid, colour in
+                conn.execute("SELECT life_goal_id, colour FROM todo_groups WHERE life_goal_id IS NOT NULL")}
+
+
+def life_goal_colour(life_goal_id):
+    return life_goal_colours().get(life_goal_id) or GOAL_COLOURS[0]
+
+
+def set_life_goal_colour(life_goal_id, colour):
+    """Change a goal's colour (its category's, so its to-dos follow)."""
+    colour = str(colour or "").strip()
+    if not (len(colour) == 7 and colour.startswith("#")):
+        raise ValueError("A colour is #RRGGBB.")
+    group_id = ensure_life_goal_group(life_goal_id)
+    with db() as conn:
+        conn.execute("UPDATE todo_groups SET colour = ? WHERE id = ?", (colour, group_id))
 
 
 def ensure_life_goal_group(life_goal_id):
