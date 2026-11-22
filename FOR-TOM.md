@@ -16,7 +16,7 @@ Every block and calendar event on the timetable can now be marked **✓ Done** (
 
 ### 2. First questions: learn what people's goals are
 
-- [ ] Write the first questions a new user is asked, so Venato learns their goals before anything else.
+- [x] Write the first questions a new user is asked, so Venato learns their goals before anything else. *(Partly, 22 Nov 2026: setup now asks for goals right after Welcome, with how long, how you'll know, why and a first step. The questions themselves still need designing with customer discovery, item 3.)*
 
 The aim is to understand what someone is trying to achieve (study, training, work, habits) and set the app up around it, instead of starting from an empty timetable.
 
