@@ -858,7 +858,6 @@ def _goal_rows():
         ob["goal_rows"] = [0]
         if is_student() and not store.find_life_goal(TERM_GOAL):
             ob["term_row"] = 0
-            st.session_state.setdefault("ob_goal_0", TERM_GOAL)
     return ob["goal_rows"]
 
 
@@ -871,7 +870,8 @@ def _goal_row(n, row):
     todo = store.get_todo(ob.get("todo_ids", {}).get(row)) if ob.get("todo_ids", {}).get(row) else None
     with st.container(border=True):
         a, b = st.columns([6, 1], vertical_alignment="bottom")
-        a.text_input(f"Goal {n + 1}", value=goal["title"] if goal else "", key=f"ob_goal_{row}",
+        first = TERM_GOAL if row == ob.get("term_row") and not ob.get("goals_saved") else ""
+        a.text_input(f"Goal {n + 1}", value=goal["title"] if goal else first, key=f"ob_goal_{row}",
                      placeholder=GOAL_PLACEHOLDERS[n % len(GOAL_PLACEHOLDERS)])
         if n or row == ob.get("term_row"):
             b.button("Remove", key=f"ob_goal_rm_{row}", icon=":material/close:", type="tertiary",
@@ -947,6 +947,7 @@ def goal_rows_typed():
 
 def _save_goals():
     save_goals(goal_rows_typed())
+    _ob()["goals_saved"] = True                     # the term goal's prefill is only for the first time round
 
 
 def _my_goals():

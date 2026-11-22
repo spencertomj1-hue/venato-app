@@ -89,4 +89,4 @@ Verified when: `pytest tests/test_setup.py tests/test_life_goals_app.py` green.
 | 1 | done |
 | 2 | done |
 | 3 | done |
-| 4 | pending |
+| 4 | done |

@@ -1231,3 +1231,12 @@ def test_home_offers_goals_for_a_long_term_goal_alone(fresh):
     assert ("goals", "Goals") not in onboarding.home_picks()
     fresh.add_life_goal("Run a 10k", months=3)
     assert ("goals", "Goals") in onboarding.home_picks()
+
+
+def test_an_emptied_term_goal_stays_empty_after_going_back(fresh):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    _next(at, "ob_student_yes")
+    at.text_input(key="ob_goal_0").set_value("").run()
+    _next(at, "wiz_skip")
+    at.button(key="wiz_back").click().run()
+    assert at.text_input(key="ob_goal_0").value == "" and fresh.life_goals() == []

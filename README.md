@@ -130,13 +130,13 @@ The first install downloads about 1 GB of packages; the speech model (about 470 
 
 The first time Venato opens, a short setup starts. It adds things and never deletes any, every step except Welcome can be skipped, and **Skip setup** leaves you with a blank app. Run it again any time from Settings → About.
 
-**Everyone.** Venato starts empty: no categories, habits or goals. Setup asks what you want to get done (a few words, a date and how you'll track it), suggests what to track for each (a habit, a timetable category, sleep or water, all unticked until you pick them), lets you add your own, and lays out your first week.
+**Everyone.** Venato starts empty: no categories, habits or goals. Right after Welcome, setup asks for your **goals for the next few months**: a few words each, how long (3, 6 or 12 months, or an end date), and how you'll know you're on the way. **Hours a week** or **A number** puts one target under the goal, due when it ends; **Tick it off** sets just the goal, which fills as you tick off its to-dos. Under "Why it matters, and a first step" you can say why, and add a first step that goes on this week's to-do list under the goal. Then it suggests what to track for each goal (a habit, a timetable category, sleep or water, all unticked until you pick them; a habit picked for a goal with no target becomes a target of three times a week), lets you add your own, and lays out your first week, named after each goal's target (or the goal). Going back and pressing Next again changes the same goals; emptying a row removes only what setup made for it.
 
-**If you're a student.** Press "I'm at uni" on Welcome and you get two more steps after it:
+**If you're a student.** Press "I'm at uni" on Welcome. Your first goal starts as **Do well this term** (3 months; change or remove it), and each module's study hours become a target under it. You get two more steps after Goals:
 1. **Connect your calendars.** Paste your university's published Outlook timetable link and your Canvas Calendar Feed link. Both are optional. Lectures go on the timetable, assignments become deadlines, and Venato finds your modules from them.
 2. **Your modules.** Tick the ones to add, rename them if you like, and say how many hours a week each one gets (6 by default). Each gets its own timetable colour and a card on the Modules page.
 
-The steps are Welcome, Connect your calendars, Your modules, Your goals, What would you track? and Your first week. If you're not a student, it's Welcome, Your goals, What would you track? and Your first week.
+The steps are Welcome, Your goals, Connect your calendars, Your modules, What would you track? and Your first week. If you're not a student, it's Welcome, Your goals, What would you track? and Your first week.
 
 Both links are read only, and are kept in your system's secret store, never in a file.
 
