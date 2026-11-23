@@ -547,19 +547,33 @@ def _settings_tab():
     if (nw or w, nd or d) != (w, d):
         wk.save_units(nw or w, nd or d)
         st.rerun()
-    habits = [n for _, n in store.get_habits()]
+    opts = ["(none)"] + [n for _, n in store.get_habits()]
     linked = wk.linked_habit()
-    current = linked[1] if linked else None
-    opts = ["(none)"] + habits
-    pick = st.selectbox("Tick this habit when you log a workout", opts,
-                        index=opts.index(current) if current in opts else 0, key="wk_habit")
-    if (None if pick == "(none)" else pick) != current:
-        wk.set_habit_link(None if pick == "(none)" else pick)
+    st.session_state["wk_habit"] = linked[1] if linked else "(none)"      # the saved choice (Yes on the offer, Claude)
+    st.selectbox("Tick this habit when you log a workout", opts, key="wk_habit", on_change=_on_habit_pick)
+
+
+def _on_habit_pick():
+    pick = st.session_state["wk_habit"]
+    wk.set_habit_link(None if pick == "(none)" else pick)
+
+
+def _habit_offer():
+    """Asks once whether workouts count towards the fitness habit (setup's "Trained"): Yes links it and ticks
+    the days already trained; No is remembered. Either can be changed in the Settings tab."""
+    offer = wk.habit_offer()
+    if not offer:
+        return
+    box = st.container(border=True, horizontal=True, vertical_alignment="center", key="wk_habit_offer")
+    box.markdown(f"Count your workouts towards **{offer[1]}**? Each day you log one ticks it, including the ones "
+                 "you've already logged.", width="stretch")
+    box.button("Yes", key="wk_offer_yes", type="primary", on_click=wk.set_habit_link, args=(offer[1],))
+    box.button("No", key="wk_offer_no", on_click=wk.set_habit_link, args=(None,))
 
 
 def render_page():
-    wk.linked_habit()                 # a fitness habit made since (setup's "Trained") gets the workouts already logged
     st.title("Workouts")
+    _habit_offer()
     today = store.local_today()
     _metrics(today)
     tabs = st.tabs(["Log", "History", "Progress", "Plans", "Exercises", "Settings"])
@@ -588,7 +602,6 @@ def render_home():
     """Home's Workouts widget: this week as seven dots (filled on a day you trained), then the last workout."""
     from venato.ui import appearance
     kit.subhead("Workouts")
-    wk.linked_habit()
     today = store.local_today()
     start = store.week_start_of(today)
     days = {store._as_date(w["date"]) for w in wk.workouts(start, start + timedelta(days=6))}

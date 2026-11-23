@@ -765,16 +765,22 @@ def summary(wid):
 # --- Habit link ---
 
 def linked_habit():
-    """(id, name) of the habit a logged workout ticks. The one picked in Settings → Workouts; if none was ever
-    picked, the only habit with a fitness name ("Trained", "Gym": what setup makes for a fitness goal), which is
-    then remembered and given the workouts already logged. None if "(none)" was picked or nothing fits."""
-    picked = store.load_settings().get("workouts") or {}
-    if "habit" in picked:
-        return store.find_habit(picked["habit"]) if picked["habit"] else None
+    """(id, name) of the habit a logged workout ticks (Settings → Workouts), or None."""
+    name = (store.load_settings().get("workouts") or {}).get("habit")
+    return store.find_habit(name) if name else None
+
+
+def habit_offer():
+    """The habit to ask about linking, or None: asked once, when no habit was ever picked (Yes or No both
+    answer it), a workout has been logged and exactly one habit has a fitness name (setup's "Trained", "Gym")."""
+    if "habit" in (store.load_settings().get("workouts") or {}):
+        return None
     fits = [h for h in store.get_habits() if suggest.is_fitness(h[1])]
     if len(fits) != 1:
         return None
-    set_habit_link(fits[0][1])
+    with store.db() as conn:
+        if not conn.execute("SELECT 1 FROM wk_workouts LIMIT 1").fetchone():
+            return None
     return fits[0]
 
 
@@ -926,6 +932,11 @@ TOOLS = [
 ]
 
 
+def _needs():
+    offer = habit_offer()
+    return [{"text": f"Count your workouts towards {offer[1]}?", "page": "Workouts"}] if offer else []
+
+
 def _page():
     from venato.ui import workouts as ui
     ui.render_page()
@@ -946,4 +957,4 @@ BLOCK = Block("workouts", "Workouts", ":material/fitness_center:",
               group="Health & body", page=_page,
               widgets=[Widget("workouts", "Workouts", _home, "small", ("small", "wide", "tall"),
                               status=_home_status, colour="#C2410C")], tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, migrate=_migrate, order=80)
+              quick=[_quick], needs=_needs, schema=SCHEMA, migrate=_migrate, order=80)

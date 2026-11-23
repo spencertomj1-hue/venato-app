@@ -14,7 +14,7 @@ Everything before 1.0.0 was an alpha test. Those releases were first published a
 - **Habits are their own block**, with a **Habits page** (this week as a grid of ticks, a progress line per habit, and adding, changing and removing habits) and a **Habits** tile on Home. They no longer sit on the Daily Log page, and switching the Daily Log off no longer hides them. If you use the Daily Log, Habits stay on for you; you can switch them off in Settings → Blocks. The journal book still has the day's ticks.
 
 ### Fixed
-- **Workouts now count towards your fitness habit.** Logging a workout ticks the habit setup made for a fitness goal (such as "Trained"), so its target no longer says 0 this week after you've trained. Workouts you logged before are counted too, and moving a workout to another day ticks that day. You can still pick another habit, or none, in Settings → Workouts.
+- **Workouts can count towards your fitness habit.** Once you've logged a workout, Venato asks once (in Needs you and on the Workouts page) whether workouts should tick the habit setup made for a fitness goal (such as "Trained"). Say yes and the workouts you've already logged are counted too, so its target no longer says 0 this week after you've trained, and moving a workout to another day ticks that day. You can change the habit, or pick none, in Workouts → Settings, which now always keeps your choice.
 
 ## [1.0.0] - 2026-11-22
 
