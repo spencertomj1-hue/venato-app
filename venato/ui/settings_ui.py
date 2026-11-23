@@ -299,7 +299,7 @@ def reminders_section():
 
 
 def daily_log_section():
-    """Sleep and water are optional extras on the Daily Log; the journal and habits are always there."""
+    """Sleep and water are optional extras on the Daily Log; the journal is always there (habits are their own block)."""
     st.subheader("Daily Log", anchor=False)
     st.write("The Daily Log is a journal. You can also record how long you slept and how much water you drank. "
              "Switching one off hides it everywhere (the page, calendar, charts, review and assistant). "

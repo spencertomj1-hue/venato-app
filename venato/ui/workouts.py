@@ -548,7 +548,8 @@ def _settings_tab():
         wk.save_units(nw or w, nd or d)
         st.rerun()
     habits = [n for _, n in store.get_habits()]
-    current = (store.load_settings().get("workouts") or {}).get("habit")
+    linked = wk.linked_habit()
+    current = linked[1] if linked else None
     opts = ["(none)"] + habits
     pick = st.selectbox("Tick this habit when you log a workout", opts,
                         index=opts.index(current) if current in opts else 0, key="wk_habit")
@@ -557,6 +558,7 @@ def _settings_tab():
 
 
 def render_page():
+    wk.linked_habit()                 # a fitness habit made since (setup's "Trained") gets the workouts already logged
     st.title("Workouts")
     today = store.local_today()
     _metrics(today)
@@ -586,6 +588,7 @@ def render_home():
     """Home's Workouts widget: this week as seven dots (filled on a day you trained), then the last workout."""
     from venato.ui import appearance
     kit.subhead("Workouts")
+    wk.linked_habit()
     today = store.local_today()
     start = store.week_start_of(today)
     days = {store._as_date(w["date"]) for w in wk.workouts(start, start + timedelta(days=6))}

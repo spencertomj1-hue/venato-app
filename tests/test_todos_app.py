@@ -149,7 +149,7 @@ def test_home_habits_tick_today(store):
     assert not at.exception
     assert date.today().isoformat() in store.get_habit_dates(hid)
     at.button(key="home_habits_manage").click().run()
-    assert at.session_state["page"] == "Daily Log"
+    assert at.session_state["page"] == "Habits"
 
 
 def test_deadlines_read_as_numbers(store):

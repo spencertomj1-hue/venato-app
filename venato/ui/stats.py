@@ -1,7 +1,7 @@
 """
 The Review page. Week: one week's review in three columns that fit the window (ui/review.py render),
 with a ‹ week › stepper. Trends: the last 8 weeks, then time planned vs done and (with Daily Log on)
-sleep and water (when switched on) and habits over a period, then anything blocks add (EXTRAS).
+habits, and sleep and water (when switched on) over a period, then anything blocks add (EXTRAS).
 """
 
 from datetime import timedelta
@@ -130,7 +130,9 @@ def _charts():
     st.caption(f"Timetable time is counted from the {stats['days_confirmed']} of {stats['days']} days you've "
                "confirmed. Confirm a day on the Timetable, or from Home's end-of-day prompt.")
 
-    if not blocks.is_on("log"):             # sleep, water and habits are Daily Log's
+    if blocks.is_on("habits"):
+        _habit_chart(stats)
+    if not blocks.is_on("log"):             # sleep and water are Daily Log's
         return
 
     entries = entries_between(stats["start"], stats["end"])
@@ -172,7 +174,8 @@ def _charts():
                                   size=max(4, min(24, 620 // max(stats["days"], 1))))
             kit.show(chart)
 
-    # --- Habit completion % ---
+def _habit_chart(stats):
+    """Habit completion % over the period (the Habits block's)."""
     if stats["habit_completion_pct"]:
         completion = pd.DataFrame(
             {"habit": list(stats["habit_completion_pct"]), "percent": list(stats["habit_completion_pct"].values())}

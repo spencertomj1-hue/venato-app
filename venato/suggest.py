@@ -14,7 +14,7 @@ import re
 # (words that trigger it, what it suggests). Words match whole, with their endings taken off:
 # "running" and "runners" find "run", "prune" finds nothing. Order is the order suggestions come back in.
 RULES = [
-    (("run", "jog", "marathon", "5k", "10k", "gym", "lift", "weights", "fitness", "exercise", "workout", "swim",
+    (("train", "run", "jog", "marathon", "5k", "10k", "gym", "lift", "weights", "fitness", "exercise", "workout", "swim",
       "cycle", "strength", "football", "hike"),
      [("category", "Exercise", "exercise"), ("habit", "Trained", None)]),
     (("exam", "degree", "first", "2:1", "2:2", "grade", "revise", "revision", "study", "essay", "dissertation",
@@ -63,3 +63,11 @@ def for_goal(text):
                 seen.add((kind, name))
                 out.append({"kind": kind, "name": name, **({"cid": cid} if cid else {})})
     return out
+
+
+def is_fitness(name):
+    """Whether a habit's name is about training ("Trained", "Gym", "Morning run"): what a logged workout counts towards."""
+    forms = set()
+    for word in re.findall(r"[a-z0-9:]+", str(name or "").lower()):
+        forms |= _forms(word)
+    return bool(forms.intersection(RULES[0][0]))

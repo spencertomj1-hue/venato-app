@@ -85,7 +85,7 @@ class Block:
 GROUPS = ["Plan", "Health & body", "Study & work", "People & life", "Other"]
 
 # The blocks a new setup starts with: the core ones, bar Grades (setup adds that for students).
-STARTER = ["timetable", "goals", "stats", "focus", "log"]
+STARTER = ["timetable", "goals", "stats", "focus", "habits", "log"]
 
 # What was always on before every block could be switched off. Settings saved back then keep these on.
 _ONCE_ALWAYS_ON = ["timetable", "goals", "focus", "grades", "stats"]
@@ -124,6 +124,8 @@ def chosen_keys():
     keys = [k for k in saved if k in known]
     if not settings.get("blocks_optional"):    # saved before every block could be switched off: the
         keys += [k for k in _ONCE_ALWAYS_ON if k not in keys and k in known]   # once always-on ones stay on
+    if not settings.get("habits_split") and "log" in keys and "habits" not in keys:   # habits were the Daily
+        keys.insert(keys.index("log") + 1, "habits")                                  # Log's until #20: keep them
     return keys
 
 
@@ -140,7 +142,7 @@ def save(keys):
     """Switch on exactly these blocks, in this priority order."""
     from venato import store
     known = {b.key for b in all_blocks()}
-    store.save_settings(blocks=[k for k in dict.fromkeys(keys) if k in known], blocks_optional=True)
+    store.save_settings(blocks=[k for k in dict.fromkeys(keys) if k in known], blocks_optional=True, habits_split=True)
 
 
 def pages():

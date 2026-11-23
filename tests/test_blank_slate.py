@@ -57,8 +57,8 @@ def test_outlook_category_still_picks_one_when_there_are_some(store):
 def test_core_blocks_and_starter(store):
     b = _blocks()
     core = {x.key for x in b.all_blocks() if x.core}
-    assert core == {"timetable", "goals", "stats", "focus", "log", "grades"}
-    assert b.STARTER == ["timetable", "goals", "stats", "focus", "log"]
+    assert core == {"timetable", "goals", "stats", "focus", "habits", "log", "grades"}
+    assert b.STARTER == ["timetable", "goals", "stats", "focus", "habits", "log"]
     assert set(b.STARTER) <= core and "grades" not in b.STARTER
 
 
@@ -94,7 +94,7 @@ def test_old_settings_keep_the_once_always_on_blocks(store):
     """Saved before blocks could be switched off: the old always-on five stay on, whatever STARTER is."""
     b = _blocks()
     store.save_settings(blocks=["log"])
-    assert b.chosen_keys() == ["log", "timetable", "goals", "focus", "grades", "stats"]
+    assert b.chosen_keys() == ["log", "habits", "timetable", "goals", "focus", "grades", "stats"]
 
 
 def test_every_page_draws_with_zero_categories(store):

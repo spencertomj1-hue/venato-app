@@ -126,7 +126,7 @@ def _goal_form(key, goal=None, life_goal_id=None):
               "life_goal_id": _life_goal_picker(key, goal["life_goal_id"] if goal else life_goal_id)}
     if how == BY_HABIT:
         if not habits:
-            st.caption("You have no habits yet. Add one on the Daily Log page, or update this goal yourself.")
+            st.caption("You have no habits yet. Add one on the Habits page, or update this goal yourself.")
             return None
         ids = list(habits)
         values["habit_id"] = st.selectbox("Habit", ids, format_func=habits.get, key=f"{key}_habit",

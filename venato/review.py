@@ -229,7 +229,7 @@ def summary(first):
 
     # --- Habits ---
     targets, habits = store.habit_targets(), []
-    for hid, name in (store.get_habits() if log_on else []):
+    for hid, name in (store.get_habits() if blocks.is_on("habits") else []):
         done = store.get_habit_dates(hid)
         ticks = sum(d in done for d in days)
         target = targets.get(hid, 7)

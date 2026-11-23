@@ -88,7 +88,7 @@ def journal_week(today=None):
 
 
 def habit_streak(habit_id, today=None):
-    """A habit's current streak (days, or weeks for a habit with a weekly target): the Daily Log's own rule."""
+    """A habit's current streak (days, or weeks for a habit with a weekly target): the Habits page's own rule."""
     return store.habit_progress(habit_id, store.get_habit_dates(habit_id), today or store.local_today())[1]
 
 

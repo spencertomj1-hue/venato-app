@@ -74,7 +74,7 @@ def test_log_on_shows_it(store, monkeypatch):
     _search(store, at, "stretch")
     assert [b for b in at.button if b.key and "Habit" in b.key]
     next(b for b in at.button if b.key and "Habit" in b.key).click().run()
-    assert at.session_state["page"] == "Daily Log"
+    assert at.session_state["page"] == "Habits"                # habits are their own block now (#20)
 
 
 def test_log_on_with_nothing_logged_says_so(store):

@@ -12,6 +12,7 @@ import uuid
 from datetime import timedelta
 
 from venato import store
+from venato import suggest
 from venato.blocks import Block, Widget
 
 KINDS = ("weights", "bodyweight", "cardio", "timed")
@@ -239,6 +240,8 @@ def update_workout(wid, **fields):
         with store.db() as conn:
             conn.execute(f"UPDATE wk_workouts SET {', '.join(f'{k} = ?' for k in allowed)} WHERE id = ?",
                          (*allowed.values(), wid))
+        if allowed.get("date"):
+            _tick_habit(allowed["date"])
 
 
 def get_workout(wid):
@@ -761,19 +764,37 @@ def summary(wid):
 
 # --- Habit link ---
 
+def linked_habit():
+    """(id, name) of the habit a logged workout ticks. The one picked in Settings → Workouts; if none was ever
+    picked, the only habit with a fitness name ("Trained", "Gym": what setup makes for a fitness goal), which is
+    then remembered and given the workouts already logged. None if "(none)" was picked or nothing fits."""
+    picked = store.load_settings().get("workouts") or {}
+    if "habit" in picked:
+        return store.find_habit(picked["habit"]) if picked["habit"] else None
+    fits = [h for h in store.get_habits() if suggest.is_fitness(h[1])]
+    if len(fits) != 1:
+        return None
+    set_habit_link(fits[0][1])
+    return fits[0]
+
+
 def _tick_habit(day):
-    """Logging a workout can tick a habit (Settings → Workouts), e.g. 'Gym'."""
-    name = (store.load_settings().get("workouts") or {}).get("habit")
-    if not name:
-        return
-    found = store.find_habit(name)
+    """Logging a workout ticks the linked habit for its day."""
+    found = linked_habit()
     if found:
         with store.db() as conn:
-            store.set_habit_done(conn, found[0], day.isoformat(), True)
+            store.set_habit_done(conn, found[0], store._as_date(day).isoformat(), True)
 
 
 def set_habit_link(name):
+    """Tick this habit (None: no habit) when a workout is logged, and for every workout already logged."""
     store.save_settings(workouts={**(store.load_settings().get("workouts") or {}), "habit": name or None})
+    found = store.find_habit(name) if name else None
+    if found:
+        with store.db() as conn:
+            days = [d for (d,) in conn.execute("SELECT DISTINCT date FROM wk_workouts")]
+            for d in days:
+                store.set_habit_done(conn, found[0], d, True)
 
 
 # --- The assistant ---

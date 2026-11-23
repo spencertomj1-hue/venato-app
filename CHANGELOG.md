@@ -10,6 +10,12 @@ Everything before 1.0.0 was an alpha test. Those releases were first published a
 
 ## [Unreleased]
 
+### Changed
+- **Habits are their own block**, with a **Habits page** (this week as a grid of ticks, a progress line per habit, and adding, changing and removing habits) and a **Habits** tile on Home. They no longer sit on the Daily Log page, and switching the Daily Log off no longer hides them. If you use the Daily Log, Habits stay on for you; you can switch them off in Settings → Blocks. The journal book still has the day's ticks.
+
+### Fixed
+- **Workouts now count towards your fitness habit.** Logging a workout ticks the habit setup made for a fitness goal (such as "Trained"), so its target no longer says 0 this week after you've trained. Workouts you logged before are counted too, and moving a workout to another day ticks that day. You can still pick another habit, or none, in Settings → Workouts.
+
 ## [1.0.0] - 2026-11-22
 
 Venato now focuses on student life and long-term goals. Home is how you get round the app (the sidebar is gone), goals are plans over months with targets and to-dos under them, setup is a short wizard, and a new install starts blank. Several blocks are gone, but none of their data is deleted (see Removed).

@@ -1,14 +1,14 @@
 """
-Daily Log page (the day's log and habits) and Home's habits.
+Daily Log page (the day's log) and Home's Journal tile. Habits have their own block (venato/ui/habits.py).
 
 Daily log: a journal. The page leads with the selected day's journal box (today's prompt), with sleep
 and water beside it when switched on (Settings -> Daily Log). A month calendar (calendar_component.js/.css)
-marks the days that have an entry; clicking a day opens it. Habits follow.
-Habits: tick habits for a day, see streaks, add/remove habits.
+marks the days that have an entry; clicking a day opens it.
 
 The journal book (journal_component.js/.css) sits above it all, closed until opened. Open, it is the
 writing page for the selected day (entries.notes, saved as you type) and the journal box steps aside;
-its left page has sleep and water (when switched on), the user's own day trackers and the day's habits.
+its left page has sleep and water (when switched on), the user's own day trackers and, with the Habits
+block on, the day's habit ticks.
 "Quoted" text becomes a to-do for that day and ^marked^ text one for that week (venato/journal.py).
 """
 
@@ -89,7 +89,7 @@ def _on_month():
     st.session_state["log_month"] = shifted.replace(day=1)
 
 
-PAGE = "Daily Log"      # page name (also what Home's habits "Manage" switches to)
+PAGE = "Daily Log"      # page name (also what Home's Journal "Write" switches to)
 
 
 def page_daily_log():
@@ -162,7 +162,9 @@ def _journal(today):
     entry = store.get_entry(d)
     logged = store.day_values(d)
     litres = regional.water_unit() == "litres"
-    habits = [{"id": hid, "name": name, "done": d in store.get_habit_dates(hid)} for hid, name in store.get_habits()]
+    from venato import blocks
+    habits = ([{"id": hid, "name": name, "done": d in store.get_habit_dates(hid)} for hid, name in store.get_habits()]
+              if blocks.is_on("habits") else [])
     _journal_component(
         data={
             "open": st.session_state.get("journal_open", False),
@@ -219,7 +221,7 @@ def _manage_trackers():
 @st.fragment
 def _day_card():
     """The selected day's journal box (with sleep and water beside it when on), the month calendar and the
-    day's habits: a fragment, so picking a day or a month redraws just this. Saving reruns the app (Past
+    a fragment, so picking a day or a month redraws just this. Saving reruns the app (Past
     entries below shows the journal)."""
     today = store.local_today()
     selected = st.session_state.setdefault("log_day", today)
@@ -254,8 +256,6 @@ def _day_card():
         },
         key="log_calendar", on_select_change=_on_select, on_nav_change=_on_month,
     )
-
-    _habits_for(selected, today)
 
 
 def calendar_days(entries, sleep_on, water_on):
@@ -336,34 +336,6 @@ def _past_entries():
                       icon=":material/edit:")
 
 
-# ---------------------------------------------------------------------------
-# Habits
-# ---------------------------------------------------------------------------
-
-def _toggle_habit(habit_id, day, key, home=False):
-    """Checkbox callback: save the new tick state straight away. The ticks are a fragment, so only they
-    rerun; on Home the whole app reruns when a goal counts this habit (its bar is outside the fragment)."""
-    with store.db() as conn:
-        store.set_habit_done(conn, habit_id, day, st.session_state[key])
-    if home:
-        kit.rerun_app_if({f"habit:{habit_id}"})
-
-
-def _open_habits():
-    st.session_state["page"] = PAGE         # the router (nav.py); set in a callback, before the page is drawn
-
-
-def render_home_habits():
-    """Home's Habits widget: today's habits to tick, each with the last 7 days and its current streak."""
-    head = st.container(horizontal=True, vertical_alignment="center")
-    kit.subhead("Habits", head, width="stretch")
-    head.button("Manage", key="home_habits_manage", type="tertiary", on_click=_open_habits)
-    if not store.get_habits():
-        st.caption("No habits yet. Add them on the Daily Log.")
-        return
-    _home_habit_rows()
-
-
 def _write_today():
     st.session_state["log_day"] = store.local_today()
     st.session_state["log_month"] = store.local_today().replace(day=1)
@@ -394,73 +366,3 @@ def render_home_journal():
         st.caption(f"Nothing yet today. {prompt_for(today)}")
 
 
-@st.fragment
-def _home_habit_rows():
-    """Home's habit ticks, side by side (a fragment: ticking one reruns just these), each with its current streak
-    after its name ("Exercise · 5"; the Daily Log's own rule, in days or weeks). The rest is on the Daily Log."""
-    today = store.local_today()
-    d = today.isoformat()
-    box = st.container(key="home_habits", horizontal=True, gap="small")
-    for habit_id, name in store.get_habits():
-        done = store.get_habit_dates(habit_id)
-        streak = store.habit_progress(habit_id, done, today)[1]
-        key = f"home_habit_{habit_id}_{d}"
-        box.checkbox(f"{name} · {streak}" if streak else name, value=d in done, key=key, on_change=_toggle_habit,
-                     args=(habit_id, d, key, True), width="content")
-
-
-@st.fragment
-def _habit_ticks(day, today):
-    """The selected day's habit ticks with their progress (a fragment: ticking one reruns just these; nothing
-    else on the Daily Log shows habits)."""
-    d = day.isoformat()
-    for habit_id, name in store.get_habits():
-        done_dates = store.get_habit_dates(habit_id)
-        progress, _, _ = store.habit_progress(habit_id, done_dates, min(day, today))
-        key = f"habit_{habit_id}_{d}"
-        left, right = st.columns([3, 2])
-        left.checkbox(name, value=d in done_dates, key=key, disabled=day > today,
-                      on_change=_toggle_habit, args=(habit_id, d, key))
-        right.caption(progress)
-
-
-# "How often" choices: index 0 is every day, index n is n times a week.
-OFTEN = ["Every day"] + [f"{n} time{'s' * (n > 1)} a week" for n in range(1, 8)]
-
-
-def _habits_for(day, today):
-    """The selected day's habits to tick (not for future days), with streaks, and adding/removing habits."""
-    st.subheader("Habits", anchor=False)
-    habits = store.get_habits()
-    if not habits:
-        st.caption("No habits yet. Add one below.")
-    else:
-        _habit_ticks(day, today)
-
-    with st.expander("Manage habits"):
-        with st.form("add_habit", clear_on_submit=True):
-            a, b, c = st.columns([3, 2, 1], vertical_alignment="bottom")
-            new_name = a.text_input("New habit")
-            how = b.selectbox("How often", OFTEN, key="habit_new_often")
-            if c.form_submit_button("Add habit") and new_name.strip():
-                store.add_habit(new_name.strip(), OFTEN.index(how) or None)
-                st.rerun()
-
-        if habits:
-            targets = store.habit_targets()
-            names = {name: habit_id for habit_id, name in habits}
-            a, b, c = st.columns([3, 2, 1], vertical_alignment="bottom")
-            which = a.selectbox("Change how often", list(names), key="habit_often_which")
-            how = b.selectbox("How often", OFTEN, index=targets.get(names[which], 0), key=f"habit_often_{names[which]}")
-            if c.button("Save", key="habit_often_save"):
-                store.set_habit_target(names[which], OFTEN.index(how) or None)
-                st.rerun()
-
-        if habits:
-            names = {name: habit_id for habit_id, name in habits}
-            to_remove = st.selectbox("Remove a habit", list(names))
-            st.caption("Removing a habit also deletes its history (you can undo it straight after).")
-            if st.button("Remove habit"):
-                undo.checkpoint(f"Removed the habit '{to_remove}' and its history")
-                store.delete_habit(names[to_remove])
-                st.rerun()

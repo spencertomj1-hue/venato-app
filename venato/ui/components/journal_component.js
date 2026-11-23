@@ -116,7 +116,7 @@ class Journal {
         ${trackers ? `<div class="jn-block"><div class="jn-label">Tracking</div>${trackers}</div>` : ""}
         ${sessions ? `<div class="jn-block"><div class="jn-label">Training</div>${sessions}</div>` : ""}
         <div class="jn-block"><div class="jn-label">Habits</div>
-          ${habits || `<div class="jn-none">No habits yet (add them under the book).</div>`}</div>
+          ${habits || `<div class="jn-none">No habits yet (add them on the Habits page).</div>`}</div>
         ${d.notice ? `<div class="jn-notice">${esc(d.notice)}</div>` : ""}
         <div class="jn-tip"><b>"Buy milk"</b> → that day's to-dos · <b>^Meal prep^</b> → that week's</div>
         <div class="jn-left-nav">

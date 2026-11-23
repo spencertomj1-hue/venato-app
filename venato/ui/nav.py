@@ -19,7 +19,7 @@ KEY = "page"
 
 # Shortcut colours (the tiles' icon squares), by page.
 COLOURS = {"Timetable": "#0B4F9C", "To-dos": "#C62828", "Goals": "#146C2E", "Focus": "#0F766E", "Modules": "#6B3FA0",
-           "Daily Log": "#B45309", "Review": "#8E1C1C", SETTINGS: "#5F6170"}
+           "Habits": "#A16207", "Daily Log": "#B45309", "Review": "#8E1C1C", SETTINGS: "#5F6170"}
 ICONS = {HOME: ":material/home:", SETTINGS: ":material/settings:", "To-dos": ":material/check:"}
 
 _JS = """

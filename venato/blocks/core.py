@@ -1,4 +1,4 @@
-"""The blocks Venato started with: timetable, goals, stats (the Review page) and the daily log.
+"""The blocks Venato started with: timetable, goals, stats (the Review page), habits and the daily log.
 Their pages and tools live where they always have (venato/ui/*, venato/tools/); this just
 describes them as blocks. All of them can be switched off; they're on for installs that never chose."""
 
@@ -63,8 +63,17 @@ def _log_page():
 
 
 def _habits_home():
-    from venato.ui import daily_log
-    daily_log.render_home_habits()
+    from venato.ui import habits
+    habits.render_home()
+
+
+def _habits_page():
+    from venato.ui import habits
+    habits.render_page()
+
+
+def _habit_search_open(r, ss):
+    ss["page"] = "Habits"
 
 
 def _journal_home():
@@ -101,15 +110,19 @@ BLOCKS = [
                           status=_st("deadlines"), icon=":material/event:", colour="#5F6170"),
                    Widget("goals", "Goals", _goals_home, "wide", ("small", "wide", "large", "tall", "column"), status=_st("goals"), icon=":material/flag:",
                           colour="#146C2E")]),
+    Block("habits", "Habits", ":material/repeat:",
+          "Habits to tick off every day or so many times a week, with streaks.",
+          group="Health & body", page=_habits_page, order=55, default=True, core=True,
+          widgets=[Widget("habits", "Habits", _habits_home, "small", status=_st("habits"), colour="#A16207")],
+          search={"Habit": ("SELECT id, name, NULL, NULL, per_week FROM habits", "name", "name")},
+          search_icons={"Habit": "repeat"}, search_open=_habit_search_open),
     Block("log", "Daily Log", ":material/edit_calendar:",
-          "A journal for each day, habits with streaks, and optional sleep and water.",
+          "A journal for each day, and optional sleep and water.",
           group="Health & body", page=_log_page, order=60, default=True, core=True,
-          widgets=[Widget("habits", "Daily log", _habits_home, "small", status=_st("habits"), colour="#B45309"),
-                   Widget("journal", "Journal", _journal_home, "small", status=_st("journal"), icon=":material/edit_note:",
+          widgets=[Widget("journal", "Journal", _journal_home, "small", status=_st("journal"), icon=":material/edit_note:",
                           colour="#B45309")],
-          search={"Habit": ("SELECT id, name, NULL, NULL, per_week FROM habits", "name", "name"),
-                  "Journal": ("SELECT date, notes, NULL, date, NULL FROM entries", "COALESCE(notes, '')")},
-          search_icons={"Habit": "repeat", "Journal": "edit_note"}, search_open=_log_search_open),
+          search={"Journal": ("SELECT date, notes, NULL, date, NULL FROM entries", "COALESCE(notes, '')")},
+          search_icons={"Journal": "edit_note"}, search_open=_log_search_open),
     Block("stats", "Review", ":material/monitoring:",
           "Time planned vs done, your past weekly reviews, and sleep charts if you track it.",
           group="Plan", page=_stats_page, order=50, default=True, core=True,

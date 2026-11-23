@@ -75,7 +75,7 @@ def test_settings_tab_switches_blocks(store):
 def test_saved_before_blocks_were_optional_keeps_the_starter(store):
     b = _blocks()
     store.save_settings(blocks=["log"])                               # an older install's list, no blocks_optional
-    assert b.chosen_keys() == ["log", "timetable", "goals", "focus", "grades", "stats"]   # the once always-on ones stay
+    assert b.chosen_keys() == ["log", "habits", "timetable", "goals", "focus", "grades", "stats"]   # the once always-on ones stay
     assert b.get("stats").name == "Review"
     b.save(["log"])                                                   # once saved now, it's exactly the list
     assert b.chosen_keys() == ["log"]
@@ -147,7 +147,7 @@ def test_old_saved_order_keeps_its_order(store):
     """A list saved before blocks were optional: its order stays first, the once always-on ones follow."""
     b = _blocks()
     store.save_settings(blocks=["timetable", "goals", "stats", "log", "grades"])    # saved before Focus and Grades existed
-    assert b.chosen_keys() == ["timetable", "goals", "stats", "log", "grades", "focus"]
+    assert b.chosen_keys() == ["timetable", "goals", "stats", "log", "habits", "grades", "focus"]
 
 
 def test_core_blocks_bring_home_widgets(store):
