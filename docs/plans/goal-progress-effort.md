@@ -73,6 +73,18 @@ goal % = Σ (effort × progress) over the goal's targets and its own to-dos
   goals with no to-dos.
 - Expected (pace) value for a milestone halfway through its span is 0.5.
 
+## Decisions made
+
+- Goal-level to-dos count toward the goal % (at their effort), even when the goal has targets.
+- Effort NULL means 5. No backfill.
+- Standalone to-dos get the effort field too (it's on the To-dos pop-up) but feed no bar.
+
+## Cleanup to fold into phase 1
+
+- `venato/pace.py` `suggestions`, `suggested_target`, `dismiss_suggestion`, and their tests in `tests/test_pace.py`:
+  nothing in the UI calls them any more (the Goals page side panel was removed). Check with grep, then delete.
+- `venato/ui/goal_time.py` `GOAL_COLOURS` (and its comment): unused since `free_split` went. Check, then delete.
+
 ## Order
 
 1. Store and maths, with tests (no UI).
