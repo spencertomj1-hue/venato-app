@@ -78,7 +78,8 @@ def _next_ord(conn, period, start):
                         (period, start)).fetchone()[0]
 
 
-def _insert_todo(conn, title, period, start, notes=None, repeat=False, todo_id=None, minutes=None, group_id=None):
+def _insert_todo(conn, title, period, start, notes=None, repeat=False, todo_id=None, minutes=None, group_id=None,
+                 effort=None):
     """Add a to-do at the end of its list. Idempotent for a given id (the to-do list replays ops)."""
     todo_id = todo_id or uuid.uuid4().hex
     conn.execute(
@@ -86,8 +87,9 @@ def _insert_todo(conn, title, period, start, notes=None, repeat=False, todo_id=N
         (todo_id, title, notes, period, start, int(bool(repeat)), _next_ord(conn, period, start),
          stamp()),
     )
-    if minutes or group_id:
-        conn.execute("UPDATE todos SET minutes = ?, group_id = ? WHERE id = ?", (minutes, group_id, todo_id))
+    if minutes or group_id or effort:
+        conn.execute("UPDATE todos SET minutes = ?, group_id = ?, effort = ? WHERE id = ?",
+                     (minutes, group_id, effort, todo_id))
     return todo_id
 
 
@@ -355,16 +357,17 @@ def roll_todos(today=None):
             if done and done[0] >= start:
                 continue
             latest = {}
-            for title, notes, repeat, minutes, group_id in conn.execute(
-                'SELECT title, notes, "repeat", minutes, group_id FROM todos WHERE period = ? AND period_start < ? '
+            for title, notes, repeat, minutes, group_id, effort in conn.execute(
+                'SELECT title, notes, "repeat", minutes, group_id, effort FROM todos WHERE period = ? AND period_start < ? '
                 "ORDER BY period_start DESC, ord",
                 (period, start),
             ):
-                latest.setdefault(title.lower(), (title, notes, repeat, minutes, group_id))
+                latest.setdefault(title.lower(), (title, notes, repeat, minutes, group_id, effort))
             existing = _titles(conn, period, start)
-            for key, (title, notes, repeat, minutes, group_id) in latest.items():
+            for key, (title, notes, repeat, minutes, group_id, effort) in latest.items():
                 if repeat and key not in existing:
-                    _insert_todo(conn, title, period, start, notes, True, minutes=minutes, group_id=group_id)
+                    _insert_todo(conn, title, period, start, notes, True, minutes=minutes, group_id=group_id,
+                                 effort=effort)
                     made += 1
             conn.execute("INSERT OR REPLACE INTO todo_rollover VALUES (?, ?)", (period, start))
     return made
@@ -378,13 +381,14 @@ def carry_over(period, start):
     with db() as conn:
         existing = _titles(conn, period, nxt)
         rows = conn.execute(
-            'SELECT title, notes, "repeat", minutes, group_id FROM todos '
+            'SELECT title, notes, "repeat", minutes, group_id, effort FROM todos '
             "WHERE period = ? AND period_start = ? AND done = 0 ORDER BY ord",
             (period, start),
         ).fetchall()
-        for title, notes, repeat, minutes, group_id in rows:
+        for title, notes, repeat, minutes, group_id, effort in rows:
             if title.lower() not in existing:
-                _insert_todo(conn, title, period, nxt, notes, repeat, minutes=minutes, group_id=group_id)
+                _insert_todo(conn, title, period, nxt, notes, repeat, minutes=minutes, group_id=group_id,
+                             effort=effort)
                 existing.add(title.lower())
                 copied += 1
     return copied

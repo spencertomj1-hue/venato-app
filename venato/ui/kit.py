@@ -358,3 +358,44 @@ def rerun_app_if(changed):
     the code that called it."""
     if app_depends_on(changed):
         st.rerun(scope="app")
+
+
+# --- Effort (how big a chunk of its goal a target or to-do is, 1-10; see store.life_goals) ---
+
+EFFORT_SIZES = {"Small": 2, "Medium": 5, "Big": 8}
+EFFORT_HELP = "How big a chunk of the goal this is: how hard times how long. It weights the goal's %."
+
+
+def effort_dots(effort):
+    """"●●●○○": an effort of 1-10 as five dots (effort ÷ 2, rounded up; unset reads as 5)."""
+    n = (store.effort({"effort": effort}) + 1) // 2
+    return "●" * n + "○" * (5 - n)
+
+
+def effort_html(effort):
+    """The dots as a small grey span with the number in its tooltip (markdown with unsafe_allow_html, or st.html)."""
+    e = store.effort({"effort": effort})
+    text = f"Effort {e} of 10"
+    return (f'<span class="vn-effort" title="{text}" aria-label="{text}" role="img" '
+            f'style="opacity:0.6;font-size:0.75em;letter-spacing:1px;white-space:nowrap">{effort_dots(effort)}</span>')
+
+
+def effort_label(effort):
+    """":gray[●●●○○]" for a checkbox's label (markdown only); the number goes in its help."""
+    return f":gray[{effort_dots(effort)}]"
+
+
+def effort_picker(key, effort=None, exact=True, label="Effort"):
+    """Small 2 · Medium 5 · Big 8 as chips, and (exact=True) a 1-10 slider under "Exact". Returns the effort,
+    or None while an unset one is left alone (unset reads as 5, so that's the same as Medium)."""
+    current = store.effort({"effort": effort})
+    size = next((name for name, n in EFFORT_SIZES.items() if n == current), None)
+    names = list(EFFORT_SIZES)
+    pick = st.segmented_control(label, names, default=size, key=f"{key}_effort", help=EFFORT_HELP,
+                                format_func=lambda n: f"{n} {EFFORT_SIZES[n]}",
+                                label_visibility="visible" if exact else "collapsed")
+    chosen = EFFORT_SIZES.get(pick) if pick else current
+    if exact and st.toggle("Exact", value=size is None, key=f"{key}_effort_exact"):
+        chosen = st.slider("Effort (1-10)", 1, 10, value=chosen, key=f"{key}_effort_n",
+                           label_visibility="collapsed")
+    return None if effort is None and chosen == 5 else chosen

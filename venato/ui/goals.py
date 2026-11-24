@@ -150,7 +150,8 @@ def _goal_form(key, goal=None, life_goal_id=None):
                         "(and, if you like, only one activity) add up by themselves.")
     values = {"title": title.strip(), "target": target, "unit": unit.strip() or None, "habit_id": None,
               "category_id": None, "label": None, "due": due, "milestone": False,
-              "life_goal_id": _life_goal_picker(key, goal["life_goal_id"] if goal else life_goal_id)}
+              "life_goal_id": _life_goal_picker(key, goal["life_goal_id"] if goal else life_goal_id),
+              "effort": kit.effort_picker(key, goal.get("effort") if goal else None)}
     if how == BY_HABIT:
         if not habits:
             st.caption("You have no habits yet. Add one on the Daily Log page, or update this goal yourself.")
@@ -183,7 +184,7 @@ def _milestone_form(key, goal, life_goal_id):
     due = due_picker(key, date.fromisoformat(goal["due"]) if goal else default_due(store.local_today()))
     values = {"title": title.strip(), "milestone": True, "due": due,
               "life_goal_id": _life_goal_picker(key, goal["life_goal_id"] if goal else life_goal_id),
-              "start": None, "earlier": 0.0}
+              "effort": kit.effort_picker(key, goal.get("effort") if goal else None), "start": None, "earlier": 0.0}
     rating = goal.get("self_rating") if goal else None
     rate = st.toggle("Rate it myself", value=rating is not None, key=f"{key}_rate",
                      help="For fuzzy ones (\"get good at Swift\"): your own guess replaces counting its to-dos.")
@@ -240,14 +241,14 @@ def _new_goal(key="new_goal", life_goal_id=None):
             if values["milestone"]:
                 today = store.local_today()
                 g = store.add_goal(values["title"], None, today, None, due=max(values["due"], today),
-                                   life_goal_id=values["life_goal_id"], milestone=True)
+                                   life_goal_id=values["life_goal_id"], milestone=True, effort=values["effort"])
                 if values["self_rating"] is not None:
                     store.update_goal(g["id"], self_rating=values["self_rating"])
             else:
                 g = store.add_goal(values["title"], None, values["start"] or store.local_today(), values["target"],
                                    values["unit"], values["habit_id"], category_id=values["category_id"],
                                    label=values["label"], due=max(values["due"], values["start"] or values["due"]),
-                                   life_goal_id=values["life_goal_id"])
+                                   life_goal_id=values["life_goal_id"], effort=values["effort"])
             if values["earlier"]:
                 store.set_goal_progress(g["id"], values["earlier"])
             for k in [k for k in st.session_state if k.startswith(f"{key}_")]:
@@ -315,7 +316,8 @@ def _goal_row(g, ctx=None, neighbours=None):
         when, left = due_parts(g)
         badge = f"{goal_time.badge(p['state'])} " if p and p["state"] != "upcoming" else ""
         # The deadline stays on the title's line (non-breaking spaces keep "by 31/12" in one piece).
-        text.markdown(f"**{goal_time.md(g['title'])}**\u00a0:gray[{when.replace(' ', chr(160))}]  \n{badge}:gray[{left}]")
+        text.markdown(f"**{goal_time.md(g['title'])}**\u00a0:gray[{when.replace(' ', chr(160))}]\u00a0"
+                      f"{kit.effort_html(g.get('effort'))}  \n{badge}:gray[{left}]", unsafe_allow_html=True)
         unit = f" {g['unit']}" if g["unit"] else ""
         should = pace.expected(g, today) if g["target"] else 0
         if g["milestone"]:
@@ -400,7 +402,8 @@ def _target_todos(g):
     today = store.local_today()
     for t in open_:
         when = f" :gray[· due {regional.short_date(t['due'], today)}]" if t.get("due") else ""
-        st.checkbox(f"{kit.md(t['title'])}{when}", value=False, key=f"target_todo_{t['id']}",
+        st.checkbox(f"{kit.md(t['title'])}{when} {kit.effort_label(t.get('effort'))}", value=False,
+                    key=f"target_todo_{t['id']}", help=f"Effort {store.effort(t)} of 10",
                     on_change=_tick_target_todo, args=(t["id"], g))
     if st.session_state.get(_plus_offer_key(g["id"])):
         with st.container(horizontal=True, gap="small", vertical_alignment="center"):
@@ -419,10 +422,12 @@ def _new_target_todo(g):
     with st.container(horizontal=True, vertical_alignment="bottom"):
         title = st.text_input("New to-do", key=key, placeholder="Add a to-do for this target",
                               label_visibility="collapsed", width="stretch")
+        effort = kit.effort_picker(key, exact=False)
         if st.button("", icon=":material/add:", key=f"{key}_add", help="Add this to-do to the target",
                      disabled=not (title or "").strip()):
-            store.add_detailed_todo(title.strip(), group_id=store.ensure_target_group(g["id"]))
-            del st.session_state[key]
+            store.add_detailed_todo(title.strip(), group_id=store.ensure_target_group(g["id"]), effort=effort)
+            for k in (key, f"{key}_effort"):
+                st.session_state.pop(k, None)
             st.rerun()
 
 

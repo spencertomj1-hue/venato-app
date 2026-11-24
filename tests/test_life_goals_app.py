@@ -243,3 +243,43 @@ def test_rate_a_milestone_yourself(store):
     m = store.get_goal(m["id"])
     assert m["self_rated"] and abs(store.target_progress(m) - 0.4) < 1e-9
     assert "Self-rated · 40%" in " ".join(h.body for h in at.get("html"))
+
+
+def test_effort_on_targets_and_todos(store):
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    t = store.add_goal("Users", None, today, 50, "users", due=store.months_on(today, 1), life_goal_id=g["id"],
+                       effort=8)
+    at = goals_page()
+    html = " ".join(m.value for m in at.markdown)
+    assert 'title="Effort 8 of 10"' in html and "●●●●○" in html                   # the dots on the row
+    # A new target: Big.
+    key = f"new_goal_{g['id']}"
+    at.text_input(key=f"{key}_title").input("Reviews").run()
+    at.segmented_control(key=f"{key}_effort").set_value("Big").run()
+    at.button(key=f"{key}_add").click().run()
+    new = next(x for x in store.life_goal_targets(g["id"]) if x["title"] == "Reviews")
+    assert new["effort"] == 8
+    # Exact: 3.
+    key = f"edit_{t['id']}"
+    at.toggle(key=f"{key}_effort_exact").set_value(True).run()
+    at.slider(key=f"{key}_effort_n").set_value(3).run()
+    at.button(key=f"{key}_save").click().run()
+    assert store.get_goal(t["id"])["effort"] == 3
+    # A to-do for the goal, Small; its dots show beside it.
+    key = f"life_{g['id']}_newtodo"
+    at.text_input(key=key).input("Write the README").run()
+    at.segmented_control(key=f"{key}_effort").set_value("Small").run()
+    at.button(key=f"{key}_add").click().run()
+    todo = store.life_goal_todos(g["id"])[0]
+    assert todo["effort"] == 2
+    assert "●○○○○" in at.checkbox(key=f"life_todo_{todo['id']}").label
+
+
+def test_untouched_effort_stays_unset(store):
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    t = store.add_goal("Users", None, today, 50, due=store.months_on(today, 1), life_goal_id=g["id"])
+    at = goals_page()
+    at.button(key=f"edit_{t['id']}_save").click().run()
+    assert store.get_goal(t["id"])["effort"] is None

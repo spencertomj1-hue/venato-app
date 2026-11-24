@@ -188,3 +188,21 @@ def test_expected_is_weighted_by_effort(store):
     targets = store.life_goal_targets(g["id"])
     assert {t["id"] for t in targets} == {done_by_now["id"], fresh["id"]}
     assert _close(life_goals.expected_fraction(g, targets, today), 2 / 10)
+
+
+def test_repeats_and_carry_over_keep_their_effort(store):
+    from datetime import date
+    t = store.add_todo("Stretch", "daily", date(2026, 11, 20), repeat=True, effort=3)
+    store.roll_todos(date(2026, 11, 21))
+    copy = [x for x in store.todos_for("daily", date(2026, 11, 21)) if x["title"] == "Stretch"][0]
+    assert copy["effort"] == 3 and copy["id"] != t["id"]
+    store.add_todo("Tidy", "weekly", date(2026, 11, 16), effort=7)
+    store.carry_over("weekly", date(2026, 11, 16))
+    assert [x["effort"] for x in store.todos_for("weekly", date(2026, 11, 23)) if x["title"] == "Tidy"] == [7]
+
+
+def test_effort_outside_1_to_10_is_refused(store):
+    with pytest.raises(ValueError):
+        store.add_detailed_todo("Big", effort=11)
+    with pytest.raises(ValueError):
+        store.add_goal("Users", None, "2026-11-01", 10, due="2027-01-31", effort=0)

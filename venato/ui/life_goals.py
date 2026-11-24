@@ -167,7 +167,8 @@ def _todos(g, today):
     kit.subhead("To-dos for the goal", icon=":material/check_box:")
     for t in open_:
         when = f" :gray[· due {regional.short_date(t['due'], today)}]" if t.get("due") else ""
-        st.checkbox(f"{kit.md(t['title'])}{when}", value=False, key=f"life_todo_{t['id']}",
+        st.checkbox(f"{kit.md(t['title'])}{when} {kit.effort_label(t.get('effort'))}", value=False,
+                    key=f"life_todo_{t['id']}", help=f"Effort {store.effort(t)} of 10",
                     on_change=store.set_todo_done, args=(t["id"], True))
     done = len(todos) - len(open_)
     if done:
@@ -178,10 +179,12 @@ def _todos(g, today):
     with st.container(horizontal=True, vertical_alignment="bottom"):
         title = st.text_input("New to-do", key=key, placeholder="Add a to-do", label_visibility="collapsed",
                               width="stretch")
+        effort = kit.effort_picker(key, exact=False)
         if st.button("", icon=":material/add:", key=f"{key}_add", help="Add this to-do to the goal",
                      disabled=not (title or "").strip()):
-            store.add_detailed_todo(title.strip(), group_id=store.ensure_life_goal_group(g["id"]))
-            del st.session_state[key]
+            store.add_detailed_todo(title.strip(), group_id=store.ensure_life_goal_group(g["id"]), effort=effort)
+            for k in (key, f"{key}_effort"):
+                st.session_state.pop(k, None)
             st.rerun()
 
 
