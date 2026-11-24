@@ -41,6 +41,12 @@ CREATE TABLE IF NOT EXISTS gr_assessments (
 );
 -- Canvas courses seen in a Canvas feed (it gives no names or codes: the label is the SIS bracket
 -- text, e.g. "20501.202610"), and the module the student linked each one to (NULL = none).
+-- The student's choice for an imported event series, by store.title_key(title): its module, or NULL for
+-- "not a module". Kept apart from tt_outlook, which every sync replaces. Beats the code and title rules.
+CREATE TABLE IF NOT EXISTS gr_event_links (
+    title_key TEXT PRIMARY KEY,
+    module_id TEXT                         -- gr_modules.id, NULL = not a module
+);
 CREATE TABLE IF NOT EXISTS gr_canvas_courses (
     course_id TEXT PRIMARY KEY,
     label     TEXT,
@@ -50,9 +56,11 @@ CREATE TABLE IF NOT EXISTS gr_canvas_courses (
 
 
 def _migrate(conn):
-    """Later columns: each module's timetable category. Modules made before it have none (no backfill:
-    existing data isn't rewritten; a later phase offers to make them)."""
+    """Later columns: each module's timetable category (modules made before it have none: existing data isn't
+    rewritten; a later phase offers to make them), and `match`, words a lecture title must contain (NULL: the
+    module's name when it has no code)."""
     store._add_column(conn, "gr_modules", "category_id", "TEXT")
+    store._add_column(conn, "gr_modules", "match", "TEXT")
 
 
 class GradeError(ValueError):
@@ -89,8 +97,8 @@ def save_settings(system=None, years=None):
 
 # --- Modules and assessments ---
 
-M_COLS = ("id", "name", "code", "credits", "year", "target", "final", "category_id", "created_at")
-EDITABLE = ("name", "code", "credits", "year", "target", "final")
+M_COLS = ("id", "name", "code", "credits", "year", "target", "final", "category_id", "created_at", "match")
+EDITABLE = ("name", "code", "credits", "year", "target", "final", "match")
 A_COLS = ("id", "module_id", "name", "weight", "mark", "due")
 
 
@@ -114,7 +122,7 @@ def find_module(name):
     return part[0] if len(part) == 1 else None
 
 
-def add_module(name, credits=10, year=None, target=None, code=None):
+def add_module(name, credits=10, year=None, target=None, code=None, match=None):
     name = str(name or "").strip()
     if not name:
         raise GradeError("The module needs a name.")
@@ -127,12 +135,11 @@ def add_module(name, credits=10, year=None, target=None, code=None):
     mid = _id()
     cid = f"module-{mid[:12]}"
     with store.db() as conn:                                          # one transaction: no orphan category
-        conn.execute("INSERT INTO gr_modules (id, name, code, credits, year, target, final, category_id, created_at) "
-                     "VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
-                     (mid, name, _code(code), credits, year, target, cid, store.stamp()))
+        conn.execute("INSERT INTO gr_modules (id, name, code, credits, year, target, final, category_id, created_at, "
+                     "match) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                     (mid, name, _code(code), credits, year, target, cid, store.stamp(), _match(match)))
         store.add_module_category(conn, cid, name)                    # its own category, next free colour
-    if code:
-        store.tag_outlook_modules()                                   # its timetable events
+    store.tag_outlook_modules()                                       # its timetable events (by code, rule or name)
     return mid
 
 
@@ -140,8 +147,14 @@ def _code(code):
     return (str(code).strip() or None) if code is not None else None
 
 
+def _match(words):
+    """A title rule as saved: its words with single spaces, or None."""
+    return " ".join(str(words or "").split()) or None
+
+
 def update_module(mid, **fields):
-    """Change a module's details. Renaming it renames its category; a new code re-tags the timetable."""
+    """Change a module's details. Renaming it renames its category; a new name, code or title rule re-tags the
+    timetable."""
     f = {k: v for k, v in fields.items() if k in EDITABLE}
     for k in ("target", "final"):
         if k in f:
@@ -152,14 +165,26 @@ def update_module(mid, **fields):
             raise GradeError("The module needs a name.")
     if "code" in f:
         f["code"] = _code(f["code"])
+    if "match" in f:
+        f["match"] = _match(f["match"])
     if f:
         with store.db() as conn:
             conn.execute(f"UPDATE gr_modules SET {', '.join(f'{k} = ?' for k in f)} WHERE id = ?", (*f.values(), mid))
     m = get_module(mid)
     if m and "name" in f and m["category_id"]:
         store.rename_category(m["category_id"], f["name"])
-    if "code" in f:
+    if {"name", "code", "match"} & set(f):
         store.tag_outlook_modules()
+
+
+def file_series(title, module_id):
+    """The student's choice for an imported event series (every event with that title, kind words and case
+    aside): `module_id`, or None for "not a module". It beats the code and title rules, and survives a sync."""
+    with store.db() as conn:
+        conn.execute("INSERT INTO gr_event_links (title_key, module_id) VALUES (?, ?) "
+                     "ON CONFLICT(title_key) DO UPDATE SET module_id = excluded.module_id",
+                     (store.title_key(title), module_id or None))
+    store.tag_outlook_modules()
 
 
 def delete_module(mid):

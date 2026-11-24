@@ -9,6 +9,7 @@ An event that names a module code (module_code) is tagged with the module that h
 (module_id), and then takes that module's category (module_category) instead of the Outlook one.
 """
 
+import re
 import sqlite3
 
 from .categories import event_category
@@ -29,11 +30,61 @@ def replace_outlook(rows):
         _tag_modules(conn)
 
 
+def title_key(title):
+    """An event series' key: its title without Lecture / Seminar / Lab / Tutorial, lower case, spaces collapsed."""
+    from venato import feeds
+    return re.sub(r"\s+", " ", feeds.strip_kind(title)).strip().lower()
+
+
+def _rule(text):
+    """A title rule as a pattern: its words, whole, any case, any spacing."""
+    words = str(text or "").lower().split()
+    return re.compile(r"(?<!\w)" + r"\s+".join(map(re.escape, words)) + r"(?!\w)") if words else None
+
+
 def _tag_modules(conn):
-    """Set each event's module_id: the module whose code (any case, spaces ignored) is the event's code."""
-    conn.execute(
-        "UPDATE tt_outlook SET module_id = (SELECT id FROM gr_modules m WHERE m.code IS NOT NULL "
-        "AND UPPER(REPLACE(m.code, ' ', '')) = tt_outlook.module_code ORDER BY m.created_at LIMIT 1)")
+    """Set each event's module_id, the first that applies:
+    1. the student's choice for its series (gr_event_links, by title_key; a NULL module = not a module),
+    2. the module whose code (any case, spaces ignored) is the event's code,
+    3. the first module (oldest) whose title rule is in its title: its `match` words, or its name when it
+       has neither a code nor a rule.
+    Reads gr_* with SQL only (the store never imports the blocks); no Modules tables = no modules."""
+    from venato import feeds
+    mods = []
+    for cols in ("id, name, code, match", "id, name, code, NULL"):         # (before the Modules block adds match)
+        try:
+            mods = conn.execute(f"SELECT {cols} FROM gr_modules ORDER BY created_at, rowid").fetchall()
+            break
+        except sqlite3.OperationalError:
+            continue
+    try:
+        links = dict(conn.execute("SELECT title_key, module_id FROM gr_event_links").fetchall())
+    except sqlite3.OperationalError:
+        links = {}
+    ids = {m[0] for m in mods}
+    by_code = {}
+    for mid, _, code, _ in mods:
+        if code:
+            by_code.setdefault(feeds.norm_code(code), mid)
+    rules = [(mid, _rule(match or (None if code else name))) for mid, name, code, match in mods]
+    rules = [(mid, r) for mid, r in rules if r]
+    seen = {}
+
+    def module_of(title, code):
+        if (title, code) not in seen:
+            key = title_key(title)
+            if key in links and (links[key] is None or links[key] in ids):
+                hit = links[key]
+            else:
+                hit = by_code.get(code) if code else None
+                full = " ".join(str(title or "").lower().split())        # a rule may name the kind ("lab")
+                hit = hit or next((mid for mid, r in rules if r.search(key) or r.search(full)), None)
+            seen[(title, code)] = hit
+        return seen[(title, code)]
+
+    rows = conn.execute("SELECT uid, title, module_code FROM tt_outlook").fetchall()
+    conn.executemany("UPDATE tt_outlook SET module_id = ? WHERE uid = ?",
+                     [(module_of(title, code), uid) for uid, title, code in rows])
 
 
 def tag_outlook_modules():

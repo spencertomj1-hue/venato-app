@@ -312,3 +312,55 @@ def test_modules_page_offers_new_modules(gr, store, ol, today):
     assert gr.find_module("Lasers")["code"] == "CHEM60004"
     next(b for b in at.button if b.key == "gr_new_ign_CHEM50001").click().run()
     assert "CHEM50001" not in {m["code"] for m in gr.new_found()["modules"]}
+
+
+def test_module_without_code_gets_its_lectures_by_name(gr, store, ol):
+    """No module has Spectroscopy's code (CHEM50002): a module with no code gets the series whose titles
+    contain its name, the make-up lecture too."""
+    sync_uni(ol)
+    spec = gr.add_module("Spectroscopy")
+    assert all(e["module_id"] == spec for e in events_titled(store, "Spectroscopy"))
+    assert all(e["module_id"] == spec for e in events_titled(store, "Spectroscopy Make-Up Lecture"))
+    assert not any(e["module_id"] for e in events_titled(store, "Organic Chemistry"))
+    sync_uni(ol)                                                 # and again after a re-sync
+    assert all(e["module_id"] == spec for e in events_titled(store, "Spectroscopy"))
+
+
+def test_match_rule_and_override_priority(gr, store, ol):
+    sync_uni(ol)
+    org = gr.add_module("Organic Chemistry", code="CHEM50001")
+    other = gr.add_module("Other", match="organic")              # broad rule loses to the code
+    assert gr.get_module(other)["match"] == "organic"
+    assert all(e["module_id"] == org for e in events_titled(store, "Organic Chemistry"))
+    gr.file_series("Summer project chat", other)                 # a one-off with no code or rule
+    sync_uni(ol)                                                 # survives a re-sync
+    assert all(e["module_id"] == other for e in events_titled(store, "Summer project chat"))
+    gr.file_series("Organic Chemistry", None)                    # "not a module" beats the code
+    assert not any(e["module_id"] for e in events_titled(store, "Organic Chemistry"))
+    gr.file_series("organic  chemistry lecture", org)            # keyed by the normalised title
+    assert all(e["module_id"] == org for e in events_titled(store, "Organic Chemistry"))
+
+
+def test_first_module_wins_between_title_rules(gr, store, ol):
+    sync_uni(ol)
+    first = gr.add_module("Lab skills", match="laboratory")
+    gr.add_module("Lab reports", match="LABORATORY")
+    assert all(e["module_id"] == first for e in events_titled(store, "Year 2 Laboratory (L1L2)"))
+
+
+def test_changing_a_rule_retags(gr, store, ol):
+    sync_uni(ol)
+    mid = gr.add_module("Talks")
+    assert not any(e["module_id"] for e in events_titled(store, "Years 2 & 3 Town Hall"))
+    gr.update_module(mid, match="town hall")
+    assert all(e["module_id"] == mid for e in events_titled(store, "Years 2 & 3 Town Hall"))
+    gr.update_module(mid, match="")                              # cleared: back to the name (no match)
+    assert gr.get_module(mid)["match"] is None
+    assert not any(e["module_id"] for e in events_titled(store, "Years 2 & 3 Town Hall"))
+    gr.update_module(mid, code="CHEM50005")                      # a code: the name rule stops
+    assert all(e["module_id"] == mid for e in events_titled(store, "Year 2 Laboratory (L1L2)"))
+
+
+def test_title_key(store):
+    assert store.title_key("  Organic  Chemistry Lecture ") == "organic chemistry"
+    assert store.title_key("Maths Methods Classwork") == "maths methods classwork"

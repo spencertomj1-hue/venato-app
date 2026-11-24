@@ -44,7 +44,7 @@ from .categories import (EXAMPLE_CATEGORIES, EXAMPLE_LABEL_MAP, DEFAULT_OUTLOOK_
     MODULES_GROUP, add_module_category, event_category, groups, learn_label, load_categories, load_label_map,
     match_category, next_free_colour, outlook_category, remove_label_default, rename_category, resolve_category, save_category, set_label_default)
 from .outlook import (OUTLOOK_COLS, _as_block, detach_outlook, get_outlook, hide_outlook, outlook_between,
-    outlook_details, outlook_overlaps, outlook_signature, replace_outlook, tag_outlook_modules)
+    outlook_details, outlook_overlaps, outlook_signature, replace_outlook, tag_outlook_modules, title_key)
 from .timetable import (blocks_at, blocks_between, delete_block, get_block, link_todo, linked_todo, move_block,
     paint, preview_paint, set_block_label, todo_link, todo_links, unlink_todo, upsert_blocks)
 from .days import (confirm_day, confirmed_days, correct, day_ended, day_started, day_status, free_runs,
