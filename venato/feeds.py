@@ -62,6 +62,9 @@ def _strip_kind(title):
     return re.sub(r"\s+", " ", KINDS.sub(" ", str(title or ""))).strip(" -–—:,()")
 
 
+strip_kind = _strip_kind
+
+
 def _most_common(values):
     values = [v for v in values if v]
     return Counter(values).most_common(1)[0][0] if values else None

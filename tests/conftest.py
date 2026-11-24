@@ -48,6 +48,8 @@ def no_real_outlook(tmp_path, monkeypatch):
     monkeypatch.setattr(assistant, "keyring", MemoryKeyring())
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setenv("VENATO_NO_REMINDERS", "1")     # no reminder thread popping up real notifications
+    from venato.blocks import grades                # each test parses its own calendars
+    grades._parsed.clear()
 
 
 class MemoryKeyring:

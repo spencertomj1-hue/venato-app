@@ -1,6 +1,6 @@
 """The Modules page (where you stand overall, a chart of every module against the classification
-bands, what's due next, and a card per module: its colour, next deadline, hours this week and mark against
-target, with its assessments) and its Home widget. A module's own page is in module_page.py.
+bands, what's due next, new modules and courses in the calendars, Unfiled lectures and deadlines, and a card per
+module: its colour, next deadline, what's linked, hours this week and mark against target) and its Home widget. A module's own page is in module_page.py.
 The data and maths are in venato/blocks/grades.py."""
 
 from html import escape
@@ -181,7 +181,8 @@ def _open(mid):
 
 
 def _facts(m, ctx):
-    """The card's lines: next deadline, and hours this week (done / planned / goal)."""
+    """The card's lines: next deadline, what's linked (lectures in the next 8 weeks, deadlines, Canvas), and hours
+    this week (done / planned / goal)."""
     from venato import pace
     due = gr.open_deadlines(m["id"])
     if due:
@@ -190,6 +191,14 @@ def _facts(m, ctx):
                    f"{store.countdown(d['due'], store.local_today(), d.get('due_time'), store.local_now())}")
     else:
         st.caption(":material/event_available: No deadlines")
+    links = gr.link_summary(m, store.local_today())
+    if links["lectures"]:
+        bits = [gr._plural(links["lectures"], "lecture"), gr._plural(links["deadlines"], "deadline")]
+        if links["canvas"]:
+            bits.append(f"Canvas: {links['canvas']}")
+        st.caption(":material/link: " + md(" · ".join(bits)))
+    else:
+        st.caption(":orange[No lectures found. Open it and set its code or title in Links.]")
     if m["category_id"]:
         h = gr.module_hours(m, ctx)
         f = pace.fmt
@@ -230,10 +239,8 @@ def _module_card(m, ctx):
             kit.bars([{"label": "Marked", "frac": n["done_weight"] / 100, "colour": colour,
                        "value": f"{n['done_weight']:g}% · {n['secured']:.1f}% banked"}])
         _facts(m, ctx)
-        st.button("Open", key=f"gr_open_btn_{m['id']}", icon=":material/arrow_forward:", on_click=_open, args=(m["id"],))
-        if st.toggle("Assessments and settings", key=f"gr_open_{m['id']}"):
-            assessment_editor(m)
-            module_settings(m)
+        st.button("Open", key=f"gr_open_btn_{m['id']}", icon=":material/arrow_forward:", on_click=_open, args=(m["id"],),
+                  help="Its lectures, deadlines, assessments, Links and settings")
 
 
 def _add_module(expanded):
@@ -270,6 +277,108 @@ def _settings(ms, s):
             st.rerun()
 
 
+# --- New in your calendars ---
+
+def _add_found(m):
+    from venato.ui import onboarding
+    try:
+        gr.add_module(m["name"], onboarding.DEFAULT_CREDITS, code=m["code"])
+    except gr.GradeError as e:
+        st.session_state["gr_new_error"] = str(e)
+
+
+def _link_found(course_id, key):
+    mid = st.session_state.get(key)
+    if mid:
+        gr.link_canvas_course(course_id, mid)
+
+
+def _new_found(ms):
+    """Modules and Canvas courses the calendars have that Venato doesn't yet: Add or Ignore each."""
+    found = gr.new_found()
+    if not (found["modules"] or found["courses"]):
+        return
+    with kit.card("New in your calendars", "Found since you set up. Add them, or Ignore the ones that aren't yours."):
+        if err := st.session_state.pop("gr_new_error", None):
+            st.error(err)
+        for m in found["modules"]:
+            key = gr._dismiss_key(m)
+            text, add, ignore = st.columns([5, 1, 1], vertical_alignment="center")
+            sessions = f"{m['count']} sessions"
+            text.markdown(f"**{md(m['name'])}** · " + " · ".join(md(b) for b in (m["code"], sessions) if b))
+            add.button("Add", key=f"gr_new_add_{key}", icon=":material/add:", on_click=_add_found, args=(m,))
+            ignore.button("Ignore", key=f"gr_new_ign_{key}", on_click=gr.dismiss, args=("module", key))
+        names = {x["id"]: x["name"] for x in ms}
+        for c in found["courses"]:
+            text, pick, ignore = st.columns([3, 3, 1], vertical_alignment="center")
+            seen = "; ".join(c["titles"])
+            text.markdown(f"**Canvas course {md(c['label'] or c['course_id'])}**"
+                          + (f"  \n:grey[{md(seen)}]" if seen else ""))
+            key = f"gr_new_c_{c['course_id']}"
+            pick.selectbox("Module", list(names), index=None, format_func=names.get, key=key,
+                           placeholder="Link to a module", label_visibility="collapsed", disabled=not names,
+                           on_change=_link_found, args=(c["course_id"], key))
+            ignore.button("Ignore", key=f"gr_new_cign_{c['course_id']}", on_click=gr.dismiss,
+                          args=("course", c["course_id"]))
+
+
+# --- Unfiled ---
+
+NOT_A_MODULE = "__none__"
+
+
+def _file(title, code, key):
+    choice = st.session_state.get(key)
+    if choice:
+        gr.file_series(title, None if choice == NOT_A_MODULE else choice, code=code)
+
+
+def _file_deadline(did, key):
+    if st.session_state.get(key):
+        store.update_deadline(did, module_id=st.session_state[key])
+
+
+def _unfiled(ms):
+    """Lecture series and deadlines on no module: pick the module each belongs to."""
+    today = store.local_today()
+    series = gr.unfiled_series(today)
+    due = gr.unfiled_deadlines()
+    if not ms or not (series or due):
+        return
+    names = {m["id"]: m["name"] for m in ms}
+    with kit.card("Unfiled", "On your timetable or due, but on no module yet. Pick where each one goes."):
+        for x in series:
+            text, pick = st.columns([3, 2], vertical_alignment="center")
+            day = store.fmt_day(store._as_date(x["next"]), "%a %-d %b")
+            text.markdown(f"**{md(x['title'])}** · " + " · ".join(md(b) for b in (x["code"], f"{x['count']} sessions",
+                                                                                     f"next {day}") if b))
+            key = f"gr_unf_s_{store.series_key(x['title'], x['code'])}"
+            pick.selectbox(x["title"], [*names, NOT_A_MODULE], index=None, key=key, label_visibility="collapsed",
+                           format_func=lambda v: "Not a module" if v == NOT_A_MODULE else names[v],
+                           placeholder="Choose a module", on_change=_file, args=(x["title"], x["code"], key))
+        for d in due:
+            text, pick = st.columns([3, 2], vertical_alignment="center")
+            when = store.fmt_day(store._as_date(d["due"]), "%a %-d %b")
+            text.markdown(f":material/event: **{md(d['title'])}** · due {md(when)}")
+            key = f"gr_unf_d_{d['id']}"
+            pick.selectbox(d["title"], list(names), index=None, key=key, label_visibility="collapsed",
+                           format_func=names.get, placeholder="Choose a module",
+                           on_change=_file_deadline, args=(d["id"], key))
+
+
+def _not_modules():
+    """The series marked "not a module", each with Restore (its code and the title rules decide again)."""
+    rows = gr.not_a_module_series()
+    if not rows:
+        return
+    with st.expander(f"Not modules ({len(rows)})", icon=":material/block:"):
+        for i, x in enumerate(rows):
+            text, btn = st.columns([4, 1], vertical_alignment="center")
+            text.markdown(" · ".join(md(b) for b in (x["title"], x["code"]) if b))
+            btn.button("Restore", key=f"gr_restore_{i}_{store.series_key(x['title'], x['code'])}",
+                       on_click=gr.unfile_series, args=(x["title"], x["code"]))
+
+
 def render_page():
     current = gr.get_module(st.session_state.get("gr_module") or "")
     if current:
@@ -281,6 +390,7 @@ def render_page():
     ms = gr.modules()
     o = gr.overall()
     s = gr.settings()
+    _new_found(ms)
     if ms:
         from venato import pace
         ctx = pace.Ctx()
@@ -292,6 +402,7 @@ def render_page():
                 kit.pills([(f"{y}: {v:.1f}%", band(v)[1]) for y, v in o["years"].items()])
         with b, kit.card("Coming up"):
             _coming_up(ms)
+        _unfiled(ms)
         years = list(dict.fromkeys(m["year"] or "Other" for m in ms))
         for year in sorted(years, reverse=True):
             these = [m for m in ms if (m["year"] or "Other") == year]
@@ -306,6 +417,7 @@ def render_page():
     else:
         kit.empty("No modules yet. Add your first one below, and its deadlines, lectures and study hours gather here.",
                   ":material/school:")
+    _not_modules()
     _add_module(not ms)
     _settings(ms, s)
 

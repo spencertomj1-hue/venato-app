@@ -1,6 +1,6 @@
 """One module's page (Modules, after clicking a module): this week's lectures, its deadlines (with Plan),
 its assessments and what it needs on the rest, its hours this week and since you added it, its timetable
-blocks, and Fit time. The numbers come from venato/blocks/grades.py."""
+blocks, Fit time, and Links (its code, title words, Canvas course and lecture series). The numbers come from venato/blocks/grades.py."""
 
 from html import escape
 
@@ -114,6 +114,52 @@ def _fit(m, ctx, week):
         timetable_tools.open_fit(m["name"], week[-1], category=m["name"], hours=short, first=max(week[0], ctx.today))
 
 
+def _set(mid, field, key):
+    try:
+        gr.update_module(mid, **{field: st.session_state.get(key)})
+    except gr.GradeError as e:
+        st.session_state["gr_links_error"] = str(e)
+
+
+def _link_course(mid, old, key):
+    new = st.session_state.get(key)
+    if old and old != new:
+        gr.link_canvas_course(old, None)
+    if new:
+        gr.link_canvas_course(new, mid)
+
+
+def _links(m):
+    """What's linked to the module and how: its code, a title rule, its Canvas course, and its lecture series
+    (each can be taken off it)."""
+    if err := st.session_state.pop("gr_links_error", None):
+        st.error(err)
+    st.caption("Lectures join a module by its code, else by words in their titles (its name when it has no code).")
+    a, b, c = st.columns(3)
+    a.text_input("Code", m["code"] or "", key=f"gr_code_{m['id']}", placeholder="e.g. CHEM50001",
+                 on_change=_set, args=(m["id"], "code", f"gr_code_{m['id']}"))
+    b.text_input("Lecture titles contain", m["match"] or "", key=f"gr_match_{m['id']}",
+                 placeholder=m["name"] if not m["code"] else "e.g. Organic",
+                 help="Words a lecture's title must have to count for this module",
+                 on_change=_set, args=(m["id"], "match", f"gr_match_{m['id']}"))
+    known = {x["course_id"]: x for x in gr.canvas_courses()}
+    for x in gr.detected_courses():
+        known.setdefault(x["course_id"], x)
+    mine = next((cid for cid, x in known.items() if x["module_id"] == m["id"]), None)
+    options = [None, *known]
+    c.selectbox("Canvas course", options, index=options.index(mine), key=f"gr_canvas_{m['id']}",
+                format_func=lambda cid: "None" if cid is None else (known[cid]["label"] or cid),
+                on_change=_link_course, args=(m["id"], mine, f"gr_canvas_{m['id']}"))
+    series = gr.series_of(m["id"], store.local_today())
+    if not series:
+        st.caption("No lectures linked in the next 8 weeks.")
+    for i, x in enumerate(series):
+        text, btn = st.columns([4, 1], vertical_alignment="center")
+        text.markdown(f":material/school: **{md(x['title'])}** · {x['count']} sessions")
+        btn.button("Not this module", key=f"gr_notthis_{m['id']}_{i}", on_click=gr.file_series,
+                   args=(x["title"], None, x["code"]), help="It goes to Not modules on the Modules page")
+
+
 def render(m):
     ctx = pace.Ctx()
     week = pace.week_days(ctx.today)
@@ -142,5 +188,7 @@ def render(m):
         _hours(m, ctx)
     with d, kit.card(stretch=False):
         _blocks(m, week)
+    with st.expander("Links", icon=":material/link:"):
+        _links(m)
     with st.expander("Module settings", icon=":material/tune:"):
         page.module_settings(m)

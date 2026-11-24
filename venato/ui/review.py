@@ -352,6 +352,27 @@ def _time(s, key):
         st.html(f'<div class="rv-time"><div class="rows">{"".join(out)}</div>{foot}</div>')
 
 
+def _modules(first):
+    """Study by module: each module's done hours (the Actual, confirmed days) in the week against its goal."""
+    if not blocks.is_on("grades"):
+        return
+    from venato.blocks import grades as gr
+    ms = [m for m in gr.modules() if m["category_id"]]
+    if not ms:
+        return
+    ctx = pace.Ctx()
+    last = first + timedelta(days=6)
+    rows = []
+    for m in ms:
+        done = ctx.hours({"category_id": m["category_id"], "label": None}, first, last, "actual")
+        goal = gr.week_hours_goal(m)
+        rows.append({"label": m["name"], "frac": done / goal if goal else 0,
+                     "colour": gr.category_colour(m) or kit.muted(),
+                     "value": f"{_h(done)} of {_h(goal)} h" if goal else f"{_h(done)} h"})
+    with kit.card("Study by module", stretch=False):
+        kit.bars(rows)
+
+
 def render(first, key, page=False):
     """The review of the week starting `first`, in three columns. `key` keeps widget keys apart (pop-up vs
     page); `page`: the Review page, where the columns fill the window's height."""
@@ -369,6 +390,7 @@ def render(first, key, page=False):
             _next_week(s, key)
         with right:
             _time(s, key)
+            _modules(first)
 
 
 def trends(first):

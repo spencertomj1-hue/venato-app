@@ -5,8 +5,10 @@ for each year and the whole degree (credit-weighted, years weighted as you set) 
 UK classification or a US GPA. Marks are percentages.
 
 Each module has its own timetable category (group "Modules"), made with it and renamed with it.
-Deadlines (module_id), imported timetable events (tt_outlook.module_id, matched by code) and Canvas
-courses (gr_canvas_courses) link to a module; deleting the module only clears those links.
+Deadlines (module_id), imported timetable events (tt_outlook.module_id: the student's choice for the series,
+else its code, else a title rule; see store/outlook.py) and Canvas courses (gr_canvas_courses) link to a module;
+deleting the module only clears those links. Modules and courses found in the calendars after setup are offered
+on the Modules page and in Needs you.
 """
 
 import re
@@ -41,6 +43,14 @@ CREATE TABLE IF NOT EXISTS gr_assessments (
 );
 -- Canvas courses seen in a Canvas feed (it gives no names or codes: the label is the SIS bracket
 -- text, e.g. "20501.202610"), and the module the student linked each one to (NULL = none).
+-- The student's choice for an imported event series, by store.series_key(title, code): its module, or NULL
+-- for "not a module". Kept apart from tt_outlook, which every sync replaces. Beats the code and title rules.
+CREATE TABLE IF NOT EXISTS gr_event_links (
+    key       TEXT PRIMARY KEY,
+    module_id TEXT,                        -- gr_modules.id, NULL = not a module
+    title     TEXT,                        -- the series as the student saw it (to list and restore it)
+    code      TEXT
+);
 CREATE TABLE IF NOT EXISTS gr_canvas_courses (
     course_id TEXT PRIMARY KEY,
     label     TEXT,
@@ -50,9 +60,11 @@ CREATE TABLE IF NOT EXISTS gr_canvas_courses (
 
 
 def _migrate(conn):
-    """Later columns: each module's timetable category. Modules made before it have none (no backfill:
-    existing data isn't rewritten; a later phase offers to make them)."""
+    """Later columns: each module's timetable category (modules made before it have none: existing data isn't
+    rewritten; a later phase offers to make them), and `match`, words a lecture title must contain (NULL: the
+    module's name when it has no code)."""
     store._add_column(conn, "gr_modules", "category_id", "TEXT")
+    store._add_column(conn, "gr_modules", "match", "TEXT")
 
 
 class GradeError(ValueError):
@@ -89,8 +101,8 @@ def save_settings(system=None, years=None):
 
 # --- Modules and assessments ---
 
-M_COLS = ("id", "name", "code", "credits", "year", "target", "final", "category_id", "created_at")
-EDITABLE = ("name", "code", "credits", "year", "target", "final")
+M_COLS = ("id", "name", "code", "credits", "year", "target", "final", "category_id", "created_at", "match")
+EDITABLE = ("name", "code", "credits", "year", "target", "final", "match")
 A_COLS = ("id", "module_id", "name", "weight", "mark", "due")
 
 
@@ -114,7 +126,7 @@ def find_module(name):
     return part[0] if len(part) == 1 else None
 
 
-def add_module(name, credits=10, year=None, target=None, code=None):
+def add_module(name, credits=10, year=None, target=None, code=None, match=None):
     name = str(name or "").strip()
     if not name:
         raise GradeError("The module needs a name.")
@@ -127,12 +139,11 @@ def add_module(name, credits=10, year=None, target=None, code=None):
     mid = _id()
     cid = f"module-{mid[:12]}"
     with store.db() as conn:                                          # one transaction: no orphan category
-        conn.execute("INSERT INTO gr_modules (id, name, code, credits, year, target, final, category_id, created_at) "
-                     "VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
-                     (mid, name, _code(code), credits, year, target, cid, store.stamp()))
+        conn.execute("INSERT INTO gr_modules (id, name, code, credits, year, target, final, category_id, created_at, "
+                     "match) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                     (mid, name, _code(code), credits, year, target, cid, store.stamp(), _match(match)))
         store.add_module_category(conn, cid, name)                    # its own category, next free colour
-    if code:
-        store.tag_outlook_modules()                                   # its timetable events
+    store.tag_outlook_modules()                                       # its timetable events (by code, rule or name)
     return mid
 
 
@@ -140,8 +151,14 @@ def _code(code):
     return (str(code).strip() or None) if code is not None else None
 
 
+def _match(words):
+    """A title rule as saved: its words with single spaces, or None."""
+    return " ".join(str(words or "").split()) or None
+
+
 def update_module(mid, **fields):
-    """Change a module's details. Renaming it renames its category; a new code re-tags the timetable."""
+    """Change a module's details. Renaming it renames its category; a new name, code or title rule re-tags the
+    timetable."""
     f = {k: v for k, v in fields.items() if k in EDITABLE}
     for k in ("target", "final"):
         if k in f:
@@ -152,25 +169,117 @@ def update_module(mid, **fields):
             raise GradeError("The module needs a name.")
     if "code" in f:
         f["code"] = _code(f["code"])
+    if "match" in f:
+        f["match"] = _match(f["match"])
     if f:
         with store.db() as conn:
             conn.execute(f"UPDATE gr_modules SET {', '.join(f'{k} = ?' for k in f)} WHERE id = ?", (*f.values(), mid))
     m = get_module(mid)
     if m and "name" in f and m["category_id"]:
         store.rename_category(m["category_id"], f["name"])
-    if "code" in f:
+    if {"name", "code", "match"} & set(f):
         store.tag_outlook_modules()
+
+
+def file_series(title, module_id, code=None):
+    """The student's choice for an imported event series (the events with that title, kind words and case aside,
+    and that module code): `module_id`, or None for "not a module". It beats the code and title rules, and
+    survives a sync."""
+    from venato import feeds
+    code = feeds.norm_code(code) if code else None
+    with store.db() as conn:
+        conn.execute("INSERT INTO gr_event_links (key, module_id, title, code) VALUES (?, ?, ?, ?) "
+                     "ON CONFLICT(key) DO UPDATE SET module_id = excluded.module_id, title = excluded.title",
+                     (store.series_key(title, code), module_id or None, title, code))
+    store.tag_outlook_modules()
+
+
+def unfile_series(title, code=None):
+    """Forget the choice made for a series: its code and the title rules decide again."""
+    with store.db() as conn:
+        conn.execute("DELETE FROM gr_event_links WHERE key = ?", (store.series_key(title, code),))
+    store.tag_outlook_modules()
+
+
+def not_a_module_series():
+    """[{title, code}]: the series the student marked "not a module"."""
+    with store.db() as conn:
+        rows = conn.execute("SELECT title, code FROM gr_event_links WHERE module_id IS NULL "
+                            "ORDER BY title COLLATE NOCASE").fetchall()
+    return [{"title": t, "code": c} for t, c in rows]
 
 
 def delete_module(mid):
     """Delete a module and its assessments. Only its links go: its category, deadlines, Canvas courses
-    and timetable events stay (unlinked)."""
+    and timetable events stay (unlinked; its series show as Unfiled again, unless another module's rule
+    takes them)."""
     with store.db() as conn:
         conn.execute("UPDATE deadlines SET module_id = NULL WHERE module_id = ?", (mid,))
         conn.execute("UPDATE tt_outlook SET module_id = NULL WHERE module_id = ?", (mid,))
         conn.execute("UPDATE gr_canvas_courses SET module_id = NULL WHERE module_id = ?", (mid,))
+        conn.execute("DELETE FROM gr_event_links WHERE module_id = ?", (mid,))   # its series: Unfiled again
         conn.execute("DELETE FROM gr_assessments WHERE module_id = ?", (mid,))
         conn.execute("DELETE FROM gr_modules WHERE id = ?", (mid,))
+    store.tag_outlook_modules()
+
+
+def _group_series(rows, minimum=1):
+    """[(title, date, code)] -> [{title, code, count, next}] by series_key, the most common title for each."""
+    from collections import Counter
+    groups = {}
+    for title, day, code in rows:
+        g = groups.setdefault(store.series_key(title, code), {"titles": Counter(), "count": 0, "next": day, "code": code})
+        g["titles"][title] += 1
+        g["count"] += 1
+    return [{"title": g["titles"].most_common(1)[0][0], "code": g["code"], "count": g["count"], "next": g["next"]}
+            for g in groups.values() if g["count"] >= minimum]
+
+
+_SERIES = ("SELECT title, date, module_code FROM tt_outlook WHERE all_day = 0 AND date BETWEEN ? AND ? "
+           "AND uid NOT IN (SELECT uid FROM tt_outlook_hidden) AND ")
+
+
+def unfiled_series(today, weeks=8):
+    """[{title, code, count, next}]: timed event series in the next `weeks` (from `today`) on no module and with
+    no choice made for them ("not a module" counts as a choice), 2+ sessions each, soonest first. The same title
+    under two module codes is two series."""
+    from datetime import timedelta
+    from venato import feeds
+    window = (today.isoformat(), (today + timedelta(weeks=weeks)).isoformat())
+    with store.db() as conn:
+        rows = conn.execute(_SERIES + "module_id IS NULL ORDER BY date, start", window).fetchall()
+        filed = {r[0] for r in conn.execute("SELECT key FROM gr_event_links")}
+    out = [s for s in _group_series(rows, feeds.MIN_EVENTS) if store.series_key(s["title"], s["code"]) not in filed]
+    return sorted(out, key=lambda s: (s["next"], s["title"].lower()))
+
+
+def series_of(mid, today, weeks=8):
+    """[{title, code, count, next}]: the module's event series in the next `weeks`."""
+    from datetime import timedelta
+    window = (today.isoformat(), (today + timedelta(weeks=weeks)).isoformat())
+    with store.db() as conn:
+        rows = conn.execute(_SERIES + "module_id = ? ORDER BY date, start", (*window, mid)).fetchall()
+    return _group_series(rows)
+
+
+def link_summary(m, today, weeks=8):
+    """What's linked to a module: {"lectures": timed events in the next `weeks`, "deadlines": open ones,
+    "canvas": the linked Canvas course's label (or id), or None}."""
+    from datetime import timedelta
+    lectures = [e for e in week_events(m["id"], today, today + timedelta(weeks=weeks)) if not e["all_day"]]
+    course = next((c for c in canvas_courses() if c["module_id"] == m["id"]), None)
+    return {"lectures": len(lectures), "deadlines": len(open_deadlines(m["id"])),
+            "canvas": (course["label"] or course["course_id"]) if course else None}
+
+
+def unfiled_deadlines():
+    """Open Canvas deadlines on no module (not from a course the student ignored), soonest first. Ones typed in
+    by hand are left out: plenty belong to no module."""
+    with store.db() as conn:
+        courses = dict(conn.execute("SELECT id, course_id FROM deadlines WHERE source = 'canvas'").fetchall())
+    gone = dismissed()["course"]
+    return [d for d in store.deadlines() if d["module_id"] is None and d["id"] in courses
+            and courses[d["id"]] not in gone]
 
 
 def create_category(mid):
@@ -274,6 +383,109 @@ def link_canvas_course(course_id, module_id):
         # Only the ones that followed the course (no module, or its old one): one the student moved stays put.
         conn.execute("UPDATE deadlines SET module_id = ? WHERE source = 'canvas' AND course_id = ? "
                      "AND (module_id IS NULL OR module_id = ?)", (module_id, course_id, previous))
+
+
+# --- Detection: modules and Canvas courses in the connected calendars (after setup too) ---
+
+_parsed = {}                                   # {(kind, day, zone, calendar bytes): parsed events}
+
+
+def _calendars(canvas, day=None):
+    """Parsed events of the connected calendars of one kind (timetable or Canvas), parsed again only when a
+    calendar or the day changed (Home asks on every rerun). A calendar that no longer parses adds nothing."""
+    from venato import feeds, outlook
+    data = tuple(d for _, d in outlook.cached_calendars() if feeds.is_canvas("", d) == canvas)
+    key = ("canvas" if canvas else "uni", day or store.local_today(), str(store.tz()), data)
+    events = _parsed.get(key)                      # one read: another session's thread may clear _parsed
+    if events is None:
+        events = []
+        for d in data:
+            try:
+                events += feeds.canvas_events(d, store.tz()) if canvas else outlook.parse(d, day)
+            except Exception:
+                continue
+        if len(_parsed) > 4:
+            _parsed.clear()
+        _parsed[key] = events
+    return events
+
+
+def detected(day=None):
+    """[{code, name, count}]: the modules in the connected timetable calendars (Canvas has no module names)."""
+    from venato import feeds
+    return feeds.detect_modules(_calendars(False, day))
+
+
+def detected_courses(day=None):
+    """The connected Canvas courses: [{course_id, label, titles (a couple of its assignments), module_id}].
+    The module links are read fresh."""
+    from venato import feeds
+    events = _calendars(True, day)
+    linked = {c["course_id"]: c["module_id"] for c in canvas_courses()}
+    return [{"course_id": c["course_id"], "label": c["label"], "module_id": linked.get(c["course_id"]),
+             "titles": [e["title"] for e in events if e.get("course_id") == c["course_id"]][:2]}
+            for c in feeds.canvas_courses(events)]
+
+
+def _module_for(code, name):
+    """The module already in Venato for a detected one: the same code, or the same name when one of them has no
+    code (last year's module with the same name and another code is another module). Or None."""
+    from venato import feeds
+    for m in modules():
+        if code and m["code"]:                                       # both have codes: only the codes count
+            if feeds.norm_code(m["code"]) == feeds.norm_code(code):
+                return m
+        elif m["name"].lower() == str(name or "").strip().lower():
+            return m
+    return None
+
+
+def _dismiss_key(m):
+    return m["code"] or m["name"].lower()
+
+
+def dismissed():
+    d = store.load_settings().get("modules_dismissed") or {}
+    return {"module": set(d.get("module") or []), "course": set(d.get("course") or [])}
+
+
+def dismiss(kind, key):
+    """Stop offering a detected module (key: its code, or its lowercased name without one) or a Canvas course
+    (key: its course id)."""
+    if kind not in ("module", "course"):
+        raise GradeError("Ignore a module or a course.")
+    d = dismissed()
+    d[kind].add(str(key))
+    store.save_settings(modules_dismissed={k: sorted(v) for k, v in d.items()})
+
+
+def new_found(day=None):
+    """{"modules", "courses"}: detected modules not in Venato (_module_for), not ignored and whose lectures aren't
+    all on a module already (a rule or the student's choice took them), and
+    Canvas courses linked to no module and not ignored."""
+    gone = dismissed()
+    with store.db() as conn:                                         # codes whose events are all on a module
+        filed = {c for c, loose in conn.execute("SELECT module_code, SUM(module_id IS NULL) FROM tt_outlook "
+                                                "WHERE module_code IS NOT NULL GROUP BY module_code") if not loose}
+    return {"modules": [m for m in detected(day) if not _module_for(m["code"], m["name"])
+                        and _dismiss_key(m) not in gone["module"] and m["code"] not in filed],
+            "courses": [c for c in detected_courses(day) if c["module_id"] is None
+                        and c["course_id"] not in gone["course"]]}
+
+
+def _plural(n, word):
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def _needs():
+    """Home's "Needs you": one item when the calendars have modules or Canvas courses to sort out."""
+    found = new_found()
+    bits = []
+    if found["modules"]:
+        bits.append(f"{_plural(len(found['modules']), 'new module')} in your timetable")
+    if found["courses"]:
+        bits.append(f"{_plural(len(found['courses']), 'Canvas course')} to link")
+    return [{"text": " · ".join(bits), "icon": ":material/school:", "page": "grades"}] if bits else []
 
 
 def assessments(mid):
@@ -516,4 +728,4 @@ def _modules_status():
 BLOCK = Block("grades", "Modules", ":material/school:",
               "Your modules: deadlines, study hours, weighted marks, what you need to hit your target, and your classification or GPA.",
               group="Study & work", page=_page, widgets=[Widget("modules", "Modules", _home, "small", ("small", "wide"), status=_modules_status, colour="#6B3FA0")], tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, migrate=_migrate, order=40, default=True, core=True)
+              quick=[_quick], needs=_needs, schema=SCHEMA, migrate=_migrate, order=40, default=True, core=True)

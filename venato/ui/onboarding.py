@@ -139,55 +139,23 @@ def _forget_calendars():
 
 
 def detected_modules(day=None):
-    """[{code, name, count}] found in the connected timetable calendars (Canvas has no module names).
-    Parsed once per run of setup (kept in `ob`, cleared when a calendar is connected); `day` is for tests."""
+    """[{code, name, count}] found in the connected timetable calendars (gr.detected). Kept in `ob` for this
+    run of setup (cleared when a calendar is connected); `day` is for tests."""
     ob = _ob()
     if day is None and "detected" in ob:
         return ob["detected"]
-    events = []
-    for _, data in outlook.cached_calendars():
-        if feeds.is_canvas("", data):
-            continue
-        try:
-            events += outlook.parse(data, day)
-        except Exception:                                      # a calendar that no longer parses adds nothing
-            continue
-    found = feeds.detect_modules(events)
+    found = gr.detected(day)
     if day is None:
         ob["detected"] = found
     return found
 
 
 def canvas_courses(day=None):
-    """The connected Canvas courses: [{course_id, label, titles (a couple of its assignments), module_id}].
-    The feeds are parsed once per run of setup (kept in `ob`); the module links are read fresh."""
-    ob = _ob()
-    if day is None and "canvas_events" in ob:
-        events = ob["canvas_events"]
-    else:
-        events = []
-        for _, data in outlook.cached_calendars():
-            if feeds.is_canvas("", data):
-                try:
-                    events += feeds.canvas_events(data, store.tz())
-                except Exception:
-                    continue
-        if day is None:
-            ob["canvas_events"] = events
-    linked = {c["course_id"]: c["module_id"] for c in gr.canvas_courses()}
-    return [{"course_id": c["course_id"], "label": c["label"], "module_id": linked.get(c["course_id"]),
-             "titles": [e["title"] for e in events if e.get("course_id") == c["course_id"]][:2]}
-            for c in feeds.canvas_courses(events)]
+    """The connected Canvas courses (gr.detected_courses): [{course_id, label, titles, module_id}]."""
+    return gr.detected_courses(day)
 
 
-def _module_for(code, name):
-    """The module already in Venato for a detected one (same code, else same name), or None."""
-    for m in gr.modules():
-        if code and m["code"] and feeds.norm_code(m["code"]) == code:
-            return m
-        if m["name"].lower() == str(name or "").lower():
-            return m
-    return None
+_module_for = gr._module_for
 
 
 def add_modules(picked):
