@@ -202,3 +202,17 @@ def test_a_plan_goal_shows_once_in_needs_you(store):
     assert not at.exception
     rows = [m.value for m in at.markdown if "Lab report" in m.value]
     assert len(rows) == 1 and "event" in rows[0]                  # the deadline row, not also a goal row
+
+
+def test_review_groups_targets_under_their_goal(store):
+    from venato import review
+    from venato.ui import review as review_ui
+    today = store.local_today()
+    uni = store.add_life_goal("Get a first", months=3)
+    store.add_goal("Revision", "monthly", today, 20, "h", category_id="study", life_goal_id=uni["id"])
+    store.add_goal("Problem sets", "monthly", today, 25, life_goal_id=uni["id"])
+    store.add_goal("Loose one", "monthly", today, 5)
+    groups = review_ui._goal_groups(review.summary(store.week_start_of(today))["goals"])
+    assert [(t, sorted(x["goal"]["title"] for x in rows)) for t, _, rows in groups] == \
+        [("Get a first", ["Problem sets", "Revision"]), (review_ui.OTHER, ["Loose one"])]
+    assert groups[0][1] == store.life_goal_colour(uni["id"])
