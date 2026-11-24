@@ -156,7 +156,8 @@ def _links(m):
     for i, x in enumerate(series):
         text, btn = st.columns([4, 1], vertical_alignment="center")
         text.markdown(f":material/school: **{md(x['title'])}** · {x['count']} sessions")
-        btn.button("Not this module", key=f"gr_notthis_{m['id']}_{i}", on_click=gr.file_series, args=(x["title"], None))
+        btn.button("Not this module", key=f"gr_notthis_{m['id']}_{i}", on_click=gr.file_series,
+                   args=(x["title"], None, x["code"]), help="It goes to Not modules on the Modules page")
 
 
 def render(m):

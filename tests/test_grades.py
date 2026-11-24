@@ -335,9 +335,9 @@ def test_match_rule_and_override_priority(gr, store, ol):
     gr.file_series("Summer project chat", other)                 # a one-off with no code or rule
     sync_uni(ol)                                                 # survives a re-sync
     assert all(e["module_id"] == other for e in events_titled(store, "Summer project chat"))
-    gr.file_series("Organic Chemistry", None)                    # "not a module" beats the code
+    gr.file_series("Organic Chemistry", None, code="CHEM50001")  # "not a module" beats the code
     assert not any(e["module_id"] for e in events_titled(store, "Organic Chemistry"))
-    gr.file_series("organic  chemistry lecture", org)            # keyed by the normalised title
+    gr.file_series("organic  chemistry lecture", org, code="chem 50001")   # keyed by normalised title and code
     assert all(e["module_id"] == org for e in events_titled(store, "Organic Chemistry"))
 
 
@@ -456,6 +456,12 @@ def test_unfiled_card_and_links_panel(gr, store, ol, today):
     btn.click().run()
     assert not at.exception
     assert not any(e["module_id"] for e in events_titled(store, "Organic Chemistry"))
+    at.session_state["gr_module"] = None                         # back to Modules: Restore it
+    at.run()
+    restore = next(b for b in at.button if b.key and b.key.startswith("gr_restore_"))
+    restore.click().run()
+    assert not at.exception
+    assert all(e["module_id"] == org for e in events_titled(store, "Organic Chemistry"))
 
 
 def test_module_code_resolves_to_its_category(gr, store):
@@ -531,3 +537,64 @@ def test_cards_show_links_and_flag_missing_lectures(gr, store, ol, today):
     assert any(c.startswith(":material/link:") and "lectures" in c and "0 deadlines" in c for c in captions)
     assert any("No lectures found" in c for c in captions)
     assert not [t for t in at.toggle if t.label == "Assessments and settings"]       # it's on the module's page
+
+
+# --- Review fixes ---
+
+def _rows(store, rows):
+    store.replace_outlook([{"uid": f"u{i}", "date": d, "start": "10:00", "end": "11:00", "title": t, "location": None,
+                            "all_day": 0, "exact": None, "module_code": c} for i, (d, t, c) in enumerate(rows)])
+
+
+def test_a_series_choice_is_per_module_code(gr, store):
+    """Two modules each have "Problems Class" (and bare "Lecture"s): a choice for one leaves the other alone,
+    and can be undone."""
+    a = gr.add_module("Alpha", code="ALP101")
+    b = gr.add_module("Beta", code="BET202")
+    rows = [(f"2026-11-{d}", t, c) for d in (23, 24, 25) for t in ("Problems Class", "Lecture")
+            for c in ("ALP101", "BET202")]
+    _rows(store, rows)
+    gr.file_series("Problems Class", None, code="ALP101")
+    gr.file_series("Lecture", None, code="ALP101")
+    ev = store.outlook_between("2026-11-01", "2026-11-30")
+    assert all(e["module_id"] == b for e in ev if e["uid"] in {f"u{i}" for i, r in enumerate(rows) if r[2] == "BET202"})
+    assert not any(e["module_id"] for e in ev if e["uid"] in {f"u{i}" for i, r in enumerate(rows) if r[2] == "ALP101"})
+    assert {(s["title"], s["code"]) for s in gr.not_a_module_series()} == {("Problems Class", "ALP101"), ("Lecture", "ALP101")}
+    gr.unfile_series("Problems Class", "ALP101")                 # Restore
+    assert all(e["module_id"] == a for e in store.outlook_between("2026-11-01", "2026-11-30")
+               if e["title"] == "Problems Class" and e["uid"] in {f"u{i}" for i, r in enumerate(rows) if r[2] == "ALP101"})
+
+
+def test_not_this_module_on_the_links_panel_only_unlinks_that_module(gr, store):
+    a = gr.add_module("Alpha", code="ALP101")
+    b = gr.add_module("Beta", code="BET202")
+    _rows(store, [(f"2026-11-{d}", "Problems Class", c) for d in (23, 24) for c in ("ALP101", "BET202")])
+    series = gr.series_of(a, date(2026, 11, 20))
+    assert [(s["title"], s["code"], s["count"]) for s in series] == [("Problems Class", "ALP101", 2)]
+    gr.file_series(series[0]["title"], None, code=series[0]["code"])
+    assert gr.series_of(a, date(2026, 11, 20)) == []
+    assert gr.series_of(b, date(2026, 11, 20))[0]["count"] == 2
+    assert [s["code"] for s in gr.unfiled_series(date(2026, 11, 20))] == []     # marked, so not unfiled
+
+
+def test_unfiled_series_keep_codes_apart(gr, store):
+    _rows(store, [(f"2026-11-{d}", "Tutorial", c) for d in (23, 24) for c in ("ALP101", "BET202")])
+    assert sorted(s["code"] for s in gr.unfiled_series(date(2026, 11, 20))) == ["ALP101", "BET202"]
+    gr.file_series("Tutorial", None, code="ALP101")
+    assert [s["code"] for s in gr.unfiled_series(date(2026, 11, 20))] == ["BET202"]
+
+
+def test_same_name_other_code_is_a_new_module(gr, store, ol):
+    sync_uni(ol)
+    gr.add_module("Lasers", code="CHEM60099")                    # last year's Lasers, another code
+    assert "CHEM60004" in {m["code"] for m in gr.new_found(DAY)["modules"]}
+    gr.add_module("Organic Chemistry")                           # no code: the name is enough
+    assert "CHEM50001" not in {m["code"] for m in gr.new_found(DAY)["modules"]}
+
+
+def test_a_module_whose_lectures_are_filed_isnt_offered(gr, store, ol):
+    sync_uni(ol)
+    mine = gr.add_module("Practicals", match="laboratory")       # took the CHEM50005 lab's lectures
+    assert all(e["module_id"] == mine for e in events_titled(store, "Year 2 Laboratory (L1L2)"))
+    assert "CHEM50005" not in {m["code"] for m in gr.new_found(DAY)["modules"]}
+    assert "CHEM50003" in {m["code"] for m in gr.new_found(DAY)["modules"]}

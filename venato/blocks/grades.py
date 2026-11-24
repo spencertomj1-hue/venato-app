@@ -43,11 +43,13 @@ CREATE TABLE IF NOT EXISTS gr_assessments (
 );
 -- Canvas courses seen in a Canvas feed (it gives no names or codes: the label is the SIS bracket
 -- text, e.g. "20501.202610"), and the module the student linked each one to (NULL = none).
--- The student's choice for an imported event series, by store.title_key(title): its module, or NULL for
--- "not a module". Kept apart from tt_outlook, which every sync replaces. Beats the code and title rules.
+-- The student's choice for an imported event series, by store.series_key(title, code): its module, or NULL
+-- for "not a module". Kept apart from tt_outlook, which every sync replaces. Beats the code and title rules.
 CREATE TABLE IF NOT EXISTS gr_event_links (
-    title_key TEXT PRIMARY KEY,
-    module_id TEXT                         -- gr_modules.id, NULL = not a module
+    key       TEXT PRIMARY KEY,
+    module_id TEXT,                        -- gr_modules.id, NULL = not a module
+    title     TEXT,                        -- the series as the student saw it (to list and restore it)
+    code      TEXT
 );
 CREATE TABLE IF NOT EXISTS gr_canvas_courses (
     course_id TEXT PRIMARY KEY,
@@ -179,14 +181,32 @@ def update_module(mid, **fields):
         store.tag_outlook_modules()
 
 
-def file_series(title, module_id):
-    """The student's choice for an imported event series (every event with that title, kind words and case
-    aside): `module_id`, or None for "not a module". It beats the code and title rules, and survives a sync."""
+def file_series(title, module_id, code=None):
+    """The student's choice for an imported event series (the events with that title, kind words and case aside,
+    and that module code): `module_id`, or None for "not a module". It beats the code and title rules, and
+    survives a sync."""
+    from venato import feeds
+    code = feeds.norm_code(code) if code else None
     with store.db() as conn:
-        conn.execute("INSERT INTO gr_event_links (title_key, module_id) VALUES (?, ?) "
-                     "ON CONFLICT(title_key) DO UPDATE SET module_id = excluded.module_id",
-                     (store.title_key(title), module_id or None))
+        conn.execute("INSERT INTO gr_event_links (key, module_id, title, code) VALUES (?, ?, ?, ?) "
+                     "ON CONFLICT(key) DO UPDATE SET module_id = excluded.module_id, title = excluded.title",
+                     (store.series_key(title, code), module_id or None, title, code))
     store.tag_outlook_modules()
+
+
+def unfile_series(title, code=None):
+    """Forget the choice made for a series: its code and the title rules decide again."""
+    with store.db() as conn:
+        conn.execute("DELETE FROM gr_event_links WHERE key = ?", (store.series_key(title, code),))
+    store.tag_outlook_modules()
+
+
+def not_a_module_series():
+    """[{title, code}]: the series the student marked "not a module"."""
+    with store.db() as conn:
+        rows = conn.execute("SELECT title, code FROM gr_event_links WHERE module_id IS NULL "
+                            "ORDER BY title COLLATE NOCASE").fetchall()
+    return [{"title": t, "code": c} for t, c in rows]
 
 
 def delete_module(mid):
@@ -197,46 +217,49 @@ def delete_module(mid):
         conn.execute("UPDATE deadlines SET module_id = NULL WHERE module_id = ?", (mid,))
         conn.execute("UPDATE tt_outlook SET module_id = NULL WHERE module_id = ?", (mid,))
         conn.execute("UPDATE gr_canvas_courses SET module_id = NULL WHERE module_id = ?", (mid,))
-        conn.execute("DELETE FROM gr_event_links WHERE module_id = ?", (mid,))
+        conn.execute("DELETE FROM gr_event_links WHERE module_id = ?", (mid,))   # its series: Unfiled again
         conn.execute("DELETE FROM gr_assessments WHERE module_id = ?", (mid,))
         conn.execute("DELETE FROM gr_modules WHERE id = ?", (mid,))
     store.tag_outlook_modules()
 
 
-def unfiled_series(today, weeks=8):
-    """[{title, count, next}]: timed event series in the next `weeks` (from `today`) on no module and with no
-    choice made for them ("not a module" counts as a choice), 2+ sessions each, soonest first."""
+def _group_series(rows, minimum=1):
+    """[(title, date, code)] -> [{title, code, count, next}] by series_key, the most common title for each."""
     from collections import Counter
+    groups = {}
+    for title, day, code in rows:
+        g = groups.setdefault(store.series_key(title, code), {"titles": Counter(), "count": 0, "next": day, "code": code})
+        g["titles"][title] += 1
+        g["count"] += 1
+    return [{"title": g["titles"].most_common(1)[0][0], "code": g["code"], "count": g["count"], "next": g["next"]}
+            for g in groups.values() if g["count"] >= minimum]
+
+
+_SERIES = ("SELECT title, date, module_code FROM tt_outlook WHERE all_day = 0 AND date BETWEEN ? AND ? "
+           "AND uid NOT IN (SELECT uid FROM tt_outlook_hidden) AND ")
+
+
+def unfiled_series(today, weeks=8):
+    """[{title, code, count, next}]: timed event series in the next `weeks` (from `today`) on no module and with
+    no choice made for them ("not a module" counts as a choice), 2+ sessions each, soonest first. The same title
+    under two module codes is two series."""
     from datetime import timedelta
     from venato import feeds
-    last = today + timedelta(weeks=weeks)
+    window = (today.isoformat(), (today + timedelta(weeks=weeks)).isoformat())
     with store.db() as conn:
-        rows = conn.execute("SELECT title, date FROM tt_outlook WHERE all_day = 0 AND module_id IS NULL "
-                            "AND date BETWEEN ? AND ? AND uid NOT IN (SELECT uid FROM tt_outlook_hidden) "
-                            "ORDER BY date, start", (today.isoformat(), last.isoformat())).fetchall()
-        filed = {r[0] for r in conn.execute("SELECT title_key FROM gr_event_links")}
-    groups = {}
-    for title, day in rows:
-        key = store.title_key(title)
-        if key and key not in filed:
-            g = groups.setdefault(key, {"titles": Counter(), "count": 0, "next": day})
-            g["titles"][title] += 1
-            g["count"] += 1
-    out = [{"title": g["titles"].most_common(1)[0][0], "count": g["count"], "next": g["next"]}
-           for g in groups.values() if g["count"] >= feeds.MIN_EVENTS]
+        rows = conn.execute(_SERIES + "module_id IS NULL ORDER BY date, start", window).fetchall()
+        filed = {r[0] for r in conn.execute("SELECT key FROM gr_event_links")}
+    out = [s for s in _group_series(rows, feeds.MIN_EVENTS) if store.series_key(s["title"], s["code"]) not in filed]
     return sorted(out, key=lambda s: (s["next"], s["title"].lower()))
 
 
 def series_of(mid, today, weeks=8):
-    """[{title, count}]: the module's event series in the next `weeks` (by title, kind words and case aside)."""
-    from collections import Counter
+    """[{title, code, count, next}]: the module's event series in the next `weeks`."""
     from datetime import timedelta
-    rows = week_events(mid, today, today + timedelta(weeks=weeks))
-    keys = {}
-    for e in rows:
-        if not e["all_day"]:
-            keys.setdefault(store.title_key(e["title"]), Counter())[e["title"]] += 1
-    return [{"title": c.most_common(1)[0][0], "count": sum(c.values())} for c in keys.values()]
+    window = (today.isoformat(), (today + timedelta(weeks=weeks)).isoformat())
+    with store.db() as conn:
+        rows = conn.execute(_SERIES + "module_id = ? ORDER BY date, start", (*window, mid)).fetchall()
+    return _group_series(rows)
 
 
 def link_summary(m, today, weeks=8):
@@ -373,7 +396,8 @@ def _calendars(canvas, day=None):
     from venato import feeds, outlook
     data = tuple(d for _, d in outlook.cached_calendars() if feeds.is_canvas("", d) == canvas)
     key = ("canvas" if canvas else "uni", day or store.local_today(), str(store.tz()), data)
-    if key not in _parsed:
+    events = _parsed.get(key)                      # one read: another session's thread may clear _parsed
+    if events is None:
         events = []
         for d in data:
             try:
@@ -383,7 +407,7 @@ def _calendars(canvas, day=None):
         if len(_parsed) > 4:
             _parsed.clear()
         _parsed[key] = events
-    return _parsed[key]
+    return events
 
 
 def detected(day=None):
@@ -404,12 +428,14 @@ def detected_courses(day=None):
 
 
 def _module_for(code, name):
-    """The module already in Venato for a detected one (same code, else same name), or None."""
+    """The module already in Venato for a detected one: the same code, or the same name when one of them has no
+    code (last year's module with the same name and another code is another module). Or None."""
     from venato import feeds
     for m in modules():
-        if code and m["code"] and feeds.norm_code(m["code"]) == feeds.norm_code(code):
-            return m
-        if m["name"].lower() == str(name or "").strip().lower():
+        if code and m["code"]:                                       # both have codes: only the codes count
+            if feeds.norm_code(m["code"]) == feeds.norm_code(code):
+                return m
+        elif m["name"].lower() == str(name or "").strip().lower():
             return m
     return None
 
@@ -434,11 +460,15 @@ def dismiss(kind, key):
 
 
 def new_found(day=None):
-    """{"modules", "courses"}: detected modules not in Venato (same code, else same name) and not ignored, and
+    """{"modules", "courses"}: detected modules not in Venato (_module_for), not ignored and whose lectures aren't
+    all on a module already (a rule or the student's choice took them), and
     Canvas courses linked to no module and not ignored."""
     gone = dismissed()
+    with store.db() as conn:                                         # codes whose events are all on a module
+        filed = {c for c, loose in conn.execute("SELECT module_code, SUM(module_id IS NULL) FROM tt_outlook "
+                                                "WHERE module_code IS NOT NULL GROUP BY module_code") if not loose}
     return {"modules": [m for m in detected(day) if not _module_for(m["code"], m["name"])
-                        and _dismiss_key(m) not in gone["module"]],
+                        and _dismiss_key(m) not in gone["module"] and m["code"] not in filed],
             "courses": [c for c in detected_courses(day) if c["module_id"] is None
                         and c["course_id"] not in gone["course"]]}
 

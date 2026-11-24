@@ -36,6 +36,14 @@ def title_key(title):
     return re.sub(r"\s+", " ", feeds.strip_kind(title)).strip().lower()
 
 
+def series_key(title, code=None):
+    """The key of a choice made for an event series: its title_key (or, for a title that is only a kind word
+    such as "Lecture", the whole title) and its module code, so the same title under two modules stays apart."""
+    from venato import feeds
+    key = title_key(title) or " ".join(str(title or "").lower().split())
+    return f"{key}|{feeds.norm_code(code) if code else ''}"
+
+
 def _rule(text):
     """A title rule as a pattern: its words, whole, any case, any spacing."""
     words = str(text or "").lower().split()
@@ -44,7 +52,7 @@ def _rule(text):
 
 def _tag_modules(conn):
     """Set each event's module_id, the first that applies:
-    1. the student's choice for its series (gr_event_links, by title_key; a NULL module = not a module),
+    1. the student's choice for its series (gr_event_links, by series_key: title and code; NULL = not a module),
     2. the module whose code (any case, spaces ignored) is the event's code,
     3. the first module (oldest) whose title rule is in its title: its `match` words, or its name when it
        has neither a code nor a rule.
@@ -58,7 +66,7 @@ def _tag_modules(conn):
         except sqlite3.OperationalError:
             continue
     try:
-        links = dict(conn.execute("SELECT title_key, module_id FROM gr_event_links").fetchall())
+        links = dict(conn.execute("SELECT key, module_id FROM gr_event_links").fetchall())
     except sqlite3.OperationalError:
         links = {}
     ids = {m[0] for m in mods}
@@ -72,9 +80,9 @@ def _tag_modules(conn):
 
     def module_of(title, code):
         if (title, code) not in seen:
-            key = title_key(title)
-            if key in links and (links[key] is None or links[key] in ids):
-                hit = links[key]
+            key, chosen = title_key(title), series_key(title, code)
+            if chosen in links and (links[chosen] is None or links[chosen] in ids):
+                hit = links[chosen]
             else:
                 hit = by_code.get(code) if code else None
                 full = " ".join(str(title or "").lower().split())        # a rule may name the kind ("lab")

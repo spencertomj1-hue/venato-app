@@ -327,10 +327,10 @@ def _new_found(ms):
 NOT_A_MODULE = "__none__"
 
 
-def _file(title, key):
+def _file(title, code, key):
     choice = st.session_state.get(key)
     if choice:
-        gr.file_series(title, None if choice == NOT_A_MODULE else choice)
+        gr.file_series(title, None if choice == NOT_A_MODULE else choice, code=code)
 
 
 def _file_deadline(did, key):
@@ -350,11 +350,12 @@ def _unfiled(ms):
         for x in series:
             text, pick = st.columns([3, 2], vertical_alignment="center")
             day = store.fmt_day(store._as_date(x["next"]), "%a %-d %b")
-            text.markdown(f"**{md(x['title'])}** · {x['count']} sessions · next {md(day)}")
-            key = f"gr_unf_s_{store.title_key(x['title'])}"
+            text.markdown(f"**{md(x['title'])}** · " + " · ".join(md(b) for b in (x["code"], f"{x['count']} sessions",
+                                                                                     f"next {day}") if b))
+            key = f"gr_unf_s_{store.series_key(x['title'], x['code'])}"
             pick.selectbox(x["title"], [*names, NOT_A_MODULE], index=None, key=key, label_visibility="collapsed",
                            format_func=lambda v: "Not a module" if v == NOT_A_MODULE else names[v],
-                           placeholder="Choose a module", on_change=_file, args=(x["title"], key))
+                           placeholder="Choose a module", on_change=_file, args=(x["title"], x["code"], key))
         for d in due:
             text, pick = st.columns([3, 2], vertical_alignment="center")
             when = store.fmt_day(store._as_date(d["due"]), "%a %-d %b")
@@ -363,6 +364,19 @@ def _unfiled(ms):
             pick.selectbox(d["title"], list(names), index=None, key=key, label_visibility="collapsed",
                            format_func=names.get, placeholder="Choose a module",
                            on_change=_file_deadline, args=(d["id"], key))
+
+
+def _not_modules():
+    """The series marked "not a module", each with Restore (its code and the title rules decide again)."""
+    rows = gr.not_a_module_series()
+    if not rows:
+        return
+    with st.expander(f"Not modules ({len(rows)})", icon=":material/block:"):
+        for i, x in enumerate(rows):
+            text, btn = st.columns([4, 1], vertical_alignment="center")
+            text.markdown(" · ".join(md(b) for b in (x["title"], x["code"]) if b))
+            btn.button("Restore", key=f"gr_restore_{i}_{store.series_key(x['title'], x['code'])}",
+                       on_click=gr.unfile_series, args=(x["title"], x["code"]))
 
 
 def render_page():
@@ -403,6 +417,7 @@ def render_page():
     else:
         kit.empty("No modules yet. Add your first one below, and its deadlines, lectures and study hours gather here.",
                   ":material/school:")
+    _not_modules()
     _add_module(not ms)
     _settings(ms, s)
 
