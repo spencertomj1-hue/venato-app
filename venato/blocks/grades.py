@@ -189,13 +189,62 @@ def file_series(title, module_id):
 
 def delete_module(mid):
     """Delete a module and its assessments. Only its links go: its category, deadlines, Canvas courses
-    and timetable events stay (unlinked)."""
+    and timetable events stay (unlinked; its series show as Unfiled again, unless another module's rule
+    takes them)."""
     with store.db() as conn:
         conn.execute("UPDATE deadlines SET module_id = NULL WHERE module_id = ?", (mid,))
         conn.execute("UPDATE tt_outlook SET module_id = NULL WHERE module_id = ?", (mid,))
         conn.execute("UPDATE gr_canvas_courses SET module_id = NULL WHERE module_id = ?", (mid,))
+        conn.execute("DELETE FROM gr_event_links WHERE module_id = ?", (mid,))
         conn.execute("DELETE FROM gr_assessments WHERE module_id = ?", (mid,))
         conn.execute("DELETE FROM gr_modules WHERE id = ?", (mid,))
+    store.tag_outlook_modules()
+
+
+def unfiled_series(today, weeks=8):
+    """[{title, count, next}]: timed event series in the next `weeks` (from `today`) on no module and with no
+    choice made for them ("not a module" counts as a choice), 2+ sessions each, soonest first."""
+    from collections import Counter
+    from datetime import timedelta
+    from venato import feeds
+    last = today + timedelta(weeks=weeks)
+    with store.db() as conn:
+        rows = conn.execute("SELECT title, date FROM tt_outlook WHERE all_day = 0 AND module_id IS NULL "
+                            "AND date BETWEEN ? AND ? AND uid NOT IN (SELECT uid FROM tt_outlook_hidden) "
+                            "ORDER BY date, start", (today.isoformat(), last.isoformat())).fetchall()
+        filed = {r[0] for r in conn.execute("SELECT title_key FROM gr_event_links")}
+    groups = {}
+    for title, day in rows:
+        key = store.title_key(title)
+        if key and key not in filed:
+            g = groups.setdefault(key, {"titles": Counter(), "count": 0, "next": day})
+            g["titles"][title] += 1
+            g["count"] += 1
+    out = [{"title": g["titles"].most_common(1)[0][0], "count": g["count"], "next": g["next"]}
+           for g in groups.values() if g["count"] >= feeds.MIN_EVENTS]
+    return sorted(out, key=lambda s: (s["next"], s["title"].lower()))
+
+
+def series_of(mid, today, weeks=8):
+    """[{title, count}]: the module's event series in the next `weeks` (by title, kind words and case aside)."""
+    from collections import Counter
+    from datetime import timedelta
+    rows = week_events(mid, today, today + timedelta(weeks=weeks))
+    keys = {}
+    for e in rows:
+        if not e["all_day"]:
+            keys.setdefault(store.title_key(e["title"]), Counter())[e["title"]] += 1
+    return [{"title": c.most_common(1)[0][0], "count": sum(c.values())} for c in keys.values()]
+
+
+def unfiled_deadlines():
+    """Open Canvas deadlines on no module (not from a course the student ignored), soonest first. Ones typed in
+    by hand are left out: plenty belong to no module."""
+    with store.db() as conn:
+        courses = dict(conn.execute("SELECT id, course_id FROM deadlines WHERE source = 'canvas'").fetchall())
+    gone = dismissed()["course"]
+    return [d for d in store.deadlines() if d["module_id"] is None and d["id"] in courses
+            and courses[d["id"]] not in gone]
 
 
 def create_category(mid):

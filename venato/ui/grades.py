@@ -315,6 +315,49 @@ def _new_found(ms):
                           args=("course", c["course_id"]))
 
 
+# --- Unfiled ---
+
+NOT_A_MODULE = "__none__"
+
+
+def _file(title, key):
+    choice = st.session_state.get(key)
+    if choice:
+        gr.file_series(title, None if choice == NOT_A_MODULE else choice)
+
+
+def _file_deadline(did, key):
+    if st.session_state.get(key):
+        store.update_deadline(did, module_id=st.session_state[key])
+
+
+def _unfiled(ms):
+    """Lecture series and deadlines on no module: pick the module each belongs to."""
+    today = store.local_today()
+    series = gr.unfiled_series(today)
+    due = gr.unfiled_deadlines()
+    if not ms or not (series or due):
+        return
+    names = {m["id"]: m["name"] for m in ms}
+    with kit.card("Unfiled", "On your timetable or due, but on no module yet. Pick where each one goes."):
+        for x in series:
+            text, pick = st.columns([3, 2], vertical_alignment="center")
+            day = store.fmt_day(store._as_date(x["next"]), "%a %-d %b")
+            text.markdown(f"**{md(x['title'])}** · {x['count']} sessions · next {md(day)}")
+            key = f"gr_unf_s_{store.title_key(x['title'])}"
+            pick.selectbox(x["title"], [*names, NOT_A_MODULE], index=None, key=key, label_visibility="collapsed",
+                           format_func=lambda v: "Not a module" if v == NOT_A_MODULE else names[v],
+                           placeholder="Choose a module", on_change=_file, args=(x["title"], key))
+        for d in due:
+            text, pick = st.columns([3, 2], vertical_alignment="center")
+            when = store.fmt_day(store._as_date(d["due"]), "%a %-d %b")
+            text.markdown(f":material/event: **{md(d['title'])}** · due {md(when)}")
+            key = f"gr_unf_d_{d['id']}"
+            pick.selectbox(d["title"], list(names), index=None, key=key, label_visibility="collapsed",
+                           format_func=names.get, placeholder="Choose a module",
+                           on_change=_file_deadline, args=(d["id"], key))
+
+
 def render_page():
     current = gr.get_module(st.session_state.get("gr_module") or "")
     if current:
@@ -338,6 +381,7 @@ def render_page():
                 kit.pills([(f"{y}: {v:.1f}%", band(v)[1]) for y, v in o["years"].items()])
         with b, kit.card("Coming up"):
             _coming_up(ms)
+        _unfiled(ms)
         years = list(dict.fromkeys(m["year"] or "Other" for m in ms))
         for year in sorted(years, reverse=True):
             these = [m for m in ms if (m["year"] or "Other") == year]

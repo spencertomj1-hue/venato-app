@@ -364,3 +364,95 @@ def test_changing_a_rule_retags(gr, store, ol):
 def test_title_key(store):
     assert store.title_key("  Organic  Chemistry Lecture ") == "organic chemistry"
     assert store.title_key("Maths Methods Classwork") == "maths methods classwork"
+
+
+def test_unfiled_lists_series_until_filed(gr, store, ol):
+    sync_uni(ol)
+    series = {s["title"]: s for s in gr.unfiled_series(DAY)}
+    assert {"Spectroscopy", "Research Frontiers Social", "Years 2 & 3 Town Hall"} <= set(series)
+    assert "Summer project chat" not in series                   # a one-off isn't a series
+    assert "Alex Doe, Personal Tutorial, 18/11/2026 13:20 GMT - New" not in series
+    social = series["Research Frontiers Social"]
+    assert social["count"] >= 2 and social["next"] >= DAY.isoformat()
+    nexts = [s["next"] for s in gr.unfiled_series(DAY)]
+    assert nexts == sorted(nexts)
+    gr.add_module("Spectroscopy")                                # filed by its name
+    assert "Spectroscopy" not in {s["title"] for s in gr.unfiled_series(DAY)}
+    gr.file_series("Research Frontiers Social", None)            # "not a module" counts as filed
+    assert "Research Frontiers Social" not in {s["title"] for s in gr.unfiled_series(DAY)}
+    assert gr.unfiled_series(date(2027, 3, 1)) == []             # nothing in that window
+
+
+def test_deleting_a_module_unfiles_its_overrides(gr, store, ol):
+    sync_uni(ol)
+    mid = gr.add_module("Projects")
+    keep = gr.add_module("Talks")
+    gr.file_series("Research Frontiers Social", mid)
+    gr.file_series("Years 2 & 3 Town Hall", keep)
+    assert all(e["module_id"] == mid for e in events_titled(store, "Research Frontiers Social"))
+    gr.delete_module(mid)
+    assert not any(e["module_id"] for e in events_titled(store, "Research Frontiers Social"))
+    titles = {s["title"] for s in gr.unfiled_series(DAY)}
+    assert "Research Frontiers Social" in titles and "Years 2 & 3 Town Hall" not in titles
+    assert all(e["module_id"] == keep for e in events_titled(store, "Years 2 & 3 Town Hall"))
+
+
+def test_deleting_a_module_lets_another_rule_take_its_series(gr, store, ol):
+    sync_uni(ol)
+    first = gr.add_module("Lab one", match="laboratory")
+    second = gr.add_module("Lab two", match="laboratory")
+    gr.delete_module(first)
+    assert all(e["module_id"] == second for e in events_titled(store, "Year 2 Laboratory (L1L2)"))
+
+
+def test_unfiled_deadlines(gr, store):
+    """Imported (Canvas) deadlines on no module, minus ignored courses. Ones typed in by hand may well be on no
+    module (a passport renewal), so they're never nagged about."""
+    mid = gr.add_module("Organic Chemistry")
+    store.add_deadline("Renew passport", "2026-12-01")
+    store.add_deadline("Problem sheet", "2026-12-02", module_id=mid)
+    store.import_canvas([
+        {"uid": "event-assignment-1", "title": "Quiz", "label": "X", "course_id": "77", "due": "2026-12-01",
+         "due_time": "17:00"},
+        {"uid": "event-assignment-2", "title": "Training", "label": "TRNG", "course_id": "88", "due": "2026-12-01",
+         "due_time": "17:00"},
+        {"uid": "event-assignment-3", "title": "Old quiz", "label": "X", "course_id": "77", "due": "2026-11-01",
+         "due_time": "17:00"}])
+    old = next(d for d in store.deadlines() if d["title"] == "Old quiz")
+    store.set_deadline_done(old["id"], True)
+    assert [d["title"] for d in gr.unfiled_deadlines()] == ["Quiz", "Training"]
+    gr.dismiss("course", "88")
+    assert [d["title"] for d in gr.unfiled_deadlines()] == ["Quiz"]
+
+
+def test_unfiled_card_and_links_panel(gr, store, ol, today):
+    from streamlit.testing.v1 import AppTest
+    sync_uni(ol, canvas=True)
+    org = gr.add_module("Organic Chemistry", code="CHEM50001")
+    gr.add_module("Projects")
+    store.import_canvas([{"uid": "event-assignment-1", "title": "Essay", "label": "X", "course_id": "77",
+                          "due": "2026-12-01", "due_time": "17:00"}])
+    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
+    goto(at, "Modules")
+    assert not at.exception
+    assert any("Unfiled" in m.value for m in at.markdown)
+    pick = next(s for s in at.selectbox if s.label == "Research Frontiers Social")
+    projects = gr.find_module("Projects")["id"]
+    pick.set_value(projects).run()
+    assert not at.exception
+    assert all(e["module_id"] == projects for e in events_titled(store, "Research Frontiers Social"))
+    essay = next(s for s in at.selectbox if s.label == "Essay")
+    essay.set_value(org).run()
+    assert [d["module_id"] for d in store.deadlines() if d["title"] == "Essay"] == [org]
+    # the module's own page: Links
+    at.session_state["gr_module"] = org
+    at.run()
+    assert not at.exception
+    at.text_input(key=f"gr_match_{org}").set_value("organic").run()
+    assert gr.get_module(org)["match"] == "organic"
+    at.selectbox(key=f"gr_canvas_{org}").set_value("1101").run()
+    assert {c["course_id"]: c["module_id"] for c in gr.canvas_courses()}["1101"] == org
+    btn = next(b for b in at.button if b.key and b.key.startswith(f"gr_notthis_{org}_"))
+    btn.click().run()
+    assert not at.exception
+    assert not any(e["module_id"] for e in events_titled(store, "Organic Chemistry"))
