@@ -193,3 +193,53 @@ def test_goal_header_shows_next_step_and_pace(store):
     words = text(goals_page())
     assert "Next: **Users** · 6 days left · Post on Reddit" in words
     assert "should be" in words and "by today" in words
+
+
+def test_add_a_milestone_target(store):
+    g = store.add_life_goal("Venato", months=6)
+    at = goals_page()
+    key = f"new_goal_{g['id']}"
+    at.segmented_control(key=f"{key}_kind").set_value("Milestone").run()
+    keys = [x.key for x in at.number_input]
+    assert f"{key}_target" not in keys and f"{key}_unit" not in [x.key for x in at.text_input]   # no amount or unit
+    at.text_input(key=f"{key}_title").input("Launch on the App Store").run()
+    at.button(key=f"{key}_add").click().run()
+    m = store.life_goal_targets(g["id"])[0]
+    assert m["title"] == "Launch on the App Store" and m["milestone"] and m["target"] == 1
+
+
+def test_milestone_row_shows_steps_and_a_tick(store):
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    m = store.add_goal("Launch", None, today, None, due=store.months_on(today, 2), life_goal_id=g["id"],
+                       milestone=True)
+    bare = store.add_goal("Pick a name", None, today, None, due=store.months_on(today, 1), life_goal_id=g["id"],
+                          milestone=True)
+    grp = store.ensure_target_group(m["id"])
+    todos = [store.add_detailed_todo(x, group_id=grp) for x in ("Build", "Test", "Screens", "Licence", "Submit")]
+    for t in todos[:3]:
+        store.set_todo_done(t["id"], True)
+    at = goals_page()
+    assert "3 of 5 steps · 60%" in " ".join(h.body for h in at.get("html"))
+    assert not [b for b in at.button if b.key in (f"plus_{m['id']}", f"minus_{m['id']}")]    # no − / +
+    assert at.checkbox(key=f"milestone_{m['id']}_False").disabled                           # its to-dos decide
+    at.checkbox(key=f"milestone_{bare['id']}_False").check().run()                          # no to-dos: a tick
+    assert store.target_progress(store.get_goal(bare["id"])) == 1
+    at.checkbox(key=f"target_todo_{todos[3]['id']}").check().run()                          # no "+1?" offer
+    assert not [b for b in at.button if b.key == f"plus_offer_yes_{m['id']}"]
+
+
+def test_rate_a_milestone_yourself(store):
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    m = store.add_goal("Get good at Swift", None, today, None, due=store.months_on(today, 2), life_goal_id=g["id"],
+                       milestone=True)
+    at = goals_page()
+    key = f"edit_{m['id']}"
+    assert at.segmented_control(key=f"{key}_kind").value == "Milestone"
+    at.toggle(key=f"{key}_rate").set_value(True).run()
+    at.slider(key=f"{key}_rating").set_value(40).run()
+    at.button(key=f"{key}_save").click().run()
+    m = store.get_goal(m["id"])
+    assert m["self_rated"] and abs(store.target_progress(m) - 0.4) < 1e-9
+    assert "Self-rated · 40%" in " ".join(h.body for h in at.get("html"))

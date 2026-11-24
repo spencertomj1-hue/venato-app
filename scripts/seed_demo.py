@@ -181,6 +181,16 @@ def main():
     store.set_goal_progress(books["id"], 14)
     for title, life in (("Book office hours", degree), ("Past papers list", degree), ("Buy running shoes", fit)):
         store.add_detailed_todo(title, group_id=store.life_goal_group(life["id"])["id"])
+    # A milestone (no number: its to-dos are its steps) and one to tick when it's done.
+    proposal = store.add_goal("Dissertation proposal signed off", None, TODAY, None, due=TODAY + timedelta(days=40),
+                              life_goal_id=degree["id"], milestone=True)
+    steps = store.ensure_target_group(proposal["id"])
+    for i, title in enumerate(("Pick a topic", "Read 10 papers", "Draft the question", "Meet supervisor", "Final draft")):
+        todo = store.add_detailed_todo(title, group_id=steps)
+        if i < 3:
+            store.set_todo_done(todo["id"], True)
+    store.add_goal("Run a 10k", None, TODAY, None, due=TODAY + timedelta(days=90), life_goal_id=fit["id"],
+                   milestone=True)
 
     print(f"Demo data created in: {FOLDER}")
     print(f"Run the app on it:    VENATO_DATA_DIR='{FOLDER}' .venv/bin/streamlit run app.py")
