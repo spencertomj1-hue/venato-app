@@ -115,12 +115,22 @@ def _edit(g, ids):
             st.rerun()
 
 
-def bar_html(frac, label="", colour=None, expected=None):
+def breakdown(parts):
+    """What a goal's % is made of, for its bar's tooltip: "Users 0% (effort 8) · Apple licence 100% (3) · …"."""
+    bits = [f"{p['title']} {round(100 * p['fraction'])}% ({'effort ' if i == 0 else ''}{p['effort']})"
+            for i, p in enumerate(parts)]
+    return " · ".join(bits)
+
+
+def bar_html(frac, label="", colour=None, expected=None, tip=""):
     """A goal's overall bar, in its colour (else the theme's accent), with the "should be here by today" tick
-    when `expected` (0..1) is given and the goal isn't there yet."""
+    when `expected` (0..1) is given and the goal isn't there yet. `tip`: its hover text (the breakdown)."""
     from venato.ui.goals import BAR_CSS, _accent, goal_bar_css
     fill = f";background:{colour}" if colour else ""
-    bar = f'<div class="hg-bar" role="img" aria-label="{escape(label)}"><i style="width:{100 * frac:.1f}%{fill}"></i></div>'
+    say = f"{label}. {tip}" if tip else label
+    hover = f' title="{escape(tip)}"' if tip else ""
+    bar = (f'<div class="hg-bar" role="img" aria-label="{escape(say)}"{hover}>'
+           f'<i style="width:{100 * frac:.1f}%{fill}"></i></div>')
     if expected and frac < expected:
         tip = f"Should be at {round(100 * expected)}% by today"
         mark = (f'<span class="hg-mark" role="img" aria-label="{tip}" title="{tip}" '
@@ -204,9 +214,10 @@ def card(g, ids, ctx, today, expanded=False):
         if g["why"]:
             st.caption(f":material/format_quote: {kit.md(g['why'])}")
         exp = expected_fraction(g, targets, today, p["parts"]) if ctx is not None else None
+        tip = breakdown(p["parts"])
         st.html(bar_html(p["fraction"], f"{g['title']}: {round(100 * p['fraction'])}%", store.life_goal_colour(g["id"]),
-                         expected=exp))
-        st.caption(f"{pace_words(p['fraction'], exp)} · {summary(p)}")
+                         expected=exp, tip=tip))
+        st.caption(f"{pace_words(p['fraction'], exp)} · {summary(p)}", help=f"Weighted by effort: {tip}" if tip else None)
         step = store.next_step(g["id"], today, targets) if ctx is not None else None
         if step:
             st.markdown(next_step_line(step, today))

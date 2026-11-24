@@ -253,6 +253,8 @@ def test_effort_on_targets_and_todos(store):
     at = goals_page()
     html = " ".join(m.value for m in at.markdown)
     assert 'title="Effort 8 of 10"' in html and "●●●●○" in html                   # the dots on the row
+    bars = " ".join(h.body for h in at.get("html"))
+    assert 'title="Users 0% (effort 8)"' in bars                                 # the header's breakdown
     # A new target: Big.
     key = f"new_goal_{g['id']}"
     at.text_input(key=f"{key}_title").input("Reviews").run()

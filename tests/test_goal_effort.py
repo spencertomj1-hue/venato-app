@@ -206,3 +206,38 @@ def test_effort_outside_1_to_10_is_refused(store):
         store.add_detailed_todo("Big", effort=11)
     with pytest.raises(ValueError):
         store.add_goal("Users", None, "2026-11-01", 10, due="2027-01-31", effort=0)
+
+
+def test_csv_round_trip_keeps_effort_milestone_and_rating(store):
+    from io import StringIO
+    import pandas as pd
+    g = _goal(store)
+    m = store.add_goal("Launch", None, "2026-11-01", None, due="2027-01-31", life_goal_id=g["id"], milestone=True,
+                       effort=7)
+    store.update_goal(m["id"], self_rating=0.4)
+    n = store.add_goal("Users", None, "2026-11-01", 50, due="2027-01-31", life_goal_id=g["id"])
+    todo = store.add_detailed_todo("Blurb", group_id=store.ensure_life_goal_group(g["id"]), effort=3)
+    goals_csv = store.load_goals().to_csv(index=False)
+    todos_csv = store.load_todos().to_csv(index=False)
+    store.save_goals(pd.read_csv(StringIO(goals_csv)), replace=True)
+    store.save_todos(pd.read_csv(StringIO(todos_csv)), replace=True)
+    m2, n2 = store.get_goal(m["id"]), store.get_goal(n["id"])
+    assert m2["milestone"] and m2["effort"] == 7 and m2["self_rated"] and _close(m2["value"], 0.4)
+    assert not n2["milestone"] and n2["effort"] is None
+    assert store.get_todo(todo["id"])["effort"] == 3
+    # An older CSV, without the new columns: unset, a number, not rated.
+    old = pd.read_csv(StringIO(goals_csv)).drop(columns=["effort", "milestone", "self_rating"])
+    store.save_goals(old, replace=True)
+    assert store.get_goal(n["id"])["effort"] is None and not store.get_goal(n["id"])["milestone"]
+
+
+def test_breakdown_for_the_header_tooltip(store):
+    from venato.ui import life_goals
+    g = _goal(store)
+    t = store.add_goal("Users", None, "2026-11-01", 10, due="2027-01-31", life_goal_id=g["id"], effort=8)
+    m = store.add_goal("Apple licence", None, "2026-11-01", None, due="2026-12-31", life_goal_id=g["id"],
+                       milestone=True, effort=3)
+    store.set_goal_progress(m["id"], 1)
+    assert t
+    text = life_goals.breakdown(store.life_goal_progress(g["id"])["parts"])
+    assert text == "Apple licence 100% (effort 3) · Users 0% (8)"

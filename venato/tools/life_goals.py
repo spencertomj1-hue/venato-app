@@ -106,10 +106,12 @@ def list_life_goals():
         lines.append(f"- {g['title']} ({g['start']} to {g['end_date']}, {store.time_left(g)}, "
                      f"{round(100 * p['fraction'])}%, id {g['id']}).{why}")
         for t in targets:
-            lines.append(f"  - target {t['title']} {store.goal_title_due(t['due'])}: {store._num(t['value'])}/"
-                         f"{store._num(t['target'])}{' ' + t['unit'] if t['unit'] else ''} (id {t['id']})")
+            from .goals import _amount
+            kind = "milestone" if t["milestone"] else "target"
+            lines.append(f"  - {kind} {t['title']} {store.goal_title_due(t['due'])}: {_amount(t)}, "
+                         f"effort {store.effort(t)} (id {t['id']})")
         for t in todos:
-            lines.append(f"  - to-do {t['title']} (id {t['id']})")
+            lines.append(f"  - to-do {t['title']}, effort {store.effort(t)} (id {t['id']})")
     loose = store.unparented_targets()
     if loose and goals:
         lines.append("Targets under no goal: " + ", ".join(t["title"] for t in loose))

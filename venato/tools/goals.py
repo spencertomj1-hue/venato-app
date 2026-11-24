@@ -11,13 +11,21 @@ from .common import Pending, Result, ToolError, _best_match, _day, _period, _per
 
 
 def _amount(goal, n=None):
-    """"7/12 sessions" for a goal (or n of its unit)."""
+    """"7/12 sessions" for a goal (or n of its unit); a milestone: "60% (3 of 5 steps)", "done", "not done"."""
     n = goal["value"] if n is None else n
+    if goal.get("milestone"):
+        done, total = goal.get("steps") or (0, 0)
+        pct = f"{round(100 * min(float(n), 1))}%"
+        if goal.get("self_rated"):
+            return f"{pct}, self-rated"
+        return f"{pct} ({done} of {total} steps)" if total else ("done" if float(n) >= 1 else "not done")
     return f"{store._num(n)}/{goal['target']}" + (f" {goal['unit']}" if goal["unit"] else "")
 
 
 def describe_goal(g):
     when = store.goal_title_due(g["due"])
+    if g.get("milestone"):
+        return f"'{g['title']}' (milestone {when}: {_amount(g)}, effort {store.effort(g)})"
     how = f", counted from the habit {g['habit']}" if g["habit"] else ""
     if g.get("category"):
         how = f", counted from Actual hours of {g['label'] + ' (' + g['category'] + ')' if g.get('label') else g['category']}"
@@ -76,11 +84,21 @@ def _life_goal_id(life_goal):
     return find_life_goal(life_goal)["id"]
 
 
-def add_goal(title, target, period=None, unit=None, habit=None, date=None, category=None, label=None, due=None,
-             life_goal=None):
+def _effort(effort):
+    try:
+        return store.check_effort(effort)
+    except (TypeError, ValueError):
+        raise ToolError("effort goes from 1 (tiny) to 10 (huge); 2 small, 5 medium, 8 big.")
+
+
+def add_goal(title, target=None, period=None, unit=None, habit=None, date=None, category=None, label=None, due=None,
+             life_goal=None, effort=None, milestone=False):
     """A measurable goal with a deadline (`due`), from today (or `date`). Without a deadline, `period`
     "monthly" / "yearly" makes it due at the end of the month / year (default: this month). With a
-    category (and optionally an activity label) it counts the timetable's Actual hours instead of a hand-kept number."""
+    category (and optionally an activity label) it counts the timetable's Actual hours instead of a hand-kept number.
+    milestone=True: a qualitative target (no number): its to-dos are its steps, or it's ticked when done.
+    effort (1-10): how big a chunk of its long-term goal it is (default 5)."""
+    effort = _effort(effort)
     day = _period_day(date)
     per = None
     if due is None:                              # the month's or year's: from its first day to its last
@@ -90,10 +108,14 @@ def add_goal(title, target, period=None, unit=None, habit=None, date=None, categ
         due = _due(due)
     if due < day:
         raise ToolError("The deadline can't be before the goal starts.")
+    if milestone:
+        target = 1
+        if habit or category:
+            raise ToolError("A milestone has no number, so it can't count a habit or timetable hours.")
     try:
         target = float(target)
     except (TypeError, ValueError):
-        raise ToolError("target must be a number, e.g. 12.")
+        raise ToolError("target must be a number, e.g. 12 (or milestone=true for one with no number).")
     if target <= 0:
         raise ToolError("target must be more than 0.")
     title = str(title).strip()
@@ -106,7 +128,8 @@ def add_goal(title, target, period=None, unit=None, habit=None, date=None, categ
     cid = _goal_category(category) if category else None
     life = _life_goal_id(life_goal) or None
     g = store.add_goal(title, per, day, target, (unit or "h") if cid else unit, _habit_id(habit),
-                       category_id=cid, label=label if cid else None, due=None if per else due, life_goal_id=life)
+                       category_id=cid, label=label if cid else None, due=None if per else due, life_goal_id=life,
+                       effort=effort, milestone=bool(milestone))
     under = f" under the goal '{store.get_life_goal(life)['title']}'" if life else ""
     return Result(f"Added the target {describe_goal(g)}{under}.", changed=True)
 
@@ -114,6 +137,9 @@ def add_goal(title, target, period=None, unit=None, habit=None, date=None, categ
 def log_goal_progress(goal, amount=1, period=None, date=None):
     """Add to a goal's progress (a negative amount takes some off)."""
     g = _find_goal(goal, period, date)
+    if g["milestone"]:
+        raise ToolError(f"{describe_goal(g)} is a milestone: tick its to-dos, set_goal_progress(value=1) to tick "
+                        "it done, or edit_goal(self_rating=...).")
     if g["habit"]:
         raise ToolError(f"{describe_goal(g)} counts the habit {g['habit']} automatically. "
                         "Tick the habit instead (set_habit).")
@@ -131,17 +157,31 @@ def set_goal_progress(goal, value, period=None, date=None):
     if g["kind"] != "count":
         raise ToolError(f"{describe_goal(g)} is counted automatically; it can't be set by hand.")
     old = g["value"]
+    if g["milestone"]:
+        value = 1 if float(value) >= 1 else 0          # a milestone's own progress is a tick
     store.set_goal_progress(g["id"], float(value))
     g = store.get_goal(g["id"])
     return Result(f"Set {describe_goal(g)} (was {store._num(old)}).", changed=True)
 
 
 def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit=False, period=None, date=None,
-              category=None, label=None, unlink_category=False, due=None, start=None, life_goal=None):
+              category=None, label=None, unlink_category=False, due=None, start=None, life_goal=None,
+              effort=None, milestone=None, self_rating=None, clear_self_rating=False):
     """Change a goal's title, target, unit, deadline, start (the day it counts from: earlier to count
-    progress already made), or what (a habit, timetable hours, or nothing) it counts."""
+    progress already made), what (a habit, timetable hours, or nothing) it counts, its effort (1-10), whether
+    it's a milestone, or a milestone's self-rating (0-100%; clear_self_rating goes back to its to-dos)."""
     g = _find_goal(goal, period, date)
     changes = {}
+    if effort is not None:
+        changes["effort"] = _effort(effort)
+    if milestone is not None:
+        changes["milestone"] = bool(milestone)
+    if self_rating is not None or clear_self_rating:
+        if not (changes.get("milestone", g["milestone"])):
+            raise ToolError("Only a milestone can be self-rated.")
+        if self_rating is not None and not 0 <= float(self_rating) <= 100:
+            raise ToolError("self_rating is a percentage, 0 to 100.")
+        changes["self_rating"] = None if clear_self_rating else float(self_rating) / 100
     if start is not None:
         changes["start"] = _due(start)
     if due is not None:
@@ -172,7 +212,7 @@ def edit_goal(goal, title=None, target=None, unit=None, habit=None, unlink_habit
         changes["life_goal_id"] = _life_goal_id(life_goal) or None
     if not changes:
         raise ToolError("Say what to change: title, target, unit, due, start, habit, category, label, life_goal, "
-                        "unlink_habit or unlink_category.")
+                        "effort, milestone, self_rating, unlink_habit or unlink_category.")
     store.update_goal(g["id"], **changes)
     return Result(f"Updated: {describe_goal(store.get_goal(g['id']))}.", changed=True)
 

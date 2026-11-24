@@ -454,7 +454,7 @@ def load_goals():
     """Every goal, for export (the linked habit by name, so the CSV makes sense on its own)."""
     return _read(f"""SELECT g.id, g.title, g.period, g.period_start, g.due, g.target, g.unit, g.progress,
                             h.name AS habit, c.name AS category, g.label, g.ord, g.created_at, g.deadline_id, g.closed,
-                            l.title AS life_goal
+                            l.title AS life_goal, g.effort, g.milestone, g.self_rating
                      FROM goals g LEFT JOIN habits h ON h.id = g.habit_id
                      LEFT JOIN tt_categories c ON c.id = g.category_id
                      LEFT JOIN life_goals l ON l.id = g.life_goal_id
@@ -510,6 +510,13 @@ def save_goals(df, replace=False):
             if replace and did and conn.execute("SELECT 1 FROM deadlines WHERE id = ?", (did,)).fetchone():
                 conn.execute("UPDATE goals SET deadline_id = ?, closed = ? WHERE id = ?",
                              (did, 1 if _clean(row.get("closed"), int) else 0, gid))
+            # Effort, milestone and self-rating (older CSVs have none: unset, a number target, not rated).
+            from .todos import _import_effort
+            rating = _clean(row.get("self_rating"), float)
+            milestone = 1 if _clean(row.get("milestone"), float) else 0
+            conn.execute("UPDATE goals SET effort = ?, milestone = ?, self_rating = ? WHERE id = ?",
+                         (_import_effort(row.get("effort")), milestone,
+                          min(1.0, max(0.0, rating)) if milestone and rating is not None else None, gid))
             life = _clean(row.get("life_goal"), str)            # the long-term goal, by title (unknown: left as is)
             if life and life.strip().lower() in lifes:
                 conn.execute("UPDATE goals SET life_goal_id = ? WHERE id = ?", (lifes[life.strip().lower()], gid))
