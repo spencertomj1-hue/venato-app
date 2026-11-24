@@ -120,9 +120,15 @@ def _css(key, page):
     .rv-verdict {{ font-family: var(--venato-serif); font-size: 1.1rem; font-weight: 500; line-height: 1.3;
                    margin-top: .35rem; }}
     .rv-pill-big {{ font-size: 0.88rem; padding: 3px 12px; }}
-    .rv-goals {{ display: flex; flex-direction: column; gap: 5px; margin-top: .25rem; }}
-    .rv-goals > div {{ display: flex; gap: 10px; align-items: baseline; line-height: 1.25; }}
-    .rv-goals b {{ font-weight: 600; }} .rv-goals .m, .rv-m {{ opacity: .68; font-size: .85rem; }}
+    .rv-goals {{ display: flex; flex-direction: column; gap: 12px; margin-top: .1rem; }}
+    .rv-goals fieldset {{ margin: 0; min-width: 0; border: 1.5px solid var(--c); border-radius: 8px;
+                          padding: 2px 10px 8px; display: flex; flex-direction: column; gap: 4px; }}
+    .rv-goals legend {{ padding: 0 6px; margin-left: -2px; font-weight: 700; font-size: .92rem; color: var(--c); }}
+    .rv-goals legend .m {{ font-weight: 400; color: {kit.ink()}; margin-left: 6px; }}
+    .rv-goals .t {{ display: flex; gap: 8px; align-items: baseline; line-height: 1.3; font-size: .92rem; }}
+    .rv-goals .t > div {{ flex: 1; min-width: 0; display: flex; flex-wrap: wrap; column-gap: 8px; }}
+    .rv-goals .t .m {{ white-space: nowrap; margin-left: auto; }}      /* drops under the name when narrow */
+    .rv-goals .m, .rv-m {{ opacity: .68; font-size: .85rem; }}
     .rv-next {{ overflow-y: auto; }}
     .rv-next, .rv-time {{ min-height: 100%; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; }}
     .rv-next section {{ display: flex; flex-direction: column; gap: 6px; }}
@@ -217,22 +223,52 @@ def _looking_back(s, key):
                     st.toast("Saved", icon=":material/check_circle:")
 
 
+BEHIND = ("behind", "slipping", "unreachable")
+OTHER = "Other targets"                        # targets that aren't under a goal
+
+
+def _target_row(x):
+    """One target: its pace pill, its name, and the week's (or the total's) amount on the right."""
+    g = x["goal"]
+    if x["done"] is not None:
+        amt = f"{pace.fmt(x['done'])} / {pace.amount(g, x['need'])} this week"
+    else:
+        amt = f"{pace.fmt(g['value'])} / {pace.fmt(g['target'])}"
+    return (f'<div class="t">{_pill(pace.STATES[x["state"]], STATE_TONE[x["state"]])}'
+            f'<div><span>{escape(g["title"])}</span><span class="m">{escape(amt)}</span></div></div>')
+
+
+def _goal_groups(rows):
+    """The week's targets under their goal, in the goals' list order, then the ones with no goal:
+    [(title, colour, [row])]."""
+    by_goal = {}
+    for x in rows:
+        by_goal.setdefault(x["goal"].get("life_goal_id"), []).append(x)
+    colours = store.life_goal_colours()
+    out = [(lg["title"], colours.get(lg["id"]) or store.GOAL_COLOURS[0], by_goal.pop(lg["id"]))
+           for lg in store.life_goals(include_past=True) if lg["id"] in by_goal]
+    rest = [x for xs in by_goal.values() for x in xs]          # no goal, or one that's since gone
+    if rest:
+        out.append((OTHER, kit.muted(), rest))
+    return out
+
+
 def _goal_pace(s, key):
     with st.container(border=True, key=f"{key}_goals"):
-        _title("Goal pace")
         if not s.get("goals"):
+            _title("Goal pace")
             st.caption("No goals ran this week.")
             return
-        rows = []
-        for x in s["goals"]:
-            g = x["goal"]
-            if x["done"] is not None:
-                sub = f"{pace.amount(g, round(x['done'], 1))} this week, needed {pace.amount(g, round(x['need'], 1))}"
-            else:
-                sub = f"{pace.amount(g, g['value'])} of {pace.amount(g, g['target'])} so far"
-            rows.append(f"<div>{_pill(pace.STATES[x['state']], STATE_TONE[x['state']])}"
-                        f"<div><b>{escape(g['title'])}</b><div class='m'>{escape(sub)}</div></div></div>")
-        st.html(f'<div class="rv-goals">{"".join(rows)}</div>')
+        on = sum(x["state"] not in BEHIND for x in s["goals"])
+        _title("Goal pace", f"{on} of {len(s['goals'])} on track")
+        boxes = []
+        for title, colour, rows in _goal_groups(s["goals"]):
+            behind = sum(x["state"] in BEHIND for x in rows)
+            tally = ("all behind" if behind == len(rows) > 1 else f"{behind} of {len(rows)} behind") if behind \
+                else "on track"
+            boxes.append(f'<fieldset style="--c:{colour}"><legend>{escape(title)}'
+                         f'<span class="m">· {tally}</span></legend>{"".join(_target_row(x) for x in rows)}</fieldset>')
+        st.html(f'<div class="rv-goals">{"".join(boxes)}</div>')
 
 
 def _plan_next_week(first, key):
