@@ -93,9 +93,11 @@ def _css(key, page):
     {k}_cols > [data-testid="stLayoutWrapper"], {k}_cols [data-testid="stHorizontalBlock"] {{ height: 100%; }}
     {k}_cols [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{ height: 100%; flex-wrap: nowrap; }}
     {k}_back, {k}_next, {k}_time {{ flex: 1 1 0; min-height: 0; }}
+    [data-testid="stLayoutWrapper"]:has(> {k}_goals) {{ flex: 0 1 auto; min-height: 0; max-height: 55%; }}
+    {k}_goals {{ height: 100%; overflow-y: auto; }}   /* a long goal list scrolls, leaving Next week room */
     {k}_back [data-testid="stForm"] {{ flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; padding: 0; }}
     {k}_back [data-testid="stForm"] > div > [data-testid="stVerticalBlock"] {{ height: 100%; }}
-    {k}_back [data-testid="stElementContainer"]:has([data-testid="stTextArea"]) {{ flex: 1 1 0; min-height: 3.5rem; }}
+    {k}_back [data-testid="stElementContainer"]:has([data-testid="stTextArea"]) {{ flex: 1 1 0; min-height: 2rem; }}
     {k}_back [data-testid="stTextArea"], {k}_back [data-testid="stTextArea"] > div:last-child,
     {k}_back [data-testid="stTextArea"] [data-baseweb="textarea"] {{ height: 100%; }}
     {k}_back [data-testid="stTextArea"] {{ display: flex; flex-direction: column; }}
@@ -113,13 +115,13 @@ def _css(key, page):
     {k}_nudge {{ background: {kit.rgba(tones["amber"], 0.10)}; border: 1px solid {kit.rgba(tones["amber"], 0.45)};
                  border-radius: 0.6rem; padding: 0.45rem 0.6rem 0.45rem 0.9rem; }}
     {k}_nudge .rv-nudge {{ color: {tones["amber"]}; font-weight: 600; }}
-    .rv-h {{ font-family: var(--venato-serif); font-size: 1.3rem; font-weight: 600; line-height: 1.2; }}
+    .rv-h {{ font-family: var(--venato-serif); font-size: 1.2rem; font-weight: 600; line-height: 1.2; }}
     .rv-h small {{ font-family: var(--font, inherit); font-size: 0.8rem; font-weight: 400; opacity: .7; margin-left: .5rem; }}
-    .rv-verdict {{ font-family: var(--venato-serif); font-size: 1.22rem; font-weight: 500; line-height: 1.3;
-                   margin-top: .55rem; }}
+    .rv-verdict {{ font-family: var(--venato-serif); font-size: 1.1rem; font-weight: 500; line-height: 1.3;
+                   margin-top: .35rem; }}
     .rv-pill-big {{ font-size: 0.88rem; padding: 3px 12px; }}
-    .rv-goals {{ display: flex; flex-direction: column; gap: 8px; margin-top: .4rem; }}
-    .rv-goals > div {{ display: flex; gap: 10px; align-items: baseline; line-height: 1.35; }}
+    .rv-goals {{ display: flex; flex-direction: column; gap: 5px; margin-top: .25rem; }}
+    .rv-goals > div {{ display: flex; gap: 10px; align-items: baseline; line-height: 1.25; }}
     .rv-goals b {{ font-weight: 600; }} .rv-goals .m, .rv-m {{ opacity: .68; font-size: .85rem; }}
     .rv-next {{ overflow-y: auto; }}
     .rv-next, .rv-time {{ min-height: 100%; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; }}
@@ -127,21 +129,21 @@ def _css(key, page):
     .rv-cap {{ font-size: .72rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; opacity: .65; }}
     .rv-row {{ display: flex; justify-content: space-between; gap: 10px; font-size: .92rem; }}
     .rv-row span:last-child {{ opacity: .7; white-space: nowrap; }}
-    .rv-big {{ font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-right: .4rem; }}
+    .rv-big {{ font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-right: .4rem; }}
     .rv-thin {{ height: 6px; border-radius: 999px; background: {kit.TRACK}; overflow: hidden; margin-top: 4px; }}
     .rv-thin i {{ display: block; height: 100%; background: currentColor; opacity: .6; border-radius: 999px; }}
     .rv-need {{ display: flex; align-items: center; gap: 8px; font-size: .9rem; }}
     .rv-time .rows {{ flex: 1 0 auto; display: flex; flex-direction: column; justify-content: space-evenly; gap: 4px; }}
-    .rv-cat {{ display: flex; flex-direction: column; gap: 3px; }}
-    .rv-cat .top {{ display: flex; justify-content: space-between; font-size: .95rem; font-variant-numeric: tabular-nums; }}
+    .rv-cat {{ display: flex; flex-direction: column; gap: 2px; }}
+    .rv-cat .top {{ display: flex; justify-content: space-between; font-size: .9rem; font-variant-numeric: tabular-nums; }}
     .rv-cat .short {{ color: {tones["amber"]}; }} .rv-cat .over {{ color: {tones["good"]}; }}
-    .rv-bar {{ position: relative; height: 26px; border-radius: 7px; background: {kit.TRACK}; }}
+    .rv-bar {{ position: relative; height: 16px; border-radius: 5px; background: {kit.TRACK}; }}
     .rv-bar > i {{ position: absolute; top: 0; bottom: 0; }}
-    .rv-bar .done {{ left: 0; border-radius: 7px 0 0 7px; }}
+    .rv-bar .done {{ left: 0; border-radius: 5px 0 0 5px; }}
     .rv-bar .gap {{ background: repeating-linear-gradient(135deg, {kit.rgba(tones["amber"], .55)} 0 3px,
                     {kit.rgba(tones["amber"], .12)} 3px 7px); }}
     .rv-bar .over {{ background: {tones["good"]}; }}
-    .rv-bar .tick {{ top: -4px; bottom: -4px; width: 3px; margin-left: -1.5px; border-radius: 2px;
+    .rv-bar .tick {{ top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px; border-radius: 2px;
                      background: {kit.ink()}; }}
     .rv-time .foot {{ border-top: 1px solid rgba(128,128,128,.3); padding-top: 8px; display: flex;
                       flex-direction: column; gap: 6px; }}
@@ -215,8 +217,8 @@ def _looking_back(s, key):
                     st.toast("Saved", icon=":material/check_circle:")
 
 
-def _goal_pace(s):
-    with st.container(border=True):
+def _goal_pace(s, key):
+    with st.container(border=True, key=f"{key}_goals"):
         _title("Goal pace")
         if not s.get("goals"):
             st.caption("No goals ran this week.")
@@ -291,7 +293,7 @@ def _time(s, key):
             if plan and done < plan:
                 bar += f'<i class="gap" style="left:{pct(done)};width:{pct(plan - done)}"></i>'
             if plan and done > plan:
-                bar += f'<i class="over" style="left:{pct(plan)};width:{pct(done - plan)};border-radius:0 7px 7px 0"></i>'
+                bar += f'<i class="over" style="left:{pct(plan)};width:{pct(done - plan)};border-radius:0 5px 5px 0"></i>'
             if plan:
                 bar += f'<i class="tick" style="left:{pct(plan)}"></i>'
             label = f"{_h(done)} of {_h(plan)} h" if plan else f"{_h(done)} h, unplanned"
@@ -324,7 +326,7 @@ def render(first, key, page=False):
                 _unconfirmed(s, key)
             _looking_back(s, key)
         with mid:
-            _goal_pace(s)
+            _goal_pace(s, key)
             _next_week(s, key)
         with right:
             _time(s, key)

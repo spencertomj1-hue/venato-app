@@ -32,19 +32,20 @@ def _date_axis(stats):
 
 VIEWS = ["Week", "Trends"]
 # The Week view fits the window: less top padding than other pages, and the columns fill the height left
-# (minus the chat bar's room when it's there).
+# (minus the chat bar's room when it's there). 166px: the nav bar, the Review title row, and the gaps around
+# them, including the one before the app's empty trailing elements; change it with any of those.
 _FIT = """<style>
 .stMainBlockContainer {{ padding-top: 1.1rem !important; padding-bottom: 0.5rem !important; }}
 [data-testid="stHeader"], [data-testid="stHeader"] > * {{ background: transparent !important; box-shadow: none !important;
     pointer-events: none; }}
 [data-testid="stHeader"] button, [data-testid="stHeader"] a {{ pointer-events: auto; }}
 .st-key-rv_page > [data-testid="stLayoutWrapper"]:has([class*="_cols"]) {{
-    height: calc(100dvh - 1.1rem - 92px - {bottom}); flex: none; }}
+    height: calc(100dvh - 1.1rem - 166px - {bottom}); flex: none; }}
 .st-key-rv_page > [data-testid="stLayoutWrapper"] :is([data-testid="stLayoutWrapper"], [data-testid="stVerticalBlock"]):has([class*="_cols"]),
 .st-key-rv_page [class*="st-key-review_"][class*="_cols"] {{ height: 100%; flex: none; }}
 </style>"""
 _HEAD = """<style>
-.st-key-rv_head .rv-title { font-family: var(--venato-serif); font-size: 2.3rem; font-weight: 600; line-height: 1.1;
+.st-key-rv_head .rv-title { font-family: var(--venato-serif); font-size: 1.9rem; font-weight: 600; line-height: 1.1;
                             margin-right: .4rem; }
 .st-key-rv_step { border: 1px solid rgba(128,128,128,.3); border-radius: .6rem; padding: 0 .2rem; }
 .st-key-rv_view_w button[aria-checked="true"] { background: #1F1E1C !important; border-color: #1F1E1C !important; }
@@ -85,7 +86,7 @@ def page_stats():
     if appearance.is_dark():                       # the chosen view: light on dark
         st.html("<style>.st-key-rv_view_w button[aria-checked='true'] { background: #E8E8EC !important; border-color: #E8E8EC !important; }"
                 ".st-key-rv_view_w button[aria-checked='true'] p { color: #1F1E1C !important; }</style>")
-    with st.container(key="rv_page", gap="medium"):
+    with st.container(key="rv_page", gap="small"):
         with st.container(key="rv_head", horizontal=True, vertical_alignment="center", gap="small"):
             st.html('<div class="rv-title">Review</div>', width="content")
             if view == "Week":
