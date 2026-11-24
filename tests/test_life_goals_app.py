@@ -160,3 +160,128 @@ def test_todo_rows_get_their_goals_colour(store):
     assert metas[0]["goal"] == {"name": "Get fit", "colour": colour}
     assert metas[1]["goal"] == {"name": "Get fit", "colour": colour}             # a target's to-do: the goal's colour
     assert metas[2]["goal"] is None
+
+
+def test_target_todos_sit_on_the_target_row_and_offer_plus_one(store):
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    t = store.add_goal("Users", None, today, 50, "users", due=store.months_on(today, 1), life_goal_id=g["id"])
+    own = store.add_detailed_todo("Write the README", group_id=store.ensure_life_goal_group(g["id"]))
+    at = goals_page()
+    at.text_input(key=f"target_{t['id']}_newtodo").input("Post on Reddit").run()
+    at.button(key=f"target_{t['id']}_newtodo_add").click().run()
+    todo = store.target_todos(t["id"])[0]
+    assert todo["title"] == "Post on Reddit"
+    assert {x["title"] for x in store.life_goal_todos(g["id"])} == {"Write the README", "Post on Reddit"}
+    keys = [c.key for c in at.checkbox]
+    assert f"target_todo_{todo['id']}" in keys and f"life_todo_{todo['id']}" not in keys   # on the row, not the goal
+    assert f"life_todo_{own['id']}" in keys
+    at.checkbox(key=f"target_todo_{todo['id']}").check().run()
+    assert store.get_todo(todo["id"])["done"]
+    at.button(key=f"plus_offer_yes_{t['id']}").click().run()
+    assert store.get_goal(t["id"])["value"] == 1
+
+
+def test_goal_header_shows_next_step_and_pace(store):
+    from datetime import timedelta
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    store.update_life_goal(g["id"], start=today - timedelta(days=30), months=6)
+    t = store.add_goal("Users", None, today - timedelta(days=30), 50, "users", due=today + timedelta(days=6),
+                       life_goal_id=g["id"])
+    store.add_detailed_todo("Post on Reddit", group_id=store.ensure_target_group(t["id"]))
+    words = text(goals_page())
+    assert "Next: **Users** · 6 days left · Post on Reddit" in words
+    assert "should be" in words and "by today" in words
+
+
+def test_add_a_milestone_target(store):
+    g = store.add_life_goal("Venato", months=6)
+    at = goals_page()
+    key = f"new_goal_{g['id']}"
+    at.segmented_control(key=f"{key}_kind").set_value("Milestone").run()
+    keys = [x.key for x in at.number_input]
+    assert f"{key}_target" not in keys and f"{key}_unit" not in [x.key for x in at.text_input]   # no amount or unit
+    at.text_input(key=f"{key}_title").input("Launch on the App Store").run()
+    at.button(key=f"{key}_add").click().run()
+    m = store.life_goal_targets(g["id"])[0]
+    assert m["title"] == "Launch on the App Store" and m["milestone"] and m["target"] == 1
+
+
+def test_milestone_row_shows_steps_and_a_tick(store):
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    m = store.add_goal("Launch", None, today, None, due=store.months_on(today, 2), life_goal_id=g["id"],
+                       milestone=True)
+    bare = store.add_goal("Pick a name", None, today, None, due=store.months_on(today, 1), life_goal_id=g["id"],
+                          milestone=True)
+    grp = store.ensure_target_group(m["id"])
+    todos = [store.add_detailed_todo(x, group_id=grp) for x in ("Build", "Test", "Screens", "Licence", "Submit")]
+    for t in todos[:3]:
+        store.set_todo_done(t["id"], True)
+    at = goals_page()
+    assert "3 of 5 steps · 60%" in " ".join(h.body for h in at.get("html"))
+    assert not [b for b in at.button if b.key in (f"plus_{m['id']}", f"minus_{m['id']}")]    # no − / +
+    assert at.checkbox(key=f"milestone_{m['id']}_False").disabled                           # its to-dos decide
+    at.checkbox(key=f"milestone_{bare['id']}_False").check().run()                          # no to-dos: a tick
+    assert store.target_progress(store.get_goal(bare["id"])) == 1
+    at.checkbox(key=f"target_todo_{todos[3]['id']}").check().run()                          # no "+1?" offer
+    assert not [b for b in at.button if b.key == f"plus_offer_yes_{m['id']}"]
+
+
+def test_rate_a_milestone_yourself(store):
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    m = store.add_goal("Get good at Swift", None, today, None, due=store.months_on(today, 2), life_goal_id=g["id"],
+                       milestone=True)
+    at = goals_page()
+    key = f"edit_{m['id']}"
+    assert at.segmented_control(key=f"{key}_kind").value == "Milestone"
+    at.toggle(key=f"{key}_rate").set_value(True).run()
+    at.slider(key=f"{key}_rating").set_value(40).run()
+    at.button(key=f"{key}_save").click().run()
+    m = store.get_goal(m["id"])
+    assert m["self_rated"] and abs(store.target_progress(m) - 0.4) < 1e-9
+    assert "Self-rated · 40%" in " ".join(h.body for h in at.get("html"))
+
+
+def test_effort_on_targets_and_todos(store):
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    t = store.add_goal("Users", None, today, 50, "users", due=store.months_on(today, 1), life_goal_id=g["id"],
+                       effort=8)
+    at = goals_page()
+    html = " ".join(m.value for m in at.markdown)
+    assert 'title="Effort 8 of 10"' in html and "●●●●○" in html                   # the dots on the row
+    bars = " ".join(h.body for h in at.get("html"))
+    assert 'title="Users 0% (effort 8)"' in bars                                 # the header's breakdown
+    # A new target: Big.
+    key = f"new_goal_{g['id']}"
+    at.text_input(key=f"{key}_title").input("Reviews").run()
+    at.segmented_control(key=f"{key}_effort").set_value("Big").run()
+    at.button(key=f"{key}_add").click().run()
+    new = next(x for x in store.life_goal_targets(g["id"]) if x["title"] == "Reviews")
+    assert new["effort"] == 8
+    # Exact: 3.
+    key = f"edit_{t['id']}"
+    at.toggle(key=f"{key}_effort_exact").set_value(True).run()
+    at.slider(key=f"{key}_effort_n").set_value(3).run()
+    at.button(key=f"{key}_save").click().run()
+    assert store.get_goal(t["id"])["effort"] == 3
+    # A to-do for the goal, Small; its dots show beside it.
+    key = f"life_{g['id']}_newtodo"
+    at.text_input(key=key).input("Write the README").run()
+    at.segmented_control(key=f"{key}_effort").set_value("Small").run()
+    at.button(key=f"{key}_add").click().run()
+    todo = store.life_goal_todos(g["id"])[0]
+    assert todo["effort"] == 2
+    assert "●○○○○" in at.checkbox(key=f"life_todo_{todo['id']}").label
+
+
+def test_untouched_effort_stays_unset(store):
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    t = store.add_goal("Users", None, today, 50, due=store.months_on(today, 1), life_goal_id=g["id"])
+    at = goals_page()
+    at.button(key=f"edit_{t['id']}_save").click().run()
+    assert store.get_goal(t["id"])["effort"] is None

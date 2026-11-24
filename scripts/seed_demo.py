@@ -171,7 +171,7 @@ def main():
     # to-dos under them; one target under no goal ---
     degree = store.add_life_goal("Get a first", months=6, why="Grad schemes want a 2:1 at least")
     fit = store.add_life_goal("Get fit", months=12)
-    store.add_goal("Study", "monthly", TODAY, 30, "h", category_id="study", life_goal_id=degree["id"])
+    store.add_goal("Study", "monthly", TODAY, 30, "h", category_id="study", life_goal_id=degree["id"], effort=8)
     store.add_goal("Learn Spanish", "monthly", TODAY, 300, "h", category_id="study", label="Spanish",
                    life_goal_id=degree["id"])                                       # can't be done in time
     store.add_goal("Exercise", "monthly", TODAY, 16, "sessions", habit_id=store.find_habit("Exercise")[0],
@@ -179,8 +179,20 @@ def main():
     store.add_goal("Side project", "monthly", TODAY, 25, "h", category_id="projects")
     books = store.add_goal("Read books", "yearly", TODAY, 20, "books")
     store.set_goal_progress(books["id"], 14)
-    for title, life in (("Book office hours", degree), ("Past papers list", degree), ("Buy running shoes", fit)):
-        store.add_detailed_todo(title, group_id=store.life_goal_group(life["id"])["id"])
+    for title, life, effort in (("Book office hours", degree, 2), ("Past papers list", degree, None),
+                                ("Buy running shoes", fit, 2)):
+        store.add_detailed_todo(title, group_id=store.life_goal_group(life["id"])["id"], effort=effort)
+    # A milestone (no number: its to-dos are its steps) and one to tick when it's done.
+    proposal = store.add_goal("Dissertation proposal signed off", None, TODAY, None, due=TODAY + timedelta(days=40),
+                              life_goal_id=degree["id"], milestone=True, effort=6)
+    steps = store.ensure_target_group(proposal["id"])
+    for i, (title, effort) in enumerate((("Pick a topic", 2), ("Read 10 papers", 8), ("Draft the question", 5),
+                                         ("Meet supervisor", 2), ("Final draft", 8))):
+        todo = store.add_detailed_todo(title, group_id=steps, effort=effort)
+        if i < 3:
+            store.set_todo_done(todo["id"], True)
+    store.add_goal("Run a 10k", None, TODAY, None, due=TODAY + timedelta(days=90), life_goal_id=fit["id"],
+                   milestone=True)
 
     print(f"Demo data created in: {FOLDER}")
     print(f"Run the app on it:    VENATO_DATA_DIR='{FOLDER}' .venv/bin/streamlit run app.py")

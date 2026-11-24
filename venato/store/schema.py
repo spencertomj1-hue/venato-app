@@ -225,6 +225,13 @@ def init_db():
                             archived INTEGER NOT NULL DEFAULT 0)""")
         _add_column(conn, "goals", "life_goal_id", "TEXT")
         _add_column(conn, "todo_groups", "life_goal_id", "TEXT")
+        # Effort-weighted goal progress (store/life_goals.py): how big a chunk of its goal each target and
+        # to-do is (1-10; NULL is read as 5), milestone targets (1 = qualitative: target 1, progress 0 or 1,
+        # or its to-dos' effort done) and a milestone's own "how far, honestly?" (0..1; NULL = not used).
+        _add_column(conn, "goals", "effort", "INTEGER")
+        _add_column(conn, "goals", "milestone", "INTEGER NOT NULL DEFAULT 0")
+        _add_column(conn, "goals", "self_rating", "REAL")
+        _add_column(conn, "todos", "effort", "INTEGER")
 
 
 def _goals_became_todos(conn):

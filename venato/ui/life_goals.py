@@ -115,12 +115,48 @@ def _edit(g, ids):
             st.rerun()
 
 
-def bar_html(frac, label="", colour=None):
-    """A goal's overall bar, in its colour (else the theme's accent)."""
-    from venato.ui.goals import BAR_CSS, _accent
+def breakdown(parts):
+    """What a goal's % is made of, for its bar's tooltip: "Users 0% (effort 8) · Apple licence 100% (3) · …"."""
+    bits = [f"{p['title']} {round(100 * p['fraction'])}% ({'effort ' if i == 0 else ''}{p['effort']})"
+            for i, p in enumerate(parts)]
+    return " · ".join(bits)
+
+
+def bar_html(frac, label="", colour=None, expected=None, tip=""):
+    """A goal's overall bar, in its colour (else the theme's accent), with the "should be here by today" tick
+    when `expected` (0..1) is given and the goal isn't there yet. `tip`: its hover text (the breakdown)."""
+    from venato.ui.goals import BAR_CSS, _accent, goal_bar_css
     fill = f";background:{colour}" if colour else ""
-    return (f'<div class="hg-bar" role="img" aria-label="{escape(label)}"><i style="width:{100 * frac:.1f}%{fill}"></i></div>'
-            + BAR_CSS.replace("ACCENT", _accent()))
+    say = f"{label}. {tip}" if tip else label
+    hover = f' title="{escape(tip)}"' if tip else ""
+    bar = (f'<div class="hg-bar" role="img" aria-label="{escape(say)}"{hover}>'
+           f'<i style="width:{100 * frac:.1f}%{fill}"></i></div>')
+    if expected and frac < expected:
+        tip = f"Should be at {round(100 * expected)}% by today"
+        mark = (f'<span class="hg-mark" role="img" aria-label="{tip}" title="{tip}" '
+                f'style="left:{100 * min(expected, 1):.1f}%"></span>')
+        return f'<div class="hg-track">{bar}{mark}</div>' + goal_bar_css()
+    return bar + BAR_CSS.replace("ACCENT", _accent())
+
+
+def pace_words(frac, expected):
+    """"12%" or, behind an even pace, "0% · should be 9% by today"."""
+    now = f"{round(100 * frac)}%"
+    if expected is not None and frac < expected - BEHIND_BY:
+        return f"{now} · :orange[should be {round(100 * expected)}% by today]"
+    return now
+
+
+def next_step_line(step, today):
+    """":material/arrow_forward: Next: **Hit 50 users** · 6 days left · Message 5 mates"."""
+    from venato.ui.goals import due_parts
+    bits = []
+    if step["target"]:
+        bits.append(f"**{kit.md(step['target']['title'])}**")
+        bits.append(due_parts(step["target"], today)[1])
+    if step["todo"]:
+        bits.append(kit.md(step["todo"]["title"]))
+    return ":material/arrow_forward: Next: " + " · ".join(bits)
 
 
 def summary(p):
@@ -135,12 +171,14 @@ def summary(p):
 
 def _todos(g, today):
     """The goal's to-dos: open ones to tick, a line to add one, done ones counted."""
-    todos = store.life_goal_todos(g["id"])
+    group = store.life_goal_group(g["id"])          # the goal's own; a target's to-dos sit on its row
+    todos = [t for t in store.life_goal_todos(g["id"]) if group and t["group_id"] == group["id"]]
     open_ = [t for t in todos if not t["done"]]
-    kit.subhead("To-dos", icon=":material/check_box:")
+    kit.subhead("To-dos for the goal", icon=":material/check_box:")
     for t in open_:
         when = f" :gray[· due {regional.short_date(t['due'], today)}]" if t.get("due") else ""
-        st.checkbox(f"{kit.md(t['title'])}{when}", value=False, key=f"life_todo_{t['id']}",
+        st.checkbox(f"{kit.md(t['title'])}{when} {kit.effort_label(t.get('effort'))}", value=False,
+                    key=f"life_todo_{t['id']}", help=f"Effort {store.effort(t)} of 10",
                     on_change=store.set_todo_done, args=(t["id"], True))
     done = len(todos) - len(open_)
     if done:
@@ -151,10 +189,12 @@ def _todos(g, today):
     with st.container(horizontal=True, vertical_alignment="bottom"):
         title = st.text_input("New to-do", key=key, placeholder="Add a to-do", label_visibility="collapsed",
                               width="stretch")
+        effort = kit.effort_picker(key, exact=False)
         if st.button("", icon=":material/add:", key=f"{key}_add", help="Add this to-do to the goal",
                      disabled=not (title or "").strip()):
-            store.add_detailed_todo(title.strip(), group_id=store.ensure_life_goal_group(g["id"]))
-            del st.session_state[key]
+            store.add_detailed_todo(title.strip(), group_id=store.ensure_life_goal_group(g["id"]), effort=effort)
+            for k in (key, f"{key}_effort"):
+                st.session_state.pop(k, None)
             st.rerun()
 
 
@@ -173,15 +213,19 @@ def card(g, ids, ctx, today, expanded=False):
             _edit(g, ids)
         if g["why"]:
             st.caption(f":material/format_quote: {kit.md(g['why'])}")
-        st.html(bar_html(p["fraction"], f"{g['title']}: {round(100 * p['fraction'])}%", store.life_goal_colour(g["id"])))
-        st.caption(f"{round(100 * p['fraction'])}% · {summary(p)}")
+        exp = expected_fraction(g, targets, today, p["parts"]) if ctx is not None else None
+        tip = breakdown(p["parts"])
+        st.html(bar_html(p["fraction"], f"{g['title']}: {round(100 * p['fraction'])}%", store.life_goal_colour(g["id"]),
+                         expected=exp, tip=tip))
+        st.caption(f"{pace_words(p['fraction'], exp)} · {summary(p)}", help=f"Weighted by effort: {tip}" if tip else None)
+        step = store.next_step(g["id"], today, targets) if ctx is not None else None
+        if step:
+            st.markdown(next_step_line(step, today))
         with st.expander("Targets and to-dos", expanded=expanded):
             kit.subhead("Targets", icon=":material/track_changes:")
             neighbours = [t["id"] for t in targets]
-            cols = st.columns(2, gap="small")
-            for i, t in enumerate(targets):
-                with cols[i % 2]:
-                    goals_ui._goal_row(t, ctx if t["due"] >= today.isoformat() else None, neighbours)
+            for t in targets:
+                goals_ui._goal_row(t, ctx if t["due"] >= today.isoformat() else None, neighbours)
             goals_ui._new_goal(key=f"new_goal_{g['id']}", life_goal_id=g["id"])
             _todos(g, today)
 
@@ -206,16 +250,36 @@ def render_section(ctx, today):
 BEHIND_BY = 0.05          # a goal more than 5 points under its pace counts as behind
 
 
-def expected_fraction(g, targets, today):
-    """Where an even pace would have a goal by today (0..1): the mean of its targets' (each capped at 100%),
-    or with no targets, how much of its span has gone."""
-    from venato import pace
-    sized = [t for t in targets if t["target"]]
-    if sized:
-        return sum(min(pace.expected(t, today) / t["target"], 1.0) for t in sized) / len(sized)
-    start, end = store._as_date(g["start"]), store._as_date(g["end_date"])
+def _time_gone(start, end, today):
+    """The share of start..end (inclusive) gone by the start of today, 0..1."""
+    start, end = store._as_date(start), store._as_date(end)
     total = (end - start).days + 1
     return min(1.0, max(0, (today - start).days) / total) if total > 0 else 0.0
+
+
+def expected_parts(g, parts, today):
+    """Each part (store.life_goal_parts) with "expected": where an even pace would have it by today, 0..1.
+    A target: its own pace (a milestone's is the share of its span gone). A goal-level to-do: the share gone
+    of the goal's start to its due day (else the goal's end)."""
+    from venato import pace
+    out = []
+    for p in parts:
+        t = p["item"]
+        if p["kind"] == "target":
+            exp = min(pace.expected(t, today) / t["target"], 1.0) if t["target"] else 0.0
+        else:
+            exp = _time_gone(g["start"], min(t.get("due") or g["end_date"], g["end_date"]), today)
+        out.append({**p, "expected": exp})
+    return out
+
+
+def expected_fraction(g, targets, today, parts=None):
+    """Where an even pace would have a goal by today (0..1): the effort-weighted mean of its parts' expected
+    values (as its % is of their progress), or with nothing under it, how much of its span has gone."""
+    parts = store.life_goal_parts(g["id"], targets) if parts is None else parts
+    if not parts:
+        return _time_gone(g["start"], g["end_date"], today)
+    return store.weighted(expected_parts(g, parts, today), "expected")
 
 
 def home_rows(today=None, todos=0):
@@ -229,7 +293,7 @@ def home_rows(today=None, todos=0):
         p = store.life_goal_progress(g["id"], targets=targets)
         nxt = next((t for t in targets if t["due"] >= today.isoformat()
                     and (not t["target"] or t["value"] < t["target"])), None)
-        exp = expected_fraction(g, targets, today)
+        exp = expected_fraction(g, targets, today, p["parts"])
         rows.append({"goal": g, "colour": colours.get(g["id"]) or store.GOAL_COLOURS[0], "progress": p,
                      "fraction": p["fraction"], "expected": exp, "behind": p["fraction"] < exp - BEHIND_BY,
                      "next": nxt, "targets": targets,

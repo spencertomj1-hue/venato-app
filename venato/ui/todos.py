@@ -317,15 +317,16 @@ def add_dialog(group_id=None, period=None):
     with b:
         minutes = _length_picker("tdn_len")
     picked, new_name = _group_picker("Category", groups, group_id, "tdn_group")
+    effort = kit.effort_picker("tdn")
     if st.button("Add to-do", type="primary", icon=":material/add:", key="tdn_add"):
         if not title.strip():
             st.error("Give the to-do a name.")
             return
         group = _resolve_group(picked, new_name)
         if due or not period:
-            store.add_detailed_todo(title, due=due, group_id=group, minutes=minutes)
+            store.add_detailed_todo(title, due=due, group_id=group, minutes=minutes, effort=effort)
         else:
-            store.add_todo(title, period, store.local_today(), group_id=group, minutes=minutes)
+            store.add_todo(title, period, store.local_today(), group_id=group, minutes=minutes, effort=effort)
         st.rerun()
 
 
@@ -344,8 +345,10 @@ def details_dialog(todo_id):
                         format=regional.input_format(), help="Leave it empty for no due day.")
     picked, new_name = _group_picker("Category", groups, t["group_id"], f"{k}_g")
     minutes = _length_picker(f"{k}_l", t["minutes"])
+    effort = kit.effort_picker(k, t.get("effort"))
     if st.button("Save", key=f"{k}_s", type="primary", icon=":material/check:"):
-        store.update_todo(t["id"], due=due, group_id=_resolve_group(picked, new_name), minutes=minutes)
+        store.update_todo(t["id"], due=due, group_id=_resolve_group(picked, new_name), minutes=minutes,
+                          effort=effort)
         st.rerun()
 
 

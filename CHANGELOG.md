@@ -10,9 +10,18 @@ Everything before 1.0.0 was an alpha test. Those releases were first published a
 
 ## [Unreleased]
 
+### Added
+- **Milestone targets** for things you get done rather than count ("Launch on the App Store"). Pick Number or Milestone when adding a target. A milestone's to-dos are its steps, so its row reads "3 of 5 steps · 60%" and it fills up as you tick them; with no to-dos it's a tick box. For fuzzy ones ("Get good at Swift") turn on **Rate it myself** and say how far you are.
+- **Effort** on targets and to-dos: pick Small 2, Medium 5 or Big 8 (or an exact 1 to 10) when adding or editing one. Rows show it as dots (●●●○○), with the number when you hover. Repeating and carried-over to-dos keep their effort.
+- Hover over a goal's bar (or the ? by its line) to see what its % is made of: each target and to-do with its % and effort. Claude can add milestones, give targets and to-dos an effort, add steps to a target and set a self-rating. Targets' and to-dos' CSVs carry effort, milestone and self-rating.
+
 ### Changed
 - **Review: Goal pace groups targets under their goal.** Each goal gets a box in its own colour, with its name and how many of its targets are behind set into the border. Targets that aren't under a goal go in an "Other targets" box. A long list scrolls inside the card.
 - **Review fits the window without scrolling.** Slightly smaller headings, bars and gaps, and in a short window the cards scroll inside instead of the whole page.
+- **A goal's % is weighted by effort.** Every target and to-do has an effort from 1 to 10 (how big a chunk of the goal it is), and a goal's bar is the effort-weighted mean of its targets and its own to-dos. Anything you haven't given an effort counts as 5, so existing goals keep their % until you set efforts. One exception: a goal's own to-dos now count beside its targets, so a goal with both will move a bit.
+
+### Removed
+- Suggested goals from timetable hours (nothing showed them since the Goals page's side panel went).
 
 ## [1.0.0] - 2026-11-22
 

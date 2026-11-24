@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Goals Page Mockups</title>
+<style>
+:root{--bg:#f4f2ec;--card:#fff;--line:#e4e0d6;--ink:#2b2b2b;--mute:#77736b;--warn:#c25a00;--warnbg:#fdeedd;--red:#d23b3b;--blue:#2f7de1;--orange:#e0782f;--ok:#2e9e6a;--serif:Georgia,"Times New Roman",serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1a18;--card:#252421;--line:#3a3833;--ink:#ece9e2;--mute:#a19c92;--warnbg:#3b2a1a;--warn:#f0a050}}
+:root[data-theme="dark"]{--bg:#1b1a18;--card:#252421;--line:#3a3833;--ink:#ece9e2;--mute:#a19c92;--warnbg:#3b2a1a;--warn:#f0a050}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px 16px 80px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-family:var(--serif);font-size:28px;margin:0 0 4px}
+.lead{color:var(--mute);margin:0 0 28px}
+nav.jump{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:32px}
+nav.jump a{padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);text-decoration:none;font-size:13px}
+section.mock{margin-bottom:56px}
+.mlabel{display:flex;align-items:baseline;gap:12px;margin-bottom:10px}
+.mlabel h2{font-family:var(--serif);font-size:22px;margin:0}
+.mlabel span{color:var(--mute)}
+.frame{border:1px solid var(--line);border-radius:14px;background:var(--bg);padding:20px;overflow:hidden;box-shadow:0 1px 0 rgba(0,0,0,.03)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.serif{font-family:var(--serif)}
+.mute{color:var(--mute)}
+.small{font-size:12px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--orange);margin-right:8px;vertical-align:middle}
+.badge{display:inline-flex;align-items:center;gap:4px;background:var(--warnbg);color:var(--warn);border-radius:4px;padding:1px 6px;font-size:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:32px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font-size:15px;padding:0 8px}
+.btns{display:flex;gap:6px}
+.bar{height:6px;border-radius:3px;background:var(--line);position:relative;overflow:visible}
+.bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--red)}
+.bar>b{position:absolute;top:-4px;width:2px;height:14px;background:var(--ink);opacity:.5}
+.goalhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.goalhead h3{font-family:var(--serif);font-size:24px;margin:0}
+svg{display:block;max-width:100%}
+.grid{display:grid;gap:14px}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:900px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.g4,.g2{grid-template-columns:1fr}}
+.big{font-family:var(--serif);font-size:26px;margin:6px 0}
+.note{margin-top:10px;padding:10px 12px;border-left:3px solid var(--blue);background:var(--card);border-radius:0 8px 8px 0;font-size:13px}
+.note b{display:block;margin-bottom:2px}
+/* list rows */
+.row{display:grid;grid-template-columns:1.6fr 1.4fr 90px 110px;gap:16px;align-items:center;padding:14px 16px;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+@media (max-width:700px){.row{grid-template-columns:1fr;gap:8px}}
+/* kpi strip */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:700px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi .n{font-family:var(--serif);font-size:30px}
+/* tabs */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow-x:auto}
+.tabs>span{padding:8px 14px;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs>span.on{border-color:var(--orange);font-weight:600}
+.split{display:grid;grid-template-columns:260px 1fr;gap:16px}
+@media (max-width:760px){.split{grid-template-columns:1fr}}
+.tlist>div{padding:10px 12px;border-radius:8px;margin-bottom:4px}
+.tlist>div.on{background:var(--card);border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Goals page: 5 directions</h1>
+<p class="lead">Right-hand widgets (hours split, "make it a goal" prompts) gone in all five. Same data: Venato goal, 4 targets.</p>
+<nav class="jump"><a href="#m1">1 · Wide grid</a><a href="#m2">2 · Compact rows</a><a href="#m3">3 · Status strip</a><a href="#m4">4 · Deadline timeline</a><a href="#m5">5 · Master-detail</a></nav>
+
+<!-- ============ 1 ============ -->
+<section class="mock" id="m1">
+<div class="mlabel"><h2>1 · Wide grid</h2><span>Minimal change. Sidebar dropped, cards go 4-across.</span></div>
+<div class="frame">
+ <div class="card">
+  <div class="goalhead"><div><h3><span class="dot"></span>Venato</h3><div class="mute">6 months left · 23/11 to 23/05/27 · 0 of 4 targets hit</div></div><span class="btn">··· ⌄</span></div>
+  <div class="bar" style="margin:14px 0 18px"><i style="width:0"></i></div>
+  <div class="grid g4" id="g1"></div>
+ </div>
+</div>
+<div class="note"><b>Why</b>Cheapest to build. Charts get smaller though, and 4 tiny charts saying "0" is a lot of ink for nothing.</div>
+</section>
+
+<!-- ============ 2 ============ -->
+<section class="mock" id="m2">
+<div class="mlabel"><h2>2 · Compact rows</h2><span>Each target is one row. Chart opens on click.</span></div>
+<div class="frame">
+ <div class="card" style="padding:0">
+  <div style="padding:16px" class="goalhead"><div><h3><span class="dot"></span>Venato</h3><div class="mute">6 months left · 0 of 4 hit</div></div><span class="btn">+ Target</span></div>
+  <div id="rows"></div>
+ </div>
+</div>
+<div class="note"><b>Why</b>Scales to 10+ targets and several goals on one screen. Progress bar with a pace tick shows "behind" without a full chart.</div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section class="mock" id="m3">
+<div class="mlabel"><h2>3 · Status strip + urgency order</h2><span>Summary up top, targets sorted by days left.</span></div>
+<div class="frame">
+ <div class="kpis" style="margin-bottom:14px">
+  <div class="card kpi"><div class="mute small">Targets hit</div><div class="n">0 / 4</div></div>
+  <div class="card kpi"><div class="mute small">Behind pace</div><div class="n" style="color:var(--warn)">4</div></div>
+  <div class="card kpi"><div class="mute small">Next deadline</div><div class="n">6 d</div><div class="small mute">10 people to try it</div></div>
+  <div class="card kpi"><div class="mute small">Goal ends</div><div class="n">23/05</div><div class="small mute">180 days</div></div>
+ </div>
+ <div class="card">
+  <div class="goalhead" style="margin-bottom:12px"><h3><span class="dot"></span>Venato</h3><span class="mute small">Sorted: soonest first</span></div>
+  <div class="grid g2" id="g3"></div>
+ </div>
+</div>
+<div class="note"><b>Why</b>Answers "what do I do this week?" first. Top two get big charts, rest drop to rows.</div>
+</section>
+
+<!-- ============ 4 ============ -->
+<section class="mock" id="m4">
+<div class="mlabel"><h2>4 · Deadline timeline</h2><span>Targets pinned to a shared time axis.</span></div>
+<div class="frame">
+ <div class="card">
+  <div class="goalhead"><div><h3><span class="dot"></span>Venato</h3><div class="mute">23/11 → 23/05/27</div></div><div class="btns"><span class="btn">3 mo</span><span class="btn">6 mo</span><span class="btn">12 mo</span></div></div>
+  <svg id="tl" viewBox="0 0 1000 260" style="margin-top:12px" role="img" aria-label="Timeline of target deadlines"></svg>
+ </div>
+</div>
+<div class="note"><b>Why</b>Shows the 4 targets are all crammed into 3 weeks of a 6-month goal. That's a planning insight the grid hides.</div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section class="mock" id="m5">
+<div class="mlabel"><h2>5 · Master-detail</h2><span>Goal tabs, target list left, one big chart right.</span></div>
+<div class="frame">
+ <div class="tabs"><span class="on"><span class="dot"></span>Venato</span><span>Uni</span><span>Fitness</span><span class="mute">+ New goal</span></div>
+ <div class="split">
+  <div class="tlist" id="tl5"></div>
+  <div class="card">
+   <div class="goalhead"><div><div class="serif" style="font-size:20px">Personally get 10 people to try Venato</div><div><span class="badge">⚠ Behind</span> <span class="mute">by 30/11 · 6 days left</span></div></div><div class="btns"><span class="btn">−</span><span class="btn">+</span><span class="btn">···</span></div></div>
+   <div class="big">0 of 10 people · 0%</div>
+   <svg id="c5" viewBox="0 0 600 220" role="img" aria-label="Progress chart"></svg>
+   <div class="mute small" style="margin-top:6px">8.8 people needed this week</div>
+   <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px"><b class="small">To-dos</b><div class="small" style="margin-top:6px">☐ Message 5 uni mates<br>☐ Post in r/productivity</div></div>
+  </div>
+ </div>
+</div>
+<div class="note"><b>Why</b>Big readable chart and to-dos together, nothing duplicated. Best if you'll have several goals.</div>
+</section>
+</div>
+
+<script>
+const T=[
+ {n:"Personally get 10 people to try Venato",d:"30/11",left:6,tot:10,u:"people",need:"8.8 people needed this week",pos:.03},
+ {n:"Hit 50 total users",d:"30/11",left:6,tot:50,u:"users",need:"43.8 users needed this week",pos:.03},
+ {n:"Get an Apple developer licence",d:"07/12",left:13,tot:1,u:"",need:"Do it this week",pos:.07},
+ {n:"Integrate Claude API + paid subs",d:"14/12",left:20,tot:1,u:"",need:"Do it this week",pos:.11}
+];
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function chart(w,h,t,big){
+ const p=big?30:16,x0=p,x1=w-p,y0=h-p,y1=p,tx=x0+(x1-x0)*(big?.18:.25);
+ return `<svg viewBox="0 0 ${w} ${h}" aria-hidden="true">
+ <line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="var(--line)" stroke-width="2"/>
+ <line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="var(--mute)" stroke-width="2" stroke-dasharray="6 5"/>
+ <line x1="${tx}" y1="${y1}" x2="${tx}" y2="${y0}" stroke="var(--mute)" stroke-width="1.5"/>
+ <circle cx="${tx}" cy="${y0}" r="${big?6:4.5}" fill="var(--red)"/>
+ <text x="${x1}" y="${y1-4}" text-anchor="end" fill="var(--ink)" font-size="${big?14:12}">${t.tot}</text></svg>`;
+}
+const head=t=>`<div class="serif" style="font-weight:600">${t.n} <span class="mute" style="font-weight:400">by ${t.d}</span></div><div style="margin-top:4px"><span class="badge">⚠ Behind</span> <span class="mute small">${t.left} days left</span></div>`;
+// 1
+document.getElementById('g1').innerHTML=T.map(t=>`<div class="card">${head(t)}<div class="big" style="font-size:20px">0 of ${t.tot}</div>${chart(220,110,t)}<div class="mute small">${t.need}</div><div class="btns" style="margin-top:10px"><span class="btn">−</span><span class="btn">+</span><span class="btn">···</span></div></div>`).join('');
+// 2
+document.getElementById('rows').innerHTML=T.map(t=>`<div class="row"><div>${head(t)}</div><div><div class="small mute" style="margin-bottom:6px">0 of ${t.tot} ${t.u} · pace says ${Math.max(1,Math.round(t.tot*.3))}</div><div class="bar"><i style="width:1%"></i><b style="left:30%"></b></div></div><div class="serif" style="font-size:22px">0%</div><div class="btns"><span class="btn">−</span><span class="btn">+</span><span class="btn">⌄</span></div></div>`).join('');
+// 3
+document.getElementById('g3').innerHTML=T.map((t,i)=>i<2?`<div class="card">${head(t)}<div class="big">0 of ${t.tot} · 0%</div>${chart(420,150,t,true)}<div class="mute small">${t.need}</div></div>`:`<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px">${'<div>'+head(t)+'</div>'}<div class="btns"><span class="btn">Done ✓</span></div></div>`).join('');
+// 4
+(function(){const s=document.getElementById('tl');const L=40,R=960,Y=200;let h=`<line x1="${L}" y1="${Y}" x2="${R}" y2="${Y}" stroke="var(--line)" stroke-width="3"/>`;
+ ["Nov","Dec","Jan","Feb","Mar","Apr","May"].forEach((m,i)=>{const x=L+(R-L)*i/6;h+=`<line x1="${x}" y1="${Y-6}" x2="${x}" y2="${Y+6}" stroke="var(--mute)"/><text x="${x}" y="${Y+26}" text-anchor="middle" fill="var(--mute)" font-size="13">${m}</text>`});
+ h+=`<line x1="${L+4}" y1="30" x2="${L+4}" y2="${Y}" stroke="var(--blue)" stroke-width="2"/><text x="${L+8}" y="24" fill="var(--blue)" font-size="12">Today</text>`;
+ T.forEach((t,i)=>{const x=L+(R-L)*t.pos+i*28,y=60+i*34;h+=`<line x1="${x}" y1="${y+8}" x2="${x}" y2="${Y}" stroke="var(--warn)" stroke-dasharray="3 3"/><circle cx="${x}" cy="${Y}" r="6" fill="var(--warn)"/><rect x="${x+8}" y="${y-8}" width="330" height="26" rx="6" fill="var(--card)" stroke="var(--line)"/><text x="${x+18}" y="${y+10}" fill="var(--ink)" font-size="13">${t.n} · 0/${t.tot} · ${t.left}d</text>`});
+ h+=`<text x="${R}" y="${Y-14}" text-anchor="end" fill="var(--mute)" font-size="12">Goal end 23/05</text><circle cx="${R}" cy="${Y}" r="6" fill="var(--orange)"/>`;s.innerHTML=h})();
+// 5
+document.getElementById('tl5').innerHTML=T.map((t,i)=>`<div class="${i?'':'on'}"><div style="font-weight:${i?400:600}">${t.n}</div><div class="small mute">0/${t.tot} · ${t.left}d left</div><div class="bar" style="margin-top:6px;height:4px"><i style="width:1%"></i></div></div>`).join('')+`<div class="mute small">+ Add target</div>`;
+document.getElementById('c5').outerHTML=chart(600,220,T[0],true);
+</script>
+</body>
+</html>
