@@ -1633,13 +1633,23 @@ class Timetable {
     this.previewRaf = requestAnimationFrame(step);
   }
 
-  // Moving a block (or a group): a dashed outline where each one lands when you let go.
+  // Moving a block (or a group), or dragging out a new one: a dashed outline where it lands when you let go.
   syncDropOutline() {
     const bd = this.blockDrag, g = this.groupDrag;
     let boxes = [];
     if (bd && bd.zone === "move" && bd.moved) boxes = [bd.target];
     else if (g && g.moved) boxes = g.items.map((it) => ({ di: it.di + g.ddi, track: this.trackFor(it.di + g.ddi),
                                                           s: it.s + g.ds, e: it.e + g.ds }));
+    else if (this.drag) {                          // painting a new block with a category
+      const { di, track, a, b } = this.drag;
+      boxes = [{ di, track, s: Math.min(a, b), e: Math.max(a, b) + 1 }];
+    } else if (this.marquee) {                     // dragging empty time in one day: a new block opens there
+      const m = this.marquee, c = col(m.di0);
+      const s0 = Math.min(m.s0, m.s1), s1 = Math.max(m.s0, m.s1);
+      const empty = !(this.blocks || []).some((x) => !x.ghost && col(x.di) === c && x.s <= s1 && x.e > s0);
+      if (!m.add && !m.from && c === col(m.di1) && s1 > s0 && empty && !this.frozen(c))
+        boxes = [{ di: c, track: this.trackFor(c), s: s0, e: s1 + 1 }];
+    }
     if (!boxes.length || !this.wrapEl) { if (this.dropEl) { this.dropEl.remove(); this.dropEl = null; } return; }
     if (!this.dropEl || this.dropEl.parentNode !== this.wrapEl) {   // (the grid may have been redrawn)
       this.dropEl?.remove();
