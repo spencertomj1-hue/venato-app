@@ -1,6 +1,6 @@
 """The Modules page (where you stand overall, a chart of every module against the classification
-bands, what's due next, and a card per module: its colour, next deadline, hours this week and mark against
-target, with its assessments) and its Home widget. A module's own page is in module_page.py.
+bands, what's due next, new modules and courses in the calendars, Unfiled lectures and deadlines, and a card per
+module: its colour, next deadline, what's linked, hours this week and mark against target) and its Home widget. A module's own page is in module_page.py.
 The data and maths are in venato/blocks/grades.py."""
 
 from html import escape
@@ -181,7 +181,8 @@ def _open(mid):
 
 
 def _facts(m, ctx):
-    """The card's lines: next deadline, and hours this week (done / planned / goal)."""
+    """The card's lines: next deadline, what's linked (lectures in the next 8 weeks, deadlines, Canvas), and hours
+    this week (done / planned / goal)."""
     from venato import pace
     due = gr.open_deadlines(m["id"])
     if due:
@@ -190,6 +191,14 @@ def _facts(m, ctx):
                    f"{store.countdown(d['due'], store.local_today(), d.get('due_time'), store.local_now())}")
     else:
         st.caption(":material/event_available: No deadlines")
+    links = gr.link_summary(m, store.local_today())
+    if links["lectures"]:
+        bits = [gr._plural(links["lectures"], "lecture"), gr._plural(links["deadlines"], "deadline")]
+        if links["canvas"]:
+            bits.append(f"Canvas: {links['canvas']}")
+        st.caption(":material/link: " + md(" · ".join(bits)))
+    else:
+        st.caption(":orange[No lectures found. Open it and set its code or title in Links.]")
     if m["category_id"]:
         h = gr.module_hours(m, ctx)
         f = pace.fmt
@@ -230,10 +239,8 @@ def _module_card(m, ctx):
             kit.bars([{"label": "Marked", "frac": n["done_weight"] / 100, "colour": colour,
                        "value": f"{n['done_weight']:g}% · {n['secured']:.1f}% banked"}])
         _facts(m, ctx)
-        st.button("Open", key=f"gr_open_btn_{m['id']}", icon=":material/arrow_forward:", on_click=_open, args=(m["id"],))
-        if st.toggle("Assessments and settings", key=f"gr_open_{m['id']}"):
-            assessment_editor(m)
-            module_settings(m)
+        st.button("Open", key=f"gr_open_btn_{m['id']}", icon=":material/arrow_forward:", on_click=_open, args=(m["id"],),
+                  help="Its lectures, deadlines, assessments, Links and settings")
 
 
 def _add_module(expanded):

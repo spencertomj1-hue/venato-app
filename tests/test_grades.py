@@ -501,3 +501,33 @@ def test_focus_on_a_module_code_counts_for_the_module(gr, store):
     today = store.local_today()
     cats = [s["category_id"] for s in focus.sessions(today, today)]
     assert cats == [gr.get_module(mid)["category_id"]] * 2
+
+
+def test_link_summary(gr, store, ol):
+    sync_uni(ol)
+    mid = gr.add_module("Organic Chemistry", code="CHEM50001")
+    s = gr.link_summary(gr.get_module(mid), DAY)
+    upcoming = [e for e in events_titled(store, "Organic Chemistry") if e["date"] >= DAY.isoformat()]
+    assert s == {"lectures": len(upcoming), "deadlines": 0, "canvas": None} and s["lectures"] > 0
+    store.add_deadline("Problem sheet", "2026-11-30", module_id=mid)
+    store.import_canvas([{"uid": "event-assignment-1", "title": "Quiz", "label": "20501.202610", "course_id": "77",
+                          "due": "2026-12-01", "due_time": "17:00"}])
+    gr.link_canvas_course("77", mid)
+    s = gr.link_summary(gr.get_module(mid), DAY)
+    assert (s["deadlines"], s["canvas"]) == (2, "20501.202610")
+    empty = gr.add_module("Nothing On")
+    assert gr.link_summary(gr.get_module(empty), DAY) == {"lectures": 0, "deadlines": 0, "canvas": None}
+
+
+def test_cards_show_links_and_flag_missing_lectures(gr, store, ol, today):
+    from streamlit.testing.v1 import AppTest
+    sync_uni(ol)
+    gr.add_module("Organic Chemistry", code="CHEM50001")
+    gr.add_module("Nothing On")
+    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
+    goto(at, "Modules")
+    assert not at.exception
+    captions = [c.value for c in at.caption]
+    assert any(c.startswith(":material/link:") and "lectures" in c and "0 deadlines" in c for c in captions)
+    assert any("No lectures found" in c for c in captions)
+    assert not [t for t in at.toggle if t.label == "Assessments and settings"]       # it's on the module's page

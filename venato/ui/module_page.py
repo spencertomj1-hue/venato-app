@@ -1,6 +1,6 @@
 """One module's page (Modules, after clicking a module): this week's lectures, its deadlines (with Plan),
 its assessments and what it needs on the rest, its hours this week and since you added it, its timetable
-blocks, and Fit time. The numbers come from venato/blocks/grades.py."""
+blocks, Fit time, and Links (its code, title words, Canvas course and lecture series). The numbers come from venato/blocks/grades.py."""
 
 from html import escape
 

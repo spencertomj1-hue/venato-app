@@ -5,8 +5,10 @@ for each year and the whole degree (credit-weighted, years weighted as you set) 
 UK classification or a US GPA. Marks are percentages.
 
 Each module has its own timetable category (group "Modules"), made with it and renamed with it.
-Deadlines (module_id), imported timetable events (tt_outlook.module_id, matched by code) and Canvas
-courses (gr_canvas_courses) link to a module; deleting the module only clears those links.
+Deadlines (module_id), imported timetable events (tt_outlook.module_id: the student's choice for the series,
+else its code, else a title rule; see store/outlook.py) and Canvas courses (gr_canvas_courses) link to a module;
+deleting the module only clears those links. Modules and courses found in the calendars after setup are offered
+on the Modules page and in Needs you.
 """
 
 import re
@@ -235,6 +237,16 @@ def series_of(mid, today, weeks=8):
         if not e["all_day"]:
             keys.setdefault(store.title_key(e["title"]), Counter())[e["title"]] += 1
     return [{"title": c.most_common(1)[0][0], "count": sum(c.values())} for c in keys.values()]
+
+
+def link_summary(m, today, weeks=8):
+    """What's linked to a module: {"lectures": timed events in the next `weeks`, "deadlines": open ones,
+    "canvas": the linked Canvas course's label (or id), or None}."""
+    from datetime import timedelta
+    lectures = [e for e in week_events(m["id"], today, today + timedelta(weeks=weeks)) if not e["all_day"]]
+    course = next((c for c in canvas_courses() if c["module_id"] == m["id"]), None)
+    return {"lectures": len(lectures), "deadlines": len(open_deadlines(m["id"])),
+            "canvas": (course["label"] or course["course_id"]) if course else None}
 
 
 def unfiled_deadlines():
