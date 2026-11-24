@@ -276,6 +276,102 @@ def link_canvas_course(course_id, module_id):
                      "AND (module_id IS NULL OR module_id = ?)", (module_id, course_id, previous))
 
 
+# --- Detection: modules and Canvas courses in the connected calendars (after setup too) ---
+
+_parsed = {}                                   # {(kind, day, zone, calendar bytes): parsed events}
+
+
+def _calendars(canvas, day=None):
+    """Parsed events of the connected calendars of one kind (timetable or Canvas), parsed again only when a
+    calendar or the day changed (Home asks on every rerun). A calendar that no longer parses adds nothing."""
+    from venato import feeds, outlook
+    data = tuple(d for _, d in outlook.cached_calendars() if feeds.is_canvas("", d) == canvas)
+    key = ("canvas" if canvas else "uni", day or store.local_today(), str(store.tz()), data)
+    if key not in _parsed:
+        events = []
+        for d in data:
+            try:
+                events += feeds.canvas_events(d, store.tz()) if canvas else outlook.parse(d, day)
+            except Exception:
+                continue
+        if len(_parsed) > 4:
+            _parsed.clear()
+        _parsed[key] = events
+    return _parsed[key]
+
+
+def detected(day=None):
+    """[{code, name, count}]: the modules in the connected timetable calendars (Canvas has no module names)."""
+    from venato import feeds
+    return feeds.detect_modules(_calendars(False, day))
+
+
+def detected_courses(day=None):
+    """The connected Canvas courses: [{course_id, label, titles (a couple of its assignments), module_id}].
+    The module links are read fresh."""
+    from venato import feeds
+    events = _calendars(True, day)
+    linked = {c["course_id"]: c["module_id"] for c in canvas_courses()}
+    return [{"course_id": c["course_id"], "label": c["label"], "module_id": linked.get(c["course_id"]),
+             "titles": [e["title"] for e in events if e.get("course_id") == c["course_id"]][:2]}
+            for c in feeds.canvas_courses(events)]
+
+
+def _module_for(code, name):
+    """The module already in Venato for a detected one (same code, else same name), or None."""
+    from venato import feeds
+    for m in modules():
+        if code and m["code"] and feeds.norm_code(m["code"]) == feeds.norm_code(code):
+            return m
+        if m["name"].lower() == str(name or "").strip().lower():
+            return m
+    return None
+
+
+def _dismiss_key(m):
+    return m["code"] or m["name"].lower()
+
+
+def dismissed():
+    d = store.load_settings().get("modules_dismissed") or {}
+    return {"module": set(d.get("module") or []), "course": set(d.get("course") or [])}
+
+
+def dismiss(kind, key):
+    """Stop offering a detected module (key: its code, or its lowercased name without one) or a Canvas course
+    (key: its course id)."""
+    if kind not in ("module", "course"):
+        raise GradeError("Ignore a module or a course.")
+    d = dismissed()
+    d[kind].add(str(key))
+    store.save_settings(modules_dismissed={k: sorted(v) for k, v in d.items()})
+
+
+def new_found(day=None):
+    """{"modules", "courses"}: detected modules not in Venato (same code, else same name) and not ignored, and
+    Canvas courses linked to no module and not ignored."""
+    gone = dismissed()
+    return {"modules": [m for m in detected(day) if not _module_for(m["code"], m["name"])
+                        and _dismiss_key(m) not in gone["module"]],
+            "courses": [c for c in detected_courses(day) if c["module_id"] is None
+                        and c["course_id"] not in gone["course"]]}
+
+
+def _plural(n, word):
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def _needs():
+    """Home's "Needs you": one item when the calendars have modules or Canvas courses to sort out."""
+    found = new_found()
+    bits = []
+    if found["modules"]:
+        bits.append(f"{_plural(len(found['modules']), 'new module')} in your timetable")
+    if found["courses"]:
+        bits.append(f"{_plural(len(found['courses']), 'Canvas course')} to link")
+    return [{"text": " · ".join(bits), "icon": ":material/school:", "page": "grades"}] if bits else []
+
+
 def assessments(mid):
     with store.db() as conn:
         rows = conn.execute(f"SELECT {', '.join(A_COLS)} FROM gr_assessments WHERE module_id = ? "
@@ -516,4 +612,4 @@ def _modules_status():
 BLOCK = Block("grades", "Modules", ":material/school:",
               "Your modules: deadlines, study hours, weighted marks, what you need to hit your target, and your classification or GPA.",
               group="Study & work", page=_page, widgets=[Widget("modules", "Modules", _home, "small", ("small", "wide"), status=_modules_status, colour="#6B3FA0")], tools=TOOLS, prompt=PROMPT, context=_context,
-              quick=[_quick], schema=SCHEMA, migrate=_migrate, order=40, default=True, core=True)
+              quick=[_quick], needs=_needs, schema=SCHEMA, migrate=_migrate, order=40, default=True, core=True)

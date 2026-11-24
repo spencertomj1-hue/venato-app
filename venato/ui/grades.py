@@ -270,6 +270,51 @@ def _settings(ms, s):
             st.rerun()
 
 
+# --- New in your calendars ---
+
+def _add_found(m):
+    from venato.ui import onboarding
+    try:
+        gr.add_module(m["name"], onboarding.DEFAULT_CREDITS, code=m["code"])
+    except gr.GradeError as e:
+        st.session_state["gr_new_error"] = str(e)
+
+
+def _link_found(course_id, key):
+    mid = st.session_state.get(key)
+    if mid:
+        gr.link_canvas_course(course_id, mid)
+
+
+def _new_found(ms):
+    """Modules and Canvas courses the calendars have that Venato doesn't yet: Add or Ignore each."""
+    found = gr.new_found()
+    if not (found["modules"] or found["courses"]):
+        return
+    with kit.card("New in your calendars", "Found since you set up. Add them, or Ignore the ones that aren't yours."):
+        if err := st.session_state.pop("gr_new_error", None):
+            st.error(err)
+        for m in found["modules"]:
+            key = gr._dismiss_key(m)
+            text, add, ignore = st.columns([5, 1, 1], vertical_alignment="center")
+            sessions = f"{m['count']} sessions"
+            text.markdown(f"**{md(m['name'])}** · " + " · ".join(md(b) for b in (m["code"], sessions) if b))
+            add.button("Add", key=f"gr_new_add_{key}", icon=":material/add:", on_click=_add_found, args=(m,))
+            ignore.button("Ignore", key=f"gr_new_ign_{key}", on_click=gr.dismiss, args=("module", key))
+        names = {x["id"]: x["name"] for x in ms}
+        for c in found["courses"]:
+            text, pick, ignore = st.columns([3, 3, 1], vertical_alignment="center")
+            seen = "; ".join(c["titles"])
+            text.markdown(f"**Canvas course {md(c['label'] or c['course_id'])}**"
+                          + (f"  \n:grey[{md(seen)}]" if seen else ""))
+            key = f"gr_new_c_{c['course_id']}"
+            pick.selectbox("Module", list(names), index=None, format_func=names.get, key=key,
+                           placeholder="Link to a module", label_visibility="collapsed", disabled=not names,
+                           on_change=_link_found, args=(c["course_id"], key))
+            ignore.button("Ignore", key=f"gr_new_cign_{c['course_id']}", on_click=gr.dismiss,
+                          args=("course", c["course_id"]))
+
+
 def render_page():
     current = gr.get_module(st.session_state.get("gr_module") or "")
     if current:
@@ -281,6 +326,7 @@ def render_page():
     ms = gr.modules()
     o = gr.overall()
     s = gr.settings()
+    _new_found(ms)
     if ms:
         from venato import pace
         ctx = pace.Ctx()

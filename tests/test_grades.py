@@ -232,3 +232,83 @@ def test_modules_tile_shows_study_hours_not_marks(gr, store, monkeypatch):
     tile = page.split('class="vn-mh"')[1].split("and 1 more")[0]
     assert "72" not in tile and "%<" not in tile
     assert any(c.value == "4 of 12 h this week" for c in at.caption)
+
+
+# --- Modules as the glue: detection after setup, title rules, overrides, unfiled, links ---
+
+DAY = date(2026, 11, 20)
+
+
+@pytest.fixture
+def today(store, monkeypatch):
+    """Pin the user's day to the fixtures' week (Needs you and the UI read it without a `day`)."""
+    monkeypatch.setattr(store, "local_today", lambda: DAY)
+    return DAY
+
+
+def sync_uni(ol, canvas=False):
+    ol.save_url(OUTLOOK_URL)
+    if canvas:
+        ol._save_extra([{"id": "c1", "name": "Canvas", "url": CANVAS_URL}])
+    ol.sync(DAY, fetcher={OUTLOOK_URL: UNI, CANVAS_URL: CANVAS}.__getitem__)
+
+
+def events_titled(store, title):
+    rows = [e for e in store.outlook_between("2026-11-01", "2026-12-31") if e["title"] == title]
+    assert rows, f"no {title!r} events in the fixture"
+    return rows
+
+
+def test_new_found_offers_only_unknown_and_undismissed(gr, store, ol):
+    sync_uni(ol, canvas=True)
+    gr.add_module("Organic Chemistry", code="CHEM50001")
+    gr.add_module("spectroscopy and structure")                  # no code: matched by name, any case
+    found = gr.new_found(DAY)
+    codes = {m["code"] for m in found["modules"]}
+    assert "CHEM50001" not in codes and "CHEM50002" not in codes and "CHEM60004" in codes
+    gr.dismiss("module", "CHEM60004")
+    assert "CHEM60004" not in {m["code"] for m in gr.new_found(DAY)["modules"]}
+    assert {c["course_id"] for c in found["courses"]} == {"1101", "1102", "2201"}
+    course = found["courses"][0]["course_id"]
+    gr.dismiss("course", course)
+    assert course not in {c["course_id"] for c in gr.new_found(DAY)["courses"]}
+    mid = gr.add_module("Lasers", code="CHEM60004")
+    gr.link_canvas_course("1102", mid)                          # a linked course isn't offered
+    assert {c["course_id"] for c in gr.new_found(DAY)["courses"]} == {"2201"}
+
+
+def test_new_found_ignores_an_old_term_still_in_venato(gr, store, ol):
+    """A new term's feed: modules from last term stay in Venato and are never offered again."""
+    sync_uni(ol)
+    for m in gr.detected(DAY):
+        gr.add_module(m["name"], code=m["code"])
+    gr.add_module("Last Term Module", code="CHEM40001")
+    assert gr.new_found(DAY) == {"modules": [], "courses": []}
+
+
+def test_needs_you_mentions_new_modules(gr, store, ol, today):
+    from venato import blocks
+    assert not [i for i in blocks.needs() if i["block"] == "grades"]          # nothing connected
+    sync_uni(ol, canvas=True)
+    items = [i for i in blocks.needs() if i["block"] == "grades"]
+    assert len(items) == 1
+    assert items[0]["text"] == "5 new modules in your timetable · 3 Canvas courses to link"
+    assert items[0]["page"] == "grades"
+    for m in gr.detected():
+        gr.dismiss("module", m["code"])
+    assert [i["text"] for i in blocks.needs() if i["block"] == "grades"] == ["3 Canvas courses to link"]
+
+
+def test_modules_page_offers_new_modules(gr, store, ol, today):
+    from streamlit.testing.v1 import AppTest
+    sync_uni(ol, canvas=True)
+    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60).run()
+    goto(at, "Modules")
+    assert not at.exception
+    assert any("New in your calendars" in m.value for m in at.markdown)
+    add = next(b for b in at.button if b.key == "gr_new_add_CHEM60004")
+    add.click().run()
+    assert not at.exception
+    assert gr.find_module("Lasers")["code"] == "CHEM60004"
+    next(b for b in at.button if b.key == "gr_new_ign_CHEM50001").click().run()
+    assert "CHEM50001" not in {m["code"] for m in gr.new_found()["modules"]}
