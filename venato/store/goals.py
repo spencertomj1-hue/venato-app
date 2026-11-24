@@ -24,7 +24,7 @@ from .grid import slot_count, slot_of
 from .history import _clean
 from .outlook import outlook_between
 from .timetable import blocks_between
-from .todos import link_goal_group, rename_goal_group
+from .todos import check_effort, link_goal_group, rename_goal_group
 
 
 GOAL_PERIODS = ("monthly", "yearly")
@@ -34,6 +34,10 @@ GOAL_COLS = "id, title, period, period_start, target, unit, progress, habit_id, 
 # What is read back: also the deadline a plan goal belongs to (deadline_id). A closed goal (its deadline
 # is done) is left out of every list, so pace, sittings and Needs you no longer see it.
 GOAL_SELECT = GOAL_COLS + ", deadline_id, life_goal_id"   # life_goal_id: the long-term goal it is a target of
+# effort: 1-10, how big a chunk of its goal it is (NULL = 5). milestone: a qualitative target ("Launch on the
+# App Store"): target 1, progress 0 or 1 (a tick), or its to-dos' effort done. self_rating: a milestone's own
+# "how far, honestly?" (0..1), which replaces both. See life_goals.target_progress.
+GOAL_SELECT += ", effort, milestone, self_rating"
 
 
 def _period_for(start, due):
@@ -122,8 +126,12 @@ def _with_value(conn, row):
     g["habit"] = g["category"] = None
     g["value"] = g["progress"]
     g["kind"] = "count"
+    g["milestone"] = bool(g.get("milestone"))
+    g["self_rated"] = False
     end = g["due"]
-    if g["habit_id"] is not None:
+    if g["milestone"]:
+        _milestone_value(conn, g)
+    elif g["habit_id"] is not None:
         name = conn.execute("SELECT name FROM habits WHERE id = ?", (g["habit_id"],)).fetchone()
         g["habit"] = name[0] if name else None
         g["kind"] = "habit"
@@ -138,6 +146,31 @@ def _with_value(conn, row):
             g["kind"] = "hours"
             g["value"] = _num(goal_hours(g, g["period_start"], end, "actual"))
     return g
+
+
+def _milestone_value(conn, g):
+    """A milestone's `value` (0..1, its target is 1) and `steps` (to-dos done, to-dos): its self-rating if it
+    has one, else its to-dos' effort done out of their total effort, else its tick (progress 0 or 1)."""
+    rows = conn.execute("SELECT done, effort FROM todos WHERE group_id IN "
+                        "(SELECT id FROM todo_groups WHERE goal_id = ?)", (g["id"],)).fetchall()
+    g["steps"] = (sum(1 for done, _ in rows if done), len(rows))
+    g["target"] = 1
+    if g.get("self_rating") is not None:
+        g["value"], g["self_rated"] = min(1.0, max(0.0, float(g["self_rating"]))), True
+    elif rows:
+        weight = [(done, effort_of(effort)) for done, effort in rows]
+        g["value"] = sum(e for done, e in weight if done) / sum(e for _, e in weight)
+    else:
+        g["value"] = 1 if g["progress"] >= 1 else 0
+
+
+def effort_of(effort):
+    """An effort as counted: NULL (unset) or anything off the 1-10 scale reads as 5, clamped to 1-10."""
+    try:
+        effort = int(effort)
+    except (TypeError, ValueError):
+        return 5
+    return 5 if effort <= 0 else min(effort, 10)
 
 
 def counted_between(first, last, habit_id=None, category_id=None, label=None):
@@ -225,10 +258,11 @@ def _check_tracking(conn, habit_id, category_id):
 
 
 def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None, category_id=None, label=None,
-             due=None, deadline_id=None, life_goal_id=None):
+             due=None, deadline_id=None, life_goal_id=None, effort=None, milestone=False):
     """Add a goal; returns it. With `due`, it runs from `day` (default today) to that deadline; without,
     `period` makes it the month's or year's containing `day` (due on its last day). category_id (and
-    optionally an activity label) makes it count the Actual hours of that category instead of a hand-kept number."""
+    optionally an activity label) makes it count the Actual hours of that category instead of a hand-kept number.
+    milestone=True: a qualitative target (no number, unit, habit or hours; its target is 1). effort: 1-10."""
     title = str(title).strip()
     if not title:
         raise ValueError("A goal needs a title.")
@@ -244,7 +278,10 @@ def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None,
         start = start_of_period(period, day).isoformat()
         due = end_of_period(period, start).isoformat()
     goal_id = goal_id or uuid.uuid4().hex
+    if milestone:
+        target, unit, habit_id, category_id = 1, None, None, None
     label = (label or "").strip() or None if category_id else None
+    effort = check_effort(effort)
     with db() as conn:
         _check_tracking(conn, habit_id, category_id)
         conn.execute(
@@ -255,6 +292,9 @@ def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None,
         )
         if life_goal_id:
             conn.execute("UPDATE goals SET life_goal_id = ? WHERE id = ?", (life_goal_id, goal_id))
+        if effort is not None or milestone:
+            conn.execute("UPDATE goals SET effort = ?, milestone = ? WHERE id = ?",
+                         (effort, 1 if milestone else 0, goal_id))
         if deadline_id:
             conn.execute("UPDATE goals SET deadline_id = ? WHERE id = ?", (deadline_id, goal_id))
         else:
@@ -263,11 +303,31 @@ def add_goal(title, period, day, target, unit=None, habit_id=None, goal_id=None,
 
 
 def update_goal(goal_id, title=KEEP, target=KEEP, unit=KEEP, habit_id=KEEP, category_id=KEEP, label=KEEP,
-                due=KEEP, start=KEEP, life_goal_id=KEEP):
+                due=KEEP, start=KEEP, life_goal_id=KEEP, effort=KEEP, milestone=KEEP, self_rating=KEEP):
     """Change a goal's title, target, unit, deadline, start (the day it counts from: earlier to count
-    progress you'd already made), linked habit or counted category (None unlinks them).
-    Linking a habit unlinks the category and the other way round."""
+    progress you'd already made), linked habit or counted category (None unlinks them), effort (1-10, None =
+    unset), milestone or self_rating (0..1, None = not used).
+    Linking a habit unlinks the category and the other way round. Making it a milestone sets its target to 1
+    and clears its unit, habit, hours and progress; making it a number again clears the self-rating."""
     fields = {}
+    if effort is not KEEP:
+        fields["effort"] = check_effort(effort)
+    if self_rating is not KEEP:
+        if self_rating is not None and not 0 <= float(self_rating) <= 1:
+            raise ValueError("A self-rating goes from 0 to 100%.")
+        fields["self_rating"] = None if self_rating is None else float(self_rating)
+    if milestone is not KEEP:
+        with db() as conn:
+            row = conn.execute("SELECT milestone FROM goals WHERE id = ?", (goal_id,)).fetchone()
+        was = bool(row and row[0])
+        fields["milestone"] = 1 if milestone else 0
+        if milestone:
+            fields.update(target=1, unit=None, habit_id=None, category_id=None, label=None)
+            target = unit = habit_id = category_id = label = KEEP
+            if not was:                          # a number's progress isn't a tick
+                fields["progress"] = 0
+        elif was:
+            fields["self_rating"] = None
     if due is not KEEP or start is not KEEP:
         with db() as conn:
             row = conn.execute("SELECT period_start, due FROM goals WHERE id = ?", (goal_id,)).fetchone()

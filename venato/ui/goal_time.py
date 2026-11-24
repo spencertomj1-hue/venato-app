@@ -396,12 +396,6 @@ def bar_style(legend=True):
       </div>""")
 
 
-# Categorical colours for goals in the free-time bar (validated with the dataviz skill's checker: lightness band,
-# colour-blind separation of neighbours, 3:1 in dark; light mode relies on the legend's names and hours).
-GOAL_COLOURS = {"light": ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6"],
-                "dark": ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"]}
-
-
 # ---------------------------------------------------------------------------
 # Home: "Needs you"
 # ---------------------------------------------------------------------------

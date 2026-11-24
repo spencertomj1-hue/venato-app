@@ -200,7 +200,7 @@ def card(g, ids, ctx, today, expanded=False):
             _edit(g, ids)
         if g["why"]:
             st.caption(f":material/format_quote: {kit.md(g['why'])}")
-        exp = expected_fraction(g, targets, today) if ctx is not None else None
+        exp = expected_fraction(g, targets, today, p["parts"]) if ctx is not None else None
         st.html(bar_html(p["fraction"], f"{g['title']}: {round(100 * p['fraction'])}%", store.life_goal_colour(g["id"]),
                          expected=exp))
         st.caption(f"{pace_words(p['fraction'], exp)} · {summary(p)}")
@@ -236,16 +236,36 @@ def render_section(ctx, today):
 BEHIND_BY = 0.05          # a goal more than 5 points under its pace counts as behind
 
 
-def expected_fraction(g, targets, today):
-    """Where an even pace would have a goal by today (0..1): the mean of its targets' (each capped at 100%),
-    or with no targets, how much of its span has gone."""
-    from venato import pace
-    sized = [t for t in targets if t["target"]]
-    if sized:
-        return sum(min(pace.expected(t, today) / t["target"], 1.0) for t in sized) / len(sized)
-    start, end = store._as_date(g["start"]), store._as_date(g["end_date"])
+def _time_gone(start, end, today):
+    """The share of start..end (inclusive) gone by the start of today, 0..1."""
+    start, end = store._as_date(start), store._as_date(end)
     total = (end - start).days + 1
     return min(1.0, max(0, (today - start).days) / total) if total > 0 else 0.0
+
+
+def expected_parts(g, parts, today):
+    """Each part (store.life_goal_parts) with "expected": where an even pace would have it by today, 0..1.
+    A target: its own pace (a milestone's is the share of its span gone). A goal-level to-do: the share gone
+    of the goal's start to its due day (else the goal's end)."""
+    from venato import pace
+    out = []
+    for p in parts:
+        t = p["item"]
+        if p["kind"] == "target":
+            exp = min(pace.expected(t, today) / t["target"], 1.0) if t["target"] else 0.0
+        else:
+            exp = _time_gone(g["start"], min(t.get("due") or g["end_date"], g["end_date"]), today)
+        out.append({**p, "expected": exp})
+    return out
+
+
+def expected_fraction(g, targets, today, parts=None):
+    """Where an even pace would have a goal by today (0..1): the effort-weighted mean of its parts' expected
+    values (as its % is of their progress), or with nothing under it, how much of its span has gone."""
+    parts = store.life_goal_parts(g["id"], targets) if parts is None else parts
+    if not parts:
+        return _time_gone(g["start"], g["end_date"], today)
+    return store.weighted(expected_parts(g, parts, today), "expected")
 
 
 def home_rows(today=None, todos=0):
@@ -259,7 +279,7 @@ def home_rows(today=None, todos=0):
         p = store.life_goal_progress(g["id"], targets=targets)
         nxt = next((t for t in targets if t["due"] >= today.isoformat()
                     and (not t["target"] or t["value"] < t["target"])), None)
-        exp = expected_fraction(g, targets, today)
+        exp = expected_fraction(g, targets, today, p["parts"])
         rows.append({"goal": g, "colour": colours.get(g["id"]) or store.GOAL_COLOURS[0], "progress": p,
                      "fraction": p["fraction"], "expected": exp, "behind": p["fraction"] < exp - BEHIND_BY,
                      "next": nxt, "targets": targets,

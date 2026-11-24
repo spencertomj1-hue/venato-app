@@ -10,6 +10,12 @@ Everything before 1.0.0 was an alpha test. Those releases were first published a
 
 ## [Unreleased]
 
+### Changed
+- **A goal's % is weighted by effort.** Every target and to-do has an effort from 1 to 10 (how big a chunk of the goal it is), and a goal's bar is the effort-weighted mean of its targets and its own to-dos. Anything you haven't given an effort counts as 5, so existing goals keep their % until you set efforts. One exception: a goal's own to-dos now count beside its targets, so a goal with both will move a bit.
+
+### Removed
+- Suggested goals from timetable hours (nothing showed them since the Goals page's side panel went).
+
 ## [1.0.0] - 2026-11-22
 
 Venato now focuses on student life and long-term goals. Home is how you get round the app (the sidebar is gone), goals are plans over months with targets and to-dos under them, setup is a short wizard, and a new install starts blank. Several blocks are gone, but none of their data is deleted (see Removed).

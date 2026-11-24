@@ -9,7 +9,11 @@ Under each goal sit
     is (todo_groups.goal_id); the to-dos in its category and in its targets' categories are its to-dos.
 
 In code a long-term goal is a "life goal" and a "goal" is a target (the table kept its name).
-Progress: the mean of its targets' progress (each capped at 100%); with no targets, its to-dos done / all.
+Progress is effort-weighted: every target and every to-do in the goal's own category has an effort (1-10, how
+big a chunk of the goal it is; unset = 5), and the goal's fraction is sum(effort × progress) / sum(effort) over them.
+A number target's progress is value / target (capped at 100%); a milestone's is its to-dos' effort done (or a tick,
+or its self-rating); a goal-level to-do is 0 or 1. A number target's to-dos are how you get there and add nothing,
+so nothing counts twice.
 """
 
 import calendar
@@ -311,22 +315,47 @@ def unparented_targets(day=None):
     return _goals_where("life_goal_id IS NULL AND due >= ?", (_as_date(day or local_today()).isoformat(),))
 
 
-def _fraction(t):
+def effort(x):
+    """A target's or to-do's effort, 1-10: unset (NULL) reads as 5."""
+    from .goals import effort_of
+    return effort_of(x.get("effort"))
+
+
+def target_progress(t):
+    """A target's progress, 0..1: value / target, capped at 100%. A milestone's value is already its fraction
+    (self-rating, else its to-dos' effort done, else its tick; see goals._milestone_value)."""
     return min(t["value"] / t["target"], 1.0) if t["target"] else 0.0
 
 
-def life_goal_progress(life_goal_id, targets=None, todos=None):
-    """{"fraction": 0..1, "targets": n, "targets_done": n, "todos": n, "todos_done": n}.
-    fraction: the mean of the targets' progress, or (with none) to-dos done out of all of them."""
+def life_goal_parts(life_goal_id, targets=None, todos=None):
+    """What a goal's % is made of, in order (targets, then the goal's own to-dos):
+    [{"kind": "target" / "todo", "item", "title", "effort", "fraction"}]."""
     targets = life_goal_targets(life_goal_id) if targets is None else targets
     todos = life_goal_todos(life_goal_id) if todos is None else todos
-    done = sum(1 for t in todos if t["done"])
-    if targets:
-        frac = sum(_fraction(t) for t in targets) / len(targets)
-    else:
-        frac = done / len(todos) if todos else 0.0
-    return {"fraction": frac, "targets": len(targets), "targets_done": sum(_fraction(t) >= 1 for t in targets),
-            "todos": len(todos), "todos_done": done}
+    group = life_goal_group(life_goal_id)
+    own = [t for t in todos if group and t["group_id"] == group["id"]]
+    return ([{"kind": "target", "item": t, "title": t["title"], "effort": effort(t), "fraction": target_progress(t)}
+             for t in targets]
+            + [{"kind": "todo", "item": t, "title": t["title"], "effort": effort(t), "fraction": 1.0 if t["done"] else 0.0}
+               for t in own])
+
+
+def weighted(parts, key="fraction"):
+    """sum(effort × part[key]) / sum(effort), or 0 with no parts."""
+    total = sum(p["effort"] for p in parts)
+    return sum(p["effort"] * p[key] for p in parts) / total if total else 0.0
+
+
+def life_goal_progress(life_goal_id, targets=None, todos=None):
+    """{"fraction": 0..1, "parts": life_goal_parts, "targets": n, "targets_done": n, "todos": n, "todos_done": n}.
+    fraction: the effort-weighted mean of its targets' progress and its own to-dos (done = 1). The to-do counts
+    are of every to-do under the goal (its targets' too)."""
+    targets = life_goal_targets(life_goal_id) if targets is None else targets
+    todos = life_goal_todos(life_goal_id) if todos is None else todos
+    parts = life_goal_parts(life_goal_id, targets, todos)
+    return {"fraction": weighted(parts), "parts": parts, "targets": len(targets),
+            "targets_done": sum(target_progress(t) >= 1 for t in targets),
+            "todos": len(todos), "todos_done": sum(1 for t in todos if t["done"])}
 
 
 def time_left(g, today=None):
