@@ -91,8 +91,11 @@ def _css(key, page):
     k = f".st-key-{key}"
     fill = f"""
     {k}_cols > [data-testid="stLayoutWrapper"], {k}_cols [data-testid="stHorizontalBlock"] {{ height: 100%; }}
+    {k}_cols [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap; }}    /* one line, so columns can't outgrow it */
+    {k}_cols [data-testid="stColumn"] {{ min-height: 0; }}
     {k}_cols [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{ height: 100%; flex-wrap: nowrap; }}
     {k}_back, {k}_next, {k}_time {{ flex: 1 1 0; min-height: 0; }}
+    [data-testid="stLayoutWrapper"]:is(:has(> {k}_back), :has(> {k}_next), :has(> {k}_time)) {{ min-height: 0; }}   /* cards shrink to fit; their insides scroll */
     [data-testid="stLayoutWrapper"]:has(> {k}_goals) {{ flex: 0 1 auto; min-height: 0; max-height: 55%; }}
     {k}_goals {{ height: 100%; overflow-y: auto; }}   /* a long goal list scrolls, leaving Next week room */
     {k}_back [data-testid="stForm"] {{ flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; padding: 0; }}

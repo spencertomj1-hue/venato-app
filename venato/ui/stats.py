@@ -31,16 +31,20 @@ def _date_axis(stats):
 
 
 VIEWS = ["Week", "Trends"]
-# The Week view fits the window: less top padding than other pages, and the columns fill the height left
-# (minus the chat bar's room when it's there). 166px: the nav bar, the Review title row, and the gaps around
-# them, including the one before the app's empty trailing elements; change it with any of those.
+# The Week view fits the window: less top padding than other pages, and the page is a column of the window's
+# height (less the chat bar's room when it's there) whose leftover space goes to the review's columns. Flex
+# does the sums, so a taller nav bar or title row just leaves the columns a little less room.
 _FIT = """<style>
-.stMainBlockContainer {{ padding-top: 1.1rem !important; padding-bottom: 0.5rem !important; }}
+.stMainBlockContainer {{ padding-top: 1.1rem !important; padding-bottom: {bottom} !important; height: 100dvh;
+    box-sizing: border-box; display: flex; flex-direction: column; }}
+.stMainBlockContainer > [data-testid="stVerticalBlock"] {{ flex: 1 1 0; min-height: 0; }}
+.stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]:has(> .st-key-rv_page) {{
+    flex: 1 1 0; min-height: 0; }}
+.st-key-rv_page {{ height: 100%; }}
 [data-testid="stHeader"], [data-testid="stHeader"] > * {{ background: transparent !important; box-shadow: none !important;
     pointer-events: none; }}
 [data-testid="stHeader"] button, [data-testid="stHeader"] a {{ pointer-events: auto; }}
-.st-key-rv_page > [data-testid="stLayoutWrapper"]:has([class*="_cols"]) {{
-    height: calc(100dvh - 1.1rem - 166px - {bottom}); flex: none; }}
+.st-key-rv_page > [data-testid="stLayoutWrapper"]:has([class*="_cols"]) {{ flex: 1 1 0; min-height: 0; }}
 .st-key-rv_page > [data-testid="stLayoutWrapper"] :is([data-testid="stLayoutWrapper"], [data-testid="stVerticalBlock"]):has([class*="_cols"]),
 .st-key-rv_page [class*="st-key-review_"][class*="_cols"] {{ height: 100%; flex: none; }}
 </style>"""
