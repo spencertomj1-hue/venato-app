@@ -246,3 +246,31 @@ def test_home_tile_draws_each_size(store, monkeypatch, size):
     assert ("Rough week so far.</b>" in page) == (size != "small")                     # the verdict in words
     head = [c.value for c in at.caption]
     assert ("Rough week so far" in head) == (size == "small")
+
+
+def test_review_shows_study_by_module(store, monkeypatch):
+    """With Modules on, Review has a "Study by module" row per module: the week's done hours against its goal."""
+    from venato import blocks, review, tools
+    from venato.blocks import grades
+    importlib.reload(tools)
+    monkeypatch.setattr(review, "should_show", lambda now=None: None)
+
+    def page():
+        at = AppTest.from_file(APP, default_timeout=60).run()
+        goto(at, "Review")
+        assert not at.exception
+        return " ".join(h.proto.body for h in at.get("html")) + " ".join(m.value for m in at.markdown)
+
+    blocks.save([k for k in blocks.chosen_keys() if k != "grades"])
+    assert "Study by module" not in page()                                   # Modules off
+    blocks.save(blocks.chosen_keys() + ["grades"])
+    assert "Study by module" not in page()                                   # on, but no modules
+    mid = grades.add_module("Organic Chemistry", code="CHEM50001")
+    grades.set_week_hours_goal(mid, 4)
+    week = store.week_start_of(store.local_today())
+    day = week.isoformat()
+    tools.add_block(day, "actual", "09:00", "11:00", "Problem sheet", category="CHEM50001")   # the code works
+    store.confirm_day(day)
+    body = page()
+    assert "Study by module" in body and "Organic Chemistry" in body
+    assert "2 of 4 h" in body

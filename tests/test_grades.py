@@ -456,3 +456,48 @@ def test_unfiled_card_and_links_panel(gr, store, ol, today):
     btn.click().run()
     assert not at.exception
     assert not any(e["module_id"] for e in events_titled(store, "Organic Chemistry"))
+
+
+def test_module_code_resolves_to_its_category(gr, store):
+    mid = gr.add_module("Organic Chemistry", code="CHEM50001")
+    cat = gr.get_module(mid)["category_id"]
+    assert store.resolve_category(category="chem 50001") == cat
+    assert store.resolve_category(category="CHEM50001") == cat
+    assert store.resolve_category(label="CHEM50001 problem sheet") == cat
+    assert store.resolve_category(label="chem 50001 revision") == cat
+    assert store.resolve_category(label="chem50001") == cat
+    assert store.resolve_category(label="Lunch") != cat
+    assert store.resolve_category(category="CHEM99999") is None
+    assert store.resolve_category(category="Exercise") == "exercise"          # names still work
+    assert store.resolve_category(label="Gym") == "exercise"
+
+
+def test_exact_category_name_beats_a_module_code(gr, store):
+    store.save_category("qm", "QM", "#123456", "Life")
+    gr.add_module("Quantum Mechanics", code="QM")
+    assert store.resolve_category(category="QM") == "qm"
+    assert store.resolve_category(label="qm") == "qm"
+
+
+def test_a_code_beats_a_word_match(gr, store):
+    """'CHEM50001 revision': the code says which module, though "Revision" alone means Study."""
+    mid = gr.add_module("Organic Chemistry", code="CHEM50001")
+    assert store.resolve_category(label="Revision") == "study"
+    assert store.resolve_category(label="CHEM50001 revision") == gr.get_module(mid)["category_id"]
+
+
+def test_no_modules_table_means_no_codes(blank_store):
+    """The store never needs the Modules block: without its tables a code is just text."""
+    assert blank_store.resolve_category(category="CHEM50001") is None
+    assert blank_store.resolve_category(label="CHEM50001 sheet") is None
+
+
+def test_focus_on_a_module_code_counts_for_the_module(gr, store):
+    from venato.blocks import focus
+    focus = importlib.reload(focus)
+    mid = gr.add_module("Organic Chemistry", code="CHEM50001")
+    focus.tool_log("chem 50001 problem sheet", 30)
+    focus.tool_log("Lunch", 30, category="chem50001")
+    today = store.local_today()
+    cats = [s["category_id"] for s in focus.sessions(today, today)]
+    assert cats == [gr.get_module(mid)["category_id"]] * 2

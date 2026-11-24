@@ -8,6 +8,7 @@ Saving a block with a category teaches its label (learn_label).
 """
 
 import re
+import sqlite3
 
 from .database import _read, data_version, db, db_path
 from .settings import load_settings
@@ -128,21 +129,56 @@ def learn_label(label, category_id):
     return True
 
 
+def _module_codes():
+    """{normalised module code: its category id} (SQL only: the store never imports the blocks; no Modules
+    tables = no codes)."""
+    from venato import feeds
+    try:
+        with db() as conn:
+            rows = conn.execute("SELECT code, category_id FROM gr_modules WHERE code IS NOT NULL "
+                                "AND category_id IS NOT NULL ORDER BY created_at").fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out = {}
+    for code, cid in rows:
+        if feeds.norm_code(code):
+            out.setdefault(feeds.norm_code(code), cid)
+    return out
+
+
+def _code_category(text, ids):
+    """The category of the module whose code is the whole text, a word in it, or a code inside it
+    ('chem 50001 revision'), any case; or None."""
+    from venato import feeds
+    codes = {k: v for k, v in _module_codes().items() if v in ids}
+    if not codes:
+        return None
+    text = str(text or "")
+    found = [feeds.norm_code(text), *map(feeds.norm_code, text.split()), feeds.find_code(text.upper())]
+    return next((codes[c] for c in found if c in codes), None)
+
+
 def resolve_category(label=None, category=None):
     """
-    Pick a category id. `category` may be an id or a name (any case); otherwise the label is
-    matched (match_category: activities, then category names, exactly or as words inside it).
-    Returns None when nothing matches.
+    Pick a category id. `category` may be an id, a name (any case) or a module's code; otherwise the label is
+    matched: an exact activity or category name first, then a module code in it ('CHEM50001 problem sheet'),
+    then match_category's words inside it. Returns None when nothing matches.
     """
     cats = load_categories()
+    ids = set(cats["id"])
     by_name = {n.lower(): i for i, n in zip(cats["id"], cats["name"])}
     if category:
         key = category.strip()
-        if key in set(cats["id"]):
+        if key in ids:
             return key
-        return by_name.get(key.lower())
+        return by_name.get(key.lower()) or _code_category(key, ids)
     if label:
-        return match_category(label, categories=cats)
+        lm = load_label_map()
+        want = str(label).strip().lower()
+        exact = {str(l).strip().lower() for l in lm["label"]} | set(by_name)
+        if want in exact:
+            return match_category(label, lm, cats)
+        return _code_category(label, ids) or match_category(label, lm, cats)
     return None
 
 
