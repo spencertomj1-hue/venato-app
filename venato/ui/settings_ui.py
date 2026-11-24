@@ -470,6 +470,9 @@ def page_settings():
             if quick_on != store.load_settings().get("quick_commands", True):
                 store.save_settings(quick_commands=quick_on)
             claude_section("set")
+        st.divider()
+        st.caption("Coming soon: a Venato subscription with a built-in AI agent, no setup needed. "
+                   "For now you can connect your own Claude API key above, but it's a bit clunky.")
     if mic:
         with mic:
             st.subheader("Voice input", anchor=False)

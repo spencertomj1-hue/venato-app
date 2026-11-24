@@ -17,6 +17,10 @@ Everything before 1.0.0 was an alpha test. Those releases were first published a
 - **A module's code works as a category.** Typing "CHEM50001" (any case, with or without a space) as a focus or log category, or in a label like "CHEM50001 problem sheet", counts the time for that module. Review has a **Study by module** card: each module's hours that week against its goal.
 - **Each module card shows what's linked**: lectures in the next 8 weeks, deadlines and its Canvas course, with a warning when no lectures are found. Assessments and settings now live on the module's own page.
 
+### Changed
+- **Review: Goal pace groups targets under their goal.** Each goal gets a box in its own colour, with its name and how many of its targets are behind set into the border. Targets that aren't under a goal go in an "Other targets" box. A long list scrolls inside the card.
+- **Review fits the window without scrolling.** Slightly smaller headings, bars and gaps, and in a short window the cards scroll inside instead of the whole page.
+
 ## [1.0.0] - 2026-11-22
 
 Venato now focuses on student life and long-term goals. Home is how you get round the app (the sidebar is gone), goals are plans over months with targets and to-dos under them, setup is a short wizard, and a new install starts blank. Several blocks are gone, but none of their data is deleted (see Removed).
