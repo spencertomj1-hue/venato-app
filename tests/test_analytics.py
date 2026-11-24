@@ -11,8 +11,10 @@ def an(blank_store, monkeypatch):
     monkeypatch.setattr(analytics, "PROJECT_KEY", "phc_test")
     monkeypatch.setattr(analytics, "_start_worker", lambda: None)      # no background thread in tests
     analytics._queue.clear()
+    analytics._flags.update(loaded=None, called=set())
     yield analytics
     analytics._queue.clear()
+    analytics._flags.update(loaded=None, called=set())
 
 
 def _events(an):
@@ -107,3 +109,45 @@ def test_features_send_events(an, blank_store):
     names = [e for e, _ in _events(an)]
     assert names == ["focus_started", "life_goal_created", "blocks_changed"]
     assert all("Essay" not in json.dumps(p) and "marathon" not in json.dumps(p) for _, p in _events(an))
+
+
+class _Resp:
+    def __init__(self, data):
+        self.data = data
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self.data
+
+
+def test_variant_is_control_when_off(an):
+    assert an.variant("onboarding-v2") == "control" and not an.is_on("new-home")
+
+
+def test_variant_from_posthog_and_exposure_once(an, monkeypatch):
+    an.set_opted_in(True)
+    asked = []
+    monkeypatch.setattr(an.requests, "post", lambda url, json, timeout: asked.append(url) or _Resp(
+        {"flags": {"onboarding-v2": {"enabled": True, "variant": "test"}, "new-home": {"enabled": True}}}))
+    assert an.variant("onboarding-v2") == "test" and an.variant("onboarding-v2") == "test"
+    assert an.is_on("new-home") and an.variant("missing") == "control"
+    assert asked == ["https://eu.i.posthog.com/flags/?v=2"]              # fetched once, then kept
+    called = [p for e, p in _events(an) if e == "$feature_flag_called"]
+    assert [c["$feature_flag"] for c in called] == ["onboarding-v2", "new-home"]
+    an.track("todo_done")
+    assert _events(an)[-1][1]["$feature/onboarding-v2"] == "test"        # later events can be split by variant
+
+
+def test_flags_offline_fall_back_to_control(an, monkeypatch):
+    an.set_opted_in(True)
+
+    def offline(*a, **k):
+        raise OSError("no network")
+    monkeypatch.setattr(an.requests, "post", offline)
+    assert an.variant("onboarding-v2") == "control"
+
+
+def test_older_decide_answer_parsed(an):
+    assert an._parse_flags({"featureFlags": {"a": "test", "b": True, "c": 3}}) == {"a": "test", "b": True}

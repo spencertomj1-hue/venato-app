@@ -12,6 +12,7 @@ Everything before 1.0.0 was an alpha test. Those releases were first published a
 
 ### Added
 - **Anonymous usage stats, opt-in.** Off unless you switch them on (setup's Welcome step or Settings → About). They send which pages you open, how long you stay on each, and which features you use, with a random id made on your computer, to PostHog's EU servers. Never anything you type. Hidden until the build has a PostHog project key.
+- **Feature flags for gradual rollouts and A/B tests** (for developers): `analytics.variant("flag")` and `analytics.is_on("flag")`. Only for people who've switched on usage stats; everyone else gets the normal version.
 
 ## [1.0.0] - 2026-11-22
 

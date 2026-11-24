@@ -12,6 +12,22 @@ Opt-in, off by default (setup's Welcome step and Settings → About). Sends page
 
 In PostHog, build: a page views by page chart, median `seconds` of `page_left` by page, and a funnel of `onboarding_step` by `index` to `onboarding_finished`.
 
+### A/B tests and gradual rollouts
+
+Ready once the key above is in. In PostHog make a feature flag (e.g. `onboarding-v2`, variants `control` and `test`, 50/50), then in the code:
+
+```python
+from venato import analytics
+if analytics.variant("onboarding-v2") == "test":
+    ...   # the new version
+```
+
+For an on/off rollout use `analytics.is_on("flag-key")`. People who haven't opted in, or are offline, always get `control` / off. Make an Experiment in PostHog on that flag with a goal event (e.g. `onboarding_finished`). With fewer than about 1,000 weekly users, use flags for rollouts rather than A/B tests: the results won't be meaningful.
+
+### Paid Claude assistant (Venato Pro)
+
+- [ ] Read `docs/subscriptions-plan.md` and answer the five decisions at the bottom.
+
 ## Added 21 Nov 2026 (from Magnus)
 
 ### 1. Analyse what people actually get done
