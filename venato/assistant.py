@@ -302,6 +302,11 @@ What the app tracks
     of the month>). "in a year" / "by Easter": work out the date. No deadline said: ask, or end of this month.
     If a habit with a matching name exists, ask whether to count that habit or update it by hand.
   - edit_goal changes the title, target, unit, deadline (due) or linked habit; delete_goal needs the user's confirmation.
+  - Milestones: targets with no number ("Launch on the App Store", "Get good at Swift") -> add_goal(milestone=true).
+    Their to-dos are their steps (add_todo with target=<the milestone>); with none, set_goal_progress(value=1) ticks
+    it done. For fuzzy ones the user can say how far they are: edit_goal(self_rating=40).
+  - Effort (1-10, default 5) says how big a chunk of its goal a target or to-do is: a goal's % is the effort-weighted
+    mean of its targets and its own to-dos. Set it when the user says something is big or small (2 small, 8 big).
 
 - Journal: the day's notes in the Daily Log (one entry per day). "journal: today was rough, ...",
   "note for today: ..." or "write in my journal that ..." -> write_journal(text) in the user's own words (first person; tidy
@@ -483,7 +488,9 @@ TOOL_SPECS = [
              date={**DATE, "description": "YYYY-MM-DD, any day in the period (default today)"},
              repeat={"type": "boolean", "description": "a fresh copy every new period"},
              notes={"type": "string", "description": "optional short note shown under the title"},
-             life_goal={"type": "string", "description": "a long-term goal's title or id to put it under (optional)"}),
+             life_goal={"type": "string", "description": "a long-term goal's title or id to put it under (optional)"},
+             target={"type": "string", "description": "a target's title or id: the to-do is one of its steps (optional)"},
+             effort={"type": "integer", "minimum": 1, "maximum": 10, "description": "how big a chunk of its goal it is, 1-10: 2 small, 5 medium (default), 8 big"}),
      tools.add_todo),
     ("complete_todo", "Tick off a to-do, found by title (or id) in the current periods.", TODO_REF, tools.complete_todo),
     ("uncomplete_todo", "Untick a to-do, found by title (or id) in the current periods.", TODO_REF,
@@ -496,8 +503,12 @@ TOOL_SPECS = [
     ("list_todos", "List to-dos (with ids) for the periods containing a date (default today).",
      _schema([], period=TODO_PERIOD, date=DATE), tools.list_todos),
     ("delete_todo", "Delete a to-do, found by title (or id) in the current periods.", TODO_REF, tools.delete_todo),
-    ("add_goal", "Add a measurable goal with a deadline, e.g. 12 gym sessions by 30 Nov. Link a habit to count it automatically.",
-     _schema(["title", "target", "due"], title={"type": "string"}, target={"type": "number"},
+    ("add_goal", "Add a target with a deadline: a number (12 gym sessions by 30 Nov; link a habit to count it "
+                 "automatically) or a milestone (milestone=true, no number: 'Launch on the App Store').",
+     _schema(["title", "due"], title={"type": "string"},
+             target={"type": "number", "description": "the number to reach (not for a milestone)"},
+             milestone={"type": "boolean", "description": "a qualitative target: its to-dos are its steps"},
+             effort={"type": "integer", "minimum": 1, "maximum": 10, "description": "how big a chunk of its goal it is, 1-10: 2 small, 5 medium (default), 8 big"},
              due={**DATE, "description": "the deadline, YYYY-MM-DD"},
              unit={"type": "string", "description": "e.g. 'sessions', 'km', 'books' (optional)"},
              habit={"type": "string", "description": "a habit whose ticks count as progress (optional)"},
@@ -517,7 +528,10 @@ TOOL_SPECS = [
              start={**DATE, "description": "a new day it counts from, YYYY-MM-DD (earlier counts past progress)"},
              habit={"type": "string"}, unlink_habit={"type": "boolean"}, category={"type": "string"},
              label={"type": "string"}, unlink_category={"type": "boolean"},
-             life_goal={"type": "string", "description": "move it under this long-term goal (title or id; 'none' for none)"}),
+             life_goal={"type": "string", "description": "move it under this long-term goal (title or id; 'none' for none)"},
+             effort={"type": "integer", "minimum": 1, "maximum": 10, "description": "how big a chunk of its goal it is, 1-10: 2 small, 5 medium (default), 8 big"}, milestone={"type": "boolean"},
+             self_rating={"type": "number", "description": "a milestone's 'how far, honestly?', 0-100%"},
+             clear_self_rating={"type": "boolean"}),
      tools.edit_goal),
     ("add_life_goal", "Add a long-term goal: a plan over months, e.g. 'Get fit' for 6 months. Targets and to-dos go under it.",
      _schema(["title"], title={"type": "string"},
@@ -564,7 +578,8 @@ TOOL_SPECS = [
      _schema(["habit_name"], habit_name={"type": "string"}), tools.delete_habit),
     ("edit_todo", "Change a to-do's title, notes or repeat, and/or move it to the day, week or month list.",
      {**TODO_REF, "properties": {**TODO_REF["properties"], "title": {"type": "string"}, "notes": {"type": "string"},
-                                 "repeat": {"type": "boolean"}, "move_to": TODO_PERIOD}}, tools.edit_todo),
+                                 "repeat": {"type": "boolean"}, "move_to": TODO_PERIOD,
+                                 "effort": {"type": "integer", "minimum": 1, "maximum": 10}}}, tools.edit_todo),
     ("save_review_answers", "Save the user's answers to the weekly review's questions: what went well, what to change.",
      _schema([], went_well={"type": "string"}, to_change={"type": "string"},
              date={**DATE, "description": "any day in the week (default: the latest review week)"}),

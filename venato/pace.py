@@ -36,9 +36,6 @@ TRAILING_DAYS = 28            # the Actual rate behind the projection: the last 
 FOLLOW_WEEKS = 6              # follow-through looks at the last 6 complete weeks...
 FOLLOW_MIN_WEEKS = 3          # ...and needs a Plan in at least 3 of them
 FOLLOW_RANGE = (0.3, 1.0)
-SUGGEST_HOURS = 2             # suggested goals: 2 h+ a week of Actual time...
-SUGGEST_WEEKS = 3             # ...in 3 of the last 4 weeks
-NEVER_SUGGEST = {"sleep"}     # categories (id or name, any case) never suggested as goals
 TOLERANCE = 0.25              # hours: anything closer than a quarter of an hour counts as there
 
 STATES = {"done": "Done", "on_track": "On track", "behind": "Behind", "slipping": "Slipping",
@@ -76,7 +73,9 @@ def fmt(x):
 
 
 def amount(goal, x):
-    """"6 h", "3 sessions", "250"."""
+    """"6 h", "3 sessions", "250"; a milestone's (0..1) as "60%"."""
+    if goal.get("milestone"):
+        return f"{round(100 * float(x))}%"
     unit = goal.get("unit")
     return f"{fmt(x)} {unit}" if unit else fmt(x)
 
@@ -685,78 +684,6 @@ def dismissed_offers():
 
 def dismiss_offer(goal_id):
     store.save_settings(goal_offers_dismissed=sorted(dismissed_offers() | {goal_id}))
-
-
-# ---------------------------------------------------------------------------
-# Phase 7: suggested goals
-# ---------------------------------------------------------------------------
-
-def suggestions(ctx=None, limit=3):
-    """
-    Categories (and activities) with 2 h+ a week of Actual time in 3 of the last 4 weeks and no
-    goal counting them this month or year: [{"key", "category_id", "category", "label", "per_week", "text"}].
-    """
-    ctx = ctx or Ctx()
-    this_week = week_days(ctx.today)[0]
-    weeks = [(this_week - timedelta(weeks=n), this_week - timedelta(weeks=n) + timedelta(days=1) * 6)
-             for n in range(1, 5)]
-    data = ctx.data(weeks[-1][0], weeks[0][1])
-    totals = {}                                   # key -> [hours per week]
-    for i, (first, last) in enumerate(weeks):
-        for b in data["blocks"]:
-            if b["track"] != "actual" or not b["category_id"] or not (_iso(first) <= b["date"] <= _iso(last)) \
-                    or b["date"] not in data["confirmed"]:
-                continue
-            h = max(0, min(store.slot_of(b["end"]), store.SLOTS) - store.slot_of(b["start"])) / 2
-            for key in (b["category_id"], f"{b['category_id']}|{b['label'].strip().lower()}"):
-                totals.setdefault(key, [0.0] * 4)[i] += h
-    cats = store.load_categories()
-    names = dict(zip(cats["id"], cats["name"]))
-    labels = {}
-    for b in data["blocks"]:
-        labels.setdefault(f"{b['category_id']}|{b['label'].strip().lower()}", b["label"].strip())
-    goals = [g for g in goals_active(ctx.today) if g["kind"] == "hours"]
-    gone = set(store.load_settings().get("goal_suggestions_dismissed") or [])
-    found = []
-    for key, per_week in totals.items():
-        cid, _, low = key.partition("|")
-        if cid not in names or cid in NEVER_SUGGEST or names[cid].lower() in NEVER_SUGGEST or sum(h >= SUGGEST_HOURS for h in per_week) < SUGGEST_WEEKS or key in gone:
-            continue
-        label = labels.get(key) if low else None
-        if label and label.lower() == names[cid].lower():
-            continue                              # the same as its category
-        if any(g["category_id"] == cid and (not label or not g["label"] or g["label"].lower() == label.lower())
-               for g in goals):
-            continue                              # a goal already counts it
-        avg = sum(per_week) / 4
-        found.append({"key": key, "keys": [key], "category_id": cid, "category": names[cid], "label": label,
-                      "per_week": avg, "text": f"{fmt(avg)} h/week of {label or names[cid]}. Make it a goal?"})
-    # A category whose time is all one activity: suggest the activity only.
-    by_cat = {}
-    for s in found:
-        by_cat.setdefault(s["category_id"], []).append(s)
-    out = []
-    for cid, items in by_cat.items():
-        whole = [s for s in items if not s["label"]]
-        parts = [s for s in items if s["label"]]
-        if whole and len(parts) == 1 and abs(parts[0]["per_week"] - whole[0]["per_week"]) < 0.05:
-            items = [{**parts[0], "keys": [parts[0]["key"], whole[0]["key"]]}]
-        out += items
-    return sorted(out, key=lambda s: -s["per_week"])[:limit]
-
-
-def suggested_target(per_week, day):
-    """A month's worth of a weekly average, in whole hours."""
-    start = store.start_of_period("monthly", day)
-    days = (store.end_of_period("monthly", start) - start).days + 1
-    return max(1, round(per_week * days / 7))
-
-
-def dismiss_suggestion(suggestion):
-    """Never suggest this again (a suggestion from suggestions(), or its key)."""
-    keys = suggestion["keys"] if isinstance(suggestion, dict) else [suggestion]
-    gone = set(store.load_settings().get("goal_suggestions_dismissed") or [])
-    store.save_settings(goal_suggestions_dismissed=sorted(gone | set(keys)))
 
 
 # ---------------------------------------------------------------------------

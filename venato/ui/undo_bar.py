@@ -9,11 +9,7 @@ from venato import undo
 
 
 def _undo():
-    label = undo.restore()
-    if label:
-        st.toast(f"Undone: {label}", icon=":material/undo:")
-    else:
-        st.toast("Can't undo that any more: something else has changed since.", icon=":material/info:")
+    undo.restore()            # silently: no "Undone" toast
 
 
 # Cmd+Z / Ctrl+Z presses Undo, but only while there's something to undo, and never while typing in a box

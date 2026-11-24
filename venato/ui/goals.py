@@ -21,6 +21,7 @@ from venato.ui import kit
 
 PAGE = "Goals"                                  # page name (also what "See all" switches to)
 BY_HAND, BY_HABIT, BY_HOURS = "Update it myself", "Count a habit's ticks", "Count timetable hours"
+NUMBER, MILESTONE = "Number", "Milestone"       # a target's two kinds: "50 users" or "Launch on the App Store"
 
 
 def _num(x):
@@ -28,8 +29,26 @@ def _num(x):
 
 
 def amount(g):
-    """"7 / 12 sessions"."""
+    """"7 / 12 sessions"; a milestone: "3 of 5 steps", "40% (self-rated)", "done" or "to do"."""
+    if g.get("milestone"):
+        done, total = g.get("steps") or (0, 0)
+        if g.get("self_rated"):
+            return f"{round(100 * fraction(g))}% (self-rated)"
+        if total:
+            return f"{done} of {total} step{'s' if total != 1 else ''}"
+        return "done" if fraction(g) >= 1 else "to do"
     return f"{_num(g['value'])} / {_num(g['target'])}" + (f" {g['unit']}" if g["unit"] else "")
+
+
+def milestone_line(g):
+    """A milestone's row: "3 of 5 steps · 60%", "Self-rated · 40%", "Done" or "Not done yet"."""
+    pct = round(100 * fraction(g))
+    done, total = g.get("steps") or (0, 0)
+    if g.get("self_rated"):
+        return f"Self-rated · {pct}%"
+    if total:
+        return f"{done} of {total} step{'s' if total != 1 else ''} · {pct}%"
+    return "Done" if pct >= 100 else "Not done yet"
 
 
 def fraction(g):
@@ -108,10 +127,18 @@ def _goal_form(key, goal=None, life_goal_id=None):
     habits = dict(store.get_habits())                       # id -> name
     cats = store.load_categories()
     categories = dict(zip(cats["id"], cats["name"]))        # id -> name
+    is_milestone = bool(goal and goal.get("milestone"))
+    kind = st.segmented_control("Kind", [NUMBER, MILESTONE], default=MILESTONE if is_milestone else NUMBER,
+                                key=f"{key}_kind", width="stretch",
+                                help="Number: something you can count (50 users, 40 gym sessions). "
+                                     "Milestone: something you get done (launch the app); its to-dos are its steps.")
+    if kind == MILESTONE:
+        return _milestone_form(key, goal, life_goal_id)
     title = st.text_input("Target", value=goal["title"] if goal else "", key=f"{key}_title",
                           placeholder="e.g. Gym")
     a, b = st.columns(2)
-    target = a.number_input("Aim for", min_value=0.5, step=1.0, value=float(goal["target"]) if goal else 10.0, format="%g",
+    target = a.number_input("Aim for", min_value=0.5, step=1.0,
+                            value=float(goal["target"]) if goal and not is_milestone else 10.0, format="%g",
                             key=f"{key}_target")
     unit = b.text_input("Unit (optional)", value=(goal["unit"] or "") if goal else "", key=f"{key}_unit",
                         placeholder="sessions, km, books…")
@@ -122,8 +149,9 @@ def _goal_form(key, goal=None, life_goal_id=None):
                         "Count timetable hours: the hours in your timetable's Actual track in a category "
                         "(and, if you like, only one activity) add up by themselves.")
     values = {"title": title.strip(), "target": target, "unit": unit.strip() or None, "habit_id": None,
-              "category_id": None, "label": None, "due": due,
-              "life_goal_id": _life_goal_picker(key, goal["life_goal_id"] if goal else life_goal_id)}
+              "category_id": None, "label": None, "due": due, "milestone": False,
+              "life_goal_id": _life_goal_picker(key, goal["life_goal_id"] if goal else life_goal_id),
+              "effort": kit.effort_picker(key, goal.get("effort") if goal else None)}
     if how == BY_HABIT:
         if not habits:
             st.caption("You have no habits yet. Add one on the Daily Log page, or update this goal yourself.")
@@ -145,6 +173,28 @@ def _goal_form(key, goal=None, life_goal_id=None):
                                        key=f"{key}_label", placeholder="e.g. Guitar").strip() or None
         values["unit"] = values["unit"] or "h"
     values["start"], values["earlier"] = _earlier(key, values, goal)
+    return values
+
+
+def _milestone_form(key, goal, life_goal_id):
+    """A milestone's form: title, deadline, the goal it's under and, if you like, "How far, honestly?"
+    (a self-rating that replaces counting its to-dos). No amount, unit or source."""
+    title = st.text_input("Target", value=goal["title"] if goal else "", key=f"{key}_title",
+                          placeholder="e.g. Launch on the App Store")
+    due = due_picker(key, date.fromisoformat(goal["due"]) if goal else default_due(store.local_today()))
+    values = {"title": title.strip(), "milestone": True, "due": due,
+              "life_goal_id": _life_goal_picker(key, goal["life_goal_id"] if goal else life_goal_id),
+              "effort": kit.effort_picker(key, goal.get("effort") if goal else None), "start": None, "earlier": 0.0}
+    rating = goal.get("self_rating") if goal else None
+    rate = st.toggle("Rate it myself", value=rating is not None, key=f"{key}_rate",
+                     help="For fuzzy ones (\"get good at Swift\"): your own guess replaces counting its to-dos.")
+    values["self_rating"] = None
+    if rate:
+        pct = st.slider("How far, honestly?", 0, 100, value=round(100 * (rating or 0)), step=5, format="%d%%",
+                        key=f"{key}_rating")
+        values["self_rating"] = pct / 100
+    else:
+        st.caption("Its to-dos are its steps: it fills up as you tick them. With none, tick it when it's done.")
     return values
 
 
@@ -188,10 +238,17 @@ def _new_goal(key="new_goal", life_goal_id=None):
     with st.popover("Add target", icon=":material/add:", width="stretch"):
         values = _goal_form(key, life_goal_id=life_goal_id)
         if st.button("Add target", key=f"{key}_add", type="primary", disabled=not values or not values["title"]):
-            g = store.add_goal(values["title"], None, values["start"] or store.local_today(), values["target"],
-                               values["unit"], values["habit_id"], category_id=values["category_id"],
-                               label=values["label"], due=max(values["due"], values["start"] or values["due"]),
-                               life_goal_id=values["life_goal_id"])
+            if values["milestone"]:
+                today = store.local_today()
+                g = store.add_goal(values["title"], None, today, None, due=max(values["due"], today),
+                                   life_goal_id=values["life_goal_id"], milestone=True, effort=values["effort"])
+                if values["self_rating"] is not None:
+                    store.update_goal(g["id"], self_rating=values["self_rating"])
+            else:
+                g = store.add_goal(values["title"], None, values["start"] or store.local_today(), values["target"],
+                                   values["unit"], values["habit_id"], category_id=values["category_id"],
+                                   label=values["label"], due=max(values["due"], values["start"] or values["due"]),
+                                   life_goal_id=values["life_goal_id"], effort=values["effort"])
             if values["earlier"]:
                 store.set_goal_progress(g["id"], values["earlier"])
             for k in [k for k in st.session_state if k.startswith(f"{key}_")]:
@@ -220,7 +277,8 @@ def _edit_goal(g, ids=None):
             down.button("Move down", icon=":material/arrow_downward:", key=f"{key}_down", width="stretch",
                         disabled=ids[-1] == g["id"], on_click=_move, args=(ids, g["id"], 1))
         values = _goal_form(key, g)
-        if g["kind"] == "count":
+        number = bool(values) and not values["milestone"]
+        if g["kind"] == "count" and number and not g["milestone"]:
             progress = st.number_input("Progress so far", min_value=0.0, step=1.0, value=float(g["progress"]), format="%g",
                                        key=f"{key}_progress")
         save, delete = st.columns(2)
@@ -232,7 +290,8 @@ def _edit_goal(g, ids=None):
             store.update_goal(g["id"], **values, **({"start": start} if start else {}))
             for k in ("due", "since", "ago_done"):
                 st.session_state.pop(f"{key}_{k}", None)
-            if g["kind"] == "count" and values["habit_id"] is None and values["category_id"] is None:
+            if g["kind"] == "count" and number and not g["milestone"] \
+                    and values["habit_id"] is None and values["category_id"] is None:
                 store.set_goal_progress(g["id"], progress + earlier)
             st.rerun()
         if delete.button("Delete", key=f"{key}_delete", icon=":material/delete:", width="stretch"):
@@ -246,18 +305,36 @@ def _edit_goal(g, ids=None):
 # ---------------------------------------------------------------------------
 
 def _goal_row(g, ctx=None, neighbours=None):
-    """One goal as a card: title, state badge, − / + (kept by hand) and ⋯; its number; the pace chart
-    (from now on) or a bar (past goals); short detail lines, and this week's numbers for hours goals."""
+    """One target as a compact row: title, state badge and time left; a progress bar with the "should be here
+    by today" tick; its %; − / + (kept by hand) and ⋯. The pace chart and detail lines fold away under it."""
     from venato import pace
     from venato.ui import goal_chart, goal_time
     p = pace.goal_pace(g, ctx) if ctx is not None else None
+    today = ctx.today if ctx is not None else store.local_today()
     with st.container(border=True, key=f"goal_card_{g['id']}"):
-        text, minus, plus, more = st.columns([5, 1, 1, 1.4], vertical_alignment="center")
+        text, bar, pct, minus, plus, more = st.columns([3.2, 3, 0.8, 0.6, 0.6, 0.9], vertical_alignment="center")
         when, left = due_parts(g)
         badge = f"{goal_time.badge(p['state'])} " if p and p["state"] != "upcoming" else ""
         # The deadline stays on the title's line (non-breaking spaces keep "by 31/12" in one piece).
-        text.markdown(f"**{goal_time.md(g['title'])}**\u00a0:gray[{when.replace(' ', chr(160))}]  \n{badge}:gray[{left}]")
-        if g["kind"] != "count":
+        text.markdown(f"**{goal_time.md(g['title'])}**\u00a0:gray[{when.replace(' ', chr(160))}]\u00a0"
+                      f"{kit.effort_html(g.get('effort'))}  \n{badge}:gray[{left}]", unsafe_allow_html=True)
+        unit = f" {g['unit']}" if g["unit"] else ""
+        should = pace.expected(g, today) if g["target"] else 0
+        if g["milestone"]:
+            line = milestone_line(g)
+            if 0 < should and fraction(g) < 1:
+                line += f" · pace says {round(100 * should)}%"
+        else:
+            line = f"{_num(g['value'])} of {_num(g['target'])}{unit}"
+            if 0 < should and fraction(g) < 1:
+                line += f" · pace says {_num(round(should, 1))}"
+        with bar:
+            st.html(goal_bar_css() + goal_bar(g, today, line))
+        pct.markdown(f"#### {round(100 * fraction(g))}%")
+        if g["milestone"]:
+            minus.empty()
+            _milestone_tick(g, plus)
+        elif g["kind"] != "count":
             minus.empty()
             plus.empty()
         else:
@@ -267,25 +344,91 @@ def _goal_row(g, ctx=None, neighbours=None):
                         on_click=store.add_goal_progress, args=(g["id"], 1))
         with more:
             _edit_goal(g, neighbours)
-        unit = f" {g['unit']}" if g["unit"] else ""
-        st.markdown(f"### {_num(g['value'])} :gray[of {_num(g['target'])}{goal_time.md(unit)} · {round(100 * fraction(g))}%]")
-        svg = goal_chart.chart(p, ctx) if p else ""
-        if svg:
-            st.html(svg)
-        else:
-            st.html(f'<div class="hg-bar">{_fill(g)}</div>' + BAR_CSS.replace("ACCENT", _accent()))
         lines = list(p.get("details") or []) if p else []
         week = goal_chart.week_line(p) if p else ""
         if week:
             lines.insert(0, week)
-        if lines:
-            st.caption("  \n".join(goal_time.md(x) for x in lines))
+        svg = goal_chart.chart(p, ctx) if p else ""
+        source = ""
         if g["habit"]:
-            st.caption(f":material/sync: Counted from the habit **{escape(g['habit'])}**")
+            source = f":material/sync: Counted from the habit **{escape(g['habit'])}**"
         elif g["category"]:
             what = f"{g['label']} ({g['category']})" if g.get("label") else g["category"]
-            st.caption(f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**, "
-                       "on days you've confirmed")
+            source = (f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**, "
+                      "on days you've confirmed")
+        _target_todos(g)
+        with st.expander("Chart, to-dos and details", icon=":material/show_chart:"):
+            if svg:
+                st.html(svg)
+            if lines:
+                st.caption("  \n".join(goal_time.md(x) for x in lines))
+            if source:
+                st.caption(source)
+            _new_target_todo(g)
+
+
+def _milestone_tick(g, where):
+    """A milestone's tick box: ticks it done (or undone) when it has no to-dos and no self-rating; otherwise it
+    shows where it stands and ticks itself (its to-dos, or the rating, decide)."""
+    done = fraction(g) >= 1
+    steps = (g.get("steps") or (0, 0))[1]
+    by_hand = not steps and not g.get("self_rated")
+    where.checkbox("Done", value=done, key=f"milestone_{g['id']}_{done}", label_visibility="collapsed",
+                   disabled=not by_hand, on_change=store.set_goal_progress, args=(g["id"], 0 if done else 1),
+                   help=f"Tick {g['title']} when it's done" if by_hand else
+                   "Ticks itself when its to-dos are done" if steps else "Self-rated: change it from ⋯")
+
+
+def _plus_offer_key(target_id):
+    return f"plus_offer_{target_id}"
+
+
+def _tick_target_todo(todo_id, target):
+    """Tick a target's to-do; on a target kept by hand, offer to add 1 to it too."""
+    store.set_todo_done(todo_id, True)
+    if target["kind"] == "count" and not target["milestone"]:
+        st.session_state[_plus_offer_key(target["id"])] = True
+
+
+def _accept_plus(target_id):
+    store.add_goal_progress(target_id, 1)
+    st.session_state.pop(_plus_offer_key(target_id), None)
+
+
+def _target_todos(g):
+    """A target's open to-dos, to tick right on its row (done ones counted), and the "+1?" offer after a tick."""
+    todos = store.target_todos(g["id"])
+    open_ = [t for t in todos if not t["done"]]
+    today = store.local_today()
+    for t in open_:
+        when = f" :gray[· due {regional.short_date(t['due'], today)}]" if t.get("due") else ""
+        st.checkbox(f"{kit.md(t['title'])}{when} {kit.effort_label(t.get('effort'))}", value=False,
+                    key=f"target_todo_{t['id']}", help=f"Effort {store.effort(t)} of 10",
+                    on_change=_tick_target_todo, args=(t["id"], g))
+    if st.session_state.get(_plus_offer_key(g["id"])):
+        with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+            st.caption(f"Ticked. Add 1 to **{kit.md(g['title'])}** too?")
+            st.button("+1", key=f"plus_offer_yes_{g['id']}", on_click=_accept_plus, args=(g["id"],))
+            st.button("No", key=f"plus_offer_no_{g['id']}", type="tertiary",
+                      on_click=st.session_state.pop, args=(_plus_offer_key(g["id"]), None))
+    done = len(todos) - len(open_)
+    if done:
+        st.caption(f"{done} to-do{'s' if done != 1 else ''} done")
+
+
+def _new_target_todo(g):
+    """A line to add a to-do to this target (it goes in the target's own to-do category)."""
+    key = f"target_{g['id']}_newtodo"
+    with st.container(horizontal=True, vertical_alignment="bottom"):
+        title = st.text_input("New to-do", key=key, placeholder="Add a to-do for this target",
+                              label_visibility="collapsed", width="stretch")
+        effort = kit.effort_picker(key, exact=False)
+        if st.button("", icon=":material/add:", key=f"{key}_add", help="Add this to-do to the target",
+                     disabled=not (title or "").strip()):
+            store.add_detailed_todo(title.strip(), group_id=store.ensure_target_group(g["id"]), effort=effort)
+            for k in (key, f"{key}_effort"):
+                st.session_state.pop(k, None)
+            st.rerun()
 
 
 def due_parts(g, today=None):
@@ -310,10 +453,8 @@ def _section(today, ctx):
         heading = "Targets" if not store.life_goals(include_past=True) else "Targets not under a goal"
         st.subheader(f"{heading} :gray[{done}/{len(goals)}]", anchor=False)
         ids = [g["id"] for g in goals]
-        cols = st.columns(2, gap="small")
-        for i, g in enumerate(goals):
-            with cols[i % 2]:
-                _goal_row(g, ctx, ids)
+        for g in goals:
+            _goal_row(g, ctx, ids)
         if not goals:
             st.caption("None. Measurable targets with a deadline (\"Gym 40 sessions by 31/03\") go here or under a goal.")
         _new_goal()
@@ -321,10 +462,8 @@ def _section(today, ctx):
     past = pace.goals_past(today)
     if past:
         with st.expander(f"Past targets ({sum(fraction(g) >= 1 for g in past)}/{len(past)} done)"):
-            cols = st.columns(2, gap="small")
-            for i, g in enumerate(past):
-                with cols[i % 2]:
-                    _goal_row(g)
+            for g in past:
+                _goal_row(g)
 
 
 def render_page():
@@ -335,16 +474,11 @@ def render_page():
     from venato.ui import goal_time
     from venato.ui import goal_chart
     ctx = pace.Ctx()
-    main, side = st.columns([2.3, 1], gap="medium")      # the side panel stacks under on narrow screens
-    with main:
-        st.html(goal_chart.legend())                    # once, for every target's pace chart
-        from venato.ui import life_goals
-        life_goals.render_section(ctx, today)
-        _section(today, ctx)
-    with side:
-        goal_time.free_split(ctx)                       # where this week's free time goes, by goal
-        goal_time.offers(ctx)                           # "X can't be finished in time"
-        goal_time.suggestions(ctx)
+    goal_time.offers(ctx)                               # "X can't be finished in time", above everything
+    st.html(goal_chart.legend())                        # once, for every target's pace chart
+    from venato.ui import life_goals
+    life_goals.render_section(ctx, today)
+    _section(today, ctx)
     from venato.ui import deadlines
     deadlines.render_section()
 
@@ -376,7 +510,8 @@ def _marker(g, today):
     if fraction(g) >= 1 or should <= 0:
         return ""
     pct = 100 * min(should / g["target"], 1.0)
-    text = f"Should be at {_num(round(should, 1))} of {_num(g['target'])} by today"
+    text = (f"Should be at {round(pct)}% by today" if g.get("milestone")
+            else f"Should be at {_num(round(should, 1))} of {_num(g['target'])} by today")
     return f'<span class="hg-mark" role="img" aria-label="{escape(text)}" title="{escape(text)}" style="left:{pct:.1f}%"></span>'
 
 
@@ -453,7 +588,10 @@ def _say(r, today):
 
 def _next_text(r, today):
     n = r["next"]
-    return f"{n['title']} · {amount(n)} {store.goal_title_due(n['due'], today)}" if n else ""
+    if not n:
+        return ""
+    what = "" if n.get("milestone") and not (n.get("steps") or (0, 0))[1] else f" · {amount(n)}"   # (a bare tick)
+    return f"{n['title']}{what} {store.goal_title_due(n['due'], today)}"
 
 
 def _gw_bar(r, today, height=8):

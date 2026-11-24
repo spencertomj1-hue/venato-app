@@ -37,3 +37,30 @@ def test_errors(store, tools):
         tools.add_todo("X", "daily", life_goal="nothing like it")
     with pytest.raises(tools.ToolError):
         tools.edit_life_goal("missing", months=3)
+
+
+def test_milestones_and_effort_through_the_tools(store, tools):
+    due = store.months_on(store.local_today(), 3).isoformat()
+    tools.add_life_goal("Launch the app", months=6)
+    r = tools.add_goal("Launch on the App Store", due=due, milestone=True, effort=8, life_goal="Launch")
+    assert r.changed and "milestone" in r.text
+    m = store.life_goal_targets(store.life_goals()[0]["id"])[0]
+    assert m["milestone"] and m["effort"] == 8
+    tools.add_todo("Apple licence", "weekly", target="Launch on the App Store", effort=2)
+    tools.add_todo("Screenshots", "weekly", target="Launch on the App Store", effort=2)
+    tools.complete_todo("Apple licence")
+    text = tools.list_life_goals().text
+    assert "milestone Launch on the App Store" in text and "50% (1 of 2 steps)" in text and "effort 8" in text
+    with pytest.raises(tools.ToolError):
+        tools.log_goal_progress("Launch on the App Store")
+    tools.edit_goal("Launch on the App Store", self_rating=30, effort=6)
+    m = store.get_goal(m["id"])
+    assert m["self_rated"] and abs(m["value"] - 0.3) < 1e-9 and m["effort"] == 6
+    tools.edit_goal("Launch on the App Store", clear_self_rating=True)
+    assert not store.get_goal(m["id"])["self_rated"]
+    tools.edit_todo("Screenshots", effort=9)
+    assert [t["effort"] for t in store.target_todos(m["id"]) if t["title"] == "Screenshots"] == [9]
+    with pytest.raises(tools.ToolError):
+        tools.add_goal("Users", 50, due=due, effort=12)
+    with pytest.raises(tools.ToolError):
+        tools.edit_goal("Launch on the App Store", milestone=False, self_rating=20)

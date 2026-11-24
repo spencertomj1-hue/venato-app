@@ -62,7 +62,7 @@ from .history import load_all_data, save_all_data
 from .status import BLOCK_STATUSES, block_statuses, set_block_status, status_log
 from .deadline import (DEADLINE_COLS, add_deadline, countdown, deadline_overdue, deadlines, delete_deadline,
     get_deadline, import_canvas, plan_deadline, set_deadline_done, update_deadline)
-from .todos import (TODO_BASE, TODO_COLS, TODO_GROUP_COLOURS, TODO_MINUTES, TODO_PERIODS, add_detailed_todo,
+from .todos import (check_effort, TODO_BASE, TODO_COLS, TODO_GROUP_COLOURS, TODO_MINUTES, TODO_PERIODS, add_detailed_todo,
     add_todo, add_todo_group, carry_over, delete_todo, delete_todo_group, done_todos, get_todo, list_for_due,
     load_todos, move_target, move_todo, open_todos, reorder_todos, roll_todos, save_todos, schedule_todo,
     set_todo_done, todo_slots,
@@ -75,7 +75,8 @@ from .goals import (GOAL_COLS, GOAL_PERIODS, _goal_matches, _num, add_goal, add_
 from .life_goals import (GOAL_COLOURS, GOAL_COLOUR_NAMES, HORIZONS, add_life_goal, delete_life_goal, ensure_life_goal_group, find_life_goal, get_life_goal,
     group_life_goals, horizon_of, life_goal_colour, life_goal_colours, life_goal_group, life_goal_group_ids, life_goal_progress, life_goal_targets,
     life_goal_todos, life_goals, life_goals_past, load_life_goals, months_on, reorder_life_goals,
-    save_life_goals, set_life_goal_colour, set_target_goal, time_left, unparented_targets, update_life_goal)
+    save_life_goals, set_life_goal_colour, set_target_goal, time_left, unparented_targets, update_life_goal,
+    target_todos, ensure_target_group, next_step, effort, target_progress, life_goal_parts, weighted)
 from .links import block_link, link_block, linked_blocks, on_block_status
 from .review import get_review, reviews, save_review
 from .stats import get_stats, period_start

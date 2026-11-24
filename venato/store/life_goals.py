@@ -9,7 +9,11 @@ Under each goal sit
     is (todo_groups.goal_id); the to-dos in its category and in its targets' categories are its to-dos.
 
 In code a long-term goal is a "life goal" and a "goal" is a target (the table kept its name).
-Progress: the mean of its targets' progress (each capped at 100%); with no targets, its to-dos done / all.
+Progress is effort-weighted: every target and every to-do in the goal's own category has an effort (1-10, how
+big a chunk of the goal it is; unset = 5), and the goal's fraction is sum(effort × progress) / sum(effort) over them.
+A number target's progress is value / target (capped at 100%); a milestone's is its to-dos' effort done (or a tick,
+or its self-rating); a goal-level to-do is 0 or 1. A number target's to-dos are how you get there and add nothing,
+so nothing counts twice.
 """
 
 import calendar
@@ -256,6 +260,49 @@ def life_goal_todos(life_goal_id, open_only=False):
     return [_todo(r) for r in rows]
 
 
+def target_todos(target_id, open_only=False):
+    """The to-dos in a target's own to-do category, open ones first then by due day."""
+    from .todos import TODO_COLS, _todo, goal_todo_group
+    group = goal_todo_group(target_id)
+    if not group:
+        return []
+    with db() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT {TODO_COLS} FROM todos WHERE group_id = ? {'AND done = 0' if open_only else ''} "
+            "ORDER BY done, COALESCE(due, period_start), ord, created_at", (group["id"],)).fetchall()
+    return [_todo(r) for r in rows]
+
+
+def ensure_target_group(target_id):
+    """The id of a target's own to-do category, making it again if the user deleted it."""
+    from .goals import get_goal
+    from .todos import link_goal_group
+    t = get_goal(target_id)
+    if not t:
+        raise ValueError("There's no such target.")
+    with db() as conn:
+        return link_goal_group(conn, target_id, t["title"])
+
+
+def next_step(life_goal_id, today=None, targets=None):
+    """What to do next for a goal: {"target": the open target due soonest or None, "todo": its first open to-do,
+    else the goal's own first open to-do, or None}. None when there's nothing open at all."""
+    today = _as_date(today or local_today()).isoformat()
+    targets = life_goal_targets(life_goal_id) if targets is None else targets
+    target = next((t for t in targets if t["due"] >= today and (not t["target"] or t["value"] < t["target"])), None)
+    todo = None
+    if target:
+        todo = next(iter(target_todos(target["id"], open_only=True)), None)
+    if not todo:
+        group = life_goal_group(life_goal_id)
+        todo = next((t for t in life_goal_todos(life_goal_id, open_only=True)
+                     if group and t["group_id"] == group["id"]), None)
+    if not target and not todo:
+        return None
+    return {"target": target, "todo": todo}
+
+
 def life_goal_targets(life_goal_id, day=None):
     """The targets under a goal that are still open (not closed), soonest deadline first, each with `value`."""
     from .goals import _goals_where
@@ -268,22 +315,47 @@ def unparented_targets(day=None):
     return _goals_where("life_goal_id IS NULL AND due >= ?", (_as_date(day or local_today()).isoformat(),))
 
 
-def _fraction(t):
+def effort(x):
+    """A target's or to-do's effort, 1-10: unset (NULL) reads as 5."""
+    from .goals import effort_of
+    return effort_of(x.get("effort"))
+
+
+def target_progress(t):
+    """A target's progress, 0..1: value / target, capped at 100%. A milestone's value is already its fraction
+    (self-rating, else its to-dos' effort done, else its tick; see goals._milestone_value)."""
     return min(t["value"] / t["target"], 1.0) if t["target"] else 0.0
 
 
-def life_goal_progress(life_goal_id, targets=None, todos=None):
-    """{"fraction": 0..1, "targets": n, "targets_done": n, "todos": n, "todos_done": n}.
-    fraction: the mean of the targets' progress, or (with none) to-dos done out of all of them."""
+def life_goal_parts(life_goal_id, targets=None, todos=None):
+    """What a goal's % is made of, in order (targets, then the goal's own to-dos):
+    [{"kind": "target" / "todo", "item", "title", "effort", "fraction"}]."""
     targets = life_goal_targets(life_goal_id) if targets is None else targets
     todos = life_goal_todos(life_goal_id) if todos is None else todos
-    done = sum(1 for t in todos if t["done"])
-    if targets:
-        frac = sum(_fraction(t) for t in targets) / len(targets)
-    else:
-        frac = done / len(todos) if todos else 0.0
-    return {"fraction": frac, "targets": len(targets), "targets_done": sum(_fraction(t) >= 1 for t in targets),
-            "todos": len(todos), "todos_done": done}
+    group = life_goal_group(life_goal_id)
+    own = [t for t in todos if group and t["group_id"] == group["id"]]
+    return ([{"kind": "target", "item": t, "title": t["title"], "effort": effort(t), "fraction": target_progress(t)}
+             for t in targets]
+            + [{"kind": "todo", "item": t, "title": t["title"], "effort": effort(t), "fraction": 1.0 if t["done"] else 0.0}
+               for t in own])
+
+
+def weighted(parts, key="fraction"):
+    """sum(effort × part[key]) / sum(effort), or 0 with no parts."""
+    total = sum(p["effort"] for p in parts)
+    return sum(p["effort"] * p[key] for p in parts) / total if total else 0.0
+
+
+def life_goal_progress(life_goal_id, targets=None, todos=None):
+    """{"fraction": 0..1, "parts": life_goal_parts, "targets": n, "targets_done": n, "todos": n, "todos_done": n}.
+    fraction: the effort-weighted mean of its targets' progress and its own to-dos (done = 1). The to-do counts
+    are of every to-do under the goal (its targets' too)."""
+    targets = life_goal_targets(life_goal_id) if targets is None else targets
+    todos = life_goal_todos(life_goal_id) if todos is None else todos
+    parts = life_goal_parts(life_goal_id, targets, todos)
+    return {"fraction": weighted(parts), "parts": parts, "targets": len(targets),
+            "targets_done": sum(target_progress(t) >= 1 for t in targets),
+            "todos": len(todos), "todos_done": sum(1 for t in todos if t["done"])}
 
 
 def time_left(g, today=None):

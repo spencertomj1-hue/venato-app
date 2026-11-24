@@ -233,28 +233,6 @@ def test_negotiation_offers(store, pace):
     assert pace.negotiation(low, pace.Ctx(NOW)) is not None                   # it can't get any time either
 
 
-# --- Phase 7: suggestions ---
-
-def test_suggested_goals(store, pace):
-    store.save_category("music", "Music", "#123456", "Life")
-    for i in range(1, 4):
-        monday = date(2026, 11, 9) - timedelta(weeks=i)
-        block(store, monday, "18:00", "20:30", "Guitar", "music", "actual")
-    found = pace.suggestions(pace.Ctx(NOW))
-    assert [s["text"] for s in found] == ["1.9 h/week of Guitar. Make it a goal?"]
-    assert pace.suggested_target(found[0]["per_week"], NOW.date()) == 8
-    pace.dismiss_suggestion(found[0])
-    assert pace.suggestions(pace.Ctx(NOW)) == []
-
-
-def test_no_suggestion_when_a_goal_counts_it(store, pace):
-    for i in range(1, 4):
-        block(store, date(2026, 11, 9) - timedelta(weeks=i), "09:00", "12:00", "Revision", "study", "actual")
-    assert pace.suggestions(pace.Ctx(NOW))
-    store.add_goal("Study", "monthly", "2026-11-01", 20, "h", category_id="study")
-    assert pace.suggestions(pace.Ctx(NOW)) == []
-
-
 # --- The mid-week nudge ---
 
 def test_nudge_once_a_week_per_goal_from_midweek(store, pace):
@@ -333,13 +311,6 @@ def test_a_day_can_be_marked_away_without_a_calendar_event(store, pace):
     assert days["2026-11-14"]["hours"] == 0 and days["2026-11-14"]["away"]
     store.set_away_day("2026-11-14", False)
     assert pace.week_capacity(NOW.date(), pace.Ctx(NOW))["days"][5]["hours"] == 18
-
-
-def test_sleep_is_never_suggested(store, pace):
-    for i in range(1, 4):
-        block(store, date(2026, 11, 9) - timedelta(weeks=i), "23:00", "01:00", "Sleep", "sleep", "actual")
-        block(store, date(2026, 11, 10) - timedelta(weeks=i), "23:00", "01:00", "Sleep", "sleep", "actual")
-    assert pace.suggestions(pace.Ctx(NOW)) == []
 
 
 def test_history_and_chart_count_confirmed_days(store, pace):

@@ -51,7 +51,7 @@ def test_targets_and_todos_under_a_goal(store):
     assert groups[store.goal_todo_group(t["id"])["id"]] == g["id"]
 
 
-def test_progress_is_targets_mean_else_todos(store):
+def test_progress_is_targets_and_own_todos_mean(store):
     g = store.add_life_goal("Get fit", months=6)
     assert store.life_goal_progress(g["id"])["fraction"] == 0
     grp = store.life_goal_group(g["id"])["id"]
@@ -65,7 +65,8 @@ def test_progress_is_targets_mean_else_todos(store):
     store.set_goal_progress(t1["id"], 5)
     store.set_goal_progress(t2["id"], 8)                                  # over target: counts as 100%
     p = store.life_goal_progress(g["id"])
-    assert p["fraction"] == 0.75 and (p["targets"], p["targets_done"], p["todos"], p["todos_done"]) == (2, 1, 2, 1)
+    # The goal's own to-dos count beside its targets (all effort 5): (0.5 + 1 + 1 + 0) / 4.
+    assert p["fraction"] == 0.625 and (p["targets"], p["targets_done"], p["todos"], p["todos_done"]) == (2, 1, 2, 1)
 
 
 def test_set_target_goal_and_delete_keeps_children(store):
