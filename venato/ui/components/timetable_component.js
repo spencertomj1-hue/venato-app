@@ -1199,7 +1199,9 @@ class Timetable {
       if (this.groupDrag) { table.style.cursor = "grabbing"; return; }
       if (this.marquee) { table.style.cursor = "crosshair"; return; }
       const td = e.target.closest("td.s");
-      this.hoverCell = td ? { di: +td.dataset.d, track: td.dataset.t, slot: +td.dataset.s } : null;
+      // lower: the pointer's in the bottom half of the cell (pasting puts a block's top on the nearest line)
+      this.hoverCell = td ? { di: +td.dataset.d, track: td.dataset.t, slot: +td.dataset.s,
+                              lower: (() => { const r = td.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; })() } : null;
       const hit = td && this.blockAt(+td.dataset.d, td.dataset.t, +td.dataset.s);
       this.hoverBlock(hit ? this.idOf(hit) : null);
       if (td && this.frozen(+td.dataset.d)) { table.style.cursor = hit ? "pointer" : "default"; return; }
@@ -1347,6 +1349,7 @@ class Timetable {
 
   highlight() {
     this.syncResizePreview();
+    this.syncDropOutline();
     this.selected.forEach((td) => td.classList.remove("sel", "box"));
     this.selected = [];
     if (this.marquee) {
@@ -1510,11 +1513,12 @@ class Timetable {
     const h = this.hoverCell;
     if (!h) { this.flashHint("Point at a time in the timetable, then paste"); return true; }
     const one = this.clip.items.length === 1;
+    const top = Math.min(SLOTS - 1, h.slot + (h.lower ? 1 : 0));   // the half-hour line nearest the pointer
     const ops = [], ids = [];
     let skipped = 0;
     for (const it of this.clip.items) {
       const di = h.di + it.ddi;
-      const s = one ? Math.max(0, Math.min(SLOTS - it.len, h.slot)) : h.slot + it.ds;
+      const s = one ? Math.max(0, Math.min(SLOTS - it.len, top)) : top + it.ds;
       if (di >= this.data.days.length || s + it.len > SLOTS || this.frozen(di)) { skipped++; continue; }   // off the end, or a locked Plan
       const id = uid();
       ids.push(id);
@@ -1627,6 +1631,26 @@ class Timetable {
       if (moving) this.previewRaf = requestAnimationFrame(step);
     };
     this.previewRaf = requestAnimationFrame(step);
+  }
+
+  // Moving a block (or a group): a dashed outline where each one lands when you let go.
+  syncDropOutline() {
+    const bd = this.blockDrag, g = this.groupDrag;
+    let boxes = [];
+    if (bd && bd.zone === "move" && bd.moved) boxes = [bd.target];
+    else if (g && g.moved) boxes = g.items.map((it) => ({ di: it.di + g.ddi, track: this.trackFor(it.di + g.ddi),
+                                                          s: it.s + g.ds, e: it.e + g.ds }));
+    if (!boxes.length || !this.wrapEl) { if (this.dropEl) { this.dropEl.remove(); this.dropEl = null; } return; }
+    if (!this.dropEl || this.dropEl.parentNode !== this.wrapEl) {   // (the grid may have been redrawn)
+      this.dropEl?.remove();
+      this.dropEl = document.createElement("div");
+      this.dropEl.className = "tt-drop";
+      this.dropEl.setAttribute("aria-hidden", "true");
+      this.wrapEl.appendChild(this.dropEl);
+    }
+    const origin = this.wrapEl.getBoundingClientRect();
+    this.dropEl.innerHTML = boxes.map(({ di, track, s, e }) =>
+      `<i style="${this.boxStyle(this.cells[di][track][s], this.cells[di][track][e - 1], origin)}"></i>`).join("");
   }
 
   removePreview() {

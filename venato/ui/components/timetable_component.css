@@ -535,6 +535,11 @@ th.day .dstate .ptag { color: var(--bp); font-weight: 700; font-size: 0.66rem; l
 .tt-preview b { font-size: 0.7rem; font-weight: 600; }
 .tt-preview span { font-size: 0.62rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
 
+/* Moving a block: a dashed outline where it lands when you let go. */
+.tt-drop { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.tt-drop i { position: absolute; box-sizing: border-box; border-radius: var(--tile-radius);
+  border: 2px dashed var(--sel, var(--accent)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
 /* Home: no gap under each row (the time lines are drawn over the cells), so the whole day fits. */
 .tt-root.readonly table.tt td { border-bottom: none; }
 
