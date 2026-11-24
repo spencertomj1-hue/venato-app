@@ -160,3 +160,36 @@ def test_todo_rows_get_their_goals_colour(store):
     assert metas[0]["goal"] == {"name": "Get fit", "colour": colour}
     assert metas[1]["goal"] == {"name": "Get fit", "colour": colour}             # a target's to-do: the goal's colour
     assert metas[2]["goal"] is None
+
+
+def test_target_todos_sit_on_the_target_row_and_offer_plus_one(store):
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    t = store.add_goal("Users", None, today, 50, "users", due=store.months_on(today, 1), life_goal_id=g["id"])
+    own = store.add_detailed_todo("Write the README", group_id=store.ensure_life_goal_group(g["id"]))
+    at = goals_page()
+    at.text_input(key=f"target_{t['id']}_newtodo").input("Post on Reddit").run()
+    at.button(key=f"target_{t['id']}_newtodo_add").click().run()
+    todo = store.target_todos(t["id"])[0]
+    assert todo["title"] == "Post on Reddit"
+    assert {x["title"] for x in store.life_goal_todos(g["id"])} == {"Write the README", "Post on Reddit"}
+    keys = [c.key for c in at.checkbox]
+    assert f"target_todo_{todo['id']}" in keys and f"life_todo_{todo['id']}" not in keys   # on the row, not the goal
+    assert f"life_todo_{own['id']}" in keys
+    at.checkbox(key=f"target_todo_{todo['id']}").check().run()
+    assert store.get_todo(todo["id"])["done"]
+    at.button(key=f"plus_offer_yes_{t['id']}").click().run()
+    assert store.get_goal(t["id"])["value"] == 1
+
+
+def test_goal_header_shows_next_step_and_pace(store):
+    from datetime import timedelta
+    today = store.local_today()
+    g = store.add_life_goal("Venato", months=6)
+    store.update_life_goal(g["id"], start=today - timedelta(days=30), months=6)
+    t = store.add_goal("Users", None, today - timedelta(days=30), 50, "users", due=today + timedelta(days=6),
+                       life_goal_id=g["id"])
+    store.add_detailed_todo("Post on Reddit", group_id=store.ensure_target_group(t["id"]))
+    words = text(goals_page())
+    assert "Next: **Users** · 6 days left · Post on Reddit" in words
+    assert "should be" in words and "by today" in words

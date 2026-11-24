@@ -115,12 +115,38 @@ def _edit(g, ids):
             st.rerun()
 
 
-def bar_html(frac, label="", colour=None):
-    """A goal's overall bar, in its colour (else the theme's accent)."""
-    from venato.ui.goals import BAR_CSS, _accent
+def bar_html(frac, label="", colour=None, expected=None):
+    """A goal's overall bar, in its colour (else the theme's accent), with the "should be here by today" tick
+    when `expected` (0..1) is given and the goal isn't there yet."""
+    from venato.ui.goals import BAR_CSS, _accent, goal_bar_css
     fill = f";background:{colour}" if colour else ""
-    return (f'<div class="hg-bar" role="img" aria-label="{escape(label)}"><i style="width:{100 * frac:.1f}%{fill}"></i></div>'
-            + BAR_CSS.replace("ACCENT", _accent()))
+    bar = f'<div class="hg-bar" role="img" aria-label="{escape(label)}"><i style="width:{100 * frac:.1f}%{fill}"></i></div>'
+    if expected and frac < expected:
+        tip = f"Should be at {round(100 * expected)}% by today"
+        mark = (f'<span class="hg-mark" role="img" aria-label="{tip}" title="{tip}" '
+                f'style="left:{100 * min(expected, 1):.1f}%"></span>')
+        return f'<div class="hg-track">{bar}{mark}</div>' + goal_bar_css()
+    return bar + BAR_CSS.replace("ACCENT", _accent())
+
+
+def pace_words(frac, expected):
+    """"12%" or, behind an even pace, "0% · should be 9% by today"."""
+    now = f"{round(100 * frac)}%"
+    if expected is not None and frac < expected - BEHIND_BY:
+        return f"{now} · :orange[should be {round(100 * expected)}% by today]"
+    return now
+
+
+def next_step_line(step, today):
+    """":material/arrow_forward: Next: **Hit 50 users** · 6 days left · Message 5 mates"."""
+    from venato.ui.goals import due_parts
+    bits = []
+    if step["target"]:
+        bits.append(f"**{kit.md(step['target']['title'])}**")
+        bits.append(due_parts(step["target"], today)[1])
+    if step["todo"]:
+        bits.append(kit.md(step["todo"]["title"]))
+    return ":material/arrow_forward: Next: " + " · ".join(bits)
 
 
 def summary(p):
@@ -135,9 +161,10 @@ def summary(p):
 
 def _todos(g, today):
     """The goal's to-dos: open ones to tick, a line to add one, done ones counted."""
-    todos = store.life_goal_todos(g["id"])
+    group = store.life_goal_group(g["id"])          # the goal's own; a target's to-dos sit on its row
+    todos = [t for t in store.life_goal_todos(g["id"]) if group and t["group_id"] == group["id"]]
     open_ = [t for t in todos if not t["done"]]
-    kit.subhead("To-dos", icon=":material/check_box:")
+    kit.subhead("To-dos for the goal", icon=":material/check_box:")
     for t in open_:
         when = f" :gray[· due {regional.short_date(t['due'], today)}]" if t.get("due") else ""
         st.checkbox(f"{kit.md(t['title'])}{when}", value=False, key=f"life_todo_{t['id']}",
@@ -173,8 +200,13 @@ def card(g, ids, ctx, today, expanded=False):
             _edit(g, ids)
         if g["why"]:
             st.caption(f":material/format_quote: {kit.md(g['why'])}")
-        st.html(bar_html(p["fraction"], f"{g['title']}: {round(100 * p['fraction'])}%", store.life_goal_colour(g["id"])))
-        st.caption(f"{round(100 * p['fraction'])}% · {summary(p)}")
+        exp = expected_fraction(g, targets, today) if ctx is not None else None
+        st.html(bar_html(p["fraction"], f"{g['title']}: {round(100 * p['fraction'])}%", store.life_goal_colour(g["id"]),
+                         expected=exp))
+        st.caption(f"{pace_words(p['fraction'], exp)} · {summary(p)}")
+        step = store.next_step(g["id"], today, targets) if ctx is not None else None
+        if step:
+            st.markdown(next_step_line(step, today))
         with st.expander("Targets and to-dos", expanded=expanded):
             kit.subhead("Targets", icon=":material/track_changes:")
             neighbours = [t["id"] for t in targets]

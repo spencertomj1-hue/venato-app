@@ -74,7 +74,8 @@ from .goals import (GOAL_COLS, GOAL_PERIODS, _goal_matches, _num, add_goal, add_
 from .life_goals import (GOAL_COLOURS, GOAL_COLOUR_NAMES, HORIZONS, add_life_goal, delete_life_goal, ensure_life_goal_group, find_life_goal, get_life_goal,
     group_life_goals, horizon_of, life_goal_colour, life_goal_colours, life_goal_group, life_goal_group_ids, life_goal_progress, life_goal_targets,
     life_goal_todos, life_goals, life_goals_past, load_life_goals, months_on, reorder_life_goals,
-    save_life_goals, set_life_goal_colour, set_target_goal, time_left, unparented_targets, update_life_goal)
+    save_life_goals, set_life_goal_colour, set_target_goal, time_left, unparented_targets, update_life_goal,
+    target_todos, ensure_target_group, next_step)
 from .links import block_link, link_block, linked_blocks, on_block_status
 from .review import get_review, reviews, save_review
 from .stats import get_stats, period_start

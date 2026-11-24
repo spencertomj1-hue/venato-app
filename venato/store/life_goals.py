@@ -256,6 +256,49 @@ def life_goal_todos(life_goal_id, open_only=False):
     return [_todo(r) for r in rows]
 
 
+def target_todos(target_id, open_only=False):
+    """The to-dos in a target's own to-do category, open ones first then by due day."""
+    from .todos import TODO_COLS, _todo, goal_todo_group
+    group = goal_todo_group(target_id)
+    if not group:
+        return []
+    with db() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT {TODO_COLS} FROM todos WHERE group_id = ? {'AND done = 0' if open_only else ''} "
+            "ORDER BY done, COALESCE(due, period_start), ord, created_at", (group["id"],)).fetchall()
+    return [_todo(r) for r in rows]
+
+
+def ensure_target_group(target_id):
+    """The id of a target's own to-do category, making it again if the user deleted it."""
+    from .goals import get_goal
+    from .todos import link_goal_group
+    t = get_goal(target_id)
+    if not t:
+        raise ValueError("There's no such target.")
+    with db() as conn:
+        return link_goal_group(conn, target_id, t["title"])
+
+
+def next_step(life_goal_id, today=None, targets=None):
+    """What to do next for a goal: {"target": the open target due soonest or None, "todo": its first open to-do,
+    else the goal's own first open to-do, or None}. None when there's nothing open at all."""
+    today = _as_date(today or local_today()).isoformat()
+    targets = life_goal_targets(life_goal_id) if targets is None else targets
+    target = next((t for t in targets if t["due"] >= today and (not t["target"] or t["value"] < t["target"])), None)
+    todo = None
+    if target:
+        todo = next(iter(target_todos(target["id"], open_only=True)), None)
+    if not todo:
+        group = life_goal_group(life_goal_id)
+        todo = next((t for t in life_goal_todos(life_goal_id, open_only=True)
+                     if group and t["group_id"] == group["id"]), None)
+    if not target and not todo:
+        return None
+    return {"target": target, "todo": todo}
+
+
 def life_goal_targets(life_goal_id, day=None):
     """The targets under a goal that are still open (not closed), soonest deadline first, each with `value`."""
     from .goals import _goals_where

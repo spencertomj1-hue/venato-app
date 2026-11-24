@@ -288,14 +288,64 @@ def _goal_row(g, ctx=None, neighbours=None):
             what = f"{g['label']} ({g['category']})" if g.get("label") else g["category"]
             source = (f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**, "
                       "on days you've confirmed")
-        if svg or lines or source:
-            with st.expander("Chart and details", icon=":material/show_chart:"):
-                if svg:
-                    st.html(svg)
-                if lines:
-                    st.caption("  \n".join(goal_time.md(x) for x in lines))
-                if source:
-                    st.caption(source)
+        _target_todos(g)
+        with st.expander("Chart, to-dos and details", icon=":material/show_chart:"):
+            if svg:
+                st.html(svg)
+            if lines:
+                st.caption("  \n".join(goal_time.md(x) for x in lines))
+            if source:
+                st.caption(source)
+            _new_target_todo(g)
+
+
+def _plus_offer_key(target_id):
+    return f"plus_offer_{target_id}"
+
+
+def _tick_target_todo(todo_id, target):
+    """Tick a target's to-do; on a target kept by hand, offer to add 1 to it too."""
+    store.set_todo_done(todo_id, True)
+    if target["kind"] == "count":
+        st.session_state[_plus_offer_key(target["id"])] = True
+
+
+def _accept_plus(target_id):
+    store.add_goal_progress(target_id, 1)
+    st.session_state.pop(_plus_offer_key(target_id), None)
+
+
+def _target_todos(g):
+    """A target's open to-dos, to tick right on its row (done ones counted), and the "+1?" offer after a tick."""
+    todos = store.target_todos(g["id"])
+    open_ = [t for t in todos if not t["done"]]
+    today = store.local_today()
+    for t in open_:
+        when = f" :gray[· due {regional.short_date(t['due'], today)}]" if t.get("due") else ""
+        st.checkbox(f"{kit.md(t['title'])}{when}", value=False, key=f"target_todo_{t['id']}",
+                    on_change=_tick_target_todo, args=(t["id"], g))
+    if st.session_state.get(_plus_offer_key(g["id"])):
+        with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+            st.caption(f"Ticked. Add 1 to **{kit.md(g['title'])}** too?")
+            st.button("+1", key=f"plus_offer_yes_{g['id']}", on_click=_accept_plus, args=(g["id"],))
+            st.button("No", key=f"plus_offer_no_{g['id']}", type="tertiary",
+                      on_click=st.session_state.pop, args=(_plus_offer_key(g["id"]), None))
+    done = len(todos) - len(open_)
+    if done:
+        st.caption(f"{done} to-do{'s' if done != 1 else ''} done")
+
+
+def _new_target_todo(g):
+    """A line to add a to-do to this target (it goes in the target's own to-do category)."""
+    key = f"target_{g['id']}_newtodo"
+    with st.container(horizontal=True, vertical_alignment="bottom"):
+        title = st.text_input("New to-do", key=key, placeholder="Add a to-do for this target",
+                              label_visibility="collapsed", width="stretch")
+        if st.button("", icon=":material/add:", key=f"{key}_add", help="Add this to-do to the target",
+                     disabled=not (title or "").strip()):
+            store.add_detailed_todo(title.strip(), group_id=store.ensure_target_group(g["id"]))
+            del st.session_state[key]
+            st.rerun()
 
 
 def due_parts(g, today=None):

@@ -48,30 +48,15 @@ def test_goals_page_pace_budget_and_ranking(store):
     at = app()
     open_page(at, "Goals")
     heads = " ".join(s.value for s in at.subheader)
-    assert "Where this week's" in heads and "This week's time" not in heads      # the PR #5 panel is gone
+    assert "Where this week's" not in heads and "This week's time" not in heads  # no side panel
     html = " ".join(h.proto.body for h in at.get("html"))
     assert html.count('class="gc-legend"') == 1                                   # one legend for every chart
     assert 'alt="Revision: 0 h of 20 h by' in html                                 # each chart says its numbers
-    assert "Unclaimed" in html and "Plan my goals" in [b.label for b in at.button]
+    assert "Unclaimed" not in html
     assert any("This week" in c.value for c in at.caption)                        # the goal's own week numbers
     at.button(key=f"edit_{b['id']}_up").click().run()            # Gym first now
     assert [g["title"] for g in store.goals_in("monthly", today)] == ["Gym", "Revision"]
     assert a["id"]
-
-
-def test_suggestion_card_makes_a_goal(store):
-    monday = store.week_start_of(store.local_today())
-    for i in range(1, 4):
-        day = (monday - timedelta(weeks=i)).isoformat()
-        store.paint(day, "actual", store.slot_of("18:00"), store.slot_of("21:00"), {"label": "Guitar", "category_id": "rest"})
-        store.mark_confirmed(day)
-    at = app()
-    open_page(at, "Goals")
-    yes = [x for x in at.button if x.key and x.key.startswith("suggest_yes_")]
-    assert yes
-    yes[0].click().run()
-    goals = store.goals_in("monthly", store.local_today())
-    assert [(g["title"], g["category_id"], g["label"]) for g in goals] == [("Guitar", "rest", "Guitar")]
 
 
 def test_home_bar_has_a_should_be_here_marker(store):
