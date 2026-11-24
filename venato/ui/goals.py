@@ -246,17 +246,26 @@ def _edit_goal(g, ids=None):
 # ---------------------------------------------------------------------------
 
 def _goal_row(g, ctx=None, neighbours=None):
-    """One goal as a card: title, state badge, − / + (kept by hand) and ⋯; its number; the pace chart
-    (from now on) or a bar (past goals); short detail lines, and this week's numbers for hours goals."""
+    """One target as a compact row: title, state badge and time left; a progress bar with the "should be here
+    by today" tick; its %; − / + (kept by hand) and ⋯. The pace chart and detail lines fold away under it."""
     from venato import pace
     from venato.ui import goal_chart, goal_time
     p = pace.goal_pace(g, ctx) if ctx is not None else None
+    today = ctx.today if ctx is not None else store.local_today()
     with st.container(border=True, key=f"goal_card_{g['id']}"):
-        text, minus, plus, more = st.columns([5, 1, 1, 1.4], vertical_alignment="center")
+        text, bar, pct, minus, plus, more = st.columns([3.2, 3, 0.8, 0.6, 0.6, 0.9], vertical_alignment="center")
         when, left = due_parts(g)
         badge = f"{goal_time.badge(p['state'])} " if p and p["state"] != "upcoming" else ""
         # The deadline stays on the title's line (non-breaking spaces keep "by 31/12" in one piece).
         text.markdown(f"**{goal_time.md(g['title'])}**\u00a0:gray[{when.replace(' ', chr(160))}]  \n{badge}:gray[{left}]")
+        unit = f" {g['unit']}" if g["unit"] else ""
+        should = pace.expected(g, today) if g["target"] else 0
+        line = f"{_num(g['value'])} of {_num(g['target'])}{unit}"
+        if 0 < should and fraction(g) < 1:
+            line += f" · pace says {_num(round(should, 1))}"
+        with bar:
+            st.html(goal_bar_css() + goal_bar(g, today, line))
+        pct.markdown(f"#### {round(100 * fraction(g))}%")
         if g["kind"] != "count":
             minus.empty()
             plus.empty()
@@ -267,25 +276,26 @@ def _goal_row(g, ctx=None, neighbours=None):
                         on_click=store.add_goal_progress, args=(g["id"], 1))
         with more:
             _edit_goal(g, neighbours)
-        unit = f" {g['unit']}" if g["unit"] else ""
-        st.markdown(f"### {_num(g['value'])} :gray[of {_num(g['target'])}{goal_time.md(unit)} · {round(100 * fraction(g))}%]")
-        svg = goal_chart.chart(p, ctx) if p else ""
-        if svg:
-            st.html(svg)
-        else:
-            st.html(f'<div class="hg-bar">{_fill(g)}</div>' + BAR_CSS.replace("ACCENT", _accent()))
         lines = list(p.get("details") or []) if p else []
         week = goal_chart.week_line(p) if p else ""
         if week:
             lines.insert(0, week)
-        if lines:
-            st.caption("  \n".join(goal_time.md(x) for x in lines))
+        svg = goal_chart.chart(p, ctx) if p else ""
+        source = ""
         if g["habit"]:
-            st.caption(f":material/sync: Counted from the habit **{escape(g['habit'])}**")
+            source = f":material/sync: Counted from the habit **{escape(g['habit'])}**"
         elif g["category"]:
             what = f"{g['label']} ({g['category']})" if g.get("label") else g["category"]
-            st.caption(f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**, "
-                       "on days you've confirmed")
+            source = (f":material/schedule: Counted from your timetable's Actual hours of **{escape(what)}**, "
+                      "on days you've confirmed")
+        if svg or lines or source:
+            with st.expander("Chart and details", icon=":material/show_chart:"):
+                if svg:
+                    st.html(svg)
+                if lines:
+                    st.caption("  \n".join(goal_time.md(x) for x in lines))
+                if source:
+                    st.caption(source)
 
 
 def due_parts(g, today=None):
@@ -310,10 +320,8 @@ def _section(today, ctx):
         heading = "Targets" if not store.life_goals(include_past=True) else "Targets not under a goal"
         st.subheader(f"{heading} :gray[{done}/{len(goals)}]", anchor=False)
         ids = [g["id"] for g in goals]
-        cols = st.columns(2, gap="small")
-        for i, g in enumerate(goals):
-            with cols[i % 2]:
-                _goal_row(g, ctx, ids)
+        for g in goals:
+            _goal_row(g, ctx, ids)
         if not goals:
             st.caption("None. Measurable targets with a deadline (\"Gym 40 sessions by 31/03\") go here or under a goal.")
         _new_goal()
@@ -321,10 +329,8 @@ def _section(today, ctx):
     past = pace.goals_past(today)
     if past:
         with st.expander(f"Past targets ({sum(fraction(g) >= 1 for g in past)}/{len(past)} done)"):
-            cols = st.columns(2, gap="small")
-            for i, g in enumerate(past):
-                with cols[i % 2]:
-                    _goal_row(g)
+            for g in past:
+                _goal_row(g)
 
 
 def render_page():
@@ -335,16 +341,11 @@ def render_page():
     from venato.ui import goal_time
     from venato.ui import goal_chart
     ctx = pace.Ctx()
-    main, side = st.columns([2.3, 1], gap="medium")      # the side panel stacks under on narrow screens
-    with main:
-        st.html(goal_chart.legend())                    # once, for every target's pace chart
-        from venato.ui import life_goals
-        life_goals.render_section(ctx, today)
-        _section(today, ctx)
-    with side:
-        goal_time.free_split(ctx)                       # where this week's free time goes, by goal
-        goal_time.offers(ctx)                           # "X can't be finished in time"
-        goal_time.suggestions(ctx)
+    goal_time.offers(ctx)                               # "X can't be finished in time", above everything
+    st.html(goal_chart.legend())                        # once, for every target's pace chart
+    from venato.ui import life_goals
+    life_goals.render_section(ctx, today)
+    _section(today, ctx)
     from venato.ui import deadlines
     deadlines.render_section()
 

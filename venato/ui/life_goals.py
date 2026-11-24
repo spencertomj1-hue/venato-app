@@ -178,10 +178,8 @@ def card(g, ids, ctx, today, expanded=False):
         with st.expander("Targets and to-dos", expanded=expanded):
             kit.subhead("Targets", icon=":material/track_changes:")
             neighbours = [t["id"] for t in targets]
-            cols = st.columns(2, gap="small")
-            for i, t in enumerate(targets):
-                with cols[i % 2]:
-                    goals_ui._goal_row(t, ctx if t["due"] >= today.isoformat() else None, neighbours)
+            for t in targets:
+                goals_ui._goal_row(t, ctx if t["due"] >= today.isoformat() else None, neighbours)
             goals_ui._new_goal(key=f"new_goal_{g['id']}", life_goal_id=g["id"])
             _todos(g, today)
 
