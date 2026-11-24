@@ -836,7 +836,11 @@ class Timetable {
     const [min, max] = [10, 18];
     const main = document.querySelector(".stMainBlockContainer");
     const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24;
-    const bottom = () => Math.max(...[".tt-card", ".tt-legend"].map((sel) => {
+    // Measured from the top of the page, not the window: scrolled down a bit, the grid would otherwise
+    // think it had more room and grow its rows on the next redraw (an undo, say), making the page jump.
+    const scroller = document.querySelector('[data-testid="stMain"]');
+    const scrolled = (scroller ? scroller.scrollTop : 0) + window.scrollY;
+    const bottom = () => scrolled + Math.max(...[".tt-card", ".tt-legend"].map((sel) => {
       const r = this.root.querySelector(sel)?.getBoundingClientRect();
       return r && r.height ? r.bottom : 0;
     }));
@@ -883,9 +887,9 @@ class Timetable {
     if (di === undefined || slot < 0 || slot >= SLOTS || !this.cells[di]) { if (line) line.remove(); return; }
     const origin = this.wrapEl.getBoundingClientRect();
     const cell = this.cells[di].plan[Math.floor(slot)].getBoundingClientRect();
-    // Across today's column only (Plan and Actual), not the other days.
-    const tableLeft = this.cells[di].plan[0].getBoundingClientRect().left;
-    const tableRight = (this.cells[di].actual[0] || this.cells[di].plan[0]).getBoundingClientRect().right;
+    // Across today's blocks only: inside the gaps either side of the column, so it never pokes into the
+    // day before (or the rail of plan colours in the gap).
+    const col = this.boxRect(this.cells[di].plan[0], this.cells[di].actual[0] || this.cells[di].plan[0], origin);
     if (!line) {
       line = document.createElement("div");
       line.className = "tt-now";
@@ -893,8 +897,8 @@ class Timetable {
       this.wrapEl.appendChild(line);
     }
     line.style.top = `${cell.top - origin.top + (slot - Math.floor(slot)) * cell.height}px`;
-    line.style.left = `${tableLeft - origin.left}px`;
-    line.style.width = `${tableRight - tableLeft}px`;
+    line.style.left = `${col.left}px`;
+    line.style.width = `${col.width}px`;
     clearTimeout(this.nowTimer);
     this.nowTimer = setTimeout(() => this.drawNow(), 30000);    // keep it moving
   }
