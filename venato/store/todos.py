@@ -94,6 +94,9 @@ def set_todo_done(todo_id, done):
             (int(bool(done)), int(bool(done)), stamp(), todo_id),
         )
     _mark_block(todo_id, done)
+    if done:
+        from venato import analytics
+        analytics.track("todo_done")
 
 
 def _mark_block(todo_id, done):

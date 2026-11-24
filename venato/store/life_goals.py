@@ -125,6 +125,8 @@ def add_life_goal(title, months=None, end=None, start=None, why=None, life_goal_
             "(SELECT COALESCE(MAX(ord) + 1, 0) FROM life_goals), ?, 0)",
             (life_goal_id, title, (why or "").strip() or None, first, last, stamp()))
         _link_group(conn, life_goal_id, title)
+    from venato import analytics
+    analytics.track("life_goal_created", months=months)
     return get_life_goal(life_goal_id)
 
 

@@ -261,12 +261,17 @@ def _finish(prefill_home=True):
             onboarding.prefill_home([k for k, _ in onboarding.home_picks()])
         except Exception:                             # Home keeps its default; setup is done either way
             logging.getLogger(__name__).warning("Setup couldn't prefill Home", exc_info=True)
+    if prefill_home:                                  # skipped: _skip already said so
+        from venato import analytics
+        analytics.track("onboarding_finished", skipped=False)
     setup_checks.save_settings(wizard_done=True)
     st.session_state["wizard_open"] = False
     onboarding.restart()
 
 
 def _skip():
+    from venato import analytics
+    analytics.track("onboarding_finished", skipped=True)
     _finish(prefill_home=False)
 
 
@@ -424,6 +429,21 @@ def _updates_section():
             st.success("You have the latest version.")
 
 
+USAGE_HELP = ("Sends which pages you open, how long you spend on each, and which features you use, with a random id "
+              "made on this computer. Never anything you type: no journal, goals, to-dos, chats, names or calendars.")
+
+
+def usage_stats_switch(prefix):
+    """The opt-in for anonymous usage stats (venato/analytics.py). Hidden when this build has nowhere to send them."""
+    from venato import analytics
+    if not analytics.project_key():
+        return
+    on = st.toggle("Share anonymous usage stats", value=analytics.opted_in(), key=f"{prefix}_usage_stats",
+                   help=USAGE_HELP)
+    if on != analytics.opted_in():
+        analytics.set_opted_in(on)
+
+
 def page_settings():
     st.header("Settings", anchor=False)
     ai = store.ai_enabled()
@@ -488,6 +508,7 @@ def page_settings():
             "Open source under the **MIT licence**."
         )
         _updates_section()
+        usage_stats_switch("about")
         st.link_button("Send feedback", feedback.feedback_url(), icon=":material/rate_review:",
                        help="Opens a short form in your browser. Nothing is sent from the app.")
         st.caption("Setup only adds things: nothing you have is deleted.")

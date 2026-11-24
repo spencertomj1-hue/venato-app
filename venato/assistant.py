@@ -871,6 +871,8 @@ def start_turn(text, history=(), key="default"):
         return Job.finished(Turn(error=(
             "Couldn't find Claude. Paste an Anthropic API key in Settings → Assistant (or install Claude Code); "
             f"if it's installed somewhere unusual, set its path in {CONFIG_PATH} as {{\"claude_path\": \"/path/to/claude\"}}.")))
+    from venato import analytics
+    analytics.track("assistant_used")             # that it was used: never what was asked
     job = Job()
     job.key = key
     timing = {"at": store.stamp(), "model": load_config().get("model") or DEFAULT_MODEL, "quick": False}

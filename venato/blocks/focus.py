@@ -120,6 +120,8 @@ def start(label, minutes=None, kind="focus", category_id=None, cycle=None, now=N
     with store.db() as conn:
         conn.execute(f"INSERT INTO focus_running ({', '.join(COLS)}, one) VALUES (?, ?, ?, ?, ?, NULL, 0, ?, 1)",
                      (label, category_id, kind, now or _now(), minutes, cycle or 0))
+    from venato import analytics
+    analytics.track("focus_started", kind=kind, minutes=minutes)
     return running()
 
 

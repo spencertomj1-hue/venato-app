@@ -2,6 +2,16 @@
 
 Things for Tom to pick up, newest at the top. Add a line or a section whenever something comes up; tick it (`[x]`) when it's done.
 
+## Added 24 Nov 2026
+
+### Switch on anonymous usage stats
+
+- [ ] Make a PostHog project (posthog.com, **EU cloud**) and put its project API key (starts `phc_`) in `PROJECT_KEY` in `venato/analytics.py`. It's write-only, so it's fine in the public repo. Until then the switch is hidden and nothing is sent.
+
+Opt-in, off by default (setup's Welcome step and Settings → About). Sends page views, time on each page (capped at 30 minutes), sessions, setup steps reached and finished or skipped, focus started, goal created, to-do ticked, assistant used, and blocks switched on. Never anything typed: `analytics.clean` drops any property not on the list in `EVENTS` and any text that isn't a short plain word. To add an event, add it to `EVENTS` and call `analytics.track(...)`.
+
+In PostHog, build: a page views by page chart, median `seconds` of `page_left` by page, and a funnel of `onboarding_step` by `index` to `onboarding_finished`.
+
 ## Added 21 Nov 2026 (from Magnus)
 
 ### 1. Analyse what people actually get done

@@ -91,6 +91,8 @@ if st.session_state.get("last_page") == "Modules" and choice != "Modules":
 if choice != "Home":
     st.session_state["home_arranging"] = False
 st.session_state["last_page"] = choice
+from venato import analytics                    # opt-in, anonymous: page views and time on each page
+analytics.page_changed(st.session_state, choice)
 from venato.ui import page_fade                   # fades between pages instead of swapping bits in front of you
 page_fade.render()
 

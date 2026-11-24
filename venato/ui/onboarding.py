@@ -615,7 +615,11 @@ def _welcome():
     st.title("Welcome to Venato", anchor=False)
     st.markdown("Plan your week, log what really happened, and see the gap.")
     st.html(_PLAN_ACTUAL)
-    st.caption(f":material/lock: Everything stays on your {system.COMPUTER}. Nothing is uploaded.")
+    from venato import analytics
+    from venato.ui import settings_ui
+    st.caption(f":material/lock: Everything stays on your {system.COMPUTER}. Nothing is uploaded"
+               + (" unless you switch on anonymous usage stats below." if analytics.project_key() else "."))
+    settings_ui.usage_stats_switch("ob")
     st.subheader("Are you at uni?", anchor=False)
     st.caption("Students also connect their timetable and Canvas, and get a Modules page.")
     ob = _ob()
@@ -1251,6 +1255,8 @@ def wizard(finish, skip=None):
         if st.session_state.get("wizard_drawn") != step:
             # A new step opens at the top, not wherever the last (longer) one was scrolled to.
             st.session_state["wizard_drawn"] = step
+            from venato import analytics
+            analytics.track("onboarding_step", step=key, index=step)
             components.html(f"<script>/* step {step} */ const d = window.parent.document;"
                             "d.querySelector('[data-testid=\"stMain\"]')?.scrollTo(0, 0); window.parent.scrollTo(0, 0);</script>",
                             height=0)

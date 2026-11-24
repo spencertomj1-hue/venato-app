@@ -10,6 +10,9 @@ Everything before 1.0.0 was an alpha test. Those releases were first published a
 
 ## [Unreleased]
 
+### Added
+- **Anonymous usage stats, opt-in.** Off unless you switch them on (setup's Welcome step or Settings → About). They send which pages you open, how long you stay on each, and which features you use, with a random id made on your computer, to PostHog's EU servers. Never anything you type. Hidden until the build has a PostHog project key.
+
 ## [1.0.0] - 2026-11-22
 
 Venato now focuses on student life and long-term goals. Home is how you get round the app (the sidebar is gone), goals are plans over months with targets and to-dos under them, setup is a short wizard, and a new install starts blank. Several blocks are gone, but none of their data is deleted (see Removed).

@@ -140,7 +140,10 @@ def save(keys):
     """Switch on exactly these blocks, in this priority order."""
     from venato import store
     known = {b.key for b in all_blocks()}
-    store.save_settings(blocks=[k for k in dict.fromkeys(keys) if k in known], blocks_optional=True)
+    chosen = [k for k in dict.fromkeys(keys) if k in known]
+    store.save_settings(blocks=chosen, blocks_optional=True)
+    from venato import analytics
+    analytics.track("blocks_changed", count=len(chosen), blocks=chosen)
 
 
 def pages():
